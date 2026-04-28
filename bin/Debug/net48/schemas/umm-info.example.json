@@ -1,0 +1,19 @@
+﻿{
+  "$schema": "./umm-info.schema.json",
+  "Id": "HunterR.MurphyBranch",
+  "DisplayName": "Murphy Branch",
+  "Author": "Hunter Rogers",
+  "Version": "1.0.0",
+  "ManagerVersion": "0.27.10",
+  "GameVersion": "2025.1",
+  "Requirements": [
+    {
+      "Id": "RAIL",
+      "NotBefore": "1.0.0"
+    }
+  ],
+  "LoadAfter": [
+    "RAIL"
+  ],
+  "RailDataFile": "MurphyBranch.bson"
+}

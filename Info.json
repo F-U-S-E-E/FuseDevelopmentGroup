@@ -1,0 +1,10 @@
+﻿{
+  "Id": "RAIL",
+  "DisplayName": "RAIL",
+  "Author": "Hunter Rogers",
+  "Version": "0.1.0",
+  "ManagerVersion": "0.27.10",
+  "AssemblyName": "RAIL.dll",
+  "EntryMethod": "RAIL.RailPlugin.Load",
+  "HomePage": ""
+}

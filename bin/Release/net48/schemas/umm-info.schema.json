@@ -1,0 +1,121 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hunterr.dev/rail/schemas/umm-info.schema.json",
+  "title": "RAIL Unity Mod Manager Info.json",
+  "description": "UMM manifest shape for the RAIL API mod and RAIL data packages.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "Id",
+    "DisplayName",
+    "Author",
+    "Version",
+    "ManagerVersion"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "Id": {
+      "$ref": "#/$defs/id"
+    },
+    "DisplayName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Author": {
+      "type": "string",
+      "minLength": 1
+    },
+    "Version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ManagerVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "GameVersion": {
+      "type": "string"
+    },
+    "AssemblyName": {
+      "type": "string",
+      "description": "Required for code mods like RAIL. Omit for RAIL data-only packages if UMM accepts the folder."
+    },
+    "EntryMethod": {
+      "type": "string",
+      "description": "Required when AssemblyName is present."
+    },
+    "HomePage": {
+      "type": "string"
+    },
+    "Repository": {
+      "type": "string"
+    },
+    "Requirements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      },
+      "default": []
+    },
+    "LoadAfter": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      },
+      "default": []
+    },
+    "RailDataFile": {
+      "type": "string",
+      "pattern": "^.+\\.(bson|json)$",
+      "description": "RAIL-specific pointer to one mod definition file in this UMM folder."
+    },
+    "RailDataFiles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^.+\\.(bson|json)$"
+      },
+      "default": [],
+      "description": "RAIL-specific ordered list of definition fragments to load from this UMM folder."
+    }
+  },
+  "dependentRequired": {
+    "AssemblyName": [
+      "EntryMethod"
+    ],
+    "EntryMethod": [
+      "AssemblyName"
+    ]
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "dependency": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "Id"
+          ],
+          "properties": {
+            "Id": {
+              "$ref": "#/$defs/id"
+            },
+            "NotBefore": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

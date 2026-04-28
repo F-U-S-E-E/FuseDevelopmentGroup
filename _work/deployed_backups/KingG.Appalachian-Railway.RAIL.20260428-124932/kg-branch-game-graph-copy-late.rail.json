@@ -1,0 +1,109 @@
+{
+  "$schema": ".\\schemas\\rail-mod.schema.json",
+  "schemaVersion": 1,
+  "id": "KingG.Appalachian-Railway.kg-branch-game-graph-copy-late",
+  "name": "Appalachian Railway & Surrounding Timberlands (kg-branch-game-graph-copy-late)",
+  "author": "KingG",
+  "modVersion": "1.0.4.6",
+  "coordinateSpace": "world",
+  "tracks": {
+    "nodes": {},
+    "segments": {},
+    "spans": {},
+    "areas": {},
+    "removals": {
+      "nodes": [],
+      "segments": [],
+      "spans": []
+    }
+  },
+  "operations": {
+    "loads": {},
+    "industries": {},
+    "loaders": {
+      "O_Hyatt-Creek-Tower_1111": {
+        "position": {
+          "x": 24626.644,
+          "y": 895.185,
+          "z": 25051.508
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 125.1,
+          "z": 0.0
+        },
+        "prefab": "vanilla://waterTower"
+      },
+      "O_KG.Round-Bottom_2i2s": {
+        "position": {
+          "x": 25918.385,
+          "y": 938.807,
+          "z": 26246.812
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 292.08,
+          "z": 0.0
+        },
+        "prefab": "vanilla://coalConveyor",
+        "industryId": "dillsboro-fuel"
+      },
+      "O_KG.TIMBER-Pin-Oak-Gap_zxhu": {
+        "position": {
+          "x": 28823.033,
+          "y": 1451.87,
+          "z": 29931.25
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 234.7,
+          "z": 0.0
+        },
+        "prefab": "vanilla://waterTower"
+      },
+      "O_KG.TIMBER-Pretty-Hollow_e8im": {
+        "position": {
+          "x": 32888.516,
+          "y": 1434.014,
+          "z": 32911.668
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 21.41,
+          "z": 0.0
+        },
+        "prefab": "vanilla://coalConveyor",
+        "industryId": "Appalachian-Railway-PH-Engine"
+      },
+      "O_KG.TIMBER-Pretty-Hollow_nl8v": {
+        "position": {
+          "x": 32871.177,
+          "y": 1433.166,
+          "z": 32902.171
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 195.9,
+          "z": 0.0
+        },
+        "prefab": "vanilla://waterTower"
+      }
+    },
+    "turntables": {},
+    "stations": {}
+  },
+  "world": {
+    "scenery": {},
+    "splineys": {},
+    "telegraphPoles": {},
+    "mapLabels": {},
+    "mapMasks": {},
+    "mapTiles": {},
+    "sceneClones": {}
+  },
+  "progression": {
+    "progressions": {},
+    "mapFeatures": {}
+  },
+  "extensions": {}
+}

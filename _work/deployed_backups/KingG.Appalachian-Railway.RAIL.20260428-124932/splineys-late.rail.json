@@ -1,0 +1,152 @@
+{
+  "$schema": ".\\schemas\\rail-mod.schema.json",
+  "schemaVersion": 1,
+  "id": "KingG.Appalachian-Railway.splineys-late",
+  "name": "Appalachian Railway & Surrounding Timberlands (splineys-late)",
+  "author": "KingG",
+  "modVersion": "1.0.4.6",
+  "coordinateSpace": "world",
+  "tracks": {
+    "nodes": {},
+    "segments": {},
+    "spans": {},
+    "areas": {},
+    "removals": {
+      "nodes": [],
+      "segments": [],
+      "spans": []
+    }
+  },
+  "operations": {
+    "loads": {},
+    "industries": {},
+    "loaders": {
+      "L_KG.BRANCH_ela-coal-loader": {
+        "position": {
+          "x": 9541.03,
+          "y": 545.811,
+          "z": 7435.564
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 201.0,
+          "z": 0.0
+        },
+        "prefab": "vanilla://coalTower",
+        "industryId": "Appalachian-Railway-Ela-Engine"
+      },
+      "OCollieElaWater_6ie8": {
+        "position": {
+          "x": 9598.297,
+          "y": 546.45,
+          "z": 7393.098
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 200.0,
+          "z": 0.0
+        },
+        "prefab": "vanilla://waterColumn"
+      },
+      "OCollieElaWater_uhrm": {
+        "position": {
+          "x": 9602.662,
+          "y": 546.45,
+          "z": 7404.456
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 20.0,
+          "z": 0.0
+        },
+        "prefab": "vanilla://waterColumn"
+      },
+      "O_KG.RAVENS_r0da": {
+        "position": {
+          "x": 18011.4,
+          "y": 618.05,
+          "z": 14607.321
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 99.0,
+          "z": 0.0
+        },
+        "prefab": "vanilla://coalTower",
+        "industryId": "Appalachian-Railway-Ravensford-Engine"
+      },
+      "O_KG.RAVENS_eq6i": {
+        "position": {
+          "x": 18013.385,
+          "y": 618.05,
+          "z": 14619.879
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 99.0,
+          "z": 0.0
+        },
+        "prefab": "vanilla://waterTower"
+      }
+    },
+    "turntables": {},
+    "stations": {
+      "O_KG.BRANCH_Cherokee-Depot": {
+        "position": {
+          "x": 16028.37,
+          "y": 594.03,
+          "z": 10369.27
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 323.0,
+          "z": 0.0
+        },
+        "prefab": "vanilla://dillsboroDepot",
+        "passengerStopId": "Cherokee-Depot"
+      },
+      "O_KG.RAVENS_Ravensford-Depot": {
+        "position": {
+          "x": 17886.129,
+          "y": 617.55,
+          "z": 14271.027
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 267.05,
+          "z": 0.0
+        },
+        "prefab": "vanilla://flagStopStation",
+        "passengerStopId": "Ravensford-Depot"
+      },
+      "O_KG.BIRDTOWN_ec4s": {
+        "position": {
+          "x": 13258.595,
+          "y": 571.324,
+          "z": 9715.38
+        },
+        "rotation": {
+          "x": 0.0,
+          "y": 144.0,
+          "z": 0.0
+        },
+        "prefab": "vanilla://flagStopStation",
+        "passengerStopId": "Birdtown-Depot"
+      }
+    }
+  },
+  "world": {
+    "scenery": {},
+    "splineys": {},
+    "telegraphPoles": {},
+    "mapLabels": {},
+    "mapMasks": {},
+    "mapTiles": {},
+    "sceneClones": {}
+  },
+  "progression": {
+    "progressions": {},
+    "mapFeatures": {}
+  },
+  "extensions": {}
+}

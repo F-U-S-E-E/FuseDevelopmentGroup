@@ -1,0 +1,215 @@
+{
+  "$schema": "./rail-mod.schema.json",
+  "schemaVersion": 1,
+  "id": "HunterR.MurphyBranch",
+  "name": "Murphy Branch",
+  "author": "Hunter Rogers",
+  "modVersion": "1.0.0",
+  "railroaderVersion": "2025.1",
+  "description": "Example RAIL JSON export.",
+  "coordinateSpace": "world",
+  "tracks": {
+    "nodes": {
+      "murphy:n:001": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 180,
+          "z": 0
+        }
+      },
+      "murphy:n:002": {
+        "position": {
+          "x": 50,
+          "y": 0.2,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 180,
+          "z": 0
+        }
+      }
+    },
+    "segments": {
+      "murphy:s:001": {
+        "startNodeId": "murphy:n:001",
+        "endNodeId": "murphy:n:002",
+        "style": "standard",
+        "trackClass": "main",
+        "speedLimit": 25
+      }
+    },
+    "spans": {
+      "murphy:span:depot": {
+        "upper": {
+          "segmentId": "murphy:s:001",
+          "normalized": 0.1
+        },
+        "lower": {
+          "segmentId": "murphy:s:001",
+          "normalized": 0.8
+        },
+        "normalize": true
+      }
+    },
+    "areas": {}
+  },
+  "operations": {
+    "loads": {
+      "pulpwood": {
+        "name": "Pulpwood",
+        "carTypeFilter": "flatcar"
+      }
+    },
+    "industries": {
+      "murphy:ind:sawmill": {
+        "name": "Sawmill",
+        "position": {
+          "x": 20,
+          "y": 0,
+          "z": 15
+        },
+        "usesContract": true,
+        "components": {
+          "inbound-logs": {
+            "type": "unloader",
+            "name": "Logs Inbound",
+            "trackSpanIds": [
+              "murphy:span:depot"
+            ],
+            "loadId": "pulpwood",
+            "maxStorage": 200
+          }
+        }
+      }
+    },
+    "loaders": {
+      "murphy:loader:water": {
+        "position": {
+          "x": 4,
+          "y": 0,
+          "z": 7
+        },
+        "rotation": {
+          "x": 0,
+          "y": 90,
+          "z": 0
+        },
+        "prefab": "vanilla://waterTower",
+        "industryId": "murphy:ind:sawmill"
+      }
+    },
+    "turntables": {},
+    "stations": {}
+  },
+  "world": {
+    "scenery": {
+      "murphy:scenery:depot": {
+        "model": "vanilla://depotSmall",
+        "position": {
+          "x": 12,
+          "y": 0,
+          "z": -9
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    },
+    "splineys": {
+      "murphy:river:001": {
+        "type": "river",
+        "profile": "default",
+        "offsetY": -0.2,
+        "points": [
+          {
+            "position": {
+              "x": -10,
+              "y": 0,
+              "z": -20
+            },
+            "width": 6
+          },
+          {
+            "position": {
+              "x": 60,
+              "y": 0,
+              "z": -18
+            },
+            "width": 8
+          }
+        ]
+      }
+    },
+    "telegraphPoles": {},
+    "mapLabels": {
+      "murphy:label:town": {
+        "text": "Murphy",
+        "position": {
+          "x": 16,
+          "y": 0,
+          "z": -4
+        },
+        "size": 1.2
+      }
+    },
+    "mapMasks": {
+      "murphy:mask:yard": {
+        "type": "rectangle",
+        "center": {
+          "x": 25,
+          "y": 0,
+          "z": 0
+        },
+        "size": {
+          "x": 80,
+          "y": 1,
+          "z": 30
+        }
+      }
+    }
+  },
+  "progression": {
+    "progressions": {
+      "murphy": {
+        "sections": {
+          "murphy:section:phase1": {
+            "displayName": "Murphy Branch Phase 1",
+            "description": "Initial construction.",
+            "deliveryPhases": [
+              {
+                "cost": 25000,
+                "industryComponentId": "murphy:ind:sawmill.progression",
+                "deliveries": [
+                  {
+                    "carTypeFilter": "flatcar",
+                    "loadId": "pulpwood",
+                    "count": 3,
+                    "destinationIndustryId": "murphy:ind:sawmill"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "mapFeatures": {}
+  },
+  "editor": {
+    "projectName": "Murphy Branch",
+    "lastEditedUtc": "2026-04-27T02:00:00Z"
+  }
+}

@@ -1,0 +1,1143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hunterr.dev/rail/schemas/rail-mod.schema.json",
+  "title": "RAIL Mod Definition",
+  "description": "Human-readable JSON form of a RAIL map mod. BSON uses the same logical model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "author"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "RAIL data schema version. This drives migrations and is separate from modVersion."
+    },
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1
+    },
+    "modVersion": {
+      "type": "string",
+      "default": "1.0.0"
+    },
+    "railroaderVersion": {
+      "type": "string",
+      "description": "Minimum supported Railroader version."
+    },
+    "description": {
+      "type": "string"
+    },
+    "coordinateSpace": {
+      "type": "string",
+      "enum": [
+        "world"
+      ],
+      "default": "world"
+    },
+    "tracks": {
+      "$ref": "#/$defs/tracks"
+    },
+    "operations": {
+      "$ref": "#/$defs/operations"
+    },
+    "world": {
+      "$ref": "#/$defs/world"
+    },
+    "progression": {
+      "$ref": "#/$defs/progression"
+    },
+    "editor": {
+      "$ref": "#/$defs/editor"
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Namespaced extension data. Use reverse-DNS keys, for example com.example.tool.",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "idRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "uri": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(vanilla|asset|rail|file)://.+$"
+    },
+    "vec3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        }
+      }
+    },
+    "dictionary": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "tracks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/trackNode"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "segments": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/trackSegment"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "spans": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/trackSpan"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "areas": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/trackArea"
+              }
+            }
+          ],
+          "default": {}
+        }
+      }
+    },
+    "trackNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position"
+      ],
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        "flipSwitchStand": {
+          "type": "boolean",
+          "default": false
+        },
+        "groupId": {
+          "$ref": "#/$defs/idRef"
+        },
+        "tags": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "trackSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startNodeId",
+        "endNodeId"
+      ],
+      "properties": {
+        "startNodeId": {
+          "$ref": "#/$defs/idRef"
+        },
+        "endNodeId": {
+          "$ref": "#/$defs/idRef"
+        },
+        "style": {
+          "type": "string",
+          "default": "standard"
+        },
+        "trackClass": {
+          "type": "string",
+          "default": "main"
+        },
+        "speedLimit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 80,
+          "default": 45
+        },
+        "priority": {
+          "type": "integer",
+          "default": 0
+        },
+        "groupId": {
+          "$ref": "#/$defs/idRef"
+        },
+        "tags": {
+          "$ref": "#/$defs/stringArray"
+        }
+      }
+    },
+    "trackLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "segmentId"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "normalized"
+          ]
+        },
+        {
+          "required": [
+            "distance"
+          ]
+        }
+      ],
+      "properties": {
+        "segmentId": {
+          "$ref": "#/$defs/idRef"
+        },
+        "normalized": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "distance": {
+          "type": "number",
+          "minimum": 0
+        },
+        "offset": {
+          "type": "number",
+          "default": 0
+        }
+      }
+    },
+    "trackSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "upper",
+        "lower"
+      ],
+      "properties": {
+        "upper": {
+          "$ref": "#/$defs/trackLocation"
+        },
+        "lower": {
+          "$ref": "#/$defs/trackLocation"
+        },
+        "normalize": {
+          "type": "boolean",
+          "default": true
+        },
+        "groupId": {
+          "$ref": "#/$defs/idRef"
+        }
+      }
+    },
+    "trackArea": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "spanIds": {
+          "$ref": "#/$defs/idArray"
+        },
+        "groupId": {
+          "$ref": "#/$defs/idRef"
+        }
+      }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "loads": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/load"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "industries": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/industry"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "loaders": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/loader"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "turntables": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/turntable"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "stations": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/station"
+              }
+            }
+          ],
+          "default": {}
+        }
+      }
+    },
+    "load": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "carTypeFilter": {
+          "type": "string"
+        },
+        "emptyCarType": {
+          "type": "string"
+        },
+        "loadedCarType": {
+          "type": "string"
+        },
+        "icon": {
+          "$ref": "#/$defs/uri"
+        }
+      }
+    },
+    "industry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "position"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        "usesContract": {
+          "type": "boolean",
+          "default": false
+        },
+        "components": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/industryComponent"
+              }
+            }
+          ],
+          "default": {}
+        }
+      }
+    },
+    "industryComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "name"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "loader",
+            "unloader",
+            "storage",
+            "formulaic",
+            "custom"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trackSpanIds": {
+          "$ref": "#/$defs/idArray"
+        },
+        "carTypeFilter": {
+          "type": "string"
+        },
+        "loadId": {
+          "$ref": "#/$defs/idRef"
+        },
+        "sharedStorage": {
+          "type": "boolean",
+          "default": true
+        },
+        "storageChangeRate": {
+          "type": "number"
+        },
+        "maxStorage": {
+          "type": "number",
+          "minimum": 0
+        },
+        "carTransferRate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "orderAroundEmpties": {
+          "type": "boolean"
+        },
+        "orderAroundLoaded": {
+          "type": "boolean"
+        },
+        "inputSpanIds": {
+          "$ref": "#/$defs/idArray"
+        }
+      }
+    },
+    "loader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position",
+        "prefab"
+      ],
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        "prefab": {
+          "$ref": "#/$defs/uri"
+        },
+        "industryId": {
+          "$ref": "#/$defs/idRef"
+        }
+      }
+    },
+    "turntable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position",
+        "radius"
+      ],
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        "radius": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "subdivisions": {
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 32,
+          "default": 16
+        },
+        "roundhouse": {
+          "$ref": "#/$defs/roundhouse"
+        }
+      }
+    },
+    "roundhouse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stalls"
+      ],
+      "properties": {
+        "stalls": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startAngle": {
+          "type": "number",
+          "default": 0
+        },
+        "stallAngle": {
+          "type": "number"
+        },
+        "startPrefab": {
+          "$ref": "#/$defs/uri"
+        },
+        "endPrefab": {
+          "$ref": "#/$defs/uri"
+        },
+        "stallPrefab": {
+          "$ref": "#/$defs/uri"
+        }
+      }
+    },
+    "station": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position",
+        "prefab"
+      ],
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        "prefab": {
+          "$ref": "#/$defs/uri"
+        },
+        "passengerStopId": {
+          "$ref": "#/$defs/idRef"
+        }
+      }
+    },
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scenery": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/scenery"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "splineys": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/spliney"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "telegraphPoles": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/telegraphPoles"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "mapLabels": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/mapLabel"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "mapMasks": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/mapMask"
+              }
+            }
+          ],
+          "default": {}
+        }
+      }
+    },
+    "scenery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "position"
+      ],
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/uri"
+        },
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        "scale": {
+          "$ref": "#/$defs/vec3",
+          "default": {
+            "x": 1,
+            "y": 1,
+            "z": 1
+          }
+        }
+      }
+    },
+    "spliney": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "points"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "river",
+            "road",
+            "trestle"
+          ]
+        },
+        "profile": {
+          "type": "string"
+        },
+        "style": {
+          "type": "string"
+        },
+        "offsetY": {
+          "type": "number",
+          "default": 0
+        },
+        "headStyle": {
+          "type": "string"
+        },
+        "tailStyle": {
+          "type": "string"
+        },
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/splineyPoint"
+          }
+        }
+      }
+    },
+    "splineyPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position"
+      ],
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "telegraphPoles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "points"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string"
+        },
+        "polePrefab": {
+          "$ref": "#/$defs/uri"
+        },
+        "wirePrefab": {
+          "$ref": "#/$defs/uri"
+        },
+        "spacing": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/vec3"
+          }
+        }
+      }
+    },
+    "mapLabel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "position"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3"
+        },
+        "size": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$"
+        }
+      }
+    },
+    "mapMask": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/circleMask"
+        },
+        {
+          "$ref": "#/$defs/rectangleMask"
+        },
+        {
+          "$ref": "#/$defs/curveMask"
+        }
+      ]
+    },
+    "circleMask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "center",
+        "radius"
+      ],
+      "properties": {
+        "type": {
+          "const": "circle"
+        },
+        "center": {
+          "$ref": "#/$defs/vec3"
+        },
+        "radius": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "rectangleMask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "center",
+        "size"
+      ],
+      "properties": {
+        "type": {
+          "const": "rectangle"
+        },
+        "center": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3"
+        },
+        "size": {
+          "$ref": "#/$defs/vec3"
+        }
+      }
+    },
+    "curveMask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "points"
+      ],
+      "properties": {
+        "type": {
+          "const": "curve"
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "points": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/vec3"
+          }
+        }
+      }
+    },
+    "progression": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "progressions": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/progressionDefinition"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "mapFeatures": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/mapFeature"
+              }
+            }
+          ],
+          "default": {}
+        }
+      }
+    },
+    "progressionDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sections": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/section"
+              }
+            }
+          ],
+          "default": {}
+        }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "displayName"
+      ],
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "prerequisiteSectionIds": {
+          "$ref": "#/$defs/idArray"
+        },
+        "enableFeaturesOnUnlock": {
+          "$ref": "#/$defs/idArray"
+        },
+        "disableFeaturesOnUnlock": {
+          "$ref": "#/$defs/idArray"
+        },
+        "enableFeaturesOnAvailable": {
+          "$ref": "#/$defs/idArray"
+        },
+        "deliveryPhases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deliveryPhase"
+          },
+          "default": []
+        }
+      }
+    },
+    "deliveryPhase": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cost": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "industryComponentId": {
+          "$ref": "#/$defs/idRef",
+          "description": "ProgressionIndustryComponent to activate while this delivery phase is pending. Required when deliveries is not empty."
+        },
+        "deliveries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/delivery"
+          },
+          "default": []
+        }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "destinationIndustryId"
+      ],
+      "properties": {
+        "carTypeFilter": {
+          "type": "string"
+        },
+        "loadId": {
+          "$ref": "#/$defs/idRef"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "destinationIndustryId": {
+          "$ref": "#/$defs/idRef"
+        }
+      }
+    },
+    "mapFeature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "displayName"
+      ],
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "initiallyEnabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "groupIds": {
+          "$ref": "#/$defs/idArray"
+        }
+      }
+    },
+    "editor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectName": {
+          "type": "string"
+        },
+        "lastEditedUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "viewport": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "position": {
+              "$ref": "#/$defs/vec3"
+            },
+            "rotation": {
+              "$ref": "#/$defs/vec3"
+            }
+          }
+        },
+        "selectedObject": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/idRef"
+            },
+            "type": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "idArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/idRef"
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "default": []
+    }
+  }
+}

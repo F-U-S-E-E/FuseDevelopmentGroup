@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- Copy this file to Local.Build.props if your Railroader install is elsewhere. -->
+    <GameDir>C:\Steam\steamapps\common\Railroader</GameDir>
+    <!-- <EnableModDeploy>true</EnableModDeploy> -->
+    <!-- <ModDeployDir>$(GameDir)\Mods\RAIL</ModDeployDir> -->
+  </PropertyGroup>
+</Project>

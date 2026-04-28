@@ -1,0 +1,15 @@
+﻿{
+    "$schema":  ".\\schemas\\umm-info.schema.json",
+    "Id":  "KingG.Appalachian-Railway.RAIL",
+    "DisplayName":  "Appalachian Railway (RAIL Translation)",
+    "Author":  "KingG",
+    "Version":  "1.0.4.6",
+    "ManagerVersion":  "0.27.10",
+    "Requirements":  [
+                         "RAIL"
+                     ],
+    "LoadAfter":  [
+                      "RAIL"
+                  ],
+    "RailDataFile":  "KingG.Appalachian-Railway.rail.json"
+}

@@ -1,0 +1,1455 @@
+{
+  "$schema": ".\\schemas\\rail-mod.schema.json",
+  "schemaVersion": 1,
+  "id": "KingG.Appalachian-Railway.industry",
+  "name": "Appalachian Railway & Surrounding Timberlands (industry)",
+  "author": "KingG",
+  "modVersion": "1.0.4.6",
+  "coordinateSpace": "world",
+  "tracks": {
+    "nodes": {},
+    "segments": {},
+    "spans": {},
+    "areas": {
+      "APPA-Ela": {
+        "name": "Ela",
+        "tagColor": [
+          0.4627451,
+          0.549019635,
+          0.149019614
+        ],
+        "order": 0
+      },
+      "ela": {
+        "name": "ela",
+        "order": 1
+      },
+      "APPA-Nick-Bottom": {
+        "name": "Nick Bottom",
+        "tagColor": [
+          0.467058825,
+          0.5117647275,
+          0.186764712
+        ],
+        "order": 2
+      },
+      "APPA-Cherokee": {
+        "name": "Cherokee",
+        "position": {
+          "x": 16028.0,
+          "y": 594.0,
+          "z": 10369.0
+        },
+        "tagColor": [
+          0.47137255,
+          0.47450982,
+          0.22450981
+        ],
+        "order": 3
+      },
+      "APPA-Birdtown": {
+        "name": "Birdtown",
+        "position": {
+          "x": 13251.1,
+          "y": 571.0,
+          "z": 9695.88
+        },
+        "order": 4
+      },
+      "APPA-Ravensford": {
+        "name": "Ravensford",
+        "position": {
+          "x": 17878.0,
+          "y": 617.0,
+          "z": 14281.0
+        },
+        "radius": 1000.0,
+        "tagColor": [
+          0.48,
+          0.4,
+          0.3
+        ],
+        "order": 5
+      },
+      "Ravensford-Timberlands": {
+        "name": "Ravensford Timberlands",
+        "position": {
+          "x": 21460.0,
+          "y": 965.0,
+          "z": 22375.0
+        },
+        "radius": 250.0,
+        "tagColor": [
+          1,
+          0.521568656,
+          0.172549024
+        ],
+        "order": 6
+      },
+      "APPA-Round-Bottom-Camp": {
+        "name": "Round Bottom Camp",
+        "order": 7
+      },
+      "APPA-Pretty-Hollow": {
+        "name": "Pretty Hollow",
+        "order": 8
+      }
+    },
+    "removals": {
+      "nodes": [],
+      "segments": [],
+      "spans": []
+    }
+  },
+  "operations": {
+    "loads": {},
+    "industries": {
+      "Appalachian-Railway-Ela-Engine": {
+        "name": "Appalachian Railway Engine Service",
+        "areaId": "APPA-Ela",
+        "order": 0,
+        "position": {
+          "x": 9596.0,
+          "y": 546.0,
+          "z": 7452.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "coaling": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Appalachian Railway Coal Loader",
+            "trackSpanIds": [
+              "ela-aprr-engine-coal"
+            ],
+            "carTypeFilter": "HM,HT",
+            "loadId": "coal",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 300000.0,
+            "carTransferRate": 10000000.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "rip": {
+            "type": "Model.Ops.RepairTrack",
+            "name": "Appalachian Railway Repair Track",
+            "trackSpanIds": [
+              "ela-aprr-engine1",
+              "ela-aprr-engine2"
+            ],
+            "carTypeFilter": "*",
+            "loadId": "repair-parts",
+            "sharedStorage": true,
+            "canOverhaul": true
+          },
+          "rip-parts": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Appalachian Railway Parts Unloading",
+            "trackSpanIds": [
+              "ela-aprr-engine3"
+            ],
+            "carTypeFilter": "XM",
+            "loadId": "repair-parts",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 200000.0,
+            "carTransferRate": 200000.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          }
+        }
+      },
+      "ela-house": {
+        "name": "Ela Station",
+        "areaId": "ela",
+        "order": 0,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "ela": {
+            "type": "AlinasMapMod.PaxStationComponent",
+            "name": "Ela Station",
+            "trackSpanIds": [
+              "Pbhv",
+              "Ela-Depot-Span2"
+            ],
+            "carTypeFilter": "*",
+            "loadId": "passengers",
+            "sharedStorage": true,
+            "passengerStopId": "ela",
+            "timetableCode": "EL",
+            "basePopulation": 25,
+            "neighborIds": [
+              "whittier",
+              "bryson"
+            ],
+            "branch": "Main"
+          }
+        }
+      },
+      "Nick-Bottom-Ag": {
+        "name": "Goose Creek Agricultural Co.",
+        "areaId": "APPA-Nick-Bottom",
+        "order": 0,
+        "position": {
+          "x": -38.007812,
+          "y": -0.032776,
+          "z": 29.221191
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": true,
+        "components": {
+          "ag1": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Goose Creek Agricultural Co. AG1",
+            "trackSpanIds": [
+              "Nick-Bottom-AG1"
+            ],
+            "carTypeFilter": "XM",
+            "loadId": "farming-supplies",
+            "sharedStorage": true,
+            "storageChangeRate": 50000,
+            "maxStorage": 100000.0,
+            "carTransferRate": 100000.0,
+            "orderAroundEmpties": true,
+            "orderAroundLoaded": true
+          },
+          "ag2": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Goose Creek Agricultural Co. AG2",
+            "trackSpanIds": [
+              "Nick-Bottom-AG2"
+            ],
+            "carTypeFilter": "HMR",
+            "loadId": "grain",
+            "sharedStorage": true,
+            "storageChangeRate": 200000.0,
+            "maxStorage": 300000.0,
+            "carTransferRate": 250000.0,
+            "orderAroundEmpties": true,
+            "orderAroundLoaded": true
+          }
+        }
+      },
+      "Cherokee-Depot": {
+        "name": "Cherokee Depot",
+        "areaId": "APPA-Cherokee",
+        "order": 0,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "Cherokee-Depot": {
+            "type": "AlinasMapMod.PaxStationComponent",
+            "name": "Cherokee",
+            "trackSpanIds": [
+              "CherokeeDepot-Span"
+            ],
+            "carTypeFilter": "*",
+            "loadId": "passengers",
+            "sharedStorage": true,
+            "passengerStopId": "Cherokee-Depot",
+            "timetableCode": "CH",
+            "basePopulation": 25,
+            "neighborIds": [
+              "wilmot",
+              "dillsboro"
+            ],
+            "branch": "Main"
+          }
+        }
+      },
+      "Cherokee-House": {
+        "name": "Cherokee House Track",
+        "areaId": "APPA-Cherokee",
+        "order": 1,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "fr1": {
+            "type": "Model.Ops.TeamTrack",
+            "name": "Cherokee House ER1",
+            "trackSpanIds": [
+              "Cherokee-House"
+            ],
+            "carTypeFilter": "XM*,FM*",
+            "sharedStorage": true,
+            "idealCars": 1.0,
+            "teamProfiles": {
+              "a": {
+                "isExport": false,
+                "loadId": "boxcar-parts",
+                "loadingTimeDays": 1.0,
+                "carTypeFilter": "FM"
+              },
+              "b": {
+                "isExport": false,
+                "loadId": "lumber-dimensional",
+                "loadingTimeDays": 0.5,
+                "carTypeFilter": "XM"
+              },
+              "c": {
+                "isExport": true,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 1.5,
+                "carTypeFilter": "XM"
+              },
+              "d": {
+                "isExport": false,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 0.75,
+                "carTypeFilter": "XM"
+              },
+              "e": {
+                "isExport": false,
+                "loadId": "building-supplies",
+                "loadingTimeDays": 2.0,
+                "carTypeFilter": "XM"
+              }
+            }
+          }
+        }
+      },
+      "Cherokee-Coal-Dealer": {
+        "name": "Cherokee Coal Supply",
+        "areaId": "APPA-Cherokee",
+        "order": 2,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": true,
+        "components": {
+          "Cherokee-Coal-Supply": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Cherokee Coal Supply L1",
+            "trackSpanIds": [
+              "Cherokee-House"
+            ],
+            "carTypeFilter": "HM,HT*",
+            "loadId": "coal",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 145749.75,
+            "carTransferRate": 145749.75,
+            "orderAroundEmpties": true,
+            "orderAroundLoaded": true
+          }
+        }
+      },
+      "Birdtown-Depot": {
+        "name": "Birdtown Depot",
+        "areaId": "APPA-Birdtown",
+        "order": 0,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "Birdtown-Depot": {
+            "type": "AlinasMapMod.PaxStationComponent",
+            "name": "Birdtown",
+            "trackSpanIds": [
+              "Birdtown-Depot"
+            ],
+            "carTypeFilter": "*",
+            "loadId": "passengers",
+            "sharedStorage": true,
+            "passengerStopId": "Birdtown-Depot",
+            "timetableCode": "BT",
+            "basePopulation": 18,
+            "neighborIds": [
+              "wilmot",
+              "dillsboro"
+            ],
+            "branch": "Main"
+          }
+        }
+      },
+      "Birdtown-House": {
+        "name": "Birdtown House Track",
+        "areaId": "APPA-Birdtown",
+        "order": 1,
+        "position": {
+          "x": 13226.1,
+          "y": 571.38,
+          "z": 9696.26
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "fr1": {
+            "type": "Model.Ops.TeamTrack",
+            "name": "Birdtown House ER1",
+            "trackSpanIds": [
+              "Birdtown-House"
+            ],
+            "carTypeFilter": "XM*,FM*",
+            "sharedStorage": true,
+            "idealCars": 1.0,
+            "teamProfiles": {
+              "a": {
+                "isExport": false,
+                "loadId": "boxcar-parts",
+                "loadingTimeDays": 1.0,
+                "carTypeFilter": "FM"
+              },
+              "b": {
+                "isExport": false,
+                "loadId": "lumber-dimensional",
+                "loadingTimeDays": 0.5,
+                "carTypeFilter": "XM"
+              },
+              "c": {
+                "isExport": true,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 1.5,
+                "carTypeFilter": "XM"
+              },
+              "d": {
+                "isExport": false,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 0.75,
+                "carTypeFilter": "XM"
+              },
+              "e": {
+                "isExport": false,
+                "loadId": "building-supplies",
+                "loadingTimeDays": 2.0,
+                "carTypeFilter": "XM"
+              }
+            }
+          }
+        }
+      },
+      "Oconalufty-RR-INT": {
+        "name": "Ocona-Lufty RR Co Interchange",
+        "areaId": "APPA-Ravensford",
+        "order": 0,
+        "position": {
+          "x": 266.480469,
+          "y": -25.306458,
+          "z": 827.2938
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "t1": {
+            "type": "Model.Ops.Interchange",
+            "name": "Oconalufty Railroad Interchange",
+            "trackSpanIds": [
+              "Smokemont-INT"
+            ],
+            "carTypeFilter": "*",
+            "sharedStorage": true
+          },
+          "logs-e": {
+            "type": "Model.Ops.InterchangedIndustryLoader",
+            "name": "Oconalufty Railroad Interchange",
+            "trackSpanIds": [
+              "Smokemont-INT"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": true
+          }
+        }
+      },
+      "Appalachian-Railway-Ravensford-Engine": {
+        "name": "Ravensford Repair",
+        "areaId": "APPA-Ravensford",
+        "order": 1,
+        "position": {
+          "x": 9596.0,
+          "y": 546.0,
+          "z": 7452.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "coaling": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Ravensford Coal Loader",
+            "trackSpanIds": [
+              "Ravensford-Shop-Coal"
+            ],
+            "carTypeFilter": "HM,HT",
+            "loadId": "coal",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 300000.0,
+            "carTransferRate": 10000000.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "rip": {
+            "type": "Model.Ops.RepairTrack",
+            "name": "Ravensford Repair RIP",
+            "trackSpanIds": [
+              "Ravensford-Shop1",
+              "Ravensford-Shop2",
+              "Ravensford-Shop3"
+            ],
+            "carTypeFilter": "*",
+            "loadId": "repair-parts",
+            "sharedStorage": true,
+            "canOverhaul": true
+          },
+          "rip-parts": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Ravensford Repair Parts Unloading",
+            "trackSpanIds": [
+              "Ravensford-Shop1",
+              "Ravensford-Shop2",
+              "Ravensford-Shop3"
+            ],
+            "carTypeFilter": "XM",
+            "loadId": "repair-parts",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 200000.0,
+            "carTransferRate": 200000.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          }
+        }
+      },
+      "Ravensford-Depot": {
+        "name": "Ravensford Depot",
+        "areaId": "APPA-Ravensford",
+        "order": 2,
+        "position": {
+          "x": 17886.0,
+          "y": 617.0,
+          "z": 14271.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "Ravensford-Depot": {
+            "type": "AlinasMapMod.PaxStationComponent",
+            "name": "Ravensford",
+            "trackSpanIds": [
+              "RavensfordDepot-Span"
+            ],
+            "carTypeFilter": "*",
+            "loadId": "passengers",
+            "sharedStorage": true,
+            "passengerStopId": "Ravensford-Depot",
+            "timetableCode": "RV",
+            "basePopulation": 10,
+            "neighborIds": [
+              "wilmot",
+              "dillsboro"
+            ],
+            "branch": "Main"
+          }
+        }
+      },
+      "Ravensford-House": {
+        "name": "Ravensford House Track",
+        "areaId": "APPA-Ravensford",
+        "order": 3,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "fr1": {
+            "type": "Model.Ops.TeamTrack",
+            "name": "Ravensford House ER1",
+            "trackSpanIds": [
+              "Ravensford-House"
+            ],
+            "carTypeFilter": "XM*,FM*",
+            "sharedStorage": true,
+            "idealCars": 1.0,
+            "teamProfiles": {
+              "a": {
+                "isExport": false,
+                "loadId": "boxcar-parts",
+                "loadingTimeDays": 1.0,
+                "carTypeFilter": "FM"
+              },
+              "b": {
+                "isExport": false,
+                "loadId": "lumber-dimensional",
+                "loadingTimeDays": 0.5,
+                "carTypeFilter": "XM"
+              },
+              "c": {
+                "isExport": true,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 1.5,
+                "carTypeFilter": "XM"
+              },
+              "d": {
+                "isExport": false,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 0.75,
+                "carTypeFilter": "XM"
+              },
+              "e": {
+                "isExport": false,
+                "loadId": "building-supplies",
+                "loadingTimeDays": 2.0,
+                "carTypeFilter": "XM"
+              }
+            }
+          }
+        }
+      },
+      "Ravensford-Sawmill": {
+        "name": "Parsons Pulp & Lumber Company",
+        "areaId": "APPA-Ravensford",
+        "order": 4,
+        "position": {
+          "x": 237.7461,
+          "y": -2.30957,
+          "z": -872.897949
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": true,
+        "components": {
+          "RV-Sawmill": {
+            "type": "Model.Ops.FormulaicIndustryComponent",
+            "name": "Parsons Pulp & Lumber Company",
+            "carTypeFilter": "",
+            "sharedStorage": true,
+            "inputTermsPerDay": {
+              "logs": 180.0,
+              "coal": 100000
+            },
+            "outputTermsPerDay": {
+              "lumber-dimensional": 3498000,
+              "gondola-woodchips": 400000.0,
+              "poles": 300000.0
+            }
+          },
+          "logs": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Parsons Pulp & Lumber Company R1/R2",
+            "trackSpanIds": [
+              "Ravensford-Sawmill-Log-Unloading1",
+              "Ravensford-Sawmill-Log-Unloading2"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 180.0,
+            "carTransferRate": 4320,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "p1": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Parsons Pulp & Lumber Company P1",
+            "trackSpanIds": [
+              "Ravensford-Sawmill-Pulpwood-Loading"
+            ],
+            "carTypeFilter": "FB*",
+            "loadId": "pulpwood",
+            "sharedStorage": true,
+            "storageChangeRate": 2222223,
+            "maxStorage": 900000.0,
+            "carTransferRate": 6000000.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "p2": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Parsons Pulp & Lumber Company P2",
+            "trackSpanIds": [
+              "Ravensford-Sawmill-Pulpwood-Loading2"
+            ],
+            "carTypeFilter": "FB*",
+            "loadId": "pulpwood",
+            "sharedStorage": true,
+            "storageChangeRate": 2222223,
+            "maxStorage": 900000.0,
+            "carTransferRate": 6000000.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "c1": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Parsons Pulp & Lumber Company C1",
+            "trackSpanIds": [
+              "Ravensford-Sawmill-Woodchips-Loading"
+            ],
+            "carTypeFilter": "GB*",
+            "loadId": "gondola-woodchips",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 300000.0,
+            "carTransferRate": 300000.0,
+            "orderAroundEmpties": true,
+            "orderAroundLoaded": true
+          },
+          "LL1/2/3": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Parsons Pulp & Lumber Company LL1/2/3",
+            "trackSpanIds": [
+              "Ravensford-Sawmill-Lumber-Loading1",
+              "Ravensford-Sawmill-Lumber-Loading2",
+              "Ravensford-Sawmill-Lumber-Loading3"
+            ],
+            "carTypeFilter": "XM*,FM*",
+            "loadId": "lumber-dimensional",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 388666,
+            "carTransferRate": 750000,
+            "orderAroundEmpties": true,
+            "orderAroundLoaded": true
+          },
+          "PW1": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Parsons Pulp & Lumber Company PW1",
+            "trackSpanIds": [
+              "Ravensford-Sawmill-Coal-Unloading"
+            ],
+            "carTypeFilter": "HM,HT",
+            "loadId": "coal",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 388666,
+            "carTransferRate": 388666,
+            "orderAroundEmpties": true,
+            "orderAroundLoaded": true
+          }
+        }
+      },
+      "Indian-Lands": {
+        "name": "Indian Lands",
+        "areaId": "Ravensford-Timberlands",
+        "order": 0,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "Indian-Lands-L1": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Indian-Lands-L1 (Upper)",
+            "trackSpanIds": [
+              "Indian-Lands-L1"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Indian-Lands-L2": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Indian-Lands-L2 (Lower)",
+            "trackSpanIds": [
+              "Indian-Lands-L2"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          }
+        }
+      },
+      "Lynn-Camp-Branch": {
+        "name": "Lynn Camp Branch",
+        "areaId": "Ravensford-Timberlands",
+        "order": 1,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "Lynn-Camp-Branch-L1": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Lynn Camp Branch L1 (Thumper)",
+            "trackSpanIds": [
+              "Lynn-Camp-Branch-L1"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Lynn-Camp-Branch-L2": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Lynn Camp Branch L2 (Table Rock)",
+            "trackSpanIds": [
+              "Lynn-Camp-Branch-L2"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Lynn-Camp-Branch-L3": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Lynn Camp Branch L3 (Miller)",
+            "trackSpanIds": [
+              "Lynn-Camp-Branch-L3"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Lynn-Camp-Branch-FR1": {
+            "type": "Model.Ops.TeamTrack",
+            "name": "Lynn Camp Branch FR1 (Lynn Camp)",
+            "trackSpanIds": [
+              "Lynn-Camp-Branch-FR2"
+            ],
+            "carTypeFilter": "XM*,FM*",
+            "sharedStorage": true,
+            "idealCars": 1.0,
+            "teamProfiles": {
+              "a": {
+                "isExport": false,
+                "loadId": "boxcar-parts",
+                "loadingTimeDays": 1.0,
+                "carTypeFilter": "FM"
+              },
+              "b": {
+                "isExport": false,
+                "loadId": "lumber-dimensional",
+                "loadingTimeDays": 0.5,
+                "carTypeFilter": "XM"
+              },
+              "c": {
+                "isExport": true,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 1.5,
+                "carTypeFilter": "XM"
+              },
+              "d": {
+                "isExport": false,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 0.75,
+                "carTypeFilter": "XM"
+              },
+              "e": {
+                "isExport": false,
+                "loadId": "building-supplies",
+                "loadingTimeDays": 2.0,
+                "carTypeFilter": "XM"
+              }
+            }
+          },
+          "Lynn-Camp-Branch-FR2": {
+            "type": "Model.Ops.TeamTrack",
+            "name": "Lynn Camp Branch FR2 (Round Bottom)",
+            "trackSpanIds": [
+              "Lynn-Camp-Branch-FR2"
+            ],
+            "carTypeFilter": "XM*,FM*",
+            "sharedStorage": true,
+            "idealCars": 1.0,
+            "teamProfiles": {
+              "a": {
+                "isExport": false,
+                "loadId": "boxcar-parts",
+                "loadingTimeDays": 1.0,
+                "carTypeFilter": "FM"
+              },
+              "b": {
+                "isExport": false,
+                "loadId": "lumber-dimensional",
+                "loadingTimeDays": 0.5,
+                "carTypeFilter": "XM"
+              },
+              "c": {
+                "isExport": true,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 1.5,
+                "carTypeFilter": "XM"
+              },
+              "d": {
+                "isExport": false,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 0.75,
+                "carTypeFilter": "XM"
+              },
+              "e": {
+                "isExport": false,
+                "loadId": "building-supplies",
+                "loadingTimeDays": 2.0,
+                "carTypeFilter": "XM"
+              }
+            }
+          }
+        }
+      },
+      "Haywood-County": {
+        "name": "Haywood County",
+        "areaId": "Ravensford-Timberlands",
+        "order": 2,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "Haywood-County-L1": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Haywood County L1",
+            "trackSpanIds": [
+              "Haywood-County-L1"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          }
+        }
+      },
+      "Beech-Ridge": {
+        "name": "Beech Ridge",
+        "areaId": "Ravensford-Timberlands",
+        "order": 3,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "Beech-Ridge-L1": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Beech Ridge L1",
+            "trackSpanIds": [
+              "Beech-Ridge-L1"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Beech-Ridge-L2": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Beech Ridge L2",
+            "trackSpanIds": [
+              "Beech-Ridge-L2"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Beech-Ridge-FR1": {
+            "type": "Model.Ops.TeamTrack",
+            "name": "Beech Ridge FR1",
+            "trackSpanIds": [
+              "Beech-Ridge-FR1"
+            ],
+            "carTypeFilter": "XM*,FM*",
+            "sharedStorage": true,
+            "idealCars": 1.0,
+            "teamProfiles": {
+              "a": {
+                "isExport": false,
+                "loadId": "boxcar-parts",
+                "loadingTimeDays": 1.0,
+                "carTypeFilter": "FM"
+              },
+              "b": {
+                "isExport": false,
+                "loadId": "lumber-dimensional",
+                "loadingTimeDays": 0.5,
+                "carTypeFilter": "XM"
+              },
+              "c": {
+                "isExport": true,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 1.5,
+                "carTypeFilter": "XM"
+              },
+              "d": {
+                "isExport": false,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 0.75,
+                "carTypeFilter": "XM"
+              },
+              "e": {
+                "isExport": false,
+                "loadId": "building-supplies",
+                "loadingTimeDays": 2.0,
+                "carTypeFilter": "XM"
+              }
+            }
+          }
+        }
+      },
+      "Mount-Sterling-Ridge": {
+        "name": "Mount Sterling Ridge",
+        "areaId": "Ravensford-Timberlands",
+        "order": 4,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "Mount-Sterling-Ridge-L1": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Mount Sterling Ridge L1",
+            "trackSpanIds": [
+              "Mount-Sterling-Ridge-L1"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Mount-Sterling-Ridge-L2": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Mount Sterling Ridge L2",
+            "trackSpanIds": [
+              "Mount-Sterling-Ridge-L2"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Mount-Sterling-Ridge-L3": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Mount Sterling Ridge L3",
+            "trackSpanIds": [
+              "Mount-Sterling-Ridge-L3"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Mount-Sterling-Ridge-L4": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Mount Sterling Ridge L4",
+            "trackSpanIds": [
+              "Mount-Sterling-Ridge-L4"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Mount-Sterling-Ridge-L5": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Mount Sterling Ridge L5",
+            "trackSpanIds": [
+              "Mount-Sterling-Ridge-L5"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          }
+        }
+      },
+      "Pretty-Hollow": {
+        "name": "Pretty Hollow",
+        "areaId": "Ravensford-Timberlands",
+        "order": 5,
+        "position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "Pretty-Hollow-L1": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Pretty Hollow L1",
+            "trackSpanIds": [
+              "Pretty-Hollow-L1"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Pretty-Hollow-L2": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Pretty Hollow L2",
+            "trackSpanIds": [
+              "Pretty-Hollow-L2"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Pretty-Hollow-L3": {
+            "type": "Model.Ops.IndustryLoader",
+            "name": "Pretty Hollow L3",
+            "trackSpanIds": [
+              "Pretty-Hollow-L3"
+            ],
+            "carTypeFilter": "FL",
+            "loadId": "logs",
+            "sharedStorage": false,
+            "storageChangeRate": 150.0,
+            "maxStorage": 300.0,
+            "carTransferRate": 72.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "Pretty-Hollow-FR1": {
+            "type": "Model.Ops.TeamTrack",
+            "name": "Pretty Hollow FR1",
+            "trackSpanIds": [
+              "Pretty-Hollow-FR1"
+            ],
+            "carTypeFilter": "XM*,FM*",
+            "sharedStorage": true,
+            "idealCars": 1.0,
+            "teamProfiles": {
+              "a": {
+                "isExport": false,
+                "loadId": "boxcar-parts",
+                "loadingTimeDays": 1.0,
+                "carTypeFilter": "FM"
+              },
+              "b": {
+                "isExport": false,
+                "loadId": "lumber-dimensional",
+                "loadingTimeDays": 0.5,
+                "carTypeFilter": "XM"
+              },
+              "c": {
+                "isExport": true,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 1.5,
+                "carTypeFilter": "XM"
+              },
+              "d": {
+                "isExport": false,
+                "loadId": "boxcar-generic",
+                "loadingTimeDays": 0.75,
+                "carTypeFilter": "XM"
+              },
+              "e": {
+                "isExport": false,
+                "loadId": "building-supplies",
+                "loadingTimeDays": 2.0,
+                "carTypeFilter": "XM"
+              }
+            }
+          }
+        }
+      },
+      "Appalachian-Railway-RB-Engine": {
+        "name": "Round Bottom Engine Service",
+        "areaId": "APPA-Round-Bottom-Camp",
+        "order": 0,
+        "position": {
+          "x": 9596.0,
+          "y": 546.0,
+          "z": 7452.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "coaling": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Round Bottom Coal Loader",
+            "trackSpanIds": [
+              "Round-Bottom-Coal"
+            ],
+            "carTypeFilter": "HM,HT",
+            "loadId": "coal",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 300000.0,
+            "carTransferRate": 10000000.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "rip": {
+            "type": "Model.Ops.RepairTrack",
+            "name": "Round Bottom Repair Track",
+            "trackSpanIds": [
+              "Round-Bottom-Rip1",
+              "Round-Bottom-Rip2"
+            ],
+            "carTypeFilter": "*",
+            "loadId": "repair-parts",
+            "sharedStorage": true,
+            "canOverhaul": false
+          },
+          "rip-parts": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Round Bottom Parts Unloading",
+            "trackSpanIds": [
+              "Round-Bottom-Parts"
+            ],
+            "carTypeFilter": "XM",
+            "loadId": "repair-parts",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 200000.0,
+            "carTransferRate": 200000.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          }
+        }
+      },
+      "Appalachian-Railway-PH-Engine": {
+        "name": "Pretty Hollow Engine Service",
+        "areaId": "APPA-Pretty-Hollow",
+        "order": 0,
+        "position": {
+          "x": 9596.0,
+          "y": 546.0,
+          "z": 7452.0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "usesContract": false,
+        "components": {
+          "coaling": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Pretty Hollow Coal Loader",
+            "trackSpanIds": [
+              "Pretty-Hollow-Coal"
+            ],
+            "carTypeFilter": "HM,HT",
+            "loadId": "coal",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 300000.0,
+            "carTransferRate": 10000000.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          },
+          "rip": {
+            "type": "Model.Ops.RepairTrack",
+            "name": "Pretty Hollow Repair Track",
+            "trackSpanIds": [
+              "Pretty-Hollow-Rip1",
+              "Pretty-Hollow-Rip2"
+            ],
+            "carTypeFilter": "*",
+            "loadId": "repair-parts",
+            "sharedStorage": true,
+            "canOverhaul": false
+          },
+          "rip-parts": {
+            "type": "Model.Ops.IndustryUnloader",
+            "name": "Round Bottom Parts Unloading",
+            "trackSpanIds": [
+              "Pretty-Hollow-Rip1",
+              "Pretty-Hollow-Rip2"
+            ],
+            "carTypeFilter": "XM",
+            "loadId": "repair-parts",
+            "sharedStorage": true,
+            "storageChangeRate": 0.0,
+            "maxStorage": 200000.0,
+            "carTransferRate": 200000.0,
+            "orderAroundEmpties": false,
+            "orderAroundLoaded": false
+          }
+        }
+      }
+    },
+    "loaders": {},
+    "turntables": {},
+    "stations": {}
+  },
+  "world": {
+    "scenery": {},
+    "splineys": {},
+    "telegraphPoles": {},
+    "mapLabels": {},
+    "mapMasks": {},
+    "mapTiles": {},
+    "sceneClones": {}
+  },
+  "progression": {
+    "progressions": {},
+    "mapFeatures": {}
+  },
+  "extensions": {}
+}

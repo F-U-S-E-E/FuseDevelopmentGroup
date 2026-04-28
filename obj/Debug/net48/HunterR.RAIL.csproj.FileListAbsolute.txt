@@ -1,0 +1,15 @@
+C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\HunterR.RAIL.csproj.AssemblyReference.cache
+C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\HunterR.RAIL.GeneratedMSBuildEditorConfig.editorconfig
+C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\HunterR.RAIL.AssemblyInfoInputs.cache
+C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\HunterR.RAIL.AssemblyInfo.cs
+C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\HunterR.RAIL.csproj.CoreCompileInputs.cache
+C:\Hrogers_Railroader_mods_Projects\Rail\bin\Debug\net48\Info.json
+C:\Hrogers_Railroader_mods_Projects\Rail\bin\Debug\net48\schemas\rail-mod.example.json
+C:\Hrogers_Railroader_mods_Projects\Rail\bin\Debug\net48\schemas\rail-mod.schema.json
+C:\Hrogers_Railroader_mods_Projects\Rail\bin\Debug\net48\schemas\RAIL_JSON_SCHEMA.md
+C:\Hrogers_Railroader_mods_Projects\Rail\bin\Debug\net48\schemas\umm-info.example.json
+C:\Hrogers_Railroader_mods_Projects\Rail\bin\Debug\net48\schemas\umm-info.schema.json
+C:\Hrogers_Railroader_mods_Projects\Rail\bin\Debug\net48\HunterR.RAIL.dll
+C:\Hrogers_Railroader_mods_Projects\Rail\bin\Debug\net48\HunterR.RAIL.pdb
+C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\HunterR.RAIL.dll
+C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\HunterR.RAIL.pdb
