@@ -42,7 +42,7 @@ namespace RAIL.API
             var feature = gameObject.AddComponent<MapFeature>();
             feature.identifier = id;
             ApplyMapFeatureDefinition(feature, definition);
-            MapFeatureCache.Instance.Set(id, feature);
+            RailMapFeatureRuntimeIndex.Instance.Set(id, feature);
             RefreshMapFeatureManager(manager);
             return feature;
         }
@@ -56,7 +56,7 @@ namespace RAIL.API
             }
 
             ApplyMapFeatureDefinition(feature, definition);
-            MapFeatureCache.Instance.Set(id, feature);
+            RailMapFeatureRuntimeIndex.Instance.Set(id, feature);
             if (MapFeatureManager.Shared != null)
             {
                 RefreshMapFeatureManager(MapFeatureManager.Shared);
@@ -68,7 +68,7 @@ namespace RAIL.API
             var feature = RequireMapFeature(id);
             feature.gameObject.SetActive(false);
             UnityEngine.Object.Destroy(feature.gameObject);
-            MapFeatureCache.Instance.Remove(id);
+            RailMapFeatureRuntimeIndex.Instance.Remove(id);
             if (MapFeatureManager.Shared != null)
             {
                 RefreshMapFeatureManager(MapFeatureManager.Shared);
@@ -77,7 +77,7 @@ namespace RAIL.API
 
         public static MapFeature GetMapFeature(string id)
         {
-            if (MapFeatureCache.Instance.TryGetValue(id, out var cached))
+            if (RailMapFeatureRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (MapFeature)cached;
             }
@@ -113,7 +113,7 @@ namespace RAIL.API
             progression.mapFeatureManager = MapFeatureManager.Shared;
 
             ApplyProgressionDefinition(progression, definition);
-            ProgressionCache.Instance.Set(id, progression);
+            RailProgressionRuntimeIndex.Instance.Set(id, progression);
             RefreshProgressionManager();
             return progression;
         }
@@ -127,7 +127,7 @@ namespace RAIL.API
             }
 
             ApplyProgressionDefinition(progression, definition);
-            ProgressionCache.Instance.Set(id, progression);
+            RailProgressionRuntimeIndex.Instance.Set(id, progression);
             RefreshProgressionManager();
         }
 
@@ -136,13 +136,13 @@ namespace RAIL.API
             var progression = RequireProgression(id);
             progression.gameObject.SetActive(false);
             UnityEngine.Object.Destroy(progression.gameObject);
-            ProgressionCache.Instance.Remove(id);
+            RailProgressionRuntimeIndex.Instance.Remove(id);
             RefreshProgressionManager();
         }
 
         public static Progression GetProgression(string id)
         {
-            if (ProgressionCache.Instance.TryGetValue(id, out var cached))
+            if (RailProgressionRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Progression)cached;
             }
@@ -202,7 +202,7 @@ namespace RAIL.API
                 }
 
                 ApplySectionDefinition(section, sectionDefinition.Value);
-                SectionCache.Instance.Set(section.identifier, section);
+                RailSectionRuntimeIndex.Instance.Set(section.identifier, section);
             }
 
             ProgressionSectionsField?.SetValue(progression, progression.GetComponentsInChildren<Section>());
@@ -289,7 +289,7 @@ namespace RAIL.API
 
         private static Section GetSection(string id)
         {
-            if (SectionCache.Instance.TryGetValue(id, out var cached))
+            if (RailSectionRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Section)cached;
             }
@@ -301,7 +301,7 @@ namespace RAIL.API
 
         private static ProgressionIndustryComponent ResolveIndustryComponent(string id)
         {
-            if (!IndustryComponentCache.Instance.TryGetValue(id, out var cached))
+            if (!RailIndustryComponentRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 cached = UnityEngine.Object.FindObjectsOfType<IndustryComponent>().FirstOrDefault(component => component.Identifier == id);
             }
@@ -328,7 +328,7 @@ namespace RAIL.API
                 throw new InvalidOperationException($"Load '{loadId}' was not found.");
             }
 
-            LoadCache.Instance.Set(load.id, load);
+            RailLoadRuntimeIndex.Instance.Set(load.id, load);
             return load;
         }
 

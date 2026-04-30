@@ -15,7 +15,10 @@ namespace RAIL.Loading
     public static class RailModLoader
     {
         private static readonly Dictionary<string, RailLoadedMod> LoadedMods = new Dictionary<string, RailLoadedMod>(StringComparer.OrdinalIgnoreCase);
+        private static readonly List<string> LoadedOrder = new List<string>();
         private static readonly RailDefinitionValidator Validator = new RailDefinitionValidator();
+
+        public static int LoadedDefinitionCount => LoadedMods.Count;
 
         public static RailLoadedMod LoadMod(string modFolder)
         {
@@ -46,6 +49,45 @@ namespace RAIL.Loading
                 throw new InvalidOperationException($"RAIL definition '{definition?.Id ?? "<null>"}' failed validation with {validation.Errors.Count} error(s).");
             }
 
+            ApplyDefinitionToRuntime(definition, folderPath, definitionPath, false, "disk load");
+        }
+
+        public static int ReapplyLoadedDefinitions(string reason)
+        {
+            var ids = LoadedOrder
+                .Where(id => LoadedMods.ContainsKey(id))
+                .Concat(LoadedMods.Keys.Where(id => !LoadedOrder.Contains(id, StringComparer.OrdinalIgnoreCase)).OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
+                .ToArray();
+
+            var reappliedCount = 0;
+            foreach (var id in ids)
+            {
+                if (!LoadedMods.TryGetValue(id, out var loaded) || loaded?.Definition == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    ApplyDefinitionToRuntime(loaded.Definition, loaded.FolderPath, loaded.DefinitionPath, true, reason);
+                    reappliedCount++;
+                }
+                catch (Exception ex)
+                {
+                    RailLog.Exception($"Failed to reapply loaded RAIL definition '{id}' for '{reason ?? "unspecified"}'", ex);
+                }
+            }
+
+            return reappliedCount;
+        }
+
+        private static void ApplyDefinitionToRuntime(RailModDefinition definition, string folderPath, string definitionPath, bool reapply, string reason)
+        {
+            if (definition == null || string.IsNullOrWhiteSpace(definition.Id))
+            {
+                throw new InvalidOperationException("RAIL definition is missing an id.");
+            }
+
             var firstLoad = !LoadedMods.TryGetValue(definition.Id, out var previousLoad);
 
             ApplyTrackRemovals(definition);
@@ -57,13 +99,24 @@ namespace RAIL.Loading
             ApplyOperationsDefinition(definition);
             ApplyWorldDefinition(definition, folderPath);
             ApplyProgressionDefinition(definition);
-            LoadedMods[definition.Id] = new RailLoadedMod(
-                folderPath ?? previousLoad?.FolderPath,
-                definitionPath ?? previousLoad?.DefinitionPath,
-                definition);
-            RailLog.Info($"RAIL applied data package '{definition.Id}' ({definition.Operations?.Turntables?.Count ?? 0} turntable(s), {definition.World?.SceneClones?.Count ?? 0} scene clone(s)).");
 
-            if (firstLoad)
+            if (!reapply)
+            {
+                LoadedMods[definition.Id] = new RailLoadedMod(
+                    folderPath ?? previousLoad?.FolderPath,
+                    definitionPath ?? previousLoad?.DefinitionPath,
+                    definition);
+                if (firstLoad && !LoadedOrder.Contains(definition.Id, StringComparer.OrdinalIgnoreCase))
+                {
+                    LoadedOrder.Add(definition.Id);
+                }
+            }
+
+            RailLog.Info(reapply
+                ? $"RAIL reapplied loaded definition '{definition.Id}' for '{reason ?? "unspecified"}' ({definition.Operations?.Turntables?.Count ?? 0} turntable(s), {definition.World?.SceneClones?.Count ?? 0} scene clone(s))."
+                : $"RAIL applied data package '{definition.Id}' from disk ({definition.Operations?.Turntables?.Count ?? 0} turntable(s), {definition.World?.SceneClones?.Count ?? 0} scene clone(s)).");
+
+            if (firstLoad && !reapply)
             {
                 RailEvents.RaiseModLoaded(definition.Id);
             }
@@ -78,6 +131,7 @@ namespace RAIL.Loading
 
             if (LoadedMods.Remove(modId))
             {
+                LoadedOrder.RemoveAll(id => string.Equals(id, modId, StringComparison.OrdinalIgnoreCase));
                 RailMapTileRegistry.UnregisterTileSources(modId);
                 RailEvents.RaiseModUnloaded(modId);
             }
@@ -85,13 +139,23 @@ namespace RAIL.Loading
 
         public static void UnloadAll()
         {
+            UnloadAll(true);
+        }
+
+        internal static void UnloadAll(bool resetDiscovery)
+        {
             var loadedIds = LoadedMods.Keys.ToArray();
             for (var index = 0; index < loadedIds.Length; index++)
             {
                 UnloadMod(loadedIds[index]);
             }
 
-            RailDataPackageDiscovery.ResetDiscovery();
+            LoadedOrder.Clear();
+            if (resetDiscovery)
+            {
+                RailDataPackageDiscovery.ResetDiscovery();
+                RailAssetPackRegistry.Reset();
+            }
         }
 
         public static IEnumerable<string> GetLoadedMods()
@@ -466,6 +530,7 @@ namespace RAIL.Loading
             }
 
             RailMapTileRegistry.RegisterTileSources(definition.Id, folderPath, definition.World);
+            ApplyWorldRemovals(definition);
 
             if (definition.World.Scenery != null)
             {
@@ -554,6 +619,47 @@ namespace RAIL.Loading
                     {
                         SceneCloneAPI.UpdateSceneClone(sceneClone.Key, sceneClone.Value);
                     }
+                }
+            }
+        }
+
+        private static void ApplyWorldRemovals(RailModDefinition definition)
+        {
+            var removals = definition?.World?.Removals;
+            if (removals == null)
+            {
+                return;
+            }
+
+            RemoveWorldItems("scene clone", removals.SceneClones, SceneCloneAPI.TryRemoveSceneClone);
+            RemoveWorldItems("scenery", removals.Scenery, SceneryAPI.TryRemoveScenery);
+            RemoveWorldItems("spliney", removals.Splineys, SplineyAPI.TryRemoveSpliney);
+            RemoveWorldItems("telegraph pole set", removals.TelegraphPoles, MapAPI.TryRemoveTelegraphPoles);
+            RemoveWorldItems("map label", removals.MapLabels, MapAPI.TryRemoveMapLabel);
+            RemoveWorldItems("map mask", removals.MapMasks, MapAPI.TryRemoveMapMask);
+        }
+
+        private static void RemoveWorldItems(string kind, IEnumerable<string> ids, Func<string, bool> remover)
+        {
+            if (ids == null)
+            {
+                return;
+            }
+
+            foreach (var id in ids)
+            {
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    remover(id);
+                }
+                catch (Exception exception)
+                {
+                    RailLog.Warning($"RAIL failed to remove world {kind} '{id}': {exception.Message}");
                 }
             }
         }

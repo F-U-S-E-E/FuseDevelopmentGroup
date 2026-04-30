@@ -18,7 +18,7 @@ namespace RAIL.API
 {
     public static class IndustryAPI
     {
-        private static readonly FieldInfo IndustryCachedComponentsField = typeof(Industry).GetField("_cachedComponents", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo IndustryRuntimeComponentsField = typeof(Industry).GetField("_cachedComponents", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo CachedIndustryField = typeof(IndustryComponent).GetField("_cachedIndustry", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ComponentIdentifierField = typeof(IndustryComponent).GetField("_identifier", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo RepairPartsLoadField = typeof(RepairTrack).GetField("repairPartsLoad", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -59,7 +59,7 @@ namespace RAIL.API
 
             RememberIndustryOrder(id, definition.Order);
             RailCreatedIndustryIds.Add(id);
-            IndustryCache.Instance.Set(id, industry);
+            RailIndustryRuntimeIndex.Instance.Set(id, industry);
             RailLog.Info($"RAIL created industry '{id}' name='{displayName}' parent='{DescribeIndustryParent(root)}' componentDefinitionCount={definition.Components?.Count ?? 0}.");
             AddOrUpdateComponents(industry, definition.Components);
             gameObject.SetActive(true);
@@ -99,8 +99,9 @@ namespace RAIL.API
             industry.transform.localRotation = Quaternion.Euler(definition.Rotation);
             industry.usesContract = definition.UsesContract;
             RememberIndustryOrder(id, definition.Order);
+            RailCreatedIndustryIds.Add(id);
             AddOrUpdateComponents(industry, definition.Components);
-            IndustryCache.Instance.Set(id, industry);
+            RailIndustryRuntimeIndex.Instance.Set(id, industry);
             if (notify)
             {
                 RefreshIndustriesAfterBatch("UpdateIndustry:" + id);
@@ -114,7 +115,7 @@ namespace RAIL.API
             var industry = RequireIndustry(id);
             industry.gameObject.SetActive(false);
             UnityEngine.Object.Destroy(industry.gameObject);
-            IndustryCache.Instance.Remove(id);
+            RailIndustryRuntimeIndex.Instance.Remove(id);
             RailCreatedIndustryIds.Remove(id);
             RefreshIndustriesAfterBatch("RemoveIndustry:" + id);
             RailEvents.RaiseIndustryRemoved(id);
@@ -122,7 +123,7 @@ namespace RAIL.API
 
         public static Industry GetIndustry(string id)
         {
-            if (IndustryCache.Instance.TryGetValue(id, out var cached))
+            if (RailIndustryRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Industry)cached;
             }
@@ -174,7 +175,7 @@ namespace RAIL.API
 
             ApplyComponentDefinition(component, definition);
             InvalidateIndustryComponents(industry);
-            IndustryComponentCache.Instance.Set(GetComponentIdentifier(industry, component), component);
+            RailIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, component), component);
             RefreshIndustriesAfterBatch("UpdateComponent:" + industry.identifier + "." + subId);
             RailEvents.RaiseIndustryComponentUpdated(component);
         }
@@ -205,7 +206,7 @@ namespace RAIL.API
                 UnityEngine.Object.DestroyImmediate(component.gameObject);
             }
 
-            IndustryComponentCache.Instance.Remove(identifier);
+            RailIndustryComponentRuntimeIndex.Instance.Remove(identifier);
             if (notify)
             {
                 InvalidateIndustryComponents(industry);
@@ -248,7 +249,7 @@ namespace RAIL.API
                 gameObject.SetActive(true);
             }
 
-            IndustryComponentCache.Instance.Set(GetComponentIdentifier(industry, component), component);
+            RailIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, component), component);
             RailLog.Info($"RAIL created industry component '{industry.identifier}.{subId}' type='{componentType.FullName}' attachedTo='{(attachToIndustryObject ? "industry" : "child")}' host='{gameObject.name}' trackSpanCount={component.trackSpans?.Length ?? 0} loadId='{definition.LoadId ?? string.Empty}'.");
             if (notify)
             {
@@ -293,7 +294,7 @@ namespace RAIL.API
                         else
                         {
                             ApplyComponentDefinition(runtime, component.Value);
-                            IndustryComponentCache.Instance.Set(GetComponentIdentifier(industry, runtime), runtime);
+                            RailIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, runtime), runtime);
                         }
                     }
                     catch (Exception ex)
@@ -460,7 +461,8 @@ namespace RAIL.API
 
             if (string.Equals(type, "passengerStop", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(type, "passenger-stop", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "AlinasMapMod.PaxStationComponent", StringComparison.OrdinalIgnoreCase))
+                string.Equals(type, "AlinasMapMod.PaxStationComponent", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "AlinasMapMod.Stations.PaxStationComponent", StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(RailPassengerStopComponent);
             }
@@ -556,7 +558,7 @@ namespace RAIL.API
                 return null;
             }
 
-            LoadCache.Instance.Set(load.id, load);
+            RailLoadRuntimeIndex.Instance.Set(load.id, load);
             return load;
         }
 
@@ -666,8 +668,8 @@ namespace RAIL.API
                 return;
             }
 
-            var clearedIndustryCache = IndustryCachedComponentsField != null;
-            IndustryCachedComponentsField?.SetValue(industry, null);
+            var clearedIndustryComponentList = IndustryRuntimeComponentsField != null;
+            IndustryRuntimeComponentsField?.SetValue(industry, null);
 
             var refreshedCount = 0;
             foreach (var component in industry.GetComponentsInChildren<IndustryComponent>(true))
@@ -683,7 +685,7 @@ namespace RAIL.API
                 refreshedCount++;
             }
 
-            RailLog.Info($"RAIL invalidated industry component caches for '{industry.identifier}' cachedComponentsCleared={clearedIndustryCache} componentIdentityRefreshed={refreshedCount}.");
+            RailLog.Info($"RAIL invalidated industry component caches for '{industry.identifier}' cachedComponentsCleared={clearedIndustryComponentList} componentIdentityRefreshed={refreshedCount}.");
         }
 
         private static string GetComponentIdentifier(Industry industry, IndustryComponent component)
@@ -717,11 +719,11 @@ namespace RAIL.API
         {
             ApplyIndustryOrdering();
             Messenger.Default.Send(default(IndustriesDidChange));
-            IndustryCache.Instance.Rebuild();
-            IndustryComponentCache.Instance.Rebuild();
+            RailIndustryRuntimeIndex.Instance.Rebuild();
+            RailIndustryComponentRuntimeIndex.Instance.Rebuild();
             var industryCount = UnityEngine.Object.FindObjectsOfType<Industry>(true).Length;
             var componentCount = UnityEngine.Object.FindObjectsOfType<IndustryComponent>(true).Length;
-            RailLog.Info($"RAIL refreshed industries after '{source}' sceneIndustryCount={industryCount} sceneIndustryComponentCount={componentCount} cacheIndustryCount={IndustryCache.Instance.Count} cacheIndustryComponentCount={IndustryComponentCache.Instance.Count}.");
+            RailLog.Info($"RAIL refreshed industries after '{source}' sceneIndustryCount={industryCount} sceneIndustryComponentCount={componentCount} cacheIndustryCount={RailIndustryRuntimeIndex.Instance.Count} cacheIndustryComponentCount={RailIndustryComponentRuntimeIndex.Instance.Count}.");
             foreach (var industryId in RailCreatedIndustryIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray())
             {
                 var industry = GetIndustry(industryId);

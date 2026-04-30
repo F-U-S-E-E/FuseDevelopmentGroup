@@ -12,6 +12,17 @@ namespace RAIL.Data
         public Dictionary<string, RailMapMask> MapMasks { get; set; } = new Dictionary<string, RailMapMask>();
         public Dictionary<string, RailMapTileSource> MapTiles { get; set; } = new Dictionary<string, RailMapTileSource>();
         public Dictionary<string, RailSceneClone> SceneClones { get; set; } = new Dictionary<string, RailSceneClone>();
+        public RailWorldRemovals Removals { get; set; } = new RailWorldRemovals();
+    }
+
+    public sealed class RailWorldRemovals
+    {
+        public string[] Scenery { get; set; } = new string[0];
+        public string[] Splineys { get; set; } = new string[0];
+        public string[] TelegraphPoles { get; set; } = new string[0];
+        public string[] MapLabels { get; set; } = new string[0];
+        public string[] MapMasks { get; set; } = new string[0];
+        public string[] SceneClones { get; set; } = new string[0];
     }
 
     public sealed class RailScenery

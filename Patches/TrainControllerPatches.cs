@@ -1,5 +1,6 @@
 using System;
 using HarmonyLib;
+using RAIL.Cache;
 using RAIL.Infrastructure;
 using RAIL.Loading;
 
@@ -13,7 +14,9 @@ namespace RAIL.Patches
             try
             {
                 var loadedCount = RailDataPackageDiscovery.LoadAllAvailablePackages();
-                RailLog.Info($"RAIL ensured data packages before turntable restore ({loadedCount} package(s) loaded this pass).");
+                RailCacheRegistry.RebuildAll();
+                var reappliedCount = RailDataPackageDiscovery.ReapplyLoadedPackages("before turntable restore");
+                RailLog.Info($"RAIL ensured data packages before turntable restore ({loadedCount} package folder(s) loaded from disk, {reappliedCount} loaded definition(s) reapplied).");
             }
             catch (Exception ex)
             {

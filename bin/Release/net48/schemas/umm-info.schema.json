@@ -66,6 +66,27 @@
       },
       "default": []
     },
+    "RailLoadPriority": {
+      "type": "integer",
+      "default": 0,
+      "description": "RAIL-specific package ordering priority. Lower values load earlier; ties fall back to dependency order, then package id."
+    },
+    "RailLoadAfter": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      },
+      "default": [],
+      "description": "RAIL-specific data package ids that must load before this package."
+    },
+    "RailLoadBefore": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      },
+      "default": [],
+      "description": "RAIL-specific data package ids that must load after this package."
+    },
     "RailDataFile": {
       "type": "string",
       "pattern": "^.+\\.(bson|json)$",
@@ -79,6 +100,23 @@
       },
       "default": [],
       "description": "RAIL-specific ordered list of definition fragments to load from this UMM folder."
+    },
+    "RailAssetPacks": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      ],
+      "description": "RAIL-specific relative folder or folders containing Railroader AssetPack Runtime stores, for example SCAssetPacks."
     }
   },
   "dependentRequired": {

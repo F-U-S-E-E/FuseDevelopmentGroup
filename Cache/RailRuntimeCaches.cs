@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace RAIL.Cache
 {
-    public sealed class TrackNodeCache : RuntimeObjectCache<TrackNodeCache>
+    public sealed class RailNodeRuntimeIndex : RailRuntimeIndex<RailNodeRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -27,7 +27,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class TrackSegmentCache : RuntimeObjectCache<TrackSegmentCache>
+    public sealed class RailSegmentRuntimeIndex : RailRuntimeIndex<RailSegmentRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -45,7 +45,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class TrackSpanCache : RuntimeObjectCache<TrackSpanCache>
+    public sealed class RailSpanRuntimeIndex : RailRuntimeIndex<RailSpanRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -57,7 +57,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class AreaCache : RuntimeObjectCache<AreaCache>
+    public sealed class RailAreaRuntimeIndex : RailRuntimeIndex<RailAreaRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -69,7 +69,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class IndustryCache : RuntimeObjectCache<IndustryCache>
+    public sealed class RailIndustryRuntimeIndex : RailRuntimeIndex<RailIndustryRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -81,7 +81,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class IndustryComponentCache : RuntimeObjectCache<IndustryComponentCache>
+    public sealed class RailIndustryComponentRuntimeIndex : RailRuntimeIndex<RailIndustryComponentRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -92,7 +92,7 @@ namespace RAIL.Cache
             }
         }
     }
-    public sealed class LoaderCache : RuntimeObjectCache<LoaderCache>
+    public sealed class RailLoaderRuntimeIndex : RailRuntimeIndex<RailLoaderRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -117,7 +117,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class TurntableCache : RuntimeObjectCache<TurntableCache>
+    public sealed class RailTurntableRuntimeIndex : RailRuntimeIndex<RailTurntableRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -129,7 +129,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class LoadCache : RuntimeObjectCache<LoadCache>
+    public sealed class RailLoadRuntimeIndex : RailRuntimeIndex<RailLoadRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -146,7 +146,7 @@ namespace RAIL.Cache
             }
         }
     }
-    public sealed class ProgressionCache : RuntimeObjectCache<ProgressionCache>
+    public sealed class RailProgressionRuntimeIndex : RailRuntimeIndex<RailProgressionRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -158,7 +158,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class SectionCache : RuntimeObjectCache<SectionCache>
+    public sealed class RailSectionRuntimeIndex : RailRuntimeIndex<RailSectionRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -170,7 +170,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class MapFeatureCache : RuntimeObjectCache<MapFeatureCache>
+    public sealed class RailMapFeatureRuntimeIndex : RailRuntimeIndex<RailMapFeatureRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -182,7 +182,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class StationAgentCache : RuntimeObjectCache<StationAgentCache>
+    public sealed class RailStationRuntimeIndex : RailRuntimeIndex<RailStationRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -194,7 +194,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class SceneryCache : RuntimeObjectCache<SceneryCache>
+    public sealed class RailSceneryRuntimeIndex : RailRuntimeIndex<RailSceneryRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -206,7 +206,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class SplineyCache : RuntimeObjectCache<SplineyCache>
+    public sealed class RailSplineyRuntimeIndex : RailRuntimeIndex<RailSplineyRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -218,7 +218,7 @@ namespace RAIL.Cache
         }
     }
 
-    public sealed class MapLabelCache : RuntimeObjectCache<MapLabelCache>
+    public sealed class RailMapLabelRuntimeIndex : RailRuntimeIndex<RailMapLabelRuntimeIndex>
     {
         public override void Rebuild()
         {
@@ -230,8 +230,8 @@ namespace RAIL.Cache
         }
     }
 
-    public abstract class RuntimeObjectCache<TCache> : BaseCache<TCache, object>
-        where TCache : RuntimeObjectCache<TCache>
+    public abstract class RailRuntimeIndex<TCache> : RailRuntimeCacheBase<TCache, object>
+        where TCache : RailRuntimeIndex<TCache>
     {
         public override void Rebuild()
         {

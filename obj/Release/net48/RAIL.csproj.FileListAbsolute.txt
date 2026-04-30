@@ -13,3 +13,4 @@ C:\Hrogers_Railroader_mods_Projects\Rail\bin\Release\net48\RAIL.dll
 C:\Hrogers_Railroader_mods_Projects\Rail\bin\Release\net48\RAIL.pdb
 C:\Hrogers_Railroader_mods_Projects\Rail\obj\Release\net48\RAIL.dll
 C:\Hrogers_Railroader_mods_Projects\Rail\obj\Release\net48\RAIL.pdb
+C:\Hrogers_Railroader_mods_Projects\Rail\obj\Release\net48\RAIL.sourcelink.json

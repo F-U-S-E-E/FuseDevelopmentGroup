@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Helpers;
 using KeyValue.Runtime;
@@ -37,6 +38,30 @@ namespace RAIL.API
             ApplyDefinition(id, definition);
         }
 
+        public static void RemoveSceneClone(string id)
+        {
+            if (!TryRemoveSceneClone(id))
+            {
+                throw new InvalidOperationException($"Scene clone '{id}' was not found.");
+            }
+        }
+
+        public static bool TryRemoveSceneClone(string id)
+        {
+            var root = FindRemovableSceneClone(id);
+            if (root == null)
+            {
+                RailLog.Warning($"RAIL world removal skipped missing scene clone '{id}'.");
+                return false;
+            }
+
+            var path = GetTransformPath(root.transform);
+            root.SetActive(false);
+            UnityEngine.Object.Destroy(root);
+            RailLog.Info($"RAIL removed scene clone '{id}' from '{path}'.");
+            return true;
+        }
+
         public static GameObject GetSceneClone(string id)
         {
             if (string.IsNullOrWhiteSpace(id))
@@ -47,6 +72,16 @@ namespace RAIL.API
             return UnityEngine.Object.FindObjectsOfType<RailSceneCloneMarker>(true)
                 .FirstOrDefault(marker => string.Equals(marker.Id, id, StringComparison.OrdinalIgnoreCase))
                 ?.gameObject;
+        }
+
+        private static GameObject FindRemovableSceneClone(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            return GetSceneClone(id) ?? RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
         }
 
         private static GameObject ApplyDefinition(string id, RailSceneClone definition)
@@ -126,7 +161,7 @@ namespace RAIL.API
 
             if (clonedFromSource && definition.Enabled != false)
             {
-                ForceRenderable(targetObject);
+                ForceRenderable(id, targetObject);
             }
 
             RailLog.Info($"RAIL scene clone '{id}' materialized at {targetObject.transform.position}; {DescribeRendererState(targetObject)}.");
@@ -194,7 +229,7 @@ namespace RAIL.API
             }
         }
 
-        private static void ForceRenderable(GameObject root)
+        private static void ForceRenderable(string id, GameObject root)
         {
             if (root == null)
             {
@@ -206,16 +241,70 @@ namespace RAIL.API
                 transform.gameObject.SetActive(true);
             }
 
+            var lodControlledRenderers = new HashSet<Renderer>();
+            var lod0Renderers = new HashSet<Renderer>();
+            var lodGroups = root.GetComponentsInChildren<LODGroup>(true);
+            for (var groupIndex = 0; groupIndex < lodGroups.Length; groupIndex++)
+            {
+                var lodGroup = lodGroups[groupIndex];
+                if (lodGroup == null)
+                {
+                    continue;
+                }
+
+                lodGroup.enabled = true;
+                lodGroup.ForceLOD(0);
+
+                var lods = lodGroup.GetLODs();
+                for (var lodIndex = 0; lodIndex < lods.Length; lodIndex++)
+                {
+                    var lodRenderers = lods[lodIndex].renderers;
+                    for (var rendererIndex = 0; rendererIndex < lodRenderers.Length; rendererIndex++)
+                    {
+                        var renderer = lodRenderers[rendererIndex];
+                        if (renderer == null)
+                        {
+                            continue;
+                        }
+
+                        lodControlledRenderers.Add(renderer);
+                        if (lodIndex == 0)
+                        {
+                            lod0Renderers.Add(renderer);
+                        }
+                    }
+                }
+            }
+
             foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
             {
-                renderer.enabled = true;
-                renderer.forceRenderingOff = false;
+                var keepVisible = !lodControlledRenderers.Contains(renderer) || lod0Renderers.Contains(renderer);
+                renderer.enabled = keepVisible;
+                renderer.forceRenderingOff = !keepVisible;
+            }
+
+            for (var groupIndex = 0; groupIndex < lodGroups.Length; groupIndex++)
+            {
+                var lodGroup = lodGroups[groupIndex];
+                if (lodGroup == null)
+                {
+                    continue;
+                }
+
+                lodGroup.ForceLOD(0);
+                lodGroup.RecalculateBounds();
+            }
+
+            if (lodGroups.Length > 0)
+            {
+                RailLog.Info($"RAIL scene clone '{id}' forced LOD0 on {lodGroups.Length} LOD group(s).");
             }
         }
 
         private static string DescribeRendererState(GameObject root)
         {
             var renderers = root.GetComponentsInChildren<Renderer>(true);
+            var lodGroups = root.GetComponentsInChildren<LODGroup>(true);
             var enabledCount = 0;
             var activeCount = 0;
             var hasBounds = false;
@@ -246,10 +335,28 @@ namespace RAIL.API
 
             if (!hasBounds)
             {
-                return $"renderers={renderers.Length}, enabled={enabledCount}, active={activeCount}, rootActive={root.activeInHierarchy}";
+                return $"renderers={renderers.Length}, enabled={enabledCount}, active={activeCount}, lodGroups={lodGroups.Length}, rootActive={root.activeInHierarchy}";
             }
 
-            return $"renderers={renderers.Length}, enabled={enabledCount}, active={activeCount}, rootActive={root.activeInHierarchy}, boundsCenter={bounds.center}, boundsSize={bounds.size}";
+            return $"renderers={renderers.Length}, enabled={enabledCount}, active={activeCount}, lodGroups={lodGroups.Length}, rootActive={root.activeInHierarchy}, boundsCenter={bounds.center}, boundsSize={bounds.size}";
+        }
+
+        private static string GetTransformPath(Transform transform)
+        {
+            if (transform == null)
+            {
+                return string.Empty;
+            }
+
+            var names = new Stack<string>();
+            var cursor = transform;
+            while (cursor != null)
+            {
+                names.Push(cursor.name);
+                cursor = cursor.parent;
+            }
+
+            return string.Join("/", names.ToArray());
         }
 
         private static void RequireId(string id, string parameterName)

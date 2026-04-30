@@ -3,8 +3,8 @@
 This folder defines the JSON side of the RAIL mod format.
 
 - `rail-mod.schema.json` is the authoritative JSON Schema for hand-authored and editor-exported `.json` files.
-- `rail-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, loaders, turntables, roundhouses, stations, scenery, splineys, telegraph poles, labels, speed signs, masks, map tiles, scene clones, progression data, and editor state.
-- `umm-info.schema.json` documents the Unity Mod Manager `Info.json` shape RAIL expects for API mods and data packages.
+- `rail-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, loaders, turntables, roundhouses, stations, scenery, splineys, telegraph poles, labels, speed signs, masks, map tiles, scene clones, world removals, progression data, and editor state.
+- `umm-info.schema.json` documents the Unity Mod Manager `Info.json` shape RAIL expects for API mods, data packages, and asset-pack packages.
 - `umm-info.example.json` is a data-only map package manifest that depends on `RAIL`.
 
 ## Design Choices
@@ -15,7 +15,7 @@ Top-level object groups:
 
 - `tracks`: nodes, segments, spans, areas, and optional removals for deleting base-game track objects.
 - `operations`: loads, industries, loaders, turntables, and passenger stations.
-- `world`: scenery, splineys, telegraph poles, map labels, map masks, map tile overlays, and scene clones.
+- `world`: scenery, splineys, telegraph poles, map labels, map masks, map tile overlays, scene clones, and optional removals for base scene objects.
 - `progression`: progression trees and map features.
 - `editor`: optional editor-only state that RAIL can ignore at runtime.
 - `extensions`: optional namespaced third-party data.
@@ -87,6 +87,25 @@ When translating legacy graph patches that delete existing base-game track objec
 
 RAIL applies span removals first, then segment removals, then node removals.
 
+Legacy source files can also use `null` entries to delete world objects such as old roads or scenery. RAIL stores those as `world.removals`, using either RAIL IDs or full scene paths:
+
+```json
+{
+  "world": {
+    "removals": {
+      "scenery": ["World/Large Scenery/Murphy/Old Depot"],
+      "splineys": ["World/Large Scenery/Murphy/Old Road"],
+      "mapLabels": [],
+      "mapMasks": [],
+      "telegraphPoles": [],
+      "sceneClones": []
+    }
+  }
+}
+```
+
+The converter maps legacy `null` entries from `scenery`, `splineys`, `mandelas`, and `texts` into these arrays.
+
 Progression delivery phases that contain deliveries must set `industryComponentId`. That ID should point at a runtime `ProgressionIndustryComponent` that RAIL or the base map can activate while the phase is pending.
 
 Turntables generate deterministic pit node IDs at load time:
@@ -134,9 +153,20 @@ Asset and prefab references are URI strings:
 
 The current runtime directly understands `vanilla://`, `path://`, `scenery://`, and `empty://`. Other schemes may be reserved by tools or future loaders.
 
+Spliney `type` describes the physical spline family, not its material flavor:
+
+- `river`: water spline, with one river behavior family.
+- `road`: normal road spline. Use `style`/`profile` for dirt versus pavement.
+- `terrainRoad`: terrain-carved road spline. Use `style`/`profile` for dirt versus pavement.
+- `trestle`: auto-generated trestle spline.
+
+Converted Strange Customs `FlowyThingBuilder` data must inspect `style` and `profile`; entries with `style: "River"` or river profiles should be emitted as `type: "river"`, not as roads.
+
 Telegraph pole definitions use the existing Railroader telegraph pole and wire prefabs by default. `profile` selects the first vanilla pole prefab whose name contains that profile string. `polePrefab` and `wirePrefab` can override that with explicit prefab URIs.
 
 Industry components currently supported by the runtime include `loader`, `unloader`, `formulaic`, `repairTrack`, `teamTrack`, `interchange`, `interchangedLoader`, and `passengerStop`. Formulaic components are attached directly to the industry object to match Strange Customs behavior; other component types get child objects.
+
+The converter emits canonical RAIL component type names. Legacy aliases such as `Model.Ops.IndustryLoader` and `AlinasMapMod.PaxStationComponent` are normalized at load time for compatibility, but new JSON should use the RAIL names above so it does not depend on AMM assemblies.
 
 Passenger stop components can carry timetable metadata:
 
@@ -189,6 +219,7 @@ RAIL treats these as overlays on top of the base game's `StreamingAssets/Maps/<d
 - `world.mapLabels` are applied at runtime as vanilla `MapLabel` clones. Labels with `style: "speedLimit"` are rendered as circled speed signs.
 - `world.mapTiles` are mounted into the live `MapStore` at map-load time and can override individual tile coordinates without copying files into `StreamingAssets`.
 - `world.sceneClones` are applied at runtime by cloning an existing scene object path or retargeting an existing object hierarchy. `localPosition`, `localRotation`, and `localScale` are optional; when omitted or `null`, RAIL now preserves the existing transform value instead of forcing zero or one. RAIL also strips unsupported mover components such as `PhysicsMover` from these clones so static visual copies do not register live physics controllers by accident.
+- `world.removals` are applied before new world objects are created. Removal IDs may be RAIL-created object IDs or full scene paths such as `World/Large Scenery/Sylva/Road (1)`.
 
 Validation that depends on Railroader runtime state, such as whether a prefab exists or whether a base-game passenger stop ID is valid, belongs in RAIL's validation layer rather than this JSON Schema.
 
@@ -218,6 +249,9 @@ MurphyBranch/
 {
   "Requirements": [{ "Id": "RAIL", "NotBefore": "1.0.0" }],
   "LoadAfter": ["RAIL"],
+  "RailLoadPriority": 100,
+  "RailLoadAfter": ["Shared.Track.Package"],
+  "RailLoadBefore": [],
   "RailDataFiles": [
     "track.rail.json",
     "operations.rail.json",
@@ -226,4 +260,16 @@ MurphyBranch/
 }
 ```
 
+RAIL-specific package ordering uses `RailLoadPriority`, `RailLoadAfter`, and `RailLoadBefore`. Lower priority values load earlier; packages with the same priority fall back to dependency order and then package id. Dependency cycles are reported in the log and the involved packages fall back to priority/name order.
+
 If explicit data-file entries are missing, RAIL falls back to the first `.bson` file in the package root, then the first `.json` file other than `Info.json`.
+
+Asset-pack-only packages can expose existing Railroader `AssetPack` runtime stores with `RailAssetPacks`. RAIL mirrors those folders into Railroader's external `AssetPacks` directory before the game builds its prefab catalog:
+
+```json
+{
+  "Requirements": ["RAIL"],
+  "LoadAfter": ["RAIL"],
+  "RailAssetPacks": ["SCAssetPacks"]
+}
+```

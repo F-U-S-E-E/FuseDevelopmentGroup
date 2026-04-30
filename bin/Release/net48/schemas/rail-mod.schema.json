@@ -950,6 +950,42 @@
             }
           ],
           "default": {}
+        },
+        "removals": {
+          "$ref": "#/$defs/worldRemovals",
+          "default": {
+            "scenery": [],
+            "splineys": [],
+            "telegraphPoles": [],
+            "mapLabels": [],
+            "mapMasks": [],
+            "sceneClones": []
+          }
+        }
+      }
+    },
+    "worldRemovals": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Scene-path or RAIL-id removals for world objects. Use this to carry source JSON null entries through conversion.",
+      "properties": {
+        "scenery": {
+          "$ref": "#/$defs/worldRemovalArray"
+        },
+        "splineys": {
+          "$ref": "#/$defs/worldRemovalArray"
+        },
+        "telegraphPoles": {
+          "$ref": "#/$defs/worldRemovalArray"
+        },
+        "mapLabels": {
+          "$ref": "#/$defs/worldRemovalArray"
+        },
+        "mapMasks": {
+          "$ref": "#/$defs/worldRemovalArray"
+        },
+        "sceneClones": {
+          "$ref": "#/$defs/worldRemovalArray"
         }
       }
     },
@@ -1481,6 +1517,15 @@
       "type": "array",
       "items": {
         "type": "string"
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "worldRemovalArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
       },
       "uniqueItems": true,
       "default": []

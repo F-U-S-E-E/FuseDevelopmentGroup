@@ -4,6 +4,7 @@ using HarmonyLib;
 using RAIL.Events;
 using RAIL.Infrastructure;
 using RAIL.Lifecycle;
+using RAIL.Loading;
 using UnityModManagerNet;
 
 namespace RAIL
@@ -27,6 +28,8 @@ namespace RAIL
 
             try
             {
+                RailAssetPackRegistry.MountAllAvailableAssetPacks();
+
                 _harmony = new Harmony(HarmonyId);
                 _harmony.PatchAll(Assembly.GetExecutingAssembly());
                 _lifecycle = new RailLifecycle();

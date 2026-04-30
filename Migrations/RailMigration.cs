@@ -77,6 +77,13 @@ namespace RAIL.Migrations
             definition.World.MapMasks = definition.World.MapMasks ?? new Dictionary<string, RailMapMask>();
             definition.World.MapTiles = definition.World.MapTiles ?? new Dictionary<string, RailMapTileSource>();
             definition.World.SceneClones = definition.World.SceneClones ?? new Dictionary<string, RailSceneClone>();
+            definition.World.Removals = definition.World.Removals ?? new RailWorldRemovals();
+            definition.World.Removals.Scenery = definition.World.Removals.Scenery ?? Array.Empty<string>();
+            definition.World.Removals.Splineys = definition.World.Removals.Splineys ?? Array.Empty<string>();
+            definition.World.Removals.TelegraphPoles = definition.World.Removals.TelegraphPoles ?? Array.Empty<string>();
+            definition.World.Removals.MapLabels = definition.World.Removals.MapLabels ?? Array.Empty<string>();
+            definition.World.Removals.MapMasks = definition.World.Removals.MapMasks ?? Array.Empty<string>();
+            definition.World.Removals.SceneClones = definition.World.Removals.SceneClones ?? Array.Empty<string>();
 
             definition.Progression.Progressions = definition.Progression.Progressions ?? new Dictionary<string, RailProgression>();
             definition.Progression.MapFeatures = definition.Progression.MapFeatures ?? new Dictionary<string, RailMapFeature>();
@@ -101,6 +108,7 @@ namespace RAIL.Migrations
                         continue;
                     }
 
+                    component.Type = NormalizeIndustryComponentType(component.Type);
                     component.TrackSpanIds = component.TrackSpanIds ?? Array.Empty<string>();
                     component.InputSpanIds = component.InputSpanIds ?? Array.Empty<string>();
                     component.InputTermsPerDay = component.InputTermsPerDay ?? new Dictionary<string, float>();
@@ -109,6 +117,46 @@ namespace RAIL.Migrations
                     component.NeighborIds = component.NeighborIds ?? Array.Empty<string>();
                     component.BranchDefinitions = component.BranchDefinitions ?? Array.Empty<RailPassengerBranch>();
                 }
+            }
+        }
+
+        private static string NormalizeIndustryComponentType(string type)
+        {
+            if (string.IsNullOrWhiteSpace(type))
+            {
+                return type;
+            }
+
+            switch (type.Trim().ToLowerInvariant())
+            {
+                case "model.ops.industryloader":
+                case "industryloader":
+                    return "loader";
+                case "model.ops.industryunloader":
+                case "industryunloader":
+                    return "unloader";
+                case "model.ops.formulaicindustrycomponent":
+                case "formulaicindustrycomponent":
+                    return "formulaic";
+                case "model.ops.repairtrack":
+                case "repair-track":
+                    return "repairTrack";
+                case "model.ops.teamtrack":
+                case "team-track":
+                    return "teamTrack";
+                case "model.ops.interchange":
+                    return "interchange";
+                case "model.ops.interchangedindustryloader":
+                case "interchanged-loader":
+                    return "interchangedLoader";
+                case "alinasmapmod.paxstationcomponent":
+                case "alinasmapmod.stations.paxstationcomponent":
+                case "paxstationcomponent":
+                case "passenger-stop":
+                case "passengerstop":
+                    return "passengerStop";
+                default:
+                    return type.Trim();
             }
         }
 

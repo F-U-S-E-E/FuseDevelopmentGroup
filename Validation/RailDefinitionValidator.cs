@@ -285,6 +285,16 @@ namespace RAIL.Validation
 
         private static void ValidateWorld(ValidationResult result, RailWorldDefinition world)
         {
+            if (world.Removals != null)
+            {
+                ValidateWorldRemovalTargets(result, "world.removals.scenery", world.Removals.Scenery, world.Scenery.Keys);
+                ValidateWorldRemovalTargets(result, "world.removals.splineys", world.Removals.Splineys, world.Splineys.Keys);
+                ValidateWorldRemovalTargets(result, "world.removals.telegraphPoles", world.Removals.TelegraphPoles, world.TelegraphPoles.Keys);
+                ValidateWorldRemovalTargets(result, "world.removals.mapLabels", world.Removals.MapLabels, world.MapLabels.Keys);
+                ValidateWorldRemovalTargets(result, "world.removals.mapMasks", world.Removals.MapMasks, world.MapMasks.Keys);
+                ValidateWorldRemovalTargets(result, "world.removals.sceneClones", world.Removals.SceneClones, world.SceneClones.Keys);
+            }
+
             foreach (var scenery in world.Scenery)
             {
                 Required(result, $"world.scenery.{scenery.Key}.model", scenery.Value.Model);
@@ -361,6 +371,35 @@ namespace RAIL.Validation
                 }
 
                 Required(result, $"world.sceneClones.{sceneClone.Key}.targetPath", sceneClone.Value.TargetPath);
+            }
+        }
+
+        private static void ValidateWorldRemovalTargets(ValidationResult result, string path, IEnumerable<string> removals, IEnumerable<string> definitions)
+        {
+            if (removals == null)
+            {
+                return;
+            }
+
+            var definedIds = new HashSet<string>(definitions ?? Enumerable.Empty<string>(), System.StringComparer.OrdinalIgnoreCase);
+            var seen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            var index = 0;
+            foreach (var id in removals)
+            {
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    result.AddError($"{path}[{index}]", "Removal IDs must not be blank.", "rail.world.removal.blank");
+                }
+                else if (!seen.Add(id))
+                {
+                    result.AddWarning($"{path}[{index}]", "Removal ID is listed more than once.", "rail.world.removal.duplicate", id);
+                }
+                else if (definedIds.Contains(id))
+                {
+                    result.AddError($"{path}[{index}]", "A world object cannot be defined and removed in the same RAIL document.", "rail.world.removal.conflict", id);
+                }
+
+                index++;
             }
         }
 

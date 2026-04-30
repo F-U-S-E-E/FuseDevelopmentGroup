@@ -7,6 +7,7 @@ using Helpers;
 using Map.Runtime.MaskComponents;
 using RAIL.Cache;
 using RAIL.Data;
+using RAIL.Infrastructure;
 using UnityEngine;
 
 namespace RAIL.API
@@ -32,7 +33,7 @@ namespace RAIL.API
 
             var root = new GameObject(id);
             ApplyDefinition(root, id, definition, false);
-            SplineyCache.Instance.Set(id, root);
+            RailSplineyRuntimeIndex.Instance.Set(id, root);
             return root;
         }
 
@@ -45,20 +46,37 @@ namespace RAIL.API
             }
 
             ApplyDefinition(root, id, definition, true);
-            SplineyCache.Instance.Set(id, root);
+            RailSplineyRuntimeIndex.Instance.Set(id, root);
         }
 
         public static void RemoveSpliney(string id)
         {
-            var root = RequireSpliney(id);
+            if (!TryRemoveSpliney(id))
+            {
+                throw new InvalidOperationException($"Spliney '{id}' was not found.");
+            }
+        }
+
+        public static bool TryRemoveSpliney(string id)
+        {
+            var root = FindRemovableSplineyObject(id);
+            if (root == null)
+            {
+                RailLog.Warning($"RAIL world removal skipped missing spliney '{id}'.");
+                return false;
+            }
+
+            var path = GetTransformPath(root.transform);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
-            SplineyCache.Instance.Remove(id);
+            RailSplineyRuntimeIndex.Instance.Remove(id);
+            RailLog.Info($"RAIL removed spliney '{id}' from '{path}'.");
+            return true;
         }
 
         public static GameObject GetSpliney(string id)
         {
-            if (SplineyCache.Instance.TryGetValue(id, out var cached))
+            if (RailSplineyRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (GameObject)cached;
             }
@@ -326,6 +344,34 @@ namespace RAIL.API
             }
 
             return root;
+        }
+
+        private static GameObject FindRemovableSplineyObject(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            return GetSpliney(id) ?? RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
+        }
+
+        private static string GetTransformPath(Transform transform)
+        {
+            if (transform == null)
+            {
+                return string.Empty;
+            }
+
+            var names = new Stack<string>();
+            var cursor = transform;
+            while (cursor != null)
+            {
+                names.Push(cursor.name);
+                cursor = cursor.parent;
+            }
+
+            return string.Join("/", names.ToArray());
         }
 
         private static void RequireId(string id, string parameterName)

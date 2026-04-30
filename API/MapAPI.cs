@@ -7,6 +7,7 @@ using Map.Runtime.MapModifiers;
 using Map.Runtime.MaskComponents;
 using RAIL.Cache;
 using RAIL.Data;
+using RAIL.Infrastructure;
 using TelegraphPoles;
 using TMPro;
 using UI.Map;
@@ -70,7 +71,7 @@ namespace RAIL.API
                 label.name = id;
                 CanvasField?.SetValue(label, labelObject.GetComponent<Canvas>());
                 ApplyMapLabelDefinition(label, definition);
-                MapLabelCache.Instance.Set(id, label);
+                RailMapLabelRuntimeIndex.Instance.Set(id, label);
                 return label;
             }
             catch
@@ -80,7 +81,7 @@ namespace RAIL.API
                     UnityEngine.Object.Destroy(wrapper);
                 }
 
-                MapLabelCache.Instance.Remove(id);
+                RailMapLabelRuntimeIndex.Instance.Remove(id);
                 throw;
             }
         }
@@ -94,21 +95,52 @@ namespace RAIL.API
             }
 
             ApplyMapLabelDefinition(label, definition);
-            MapLabelCache.Instance.Set(id, label);
+            RailMapLabelRuntimeIndex.Instance.Set(id, label);
         }
 
         public static void RemoveMapLabel(string id)
         {
-            var label = RequireMapLabel(id);
-            var wrapper = label.transform.parent != null ? label.transform.parent.gameObject : label.gameObject;
+            if (!TryRemoveMapLabel(id))
+            {
+                throw new InvalidOperationException($"Map label '{id}' was not found.");
+            }
+        }
+
+        public static bool TryRemoveMapLabel(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return false;
+            }
+
+            var label = GetMapLabel(id);
+            GameObject wrapper;
+            if (label != null)
+            {
+                wrapper = label.transform.parent != null ? label.transform.parent.gameObject : label.gameObject;
+            }
+            else
+            {
+                wrapper = RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
+            }
+
+            if (wrapper == null)
+            {
+                RailLog.Warning($"RAIL world removal skipped missing map label '{id}'.");
+                return false;
+            }
+
+            var path = GetTransformPath(wrapper.transform);
             wrapper.SetActive(false);
             UnityEngine.Object.Destroy(wrapper);
-            MapLabelCache.Instance.Remove(id);
+            RailMapLabelRuntimeIndex.Instance.Remove(id);
+            RailLog.Info($"RAIL removed map label '{id}' from '{path}'.");
+            return true;
         }
 
         public static MapLabel GetMapLabel(string id)
         {
-            if (MapLabelCache.Instance.TryGetValue(id, out var cached))
+            if (RailMapLabelRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (MapLabel)cached;
             }
@@ -155,9 +187,31 @@ namespace RAIL.API
 
         public static void RemoveMapMask(string id)
         {
-            var root = RequireMapMask(id);
+            if (!TryRemoveMapMask(id))
+            {
+                throw new InvalidOperationException($"Map mask '{id}' was not found.");
+            }
+        }
+
+        public static bool TryRemoveMapMask(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return false;
+            }
+
+            var root = GetMapMask(id) ?? RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
+            if (root == null)
+            {
+                RailLog.Warning($"RAIL world removal skipped missing map mask '{id}'.");
+                return false;
+            }
+
+            var path = GetTransformPath(root.transform);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
+            RailLog.Info($"RAIL removed map mask '{id}' from '{path}'.");
+            return true;
         }
 
         public static GameObject GetMapMask(string id)
@@ -204,9 +258,31 @@ namespace RAIL.API
 
         public static void RemoveTelegraphPoles(string id)
         {
-            var root = RequireTelegraphPoles(id);
+            if (!TryRemoveTelegraphPoles(id))
+            {
+                throw new InvalidOperationException($"Telegraph pole set '{id}' was not found.");
+            }
+        }
+
+        public static bool TryRemoveTelegraphPoles(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return false;
+            }
+
+            var root = GetTelegraphPoles(id) ?? RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
+            if (root == null)
+            {
+                RailLog.Warning($"RAIL world removal skipped missing telegraph pole set '{id}'.");
+                return false;
+            }
+
+            var path = GetTransformPath(root.transform);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
+            RailLog.Info($"RAIL removed telegraph pole set '{id}' from '{path}'.");
+            return true;
         }
 
         public static GameObject GetTelegraphPoles(string id)
@@ -820,6 +896,24 @@ namespace RAIL.API
             }
 
             return children;
+        }
+
+        private static string GetTransformPath(Transform transform)
+        {
+            if (transform == null)
+            {
+                return string.Empty;
+            }
+
+            var names = new Stack<string>();
+            var cursor = transform;
+            while (cursor != null)
+            {
+                names.Push(cursor.name);
+                cursor = cursor.parent;
+            }
+
+            return string.Join("/", names.ToArray());
         }
 
         private static void DestroyChildren(Transform transform)

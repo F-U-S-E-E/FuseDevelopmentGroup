@@ -15,10 +15,16 @@
   "LoadAfter": [
     "RAIL"
   ],
+  "RailLoadPriority": 100,
+  "RailLoadAfter": [],
+  "RailLoadBefore": [],
   "RailDataFiles": [
     "track.rail.json",
     "operations.rail.json",
     "world.rail.json",
     "progression.rail.json"
+  ],
+  "RailAssetPacks": [
+    "SCAssetPacks"
   ]
 }

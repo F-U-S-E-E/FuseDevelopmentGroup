@@ -4,6 +4,7 @@ using System.Linq;
 using Helpers;
 using RAIL.Cache;
 using RAIL.Data;
+using RAIL.Infrastructure;
 using UnityEngine;
 
 namespace RAIL.API
@@ -33,7 +34,7 @@ namespace RAIL.API
             ApplyDefinition(scenery, definition);
 
             gameObject.SetActive(true);
-            SceneryCache.Instance.Set(id, scenery);
+            RailSceneryRuntimeIndex.Instance.Set(id, scenery);
             return scenery;
         }
 
@@ -52,20 +53,37 @@ namespace RAIL.API
                 scenery.ReloadComponents();
             }
 
-            SceneryCache.Instance.Set(id, scenery);
+            RailSceneryRuntimeIndex.Instance.Set(id, scenery);
         }
 
         public static void RemoveScenery(string id)
         {
-            var scenery = RequireScenery(id);
-            scenery.gameObject.SetActive(false);
-            UnityEngine.Object.Destroy(scenery.gameObject);
-            SceneryCache.Instance.Remove(id);
+            if (!TryRemoveScenery(id))
+            {
+                throw new InvalidOperationException($"Scenery '{id}' was not found.");
+            }
+        }
+
+        public static bool TryRemoveScenery(string id)
+        {
+            var root = FindRemovableSceneryObject(id);
+            if (root == null)
+            {
+                RailLog.Warning($"RAIL world removal skipped missing scenery '{id}'.");
+                return false;
+            }
+
+            var path = GetTransformPath(root.transform);
+            root.SetActive(false);
+            UnityEngine.Object.Destroy(root);
+            RailSceneryRuntimeIndex.Instance.Remove(id);
+            RailLog.Info($"RAIL removed scenery '{id}' from '{path}'.");
+            return true;
         }
 
         public static SceneryAssetInstance GetScenery(string id)
         {
-            if (SceneryCache.Instance.TryGetValue(id, out var cached))
+            if (RailSceneryRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (SceneryAssetInstance)cached;
             }
@@ -118,6 +136,40 @@ namespace RAIL.API
             }
 
             return scenery;
+        }
+
+        private static GameObject FindRemovableSceneryObject(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            var scenery = GetScenery(id);
+            if (scenery != null)
+            {
+                return scenery.gameObject;
+            }
+
+            return RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
+        }
+
+        private static string GetTransformPath(Transform transform)
+        {
+            if (transform == null)
+            {
+                return string.Empty;
+            }
+
+            var names = new Stack<string>();
+            var cursor = transform;
+            while (cursor != null)
+            {
+                names.Push(cursor.name);
+                cursor = cursor.parent;
+            }
+
+            return string.Join("/", names.ToArray());
         }
 
         private static Transform GetSceneryRoot()

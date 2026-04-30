@@ -580,6 +580,18 @@
         "localRotation": null,
         "localScale": null
       }
+    },
+    "removals": {
+      "scenery": [
+        "World/Large Scenery/Murphy/Old Depot"
+      ],
+      "splineys": [
+        "World/Large Scenery/Murphy/Old Road"
+      ],
+      "telegraphPoles": [],
+      "mapLabels": [],
+      "mapMasks": [],
+      "sceneClones": []
     }
   },
   "progression": {

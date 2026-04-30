@@ -37,7 +37,7 @@ namespace RAIL.API
             node.flipSwitchStand = flipStand;
 
             graph.AddNode(node);
-            TrackNodeCache.Instance.Set(id, node);
+            RailNodeRuntimeIndex.Instance.Set(id, node);
             RailEvents.RaiseNodeAdded(node);
             RequestRebuild();
             return node;
@@ -64,7 +64,7 @@ namespace RAIL.API
             }
 
             Graph.Shared.OnNodeDidChange(node);
-            TrackNodeCache.Instance.Set(id, node);
+            RailNodeRuntimeIndex.Instance.Set(id, node);
             RailEvents.RaiseNodeUpdated(node);
             RequestRebuild();
         }
@@ -88,7 +88,7 @@ namespace RAIL.API
             }
 
             RemoveRuntimeObject(node);
-            TrackNodeCache.Instance.Remove(id);
+            RailNodeRuntimeIndex.Instance.Remove(id);
             RailEvents.RaiseNodeRemoved(id);
             RequestRebuild();
         }
@@ -127,7 +127,7 @@ namespace RAIL.API
             segment.groupId = groupId;
 
             graph.AddSegment(segment, true);
-            TrackSegmentCache.Instance.Set(id, segment);
+            RailSegmentRuntimeIndex.Instance.Set(id, segment);
             RailEvents.RaiseSegmentAdded(segment);
             RequestRebuild();
             return segment;
@@ -174,7 +174,7 @@ namespace RAIL.API
             segment.InvalidateCurve();
             Graph.Shared.InvalidateNode(segment.a);
             Graph.Shared.InvalidateNode(segment.b);
-            TrackSegmentCache.Instance.Set(id, segment);
+            RailSegmentRuntimeIndex.Instance.Set(id, segment);
             RailEvents.RaiseSegmentUpdated(segment);
             RequestRebuild();
         }
@@ -199,7 +199,7 @@ namespace RAIL.API
         {
             var segment = RequireSegment(id);
             RemoveRuntimeObject(segment);
-            TrackSegmentCache.Instance.Remove(id);
+            RailSegmentRuntimeIndex.Instance.Remove(id);
             RailEvents.RaiseSegmentRemoved(id);
             RequestRebuild();
         }
@@ -234,7 +234,7 @@ namespace RAIL.API
                 span.NormalizeUpperLower();
             }
 
-            TrackSpanCache.Instance.Set(id, span);
+            RailSpanRuntimeIndex.Instance.Set(id, span);
             RailEvents.RaiseSpanAdded(span);
             RequestRebuild();
             return span;
@@ -261,7 +261,7 @@ namespace RAIL.API
                 span.NormalizeUpperLower();
             }
 
-            TrackSpanCache.Instance.Set(id, span);
+            RailSpanRuntimeIndex.Instance.Set(id, span);
             RailEvents.RaiseSpanUpdated(span);
             RequestRebuild();
         }
@@ -280,14 +280,14 @@ namespace RAIL.API
         {
             var span = RequireSpan(id);
             RemoveRuntimeObject(span);
-            TrackSpanCache.Instance.Remove(id);
+            RailSpanRuntimeIndex.Instance.Remove(id);
             RailEvents.RaiseSpanRemoved(id);
             RequestRebuild();
         }
 
         public static TrackSpan GetSpan(string id)
         {
-            if (TrackSpanCache.Instance.TryGetValue(id, out var cached))
+            if (RailSpanRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (TrackSpan)cached;
             }
@@ -316,7 +316,7 @@ namespace RAIL.API
             area.identifier = id;
             ApplyAreaDefinition(area, definition);
             RememberAreaOrder(id, definition.Order);
-            AreaCache.Instance.Set(id, area);
+            RailAreaRuntimeIndex.Instance.Set(id, area);
             RailLog.Info($"RAIL created area '{id}' name='{displayName}' parent='{DescribeAreaParent(area.transform.parent)}' position={area.transform.localPosition} radius={area.radius}.");
             return area;
         }
@@ -331,7 +331,7 @@ namespace RAIL.API
 
             ApplyAreaDefinition(area, definition);
             RememberAreaOrder(id, definition.Order);
-            AreaCache.Instance.Set(id, area);
+            RailAreaRuntimeIndex.Instance.Set(id, area);
             RailLog.Info($"RAIL updated area '{id}' name='{area.name}' position={area.transform.localPosition} radius={area.radius}.");
         }
 
@@ -342,7 +342,7 @@ namespace RAIL.API
                 return null;
             }
 
-            if (AreaCache.Instance.TryGetValue(id, out var cached))
+            if (RailAreaRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Area)cached;
             }
@@ -356,7 +356,7 @@ namespace RAIL.API
                      string.Equals(candidate.name, id, StringComparison.OrdinalIgnoreCase)));
                 if (area != null)
                 {
-                    AreaCache.Instance.Set(area.identifier, area);
+                    RailAreaRuntimeIndex.Instance.Set(area.identifier, area);
                     return area;
                 }
             }

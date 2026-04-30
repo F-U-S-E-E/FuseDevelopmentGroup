@@ -14,7 +14,7 @@ namespace RAIL.API
     {
         public static Load GetLoad(string id)
         {
-            if (LoadCache.Instance.TryGetValue(id, out var cached))
+            if (RailLoadRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Load)cached;
             }
@@ -22,7 +22,7 @@ namespace RAIL.API
             var load = !string.IsNullOrWhiteSpace(id) ? CarPrototypeLibrary.instance?.LoadForId(id) : null;
             if (load != null)
             {
-                LoadCache.Instance.Set(load.id, load);
+                RailLoadRuntimeIndex.Instance.Set(load.id, load);
             }
 
             return load;
@@ -56,7 +56,7 @@ namespace RAIL.API
                 library.opsLoads = currentLoads.Concat(new[] { load }).ToArray();
             }
 
-            LoadCache.Instance.Set(load.id, load);
+            RailLoadRuntimeIndex.Instance.Set(load.id, load);
             return load;
         }
 
@@ -80,7 +80,7 @@ namespace RAIL.API
                     .ToArray();
             }
 
-            LoadCache.Instance.Remove(id);
+            RailLoadRuntimeIndex.Instance.Remove(id);
         }
 
         private static void ApplyDefinition(Load load, RailLoad definition)

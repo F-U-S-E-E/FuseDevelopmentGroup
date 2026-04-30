@@ -17,7 +17,7 @@ namespace RAIL.Patches
             {
                 RailCacheRegistry.RebuildAll();
                 var loadedCount = RailDataPackageDiscovery.LoadAllAvailablePackages();
-                RailLog.Info($"RAIL ensured data packages before snapshot restore ({loadedCount} package(s) loaded this pass).");
+                RailLog.Info($"RAIL ensured data packages before snapshot restore ({loadedCount} package folder(s) loaded from disk this pass).");
             }
             catch (Exception ex)
             {
@@ -30,8 +30,8 @@ namespace RAIL.Patches
             try
             {
                 RailCacheRegistry.RebuildAll();
-                var loadedCount = RailDataPackageDiscovery.LoadAllAvailablePackages();
-                RailLog.Info($"RAIL reapplied data packages after snapshot restore ({loadedCount} package(s) loaded this pass).");
+                var reappliedCount = RailDataPackageDiscovery.ReapplyLoadedPackages("after snapshot restore");
+                RailLog.Info($"RAIL reapplied data packages after snapshot restore ({reappliedCount} loaded definition(s) applied this pass).");
                 __instance?.StartCoroutine(ReapplyAfterRestoreDelay());
             }
             catch (Exception ex)
@@ -56,8 +56,8 @@ namespace RAIL.Patches
             try
             {
                 RailCacheRegistry.RebuildAll();
-                var loadedCount = RailDataPackageDiscovery.LoadAllAvailablePackages();
-                RailLog.Info($"RAIL reapplied data packages after snapshot settle delay ({loadedCount} package(s) loaded this pass).");
+                var reappliedCount = RailDataPackageDiscovery.ReapplyLoadedPackages("after snapshot settle delay");
+                RailLog.Info($"RAIL reapplied data packages after snapshot settle delay ({reappliedCount} loaded definition(s) applied this pass).");
             }
             catch (Exception ex)
             {

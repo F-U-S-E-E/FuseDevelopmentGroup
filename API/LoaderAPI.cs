@@ -33,7 +33,7 @@ namespace RAIL.API
             var gameObject = new GameObject(id);
             gameObject.transform.SetParent(GetLoaderRoot(), false);
             ApplyDefinition(gameObject, id, definition);
-            LoaderCache.Instance.Set(id, gameObject);
+            RailLoaderRuntimeIndex.Instance.Set(id, gameObject);
             return gameObject;
         }
 
@@ -46,7 +46,7 @@ namespace RAIL.API
             }
 
             ApplyDefinition(loader, id, definition);
-            LoaderCache.Instance.Set(id, loader);
+            RailLoaderRuntimeIndex.Instance.Set(id, loader);
         }
 
         public static void RemoveLoader(string id)
@@ -54,12 +54,12 @@ namespace RAIL.API
             var loader = RequireLoader(id);
             loader.SetActive(false);
             UnityEngine.Object.Destroy(loader);
-            LoaderCache.Instance.Remove(id);
+            RailLoaderRuntimeIndex.Instance.Remove(id);
         }
 
         public static GameObject GetLoader(string id)
         {
-            if (LoaderCache.Instance.TryGetValue(id, out var cached))
+            if (RailLoaderRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (GameObject)cached;
             }
@@ -69,7 +69,7 @@ namespace RAIL.API
 
         public static IEnumerable<GameObject> GetAllLoaders()
         {
-            return LoaderCache.Instance.Values.Cast<GameObject>();
+            return RailLoaderRuntimeIndex.Instance.Values.Cast<GameObject>();
         }
 
         private static void ApplyDefinition(GameObject loader, string id, RailLoader definition)

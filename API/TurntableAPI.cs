@@ -28,7 +28,7 @@ namespace RAIL.API
 
         public static Turntable GetTurntable(string id)
         {
-            if (TurntableCache.Instance.TryGetValue(id, out var cached))
+            if (RailTurntableRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Turntable)cached;
             }
@@ -83,9 +83,9 @@ namespace RAIL.API
 
             root.SetActive(true);
             RefreshTurntableTemplateVisuals(root);
-            TurntableCache.Instance.Set(id, turntable);
-            TrackNodeCache.Instance.Rebuild();
-            TrackSegmentCache.Instance.Rebuild();
+            RailTurntableRuntimeIndex.Instance.Set(id, turntable);
+            RailNodeRuntimeIndex.Instance.Rebuild();
+            RailSegmentRuntimeIndex.Instance.Rebuild();
             InvalidateTurntableControllerCache();
             TrackAPI.RebuildGraph();
             return turntable;
@@ -121,9 +121,9 @@ namespace RAIL.API
             ClearBridgeGroup(turntable);
             RefreshTurntableTemplateVisuals(turntable.gameObject);
 
-            TurntableCache.Instance.Set(id, turntable);
-            TrackNodeCache.Instance.Rebuild();
-            TrackSegmentCache.Instance.Rebuild();
+            RailTurntableRuntimeIndex.Instance.Set(id, turntable);
+            RailNodeRuntimeIndex.Instance.Rebuild();
+            RailSegmentRuntimeIndex.Instance.Rebuild();
             InvalidateTurntableControllerCache();
             TrackAPI.RebuildGraph();
         }
@@ -159,7 +159,7 @@ namespace RAIL.API
 
                 turntable.gameObject.SetActive(false);
                 UnityEngine.Object.Destroy(turntable.gameObject);
-                TurntableCache.Instance.Remove(id);
+                RailTurntableRuntimeIndex.Instance.Remove(id);
             }
             finally
             {

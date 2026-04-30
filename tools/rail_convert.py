@@ -85,6 +85,14 @@ def skeleton(mod_id, mod_name, mod_version, author, fragment_name):
             "mapMasks": {},
             "mapTiles": {},
             "sceneClones": {},
+            "removals": {
+                "scenery": [],
+                "splineys": [],
+                "telegraphPoles": [],
+                "mapLabels": [],
+                "mapMasks": [],
+                "sceneClones": [],
+            },
         },
         "progression": {"progressions": {}, "mapFeatures": {}},
         "extensions": {},
@@ -188,8 +196,8 @@ def convert_area(area_id, item, order=None):
 
 
 def convert_component(component_id, item):
-    component_type = item.get("type") or component_id
-    is_passenger = "paxstationcomponent" in component_type.lower() or "passenger" in component_type.lower()
+    component_type = normalize_component_type(item.get("type") or component_id)
+    is_passenger = component_type == "passengerStop"
     result = {
         "type": component_type,
         "name": item.get("name") or component_id,
@@ -216,6 +224,32 @@ def convert_component(component_id, item):
         "branchDefinitions": item.get("branchDefinitions"),
     }
     return clean(result)
+
+
+def normalize_component_type(component_type):
+    value = str(component_type or "").strip()
+    normalized = value.lower()
+    aliases = {
+        "model.ops.industryloader": "loader",
+        "industryloader": "loader",
+        "model.ops.industryunloader": "unloader",
+        "industryunloader": "unloader",
+        "model.ops.formulaicindustrycomponent": "formulaic",
+        "formulaicindustrycomponent": "formulaic",
+        "model.ops.repairtrack": "repairTrack",
+        "repair-track": "repairTrack",
+        "model.ops.teamtrack": "teamTrack",
+        "team-track": "teamTrack",
+        "model.ops.interchange": "interchange",
+        "model.ops.interchangedindustryloader": "interchangedLoader",
+        "interchanged-loader": "interchangedLoader",
+        "alinasmapmod.paxstationcomponent": "passengerStop",
+        "alinasmapmod.stations.paxstationcomponent": "passengerStop",
+        "paxstationcomponent": "passengerStop",
+        "passenger-stop": "passengerStop",
+        "passengerstop": "passengerStop",
+    }
+    return aliases.get(normalized, value)
 
 
 def convert_industry(industry_id, item, area_id=None, order=None):
@@ -280,6 +314,7 @@ def convert_scenery(item):
 
 def convert_spliney(item):
     handler = item.get("handler") or ""
+    spliney_type = infer_spliney_type(item, handler)
     points = []
     for point in item.get("points") or []:
         if not isinstance(point, dict):
@@ -293,7 +328,7 @@ def convert_spliney(item):
         points.append(converted)
 
     result = {
-        "type": HANDLER_MAP.get(handler, item.get("type") or "unknown"),
+        "type": spliney_type,
         "profile": item.get("profile"),
         "style": item.get("style"),
         "offsetY": item.get("offsetY", item.get("offsety")),
@@ -304,6 +339,27 @@ def convert_spliney(item):
     if handler and handler not in HANDLER_MAP:
         result["extensions"] = {"originalHandler": handler}
     return clean(result)
+
+
+def infer_spliney_type(item, handler):
+    style = str(item.get("style") or "")
+    profile = str(item.get("profile") or "")
+    explicit_type = item.get("type")
+
+    # Strange Customs FlowyThingBuilder is shared by roads and rivers. The
+    # style/profile tells us which physical spline family the runtime needs.
+    if handler == "StrangeCustoms.FlowyThingBuilder" and (
+        style.lower() == "river" or "river" in profile.lower()
+    ):
+        return "river"
+
+    if handler in HANDLER_MAP:
+        return HANDLER_MAP[handler]
+
+    if explicit_type:
+        return explicit_type
+
+    return "unknown"
 
 
 def convert_scene_clone(key, item):
@@ -411,11 +467,15 @@ def convert_source(source, rail, late_rail=None):
             rail["operations"]["turntables"][table_id] = convert_turntable(table_id, table)
 
     for scenery_id, scenery in (source.get("scenery") or {}).items():
-        if isinstance(scenery, dict):
+        if scenery is None:
+            rail["world"]["removals"]["scenery"].append(scenery_id)
+        elif isinstance(scenery, dict):
             rail["world"]["scenery"][scenery_id] = convert_scenery(scenery)
 
     for spliney_id, spliney in (source.get("splineys") or {}).items():
-        if isinstance(spliney, dict):
+        if spliney is None:
+            rail["world"]["removals"]["splineys"].append(spliney_id)
+        elif isinstance(spliney, dict):
             handler = spliney.get("handler")
             if handler == TURNTABLE_HANDLER:
                 rail["operations"]["turntables"][spliney_id] = convert_turntable(spliney_id, spliney)
@@ -433,11 +493,15 @@ def convert_source(source, rail, late_rail=None):
                 rail["world"]["splineys"][spliney_id] = convert_spliney(spliney)
 
     for clone_id, clone in (source.get("mandelas") or {}).items():
-        if isinstance(clone, dict):
+        if clone is None:
+            rail["world"]["removals"]["sceneClones"].append(clone_id)
+        elif isinstance(clone, dict):
             rail["world"]["sceneClones"][clone_id] = convert_scene_clone(clone_id, clone)
 
     for label_id, label in (source.get("texts") or {}).items():
-        if isinstance(label, dict):
+        if label is None:
+            rail["world"]["removals"]["mapLabels"].append(label_id)
+        elif isinstance(label, dict):
             rail["world"]["mapLabels"][label_id] = convert_label(label_id, label)
 
     simple_graphs = source.get("simpleGraphs") or {}
@@ -449,6 +513,10 @@ def count_content(rail):
     counts = {}
     for section in ("tracks", "operations", "world", "progression"):
         for key, value in rail.get(section, {}).items():
+            if section == "tracks" and key == "removals":
+                continue
+            if section == "world" and key == "removals":
+                continue
             if isinstance(value, dict):
                 counts[f"{section}.{key}"] = len(value)
             elif isinstance(value, list):
@@ -456,12 +524,15 @@ def count_content(rail):
     removals = rail["tracks"].get("removals") or {}
     for key, value in removals.items():
         counts[f"tracks.removals.{key}"] = len(value or [])
+    world_removals = rail["world"].get("removals") or {}
+    for key, value in world_removals.items():
+        counts[f"world.removals.{key}"] = len(value or [])
     return counts
 
 
 def has_content(rail):
     counts = count_content(rail)
-    return any(value for key, value in counts.items() if key != "tracks.removals")
+    return any(counts.values())
 
 
 def convert_mod(mod_folder, out_folder):
