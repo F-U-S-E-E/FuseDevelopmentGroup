@@ -21,8 +21,13 @@ namespace RAIL.API
         private static readonly FieldInfo PassengerStopField = typeof(StationAgent).GetField("passengerStop", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo SecondaryAreasField = typeof(StationAgent).GetField("secondaryAreas", BindingFlags.Instance | BindingFlags.NonPublic);
         private const float MapIconElevation = 100f;
+        private const float StationMapIconWidth = 96f;
+        private const float StationMapIconHeight = 42f;
+        private const float StationMapIconGraphicOffset = 24f;
+        private const float StationMapIconRotationOffsetDegrees = 90f;
         private static Transform _fallbackRoot;
         private static Sprite _stationIconSprite;
+        private static Material _stationIconMaterial;
 
         public static StationAgent AddStationAgent(string id, RailStation definition)
         {
@@ -204,18 +209,31 @@ namespace RAIL.API
 
         private static void ConfigureMapIcons(GameObject instance, PassengerStop passengerStop, Transform stationRoot, string id, string prefab)
         {
-            var icons = instance.GetComponentsInChildren<MapIcon>(true).ToList();
-            if (icons.Count == 0)
+            foreach (var existing in instance.GetComponentsInChildren<MapIcon>(true))
             {
-                var generated = CreateStationMapIcon(stationRoot, id);
-                if (generated != null)
+                if (existing == null)
                 {
-                    icons.Add(generated);
-                    RailLog.Info($"RAIL station '{id}' prefab '{prefab}' had no MapIcon; generated RAIL station map icon.");
+                    continue;
                 }
+
+                MapBuilder.Shared?.Remove(existing);
+                existing.gameObject.SetActive(false);
             }
 
+            var iconRotation = GetMapIconRotation(passengerStop);
+            var graphicOffset = GetMapIconGraphicLocalOffset(passengerStop, stationRoot, iconRotation);
+            var generated = CreateStationMapIcon(stationRoot, id, graphicOffset);
+            var icons = generated != null
+                ? new List<MapIcon> { generated }
+                : new List<MapIcon>();
+            RailLog.Info($"RAIL station '{id}' prefab '{prefab}' using generated schematic map icon at station prefab position.");
+
             var mapLayer = LayerMask.NameToLayer("Map");
+            if (mapLayer < 0)
+            {
+                RailLog.Warning($"RAIL station '{id}' map icon could not find Unity layer 'Map'; icon may render but map clicking may fail.");
+            }
+
             foreach (var icon in icons)
             {
                 if (icon == null)
@@ -231,23 +249,135 @@ namespace RAIL.API
 
                 icon.transform.SetPositionAndRotation(
                     GetMapIconWorldPosition(passengerStop, stationRoot),
-                    Quaternion.Euler(-90f, stationRoot.eulerAngles.y, 0f));
+                    iconRotation);
+                icon.SetText(string.Empty);
                 icon.OnClick = () => CameraSelector.shared.JumpTo(passengerStop);
                 MapBuilder.Shared?.Add(icon);
             }
         }
 
+        private static Quaternion GetMapIconRotation(PassengerStop passengerStop)
+        {
+            if (TryGetPassengerStopTrackDirection(passengerStop, out var direction))
+            {
+                var yaw = (Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg) + StationMapIconRotationOffsetDegrees;
+                return Quaternion.Euler(-90f, yaw, 0f);
+            }
+
+            return Quaternion.Euler(-90f, StationMapIconRotationOffsetDegrees, 0f);
+        }
+
+        private static bool TryGetPassengerStopTrackDirection(PassengerStop passengerStop, out Vector3 direction)
+        {
+            direction = Vector3.zero;
+            if (passengerStop == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var spans = passengerStop.TrackSpans;
+                if (spans == null)
+                {
+                    return false;
+                }
+
+                foreach (var span in spans)
+                {
+                    if (span == null)
+                    {
+                        continue;
+                    }
+
+                    var points = span.GetPoints();
+                    if (points == null || points.Count < 2)
+                    {
+                        continue;
+                    }
+
+                    var first = points.First();
+                    var last = points.Last();
+                    direction = WorldTransformer.GameToWorld(last) - WorldTransformer.GameToWorld(first);
+                    direction.y = 0f;
+                    if (direction.sqrMagnitude > 1f)
+                    {
+                        direction.Normalize();
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                RailLog.Warning($"RAIL station map icon could not calculate track-aligned rotation; using fixed rotation. {ex.Message}");
+            }
+
+            direction = Vector3.zero;
+            return false;
+        }
+
+        private static Vector3 GetMapIconGraphicLocalOffset(PassengerStop passengerStop, Transform stationRoot, Quaternion iconRotation)
+        {
+            if (passengerStop == null || stationRoot == null)
+            {
+                return Vector3.zero;
+            }
+
+            try
+            {
+                var stopWorld = WorldTransformer.GameToWorld(passengerStop.CenterPoint);
+                var awayFromTrack = stationRoot.position - stopWorld;
+                awayFromTrack.y = 0f;
+                if (awayFromTrack.sqrMagnitude < 1f)
+                {
+                    awayFromTrack = stationRoot.TransformDirection(Vector3.back);
+                    awayFromTrack.y = 0f;
+                }
+
+                if (awayFromTrack.sqrMagnitude < 1f)
+                {
+                    return Vector3.zero;
+                }
+
+                awayFromTrack.Normalize();
+                var localOffset = Quaternion.Inverse(iconRotation) * (awayFromTrack * StationMapIconGraphicOffset);
+                localOffset.z = 0f;
+                return localOffset;
+            }
+            catch (Exception ex)
+            {
+                RailLog.Warning($"RAIL station map icon could not calculate station-side graphic offset; using centered icon. {ex.Message}");
+                return Vector3.zero;
+            }
+        }
+
         private static Vector3 GetMapIconWorldPosition(PassengerStop passengerStop, Transform stationRoot)
         {
+            if (stationRoot != null && IsFinite(stationRoot.position))
+            {
+                var position = stationRoot.position;
+                position.y = stationRoot.position.y + MapIconElevation;
+                return position;
+            }
+
             try
             {
                 return WorldTransformer.GameToWorld(passengerStop.CenterPoint) + Vector3.up * MapIconElevation;
             }
             catch (Exception ex)
             {
-                RailLog.Warning($"RAIL could not place station map icon from passenger stop center; using station transform. {ex.Message}");
-                return stationRoot.position + Vector3.up * MapIconElevation;
+                RailLog.Warning($"RAIL could not place station map icon from station transform; using fallback. {ex.Message}");
+                return stationRoot != null
+                    ? stationRoot.position + Vector3.up * MapIconElevation
+                    : Vector3.up * MapIconElevation;
             }
+        }
+
+        private static bool IsFinite(Vector3 value)
+        {
+            return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
+                   !float.IsNaN(value.y) && !float.IsInfinity(value.y) &&
+                   !float.IsNaN(value.z) && !float.IsInfinity(value.z);
         }
 
         private static GameObject GetStationRootObject(StationAgent agent, string id)
@@ -282,7 +412,7 @@ namespace RAIL.API
             }
         }
 
-        private static MapIcon CreateStationMapIcon(Transform stationRoot, string id)
+        private static MapIcon CreateStationMapIcon(Transform stationRoot, string id, Vector3 graphicOffset)
         {
             // Prefer cloning the entire MapIcon GameObject from a real
             // PassengerStop. The whole assembly — Canvas, Image material,
@@ -290,18 +420,6 @@ namespace RAIL.API
             // render correctly through the map camera. Rebuilding from scratch
             // and only borrowing the sprite produces an invisible icon because
             // the default UI material does not render through the map view.
-            var cloned = TryCloneMapIconFromPassengerStop(stationRoot, id);
-            if (cloned != null)
-            {
-                return cloned;
-            }
-
-            // Fallback: legacy procedural construction. Visually inconsistent
-            // with base-game stations but never produces a missing icon.
-            RailLog.Warning(
-                $"RAIL station map icon: could not clone a base-game MapIcon for station '{id}'; " +
-                "using RAIL procedural construction (visual mismatch likely).");
-
             var iconObject = new GameObject("RAIL Station MapIcon", typeof(RectTransform));
             iconObject.transform.SetParent(stationRoot, false);
             var canvas = iconObject.AddComponent<Canvas>();
@@ -311,24 +429,11 @@ namespace RAIL.API
             var icon = iconObject.AddComponent<MapIcon>();
 
             var rect = iconObject.GetComponent<RectTransform>();
-            rect.sizeDelta = new Vector2(36f, 36f);
+            rect.sizeDelta = new Vector2(StationMapIconWidth, StationMapIconHeight);
 
-            var imageObject = new GameObject("Image", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            imageObject.transform.SetParent(iconObject.transform, false);
-            var imageRect = imageObject.GetComponent<RectTransform>();
-            imageRect.anchorMin = new Vector2(0.5f, 0.5f);
-            imageRect.anchorMax = new Vector2(0.5f, 0.5f);
-            imageRect.pivot = new Vector2(0.5f, 0.5f);
-            imageRect.anchoredPosition = Vector2.zero;
-            imageRect.sizeDelta = new Vector2(36f, 36f);
+            CreateStationIconMesh(iconObject.transform, graphicOffset);
 
-            var image = imageObject.GetComponent<Image>();
-            image.sprite = GetStationIconSprite();
-            image.type = Image.Type.Simple;
-            image.preserveAspect = true;
-            image.raycastTarget = false;
-
-            AddMapIconCollider(iconObject);
+            AddMapIconCollider(iconObject, graphicOffset);
             iconObject.name = $"RAIL Station MapIcon - {id}";
             return icon;
         }
@@ -338,42 +443,11 @@ namespace RAIL.API
         /// reparents the clone to our station, resets transform, and returns the
         /// cloned MapIcon component. Returns null if no clonable source is found.
         /// </summary>
-        private static MapIcon TryCloneMapIconFromPassengerStop(Transform stationRoot, string id)
+        private static MapIcon TryCloneStationMapIcon(Transform stationRoot, string id)
         {
             try
             {
-                MapIcon source = null;
-                var stops = UnityEngine.Object.FindObjectsOfType<PassengerStop>(true);
-                foreach (var stop in stops)
-                {
-                    if (stop == null || stop.gameObject == null)
-                    {
-                        continue;
-                    }
-
-                    var icons = stop.GetComponentsInChildren<MapIcon>(true);
-                    foreach (var icon in icons)
-                    {
-                        if (icon == null || icon.gameObject == null)
-                        {
-                            continue;
-                        }
-
-                        var name = icon.gameObject.name ?? string.Empty;
-                        if (name.StartsWith("RAIL Station MapIcon", StringComparison.Ordinal))
-                        {
-                            continue;
-                        }
-
-                        source = icon;
-                        break;
-                    }
-
-                    if (source != null)
-                    {
-                        break;
-                    }
-                }
+                var source = FindStationMapIconTemplate();
 
                 if (source == null)
                 {
@@ -383,9 +457,7 @@ namespace RAIL.API
                 var clone = UnityEngine.Object.Instantiate(source.gameObject, stationRoot, false);
                 clone.transform.localPosition = Vector3.zero;
                 clone.transform.localRotation = Quaternion.identity;
-                clone.transform.localScale = source.transform.lossyScale != Vector3.zero
-                    ? source.transform.lossyScale
-                    : Vector3.one;
+                clone.transform.localScale = Vector3.one;
                 clone.name = $"RAIL Station MapIcon - {id}";
                 clone.SetActive(true);
 
@@ -406,7 +478,257 @@ namespace RAIL.API
             }
         }
 
-        private static void AddMapIconCollider(GameObject iconObject)
+        private static MapIcon FindStationMapIconTemplate()
+        {
+            foreach (var stop in UnityEngine.Object.FindObjectsOfType<PassengerStop>(true))
+            {
+                var icon = FindCloneableMapIconUnder(stop != null ? stop.gameObject : null);
+                if (icon != null)
+                {
+                    return icon;
+                }
+            }
+
+            foreach (var agent in UnityEngine.Object.FindObjectsOfType<StationAgent>(true))
+            {
+                var icon = FindCloneableMapIconUnder(agent != null ? agent.gameObject : null);
+                if (icon != null)
+                {
+                    return icon;
+                }
+            }
+
+            MapIcon best = null;
+            var bestScore = 0;
+            var seen = new HashSet<MapIcon>();
+            foreach (var icon in UnityEngine.Object.FindObjectsOfType<MapIcon>(true).Concat(Resources.FindObjectsOfTypeAll<MapIcon>()))
+            {
+                if (icon == null || !seen.Add(icon))
+                {
+                    continue;
+                }
+
+                var score = ScoreStationMapIconTemplate(icon);
+                if (score > bestScore)
+                {
+                    best = icon;
+                    bestScore = score;
+                }
+            }
+
+            return best;
+        }
+
+        private static MapIcon FindCloneableMapIconUnder(GameObject host)
+        {
+            if (host == null)
+            {
+                return null;
+            }
+
+            foreach (var icon in host.GetComponentsInChildren<MapIcon>(true))
+            {
+                if (IsCloneableStationMapIcon(icon))
+                {
+                    return icon;
+                }
+            }
+
+            return null;
+        }
+
+        private static int ScoreStationMapIconTemplate(MapIcon icon)
+        {
+            if (!IsCloneableStationMapIcon(icon))
+            {
+                return 0;
+            }
+
+            var hierarchyName = GetHierarchyName(icon.transform);
+            var sprite = ExtractSpriteFromMapIcon(icon);
+            var spriteName = sprite != null ? sprite.name ?? string.Empty : string.Empty;
+            var score = 0;
+
+            if (LooksLikeStationIconName(hierarchyName))
+            {
+                score += 100;
+            }
+
+            if (LooksLikeStationIconName(spriteName))
+            {
+                score += 60;
+            }
+
+            if (hierarchyName.IndexOf("MapIcon", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                score += 5;
+            }
+
+            if (icon.GetComponentInChildren<Image>(true) != null)
+            {
+                score += 5;
+            }
+
+            return score >= 60 ? score : 0;
+        }
+
+        private static bool IsCloneableStationMapIcon(MapIcon icon)
+        {
+            if (icon == null || icon.gameObject == null)
+            {
+                return false;
+            }
+
+            var hierarchyName = GetHierarchyName(icon.transform);
+            return !hierarchyName.Contains("RAIL Station MapIcon") &&
+                   !LooksLikeNonStationIconName(hierarchyName);
+        }
+
+        private static string GetHierarchyName(Transform transform)
+        {
+            var names = new List<string>();
+            var cursor = transform;
+            while (cursor != null)
+            {
+                names.Add(cursor.name ?? string.Empty);
+                cursor = cursor.parent;
+            }
+
+            names.Reverse();
+            return string.Join("/", names.ToArray());
+        }
+
+        private static bool LooksLikeNonStationIconName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            return name.IndexOf("Character", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("Avatar", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("Locomotive", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("Loco", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("Player", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("Switch", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("Speed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("MPH", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("Industry", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static void CreateStationIconMesh(Transform parent, Vector3 graphicOffset)
+        {
+            var meshObject = new GameObject("Station Icon Mesh", typeof(MeshFilter), typeof(MeshRenderer));
+            meshObject.transform.SetParent(parent, false);
+            meshObject.transform.localPosition = graphicOffset;
+            meshObject.transform.localRotation = Quaternion.identity;
+            meshObject.transform.localScale = Vector3.one;
+
+            var filter = meshObject.GetComponent<MeshFilter>();
+            filter.sharedMesh = BuildStationIconMesh();
+
+            var renderer = meshObject.GetComponent<MeshRenderer>();
+            var material = GetStationIconMaterial();
+            if (material != null)
+            {
+                renderer.sharedMaterial = material;
+            }
+
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+
+        private static Mesh BuildStationIconMesh()
+        {
+            var vertices = new List<Vector3>();
+            var triangles = new List<int>();
+            const float lineWidth = 1.8f;
+            var halfWidth = StationMapIconWidth * 0.5f;
+            var halfHeight = StationMapIconHeight * 0.5f;
+
+            var topLeft = new Vector2(-halfWidth, halfHeight);
+            var topRight = new Vector2(halfWidth, halfHeight);
+            var bottomRight = new Vector2(halfWidth, -halfHeight);
+            var bottomLeft = new Vector2(-halfWidth, -halfHeight);
+            var center = Vector2.zero;
+
+            AddLineQuad(vertices, triangles, topLeft, topRight, lineWidth);
+            AddLineQuad(vertices, triangles, topRight, bottomRight, lineWidth);
+            AddLineQuad(vertices, triangles, bottomRight, bottomLeft, lineWidth);
+            AddLineQuad(vertices, triangles, bottomLeft, topLeft, lineWidth);
+            AddLineQuad(vertices, triangles, topLeft, center, lineWidth);
+            AddLineQuad(vertices, triangles, center, topRight, lineWidth);
+            AddLineQuad(vertices, triangles, bottomLeft, center, lineWidth);
+            AddLineQuad(vertices, triangles, center, bottomRight, lineWidth);
+
+            var mesh = new Mesh
+            {
+                name = "RAIL Station MapIcon Mesh"
+            };
+            mesh.SetVertices(vertices);
+            mesh.SetTriangles(triangles, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private static void AddLineQuad(ICollection<Vector3> vertices, ICollection<int> triangles, Vector2 start, Vector2 end, float width)
+        {
+            var delta = end - start;
+            if (delta.sqrMagnitude < 0.001f)
+            {
+                return;
+            }
+
+            var normal = new Vector2(-delta.y, delta.x).normalized * width * 0.5f;
+            var index = vertices.Count;
+            vertices.Add(new Vector3(start.x + normal.x, start.y + normal.y, 0f));
+            vertices.Add(new Vector3(start.x - normal.x, start.y - normal.y, 0f));
+            vertices.Add(new Vector3(end.x - normal.x, end.y - normal.y, 0f));
+            vertices.Add(new Vector3(end.x + normal.x, end.y + normal.y, 0f));
+            triangles.Add(index);
+            triangles.Add(index + 1);
+            triangles.Add(index + 2);
+            triangles.Add(index);
+            triangles.Add(index + 2);
+            triangles.Add(index + 3);
+        }
+
+        private static Material GetStationIconMaterial()
+        {
+            if (_stationIconMaterial != null)
+            {
+                return _stationIconMaterial;
+            }
+
+            var shader = Shader.Find("Unlit/Color") ?? Shader.Find("Sprites/Default") ?? Shader.Find("UI/Default");
+            if (shader == null)
+            {
+                RailLog.Warning("RAIL station map icon: no compatible unlit shader was found; generated station icon may not render.");
+                return null;
+            }
+
+            _stationIconMaterial = new Material(shader)
+            {
+                name = "RAIL Station MapIcon Material",
+                hideFlags = HideFlags.DontSave,
+                color = Color.white,
+                renderQueue = 3000
+            };
+
+            if (_stationIconMaterial.HasProperty("_Color"))
+            {
+                _stationIconMaterial.SetColor("_Color", Color.white);
+            }
+
+            if (_stationIconMaterial.HasProperty("_Cull"))
+            {
+                _stationIconMaterial.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+            }
+
+            return _stationIconMaterial;
+        }
+
+        private static void AddMapIconCollider(GameObject iconObject, Vector3 graphicOffset)
         {
             var boxColliderType = Type.GetType("UnityEngine.BoxCollider, UnityEngine.PhysicsModule");
             if (boxColliderType == null)
@@ -416,8 +738,8 @@ namespace RAIL.API
             }
 
             var collider = iconObject.AddComponent(boxColliderType);
-            boxColliderType.GetProperty("size")?.SetValue(collider, new Vector3(36f, 36f, 2f), null);
-            boxColliderType.GetProperty("center")?.SetValue(collider, Vector3.zero, null);
+            boxColliderType.GetProperty("size")?.SetValue(collider, new Vector3(StationMapIconWidth, StationMapIconHeight, 2f), null);
+            boxColliderType.GetProperty("center")?.SetValue(collider, graphicOffset, null);
         }
 
         private static Sprite GetStationIconSprite()

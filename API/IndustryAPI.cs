@@ -262,6 +262,19 @@ namespace RAIL.API
                 return definition;
             }
 
+            if (IsType(component, "Model.Ops.TeleportLoadingIndustry"))
+            {
+                ReadTeleportLoadingFields(component, definition);
+                return definition;
+            }
+
+            if (IsType(component, "Model.Ops.InterchangedIndustryUnloader"))
+            {
+                var unloaderLoad = ReadObjectField(component, "load") as Load;
+                definition.LoadId = unloaderLoad != null ? unloaderLoad.id : definition.LoadId;
+                return definition;
+            }
+
             var passengerStop = component as RailPassengerStopComponent;
             if (passengerStop != null)
             {
@@ -519,6 +532,34 @@ namespace RAIL.API
                 return;
             }
 
+            if (TryApplyOptionalType(component, "Model.Ops.InterchangedIndustryUnloader", obj =>
+            {
+                ApplyOptionalLoadField(obj, load);
+            }))
+            {
+                return;
+            }
+
+            if (TryApplyOptionalType(component, "Model.Ops.TeleportLoadingIndustry", obj =>
+            {
+                ApplyTeleportLoadingFields(obj, definition);
+            }))
+            {
+                return;
+            }
+
+            if (TryApplyOptionalType(component, "Model.Ops.ProgressionIndustryComponent", obj =>
+            {
+                RailLog.Info(
+                    $"RAIL applied package='{definition.Type ?? "<unspecified>"}' " +
+                    $"operation='industry component apply' kind='progression' " +
+                    $"id='{DescribeComponent(component)}' " +
+                    "message='progression industry component bound'.");
+            }))
+            {
+                return;
+            }
+
             var interchange = component as Interchange;
             if (interchange != null)
             {
@@ -592,6 +633,44 @@ namespace RAIL.API
                 return typeof(InterchangedIndustryLoader);
             }
 
+            // The next three types may not exist in every game build. Resolve
+            // reflectively so RAIL still compiles and runs when Assembly-CSharp
+            // doesn't ship them. If the resolver returns null, we fall through
+            // to the NotSupportedException at the bottom.
+            if (string.Equals(type, "interchangedUnloader", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "interchanged-unloader", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "Model.Ops.InterchangedIndustryUnloader", StringComparison.OrdinalIgnoreCase))
+            {
+                var resolved = Type.GetType("Model.Ops.InterchangedIndustryUnloader, Assembly-CSharp", false, true);
+                if (resolved != null)
+                {
+                    return resolved;
+                }
+            }
+
+            if (string.Equals(type, "teleportLoading", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "teleport-loading", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "Model.Ops.TeleportLoadingIndustry", StringComparison.OrdinalIgnoreCase))
+            {
+                var resolved = Type.GetType("Model.Ops.TeleportLoadingIndustry, Assembly-CSharp", false, true);
+                if (resolved != null)
+                {
+                    return resolved;
+                }
+            }
+
+            if (string.Equals(type, "progression", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "progressionIndustry", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "progression-industry", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(type, "Model.Ops.ProgressionIndustryComponent", StringComparison.OrdinalIgnoreCase))
+            {
+                var resolved = Type.GetType("Model.Ops.ProgressionIndustryComponent, Assembly-CSharp", false, true);
+                if (resolved != null)
+                {
+                    return resolved;
+                }
+            }
+
             if (string.Equals(type, "passengerStop", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(type, "passenger-stop", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(type, "AlinasMapMod.PaxStationComponent", StringComparison.OrdinalIgnoreCase) ||
@@ -600,7 +679,53 @@ namespace RAIL.API
                 return typeof(RailPassengerStopComponent);
             }
 
+            // Model.OpsNew.* aliases — resolved reflectively because the OpsNew
+            // namespace may or may not exist depending on game version. Fall
+            // back to Model.Ops siblings for cross-compat.
+            var opsNew = TryResolveOpsNewType(type);
+            if (opsNew != null)
+            {
+                return opsNew;
+            }
+
             throw new NotSupportedException($"Industry component type '{type}' is not implemented yet.");
+        }
+
+        private static Type TryResolveOpsNewType(string type)
+        {
+            if (string.IsNullOrWhiteSpace(type))
+            {
+                return null;
+            }
+
+            // Direct fully-qualified name lookup against the loaded game assembly.
+            var direct = Type.GetType(type + ", Assembly-CSharp", false, true);
+            if (direct != null)
+            {
+                return direct;
+            }
+
+            // OpsNew → Ops fallback. Common aliases the legacy mods emit.
+            if (string.Equals(type, "Model.OpsNew.Interchange", StringComparison.OrdinalIgnoreCase))
+            {
+                return typeof(Interchange);
+            }
+
+            if (string.Equals(type, "Model.OpsNew.InterchangedIndustryLoader", StringComparison.OrdinalIgnoreCase))
+            {
+                return typeof(InterchangedIndustryLoader);
+            }
+
+            if (string.Equals(type, "Model.OpsNew.InterchangedIndustryUnloader", StringComparison.OrdinalIgnoreCase))
+            {
+                var resolved = Type.GetType("Model.Ops.InterchangedIndustryUnloader, Assembly-CSharp", false, true);
+                if (resolved != null)
+                {
+                    return resolved;
+                }
+            }
+
+            return null;
         }
 
         private static string GetComponentTypeAlias(IndustryComponent component)
@@ -640,12 +765,123 @@ namespace RAIL.API
                 return "interchangedLoader";
             }
 
+            if (IsType(component, "Model.Ops.InterchangedIndustryUnloader"))
+            {
+                return "interchangedUnloader";
+            }
+
+            if (IsType(component, "Model.Ops.TeleportLoadingIndustry"))
+            {
+                return "teleportLoading";
+            }
+
+            if (IsType(component, "Model.Ops.ProgressionIndustryComponent"))
+            {
+                return "progression";
+            }
+
             if (component is RailPassengerStopComponent)
             {
                 return "passengerStop";
             }
 
             return component.GetType().FullName;
+        }
+
+        // Reflection helpers for component types that may be absent in some
+        // game versions. They keep the apply / read pipeline tolerant without
+        // taking a hard compile-time dependency on every Model.Ops subclass.
+
+        private static bool IsType(object instance, string fullTypeName)
+        {
+            if (instance == null || string.IsNullOrEmpty(fullTypeName))
+            {
+                return false;
+            }
+
+            var type = Type.GetType(fullTypeName + ", Assembly-CSharp", false, true);
+            return type != null && type.IsInstanceOfType(instance);
+        }
+
+        private static bool TryApplyOptionalType(IndustryComponent component, string fullTypeName, Action<IndustryComponent> apply)
+        {
+            if (!IsType(component, fullTypeName))
+            {
+                return false;
+            }
+
+            apply?.Invoke(component);
+            return true;
+        }
+
+        private static void ApplyOptionalLoadField(IndustryComponent component, Load load)
+        {
+            var field = component.GetType().GetField("load", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field != null && (load != null || field.GetValue(component) == null))
+            {
+                field.SetValue(component, load);
+            }
+        }
+
+        private static void ApplyTeleportLoadingFields(IndustryComponent component, RailIndustryComponent definition)
+        {
+            var type = component.GetType();
+            type.GetField("inputSpans", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?
+                .SetValue(component, ResolveSpans(definition.InputSpanIds));
+            type.GetField("outputSpans", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?
+                .SetValue(component, ResolveSpans(definition.OutputSpanIds));
+            if (definition.CarLoadPeriod != null)
+            {
+                type.GetField("carLoadPeriod", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?
+                    .SetValue(component, definition.CarLoadPeriod.Value);
+            }
+
+            if (definition.CarLengthFeet != null)
+            {
+                type.GetField("carLengthFeet", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?
+                    .SetValue(component, definition.CarLengthFeet.Value);
+            }
+        }
+
+        private static void ReadTeleportLoadingFields(IndustryComponent component, RailIndustryComponent definition)
+        {
+            var type = component.GetType();
+            var inputSpans = type.GetField("inputSpans", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?
+                .GetValue(component) as TrackSpan[];
+            var outputSpans = type.GetField("outputSpans", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?
+                .GetValue(component) as TrackSpan[];
+
+            definition.InputSpanIds = inputSpans?
+                .Where(span => span != null && !string.IsNullOrWhiteSpace(span.id))
+                .Select(span => span.id)
+                .ToArray();
+            definition.OutputSpanIds = outputSpans?
+                .Where(span => span != null && !string.IsNullOrWhiteSpace(span.id))
+                .Select(span => span.id)
+                .ToArray();
+
+            var carLoadPeriod = type.GetField("carLoadPeriod", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (carLoadPeriod != null)
+            {
+                definition.CarLoadPeriod = (float)carLoadPeriod.GetValue(component);
+            }
+
+            var carLengthFeet = type.GetField("carLengthFeet", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (carLengthFeet != null)
+            {
+                definition.CarLengthFeet = (float)carLengthFeet.GetValue(component);
+            }
+        }
+
+        private static object ReadObjectField(object instance, string fieldName)
+        {
+            if (instance == null || string.IsNullOrEmpty(fieldName))
+            {
+                return null;
+            }
+
+            var field = instance.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            return field != null ? field.GetValue(instance) : null;
         }
 
         private static Dictionary<string, float> ToFormulaTerms(IEnumerable<FormulaicIndustryComponent.Term> terms)

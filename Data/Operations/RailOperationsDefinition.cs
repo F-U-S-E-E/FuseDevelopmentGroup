@@ -63,6 +63,13 @@ namespace RAIL.Data
         public string[] NeighborIds { get; set; }
         public string Branch { get; set; }
         public RailPassengerBranch[] BranchDefinitions { get; set; }
+
+        // TeleportLoadingIndustry-specific fields. RAIL exposes them on the
+        // generic component so the same RailIndustryComponent shape can serve
+        // every game-side component type.
+        public string[] OutputSpanIds { get; set; }
+        public float? CarLoadPeriod { get; set; }
+        public float? CarLengthFeet { get; set; }
     }
 
     public sealed class RailTeamTrackEntry
