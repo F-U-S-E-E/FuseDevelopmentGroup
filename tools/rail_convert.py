@@ -5,7 +5,7 @@ import re
 import sys
 from pathlib import Path
 
-RAIL_SCHEMA_VERSION = 1
+RAIL_SCHEMA_VERSION = "1.0"
 
 HANDLER_MAP = {
     "StrangeCustoms.FlowyThingBuilder": "road",
@@ -19,6 +19,14 @@ TURNTABLE_HANDLER = "AlinasMapMod.Turntable.TurntableBuilder"
 LOADER_HANDLER = "AlinasMapMod.Loaders.LoaderBuilder"
 STATION_HANDLER = "AlinasMapMod.Stations.StationAgentBuilder"
 MAP_LABEL_HANDLER = "AlinasMapMod.MapLabelBuilder"
+TELEGRAPH_POLE_MOVER_HANDLERS = {
+    "AlinasMapMod.TelegraphPoleMover",
+    "AlinasMapMod.TelegraphPoles.TelegraphPoleMover",
+}
+RR_CROSSING_HANDLERS = {
+    "cutil.rrcrossing",
+    "cutil.railroadcrossing",
+}
 
 
 def load_json(path):
@@ -54,6 +62,24 @@ def optional_vector(value):
     return vector(value) if isinstance(value, dict) else None
 
 
+def string_ids(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, dict):
+        for key in ("id", "spanId", "trackSpanId", "trackSpan"):
+            if value.get(key):
+                return string_ids(value.get(key))
+        return []
+    if isinstance(value, (list, tuple)):
+        result = []
+        for item in value:
+            result.extend(string_ids(item))
+        return result
+    return [str(value)] if str(value).strip() else []
+
+
 def skeleton(mod_id, mod_name, mod_version, author, fragment_name):
     return {
         "$schema": ".\\schemas\\rail-mod.schema.json",
@@ -79,8 +105,10 @@ def skeleton(mod_id, mod_name, mod_version, author, fragment_name):
         },
         "world": {
             "scenery": {},
+            "spawnPoints": [],
             "splineys": {},
             "telegraphPoles": {},
+            "telegraphPoleMovements": [],
             "mapLabels": {},
             "mapMasks": {},
             "mapTiles": {},
@@ -94,7 +122,7 @@ def skeleton(mod_id, mod_name, mod_version, author, fragment_name):
                 "sceneClones": [],
             },
         },
-        "progression": {"progressions": {}, "mapFeatures": {}},
+        "progression": {"sections": [], "progressions": {}, "mapFeatures": {}},
         "extensions": {},
     }
 
@@ -150,7 +178,14 @@ def convert_location(item):
         return {"segmentId": "", "distance": 0, "end": "A"}
 
     result = {
-        "segmentId": item.get("segmentId") or item.get("segment") or "",
+        "segmentId": (
+            item.get("segmentId")
+            or item.get("segmentID")
+            or item.get("SegmentId")
+            or item.get("SegmentID")
+            or item.get("segment")
+            or ""
+        ),
         "end": normalize_end(item.get("end")) or "A",
     }
     if "normalized" in item:
@@ -211,6 +246,7 @@ def convert_component(component_id, item):
         "orderAroundEmpties": item.get("orderAroundEmpties"),
         "orderAroundLoaded": item.get("orderAroundLoaded"),
         "inputSpanIds": item.get("inputSpanIds"),
+        "outputSpanIds": item.get("outputSpanIds"),
         "inputTermsPerDay": item.get("inputTermsPerDay") or {},
         "outputTermsPerDay": item.get("outputTermsPerDay") or {},
         "idealCars": item.get("idealCars"),
@@ -222,6 +258,8 @@ def convert_component(component_id, item):
         "neighborIds": item.get("neighborIds"),
         "branch": item.get("branch"),
         "branchDefinitions": item.get("branchDefinitions"),
+        "carLoadPeriod": item.get("carLoadPeriod"),
+        "carLengthFeet": item.get("carLengthFeet"),
     }
     return clean(result)
 
@@ -231,18 +269,38 @@ def normalize_component_type(component_type):
     normalized = value.lower()
     aliases = {
         "model.ops.industryloader": "loader",
+        "model.opsnew.industryloader": "loader",
         "industryloader": "loader",
         "model.ops.industryunloader": "unloader",
+        "model.opsnew.industryunloader": "unloader",
         "industryunloader": "unloader",
         "model.ops.formulaicindustrycomponent": "formulaic",
+        "model.opsnew.formulaicindustrycomponent": "formulaic",
         "formulaicindustrycomponent": "formulaic",
         "model.ops.repairtrack": "repairTrack",
+        "model.opsnew.repairtrack": "repairTrack",
         "repair-track": "repairTrack",
         "model.ops.teamtrack": "teamTrack",
+        "model.opsnew.teamtrack": "teamTrack",
         "team-track": "teamTrack",
         "model.ops.interchange": "interchange",
+        "model.opsnew.interchange": "interchange",
         "model.ops.interchangedindustryloader": "interchangedLoader",
+        "model.opsnew.interchangedindustryloader": "interchangedLoader",
         "interchanged-loader": "interchangedLoader",
+        "model.ops.interchangedindustryunloader": "interchangedUnloader",
+        "model.opsnew.interchangedindustryunloader": "interchangedUnloader",
+        "interchanged-unloader": "interchangedUnloader",
+        "interchangedunloader": "interchangedUnloader",
+        "model.ops.teleportloadingindustry": "teleportLoading",
+        "model.opsnew.teleportloadingindustry": "teleportLoading",
+        "teleport-loading": "teleportLoading",
+        "teleportloadingindustry": "teleportLoading",
+        "model.ops.progressionindustrycomponent": "progression",
+        "model.opsnew.progressionindustrycomponent": "progression",
+        "progression-industry": "progression",
+        "progressionindustry": "progression",
+        "progressionindustrycomponent": "progression",
         "alinasmapmod.paxstationcomponent": "passengerStop",
         "alinasmapmod.stations.paxstationcomponent": "passengerStop",
         "paxstationcomponent": "passengerStop",
@@ -301,15 +359,32 @@ def convert_turntable(table_id, item):
 
 
 def convert_scenery(item):
-    model = item.get("model") or item.get("modelIdentifier") or ""
+    model = (
+        item.get("assetIdentifier")
+        or item.get("model")
+        or item.get("modelIdentifier")
+        or item.get("prefabIdentifier")
+        or item.get("prefab")
+        or ""
+    )
     if model and "://" not in model:
         model = f"scenery://{model}"
-    return clean({
-        "model": model,
+    result = {
+        "assetIdentifier": model,
         "position": vector(item.get("position") or item.get("localPosition")),
         "rotation": vector(item.get("rotation") or item.get("localRotation")),
         "scale": vector(item.get("scale") or item.get("localScale"), default_scale=True),
-    })
+    }
+    anchor_span_ids = string_ids(
+        item.get("anchorSpanIds")
+        or item.get("spanIds")
+        or item.get("spans")
+        or item.get("trackSpanIds")
+        or item.get("trackSpans")
+    )
+    if anchor_span_ids:
+        result["anchorSpanIds"] = anchor_span_ids
+    return clean(result)
 
 
 def convert_spliney(item):
@@ -414,6 +489,33 @@ def convert_station(item):
     })
 
 
+def convert_telegraph_pole_movements(item):
+    poles = item.get("polesToMove") or item.get("PolesToMove") or []
+    raw_movements = item.get("poleMovement") or item.get("PoleMovement") or []
+    grouped = {}
+    for index, pole in enumerate(poles):
+        if pole is None:
+            continue
+        movement = raw_movements[index] if index < len(raw_movements) else [0, 0, 0]
+        if isinstance(movement, dict):
+            offset = vector(movement)
+        elif isinstance(movement, (list, tuple)):
+            offset = {
+                "x": round(float(movement[0] if len(movement) > 0 else 0), 6),
+                "y": round(float(movement[1] if len(movement) > 1 else 0), 6),
+                "z": round(float(movement[2] if len(movement) > 2 else 0), 6),
+            }
+        else:
+            offset = {
+                "x": 0,
+                "y": 0,
+                "z": 0,
+            }
+        key = (offset["x"], offset["y"], offset["z"])
+        grouped.setdefault(key, {"poleIndices": [], "offset": offset})["poleIndices"].append(int(pole))
+    return list(grouped.values())
+
+
 def clean(value):
     if isinstance(value, dict):
         return {
@@ -487,6 +589,10 @@ def convert_source(source, rail, late_rail=None):
                 target["operations"]["stations"][spliney_id] = convert_station(spliney)
             elif handler == MAP_LABEL_HANDLER:
                 rail["world"]["mapLabels"][spliney_id] = convert_label(spliney_id, spliney)
+            elif handler in TELEGRAPH_POLE_MOVER_HANDLERS:
+                rail["world"]["telegraphPoleMovements"].extend(convert_telegraph_pole_movements(spliney))
+            elif (handler or "").lower() in RR_CROSSING_HANDLERS:
+                rail["world"]["scenery"][spliney_id] = convert_scenery(spliney)
             elif len(spliney.get("points") or []) < 2:
                 rail["extensions"].setdefault("legacySplineyObjects", {})[spliney_id] = spliney
             else:
@@ -507,6 +613,27 @@ def convert_source(source, rail, late_rail=None):
     simple_graphs = source.get("simpleGraphs") or {}
     if simple_graphs:
         rail["extensions"]["simpleGraphs"] = simple_graphs
+
+    convert_progression(source, rail)
+
+
+def convert_progression(source, rail):
+    progression = source.get("progression")
+    if isinstance(progression, dict):
+        if progression.get("progressionId"):
+            rail["progression"]["progressionId"] = progression.get("progressionId")
+        if isinstance(progression.get("sections"), list):
+            rail["progression"]["sections"].extend(clean(progression.get("sections")))
+        if isinstance(progression.get("progressions"), dict):
+            rail["progression"]["progressions"].update(clean(progression.get("progressions")))
+        if isinstance(progression.get("mapFeatures"), dict):
+            rail["progression"]["mapFeatures"].update(clean(progression.get("mapFeatures")))
+
+    if isinstance(source.get("progressions"), dict):
+        rail["progression"]["progressions"].update(clean(source.get("progressions")))
+
+    if isinstance(source.get("mapFeatures"), dict):
+        rail["progression"]["mapFeatures"].update(clean(source.get("mapFeatures")))
 
 
 def count_content(rail):

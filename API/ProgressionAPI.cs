@@ -8,6 +8,7 @@ using Model.Ops;
 using Model.Ops.Definition;
 using RAIL.Cache;
 using RAIL.Data;
+using RAIL.Infrastructure;
 using UnityEngine;
 
 namespace RAIL.API
@@ -113,6 +114,14 @@ namespace RAIL.API
             definition.Description = feature.description;
             definition.InitiallyEnabled = feature.defaultEnableInSandbox;
             definition.GroupIds = feature.trackGroupsEnableOnUnlock ?? feature.trackGroupsAvailableOnUnlock;
+            definition.PrerequisiteFeatureIds = ToFeatureIds(feature.prerequisites);
+            definition.TrackGroupsEnableOnUnlock = feature.trackGroupsEnableOnUnlock;
+            definition.TrackGroupsAvailableOnUnlock = feature.trackGroupsAvailableOnUnlock;
+            definition.AreasEnableOnUnlock = ToAreaIds(feature.areasEnableOnUnlock);
+            definition.GameObjectsEnableOnUnlock = ToGameObjectPaths(feature.gameObjectsEnableOnUnlock);
+            definition.UnlockIncludeIndustries = ToIndustryIds(feature.unlockIncludeIndustries);
+            definition.UnlockExcludeIndustries = ToIndustryIds(feature.unlockExcludeIndustries);
+            definition.UnlockIncludeIndustryComponents = ToIndustryComponentIds(feature.unlockIncludeIndustryComponents);
             return definition;
         }
 
@@ -204,14 +213,24 @@ namespace RAIL.API
                            progression.GetComponentsInChildren<Section>(true);
             foreach (var section in sections.Where(section => section != null && !string.IsNullOrWhiteSpace(section.identifier)))
             {
+                definition.Sections.TryGetValue(section.identifier, out var existingSection);
                 definition.Sections[section.identifier] = new RailSection
                 {
+                    Id = section.identifier,
+                    ProgressionId = progression.identifier,
                     DisplayName = section.displayName,
                     Description = section.description,
                     PrerequisiteSectionIds = ToSectionIds(section.prerequisiteSections),
                     EnableFeaturesOnUnlock = ToFeatureIds(section.enableFeaturesOnUnlock),
                     DisableFeaturesOnUnlock = ToFeatureIds(section.disableFeaturesOnUnlock),
                     EnableFeaturesOnAvailable = ToFeatureIds(section.enableFeaturesOnAvailable),
+                    UnlockIncludeIndustries = existingSection?.UnlockIncludeIndustries,
+                    UnlockExcludeIndustries = existingSection?.UnlockExcludeIndustries,
+                    UnlockIncludeIndustryComponents = existingSection?.UnlockIncludeIndustryComponents,
+                    AreasEnableOnUnlock = existingSection?.AreasEnableOnUnlock,
+                    GameObjectsEnableOnUnlock = existingSection?.GameObjectsEnableOnUnlock,
+                    TrackGroupsEnableOnUnlock = existingSection?.TrackGroupsEnableOnUnlock,
+                    TrackGroupsAvailableOnUnlock = existingSection?.TrackGroupsAvailableOnUnlock,
                     DeliveryPhases = ToDeliveryPhases(section.deliveryPhases)
                 };
             }
@@ -235,14 +254,14 @@ namespace RAIL.API
             feature.displayName = string.IsNullOrWhiteSpace(definition.DisplayName) ? feature.identifier : definition.DisplayName;
             feature.description = definition.Description ?? string.Empty;
             feature.defaultEnableInSandbox = definition.InitiallyEnabled;
-            feature.trackGroupsEnableOnUnlock = definition.GroupIds ?? Array.Empty<string>();
-            feature.trackGroupsAvailableOnUnlock = definition.GroupIds ?? Array.Empty<string>();
-            feature.prerequisites = feature.prerequisites ?? Array.Empty<MapFeature>();
-            feature.gameObjectsEnableOnUnlock = feature.gameObjectsEnableOnUnlock ?? Array.Empty<GameObject>();
-            feature.areasEnableOnUnlock = feature.areasEnableOnUnlock ?? Array.Empty<Area>();
-            feature.unlockExcludeIndustries = feature.unlockExcludeIndustries ?? Array.Empty<Industry>();
-            feature.unlockIncludeIndustries = feature.unlockIncludeIndustries ?? Array.Empty<Industry>();
-            feature.unlockIncludeIndustryComponents = feature.unlockIncludeIndustryComponents ?? Array.Empty<IndustryComponent>();
+            feature.trackGroupsEnableOnUnlock = PreferExplicit(definition.TrackGroupsEnableOnUnlock, definition.GroupIds);
+            feature.trackGroupsAvailableOnUnlock = PreferExplicit(definition.TrackGroupsAvailableOnUnlock, definition.GroupIds);
+            feature.prerequisites = ResolveMapFeatures(definition.PrerequisiteFeatureIds);
+            feature.gameObjectsEnableOnUnlock = ResolveGameObjects(definition.GameObjectsEnableOnUnlock);
+            feature.areasEnableOnUnlock = ResolveAreas(definition.AreasEnableOnUnlock);
+            feature.unlockExcludeIndustries = ResolveIndustries(definition.UnlockExcludeIndustries);
+            feature.unlockIncludeIndustries = ResolveIndustries(definition.UnlockIncludeIndustries);
+            feature.unlockIncludeIndustryComponents = ResolveIndustryComponents(definition.UnlockIncludeIndustryComponents);
         }
 
         private static void ApplyProgressionDefinition(Progression progression, RailProgression definition)
@@ -252,7 +271,8 @@ namespace RAIL.API
                 progression.mapFeatureManager = MapFeatureManager.Shared;
             }
 
-            foreach (var sectionDefinition in definition.Sections ?? new Dictionary<string, RailSection>())
+            var sectionDefinitions = definition.Sections ?? new Dictionary<string, RailSection>();
+            foreach (var sectionDefinition in sectionDefinitions)
             {
                 var section = GetSection(sectionDefinition.Key);
                 if (section == null || section.transform.parent != progression.transform)
@@ -261,6 +281,17 @@ namespace RAIL.API
                     gameObject.transform.SetParent(progression.transform, false);
                     section = gameObject.AddComponent<Section>();
                     section.identifier = sectionDefinition.Key;
+                }
+
+                RailSectionRuntimeIndex.Instance.Set(section.identifier, section);
+            }
+
+            foreach (var sectionDefinition in sectionDefinitions)
+            {
+                var section = GetSection(sectionDefinition.Key);
+                if (section == null)
+                {
+                    throw new InvalidOperationException($"Progression section '{sectionDefinition.Key}' could not be created.");
                 }
 
                 ApplySectionDefinition(section, sectionDefinition.Value);
@@ -279,11 +310,88 @@ namespace RAIL.API
 
             section.displayName = string.IsNullOrWhiteSpace(definition.DisplayName) ? section.identifier : definition.DisplayName;
             section.description = definition.Description ?? string.Empty;
+            var sectionUnlockFeature = EnsureSectionUnlockFeature(section, definition);
+
             section.prerequisiteSections = ResolveSections(definition.PrerequisiteSectionIds);
-            section.enableFeaturesOnUnlock = ResolveMapFeatures(definition.EnableFeaturesOnUnlock);
+            section.enableFeaturesOnUnlock = AppendFeature(
+                ResolveMapFeatures(definition.EnableFeaturesOnUnlock),
+                sectionUnlockFeature);
             section.enableFeaturesOnAvailable = ResolveMapFeatures(definition.EnableFeaturesOnAvailable);
             section.disableFeaturesOnUnlock = ResolveMapFeatures(definition.DisableFeaturesOnUnlock);
             section.deliveryPhases = (definition.DeliveryPhases ?? Array.Empty<RailDeliveryPhase>()).Select(CreateDeliveryPhase).ToArray();
+        }
+
+        private static MapFeature EnsureSectionUnlockFeature(Section section, RailSection definition)
+        {
+            if (section == null || definition == null || !HasSectionUnlockFeaturePayload(definition))
+            {
+                return null;
+            }
+
+            var featureId = GetSectionUnlockFeatureId(section.identifier);
+            var featureDefinition = new RailMapFeature
+            {
+                DisplayName = string.IsNullOrWhiteSpace(definition.DisplayName) ? section.identifier : definition.DisplayName,
+                Description = definition.Description,
+                InitiallyEnabled = false,
+                TrackGroupsEnableOnUnlock = definition.TrackGroupsEnableOnUnlock,
+                TrackGroupsAvailableOnUnlock = definition.TrackGroupsAvailableOnUnlock,
+                AreasEnableOnUnlock = definition.AreasEnableOnUnlock,
+                GameObjectsEnableOnUnlock = definition.GameObjectsEnableOnUnlock,
+                UnlockIncludeIndustries = definition.UnlockIncludeIndustries,
+                UnlockExcludeIndustries = definition.UnlockExcludeIndustries,
+                UnlockIncludeIndustryComponents = definition.UnlockIncludeIndustryComponents
+            };
+
+            var existing = GetMapFeature(featureId);
+            if (existing != null)
+            {
+                ApplyMapFeatureDefinition(existing, featureDefinition);
+                RailMapFeatureRuntimeIndex.Instance.Set(featureId, existing);
+                if (MapFeatureManager.Shared != null)
+                {
+                    RefreshMapFeatureManager(MapFeatureManager.Shared);
+                }
+
+                RailApiPersistence.RecordDefinition(RailDefinitionKind.MapFeature, featureId, featureDefinition);
+                RailLog.Info($"RAIL refreshed progression section unlock feature '{featureId}' for section '{section.identifier}'.");
+                return existing;
+            }
+
+            var created = AddMapFeature(featureId, featureDefinition);
+            RailLog.Info($"RAIL created progression section unlock feature '{featureId}' for section '{section.identifier}'.");
+            return created;
+        }
+
+        private static bool HasSectionUnlockFeaturePayload(RailSection definition)
+        {
+            return HasAny(definition.TrackGroupsEnableOnUnlock) ||
+                   HasAny(definition.TrackGroupsAvailableOnUnlock) ||
+                   HasAny(definition.AreasEnableOnUnlock) ||
+                   HasAny(definition.GameObjectsEnableOnUnlock) ||
+                   HasAny(definition.UnlockIncludeIndustries) ||
+                   HasAny(definition.UnlockExcludeIndustries) ||
+                   HasAny(definition.UnlockIncludeIndustryComponents);
+        }
+
+        private static string GetSectionUnlockFeatureId(string sectionId)
+        {
+            return "rail.progression.section." + (sectionId ?? string.Empty) + ".unlock";
+        }
+
+        private static MapFeature[] AppendFeature(MapFeature[] features, MapFeature feature)
+        {
+            if (feature == null)
+            {
+                return features ?? Array.Empty<MapFeature>();
+            }
+
+            return (features ?? Array.Empty<MapFeature>())
+                .Concat(new[] { feature })
+                .Where(candidate => candidate != null)
+                .GroupBy(candidate => candidate.identifier ?? candidate.name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToArray();
         }
 
         private static Section.DeliveryPhase CreateDeliveryPhase(RailDeliveryPhase definition)
@@ -297,12 +405,9 @@ namespace RAIL.API
 
             if (deliveries.Length > 0)
             {
-                if (string.IsNullOrWhiteSpace(definition.IndustryComponentId))
-                {
-                    throw new InvalidOperationException("Progression delivery phases with deliveries require IndustryComponentId.");
-                }
-
-                phase.industryComponent = ResolveIndustryComponent(definition.IndustryComponentId);
+                phase.industryComponent = !string.IsNullOrWhiteSpace(definition.IndustryComponentId)
+                    ? ResolveIndustryComponent(definition.IndustryComponentId)
+                    : ResolveDeliveryPhaseIndustryComponent(definition);
             }
 
             return phase;
@@ -315,8 +420,62 @@ namespace RAIL.API
                 carTypeFilter = new CarTypeFilter(definition.CarTypeFilter ?? string.Empty),
                 count = definition.Count,
                 load = ResolveLoad(definition.LoadId),
-                direction = Section.Delivery.Direction.LoadToIndustry
+                direction = ParseDeliveryDirection(definition.Direction)
             };
+        }
+
+        private static ProgressionIndustryComponent ResolveDeliveryPhaseIndustryComponent(RailDeliveryPhase definition)
+        {
+            var destinationIds = (definition.Deliveries ?? Array.Empty<RailDelivery>())
+                .Select(delivery => delivery?.DestinationIndustryId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (destinationIds.Length != 1)
+            {
+                throw new InvalidOperationException("Progression delivery phases with deliveries require industryComponentId, or a single destinationIndustryId that resolves to one ProgressionIndustryComponent.");
+            }
+
+            var industry = ResolveIndustry(destinationIds[0]);
+            if (industry == null)
+            {
+                throw new InvalidOperationException($"Progression delivery destination industry '{destinationIds[0]}' was not found.");
+            }
+
+            var candidates = industry.GetComponentsInChildren<ProgressionIndustryComponent>(true)
+                .Where(component => component != null)
+                .ToArray();
+            if (candidates.Length == 1)
+            {
+                return candidates[0];
+            }
+
+            if (candidates.Length == 0)
+            {
+                throw new InvalidOperationException($"Progression delivery destination industry '{destinationIds[0]}' has no ProgressionIndustryComponent. Set industryComponentId explicitly.");
+            }
+
+            throw new InvalidOperationException($"Progression delivery destination industry '{destinationIds[0]}' has {candidates.Length} ProgressionIndustryComponent entries. Set industryComponentId explicitly.");
+        }
+
+        private static Section.Delivery.Direction ParseDeliveryDirection(string direction)
+        {
+            if (string.IsNullOrWhiteSpace(direction))
+            {
+                return Section.Delivery.Direction.LoadToIndustry;
+            }
+
+            switch (direction.Trim().ToLowerInvariant())
+            {
+                case "loadfromindustry":
+                case "fromindustry":
+                case "from":
+                case "export":
+                    return Section.Delivery.Direction.LoadFromIndustry;
+                default:
+                    return Section.Delivery.Direction.LoadToIndustry;
+            }
         }
 
         private static Section[] ResolveSections(string[] ids)
@@ -327,6 +486,26 @@ namespace RAIL.API
         private static MapFeature[] ResolveMapFeatures(string[] ids)
         {
             return ResolveObjects(ids, GetMapFeature, "map feature");
+        }
+
+        private static Area[] ResolveAreas(string[] ids)
+        {
+            return ResolveObjects(ids, ResolveArea, "area");
+        }
+
+        private static Industry[] ResolveIndustries(string[] ids)
+        {
+            return ResolveObjects(ids, ResolveIndustry, "industry");
+        }
+
+        private static IndustryComponent[] ResolveIndustryComponents(string[] ids)
+        {
+            return ResolveObjects(ids, ResolveAnyIndustryComponent, "industry component");
+        }
+
+        private static GameObject[] ResolveGameObjects(string[] paths)
+        {
+            return ResolveObjects(paths, ResolveGameObject, "game object");
         }
 
         private static T[] ResolveObjects<T>(string[] ids, Func<string, T> resolver, string label)
@@ -349,6 +528,89 @@ namespace RAIL.API
             }).ToArray();
         }
 
+        private static Area ResolveArea(string id)
+        {
+            var area = TrackAPI.GetArea(id);
+            if (area != null)
+            {
+                return area;
+            }
+
+            return UnityEngine.Object.FindObjectsOfType<Area>(true).FirstOrDefault(candidate =>
+                candidate != null &&
+                (string.Equals(candidate.identifier, id, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(candidate.name, id, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private static Industry ResolveIndustry(string id)
+        {
+            var industry = IndustryAPI.GetIndustry(id);
+            if (industry != null)
+            {
+                return industry;
+            }
+
+            return UnityEngine.Object.FindObjectsOfType<Industry>(true).FirstOrDefault(candidate =>
+                candidate != null &&
+                (string.Equals(candidate.identifier, id, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(candidate.name, id, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private static IndustryComponent ResolveAnyIndustryComponent(string id)
+        {
+            if (RailIndustryComponentRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            {
+                return cached as IndustryComponent;
+            }
+
+            return UnityEngine.Object.FindObjectsOfType<IndustryComponent>(true)
+                .FirstOrDefault(component => ComponentMatchesId(component, id));
+        }
+
+        private static GameObject ResolveGameObject(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            var direct = GameObject.Find(path);
+            if (direct != null)
+            {
+                return direct;
+            }
+
+            return UnityEngine.Object.FindObjectsOfType<Transform>(true)
+                .FirstOrDefault(transform => string.Equals(GetScenePath(transform), path, StringComparison.OrdinalIgnoreCase))
+                ?.gameObject;
+        }
+
+        private static bool ComponentMatchesId(IndustryComponent component, string id)
+        {
+            if (component == null || string.IsNullOrWhiteSpace(id))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (string.Equals(component.Identifier, id, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // Some freshly cloned components have incomplete parent identity.
+            }
+
+            var industry = component.GetComponentInParent<Industry>(true);
+            return industry != null &&
+                   !string.IsNullOrWhiteSpace(industry.identifier) &&
+                   !string.IsNullOrWhiteSpace(component.subIdentifier) &&
+                   string.Equals(industry.identifier + "." + component.subIdentifier, id, StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string[] ToSectionIds(IEnumerable<Section> sections)
         {
             return sections?.Where(section => section != null && !string.IsNullOrWhiteSpace(section.identifier))
@@ -360,6 +622,36 @@ namespace RAIL.API
         {
             return features?.Where(feature => feature != null && !string.IsNullOrWhiteSpace(feature.identifier))
                 .Select(feature => feature.identifier)
+                .ToArray();
+        }
+
+        private static string[] ToAreaIds(IEnumerable<Area> areas)
+        {
+            return areas?.Where(area => area != null && !string.IsNullOrWhiteSpace(area.identifier))
+                .Select(area => area.identifier)
+                .ToArray();
+        }
+
+        private static string[] ToIndustryIds(IEnumerable<Industry> industries)
+        {
+            return industries?.Where(industry => industry != null && !string.IsNullOrWhiteSpace(industry.identifier))
+                .Select(industry => industry.identifier)
+                .ToArray();
+        }
+
+        private static string[] ToIndustryComponentIds(IEnumerable<IndustryComponent> components)
+        {
+            return components?.Where(component => component != null)
+                .Select(SafeIndustryComponentId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToArray();
+        }
+
+        private static string[] ToGameObjectPaths(IEnumerable<GameObject> gameObjects)
+        {
+            return gameObjects?.Where(gameObject => gameObject != null)
+                .Select(gameObject => GetScenePath(gameObject.transform))
+                .Where(path => !string.IsNullOrWhiteSpace(path))
                 .ToArray();
         }
 
@@ -382,7 +674,8 @@ namespace RAIL.API
                 {
                     CarTypeFilter = delivery.carTypeFilter.ToString(),
                     LoadId = delivery.load != null ? delivery.load.id : null,
-                    Count = delivery.count
+                    Count = delivery.count,
+                    Direction = delivery.direction == Section.Delivery.Direction.LoadFromIndustry ? "loadFromIndustry" : "loadToIndustry"
                 })
                 .ToArray();
         }
@@ -430,6 +723,61 @@ namespace RAIL.API
 
             RailLoadRuntimeIndex.Instance.Set(load.id, load);
             return load;
+        }
+
+        private static string[] PreferExplicit(string[] explicitValues, string[] fallbackValues)
+        {
+            return HasAny(explicitValues) ? explicitValues : (fallbackValues ?? Array.Empty<string>());
+        }
+
+        private static bool HasAny(string[] values)
+        {
+            return values != null && values.Any(value => !string.IsNullOrWhiteSpace(value));
+        }
+
+        private static string SafeIndustryComponentId(IndustryComponent component)
+        {
+            if (component == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(component.Identifier))
+                {
+                    return component.Identifier;
+                }
+            }
+            catch
+            {
+                // Incomplete cloned components can throw while their parent industry identity is being rebuilt.
+            }
+
+            var industry = component.GetComponentInParent<Industry>(true);
+            return industry != null &&
+                   !string.IsNullOrWhiteSpace(industry.identifier) &&
+                   !string.IsNullOrWhiteSpace(component.subIdentifier)
+                ? industry.identifier + "." + component.subIdentifier
+                : null;
+        }
+
+        private static string GetScenePath(Transform transform)
+        {
+            if (transform == null)
+            {
+                return null;
+            }
+
+            var names = new Stack<string>();
+            var current = transform;
+            while (current != null)
+            {
+                names.Push(current.name);
+                current = current.parent;
+            }
+
+            return string.Join("/", names.ToArray());
         }
 
         private static MapFeature RequireMapFeature(string id)

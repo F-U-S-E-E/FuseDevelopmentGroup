@@ -4,6 +4,8 @@ namespace RAIL.Data
 {
     public sealed class RailProgressionRoot
     {
+        public string ProgressionId { get; set; }
+        public RailSection[] Sections { get; set; }
         public Dictionary<string, RailProgression> Progressions { get; set; } = new Dictionary<string, RailProgression>();
         public Dictionary<string, RailMapFeature> MapFeatures { get; set; } = new Dictionary<string, RailMapFeature>();
     }
@@ -15,12 +17,22 @@ namespace RAIL.Data
 
     public sealed class RailSection
     {
+        public string Id { get; set; }
+        public string ProgressionId { get; set; }
         public string DisplayName { get; set; }
         public string Description { get; set; }
+        public string[] PrerequisiteSections { get; set; }
         public string[] PrerequisiteSectionIds { get; set; }
         public string[] EnableFeaturesOnUnlock { get; set; }
         public string[] DisableFeaturesOnUnlock { get; set; }
         public string[] EnableFeaturesOnAvailable { get; set; }
+        public string[] UnlockIncludeIndustries { get; set; }
+        public string[] UnlockExcludeIndustries { get; set; }
+        public string[] UnlockIncludeIndustryComponents { get; set; }
+        public string[] AreasEnableOnUnlock { get; set; }
+        public string[] GameObjectsEnableOnUnlock { get; set; }
+        public string[] TrackGroupsEnableOnUnlock { get; set; }
+        public string[] TrackGroupsAvailableOnUnlock { get; set; }
         public RailDeliveryPhase[] DeliveryPhases { get; set; }
     }
 
@@ -36,6 +48,7 @@ namespace RAIL.Data
         public string CarTypeFilter { get; set; }
         public string LoadId { get; set; }
         public int Count { get; set; }
+        public string Direction { get; set; }
         public string DestinationIndustryId { get; set; }
     }
 

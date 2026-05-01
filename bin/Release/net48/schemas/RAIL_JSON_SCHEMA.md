@@ -3,7 +3,7 @@
 This folder defines the JSON side of the RAIL mod format.
 
 - `rail-mod.schema.json` is the authoritative JSON Schema for hand-authored and editor-exported `.json` files.
-- `rail-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, loaders, turntables, roundhouses, stations, scenery, splineys, telegraph poles, labels, speed signs, masks, map tiles, scene clones, world removals, progression data, and editor state.
+- `rail-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, loaders, turntables, roundhouses, stations, scenery, spawn points, span-anchored scenery, splineys, telegraph poles, labels, speed signs, masks, map tiles, scene clones, world removals, progression data, and editor state.
 - `umm-info.schema.json` documents the Unity Mod Manager `Info.json` shape RAIL expects for API mods, data packages, and asset-pack packages.
 - `umm-info.example.json` is a data-only map package manifest that depends on `RAIL`.
 
@@ -15,7 +15,7 @@ Top-level object groups:
 
 - `tracks`: nodes, segments, spans, areas, and optional removals for deleting base-game track objects.
 - `operations`: loads, industries, loaders, turntables, and passenger stations.
-- `world`: scenery, splineys, telegraph poles, map labels, map masks, map tile overlays, scene clones, and optional removals for base scene objects.
+- `world`: scenery, spawn points, splineys, telegraph poles, map labels, map masks, map tile overlays, scene clones, and optional removals for base scene objects.
 - `progression`: progression trees and map features.
 - `editor`: optional editor-only state that RAIL can ignore at runtime.
 - `extensions`: optional namespaced third-party data.
@@ -64,34 +64,34 @@ Vector values are always objects:
 { "x": 0, "y": 0, "z": 0 }
 ```
 
-Track spans use structured locations rather than Strange Customs style strings:
+Track spans use two structured locations rather than Strange Customs style strings. Think of each location as an arrow measured from one segment end into the span. `Start`/`A` points from the segment's start toward its end; `End`/`B` points from the segment's end toward its start. The two endpoint arrows must face each other and the measured distance must stay within that segment.
 
 ```json
 {
-  "upper": { "segmentId": "murphy:s:001", "distance": 0.5, "end": "A" },
-  "lower": { "segmentId": "murphy:s:001", "distance": 0.5, "end": "B" }
+  "upper": { "segmentId": "murphy:s:001", "distance": 10, "end": "Start" },
+  "lower": { "segmentId": "murphy:s:001", "distance": 5, "end": "End" }
 }
 ```
 
-`end` is optional and defaults to `A`. Set it to `B` when the distance or normalized value is measured from the segment's far end. `Start` and `End` are also accepted on input and normalize to `A` and `B`.
+`end` is optional and defaults to `A`/`Start`. Set it to `B`/`End` when the distance or normalized value is measured from the segment's far end. On the same segment, one endpoint must use `Start`/`A` and the other must use `End`/`B`; RAIL rejects same-direction endpoints, crossed endpoints, zero-length spans, and distances outside the segment length.
 
 Use `normalized` for editor-authored spans where possible. Use `distance` only when the exact distance along a runtime segment matters.
 
-When translating legacy graph patches that delete existing base-game track objects, use `tracks.removals`:
+When translating legacy graph patches that delete existing base-game track objects, use `tracks.removals`. These values must be exact graph object IDs from the source game graph. Base-game track nodes usually look like short four-character alphanumeric IDs; do not use UI names such as siding, spur, or station names unless the source graph actually uses that string as the object ID.
 
 ```json
 {
   "tracks": {
     "removals": {
-      "nodes": ["Nold-switch"],
-      "segments": ["Sold-siding"],
-      "spans": ["Old Spur"]
+      "nodes": ["A1B2"],
+      "segments": ["C3D4"],
+      "spans": ["E5F6"]
     }
   }
 }
 ```
 
-RAIL applies span removals first, then segment removals, then node removals.
+RAIL-authored nodes, segments, and spans can use descriptive package-owned IDs such as `murphy:n:001`, but base-game removals must use the IDs that already exist in Railroader's live graph. RAIL applies span removals first, then segment removals, then node removals.
 
 Legacy source files can also use `null` entries to delete world objects such as old roads or scenery. RAIL stores those as `world.removals`, using either RAIL IDs or full scene paths:
 
@@ -112,7 +112,11 @@ Legacy source files can also use `null` entries to delete world objects such as 
 
 The converter maps legacy `null` entries from `scenery`, `splineys`, `mandelas`, and `texts` into these arrays.
 
-Progression delivery phases that contain deliveries must set `industryComponentId`. That ID should point at a runtime `ProgressionIndustryComponent` that RAIL or the base map can activate while the phase is pending.
+Progression can be authored either in the older keyed form under `progressions.<id>.sections` or in the flatter root `progression.sections[]` form. Root sections must set `id`; `progression.progressionId` selects the runtime `Progression.identifier`, and defaults to the package id when omitted. RAIL normalizes root sections into the existing Railroader progression system at load time.
+
+Section unlock payloads such as `areasEnableOnUnlock`, `gameObjectsEnableOnUnlock`, `unlockIncludeIndustries`, `unlockExcludeIndustries`, `unlockIncludeIndustryComponents`, `trackGroupsEnableOnUnlock`, and `trackGroupsAvailableOnUnlock` are materialized through a synthetic RAIL `MapFeature` that is enabled when the section unlocks. This keeps narrative packages on the base game's progression path instead of inventing a parallel unlock system.
+
+Progression delivery phases that contain deliveries should set `industryComponentId` when the target progression industry component is known. If omitted, RAIL can infer it when every delivery in the phase points at the same `destinationIndustryId` and that industry has exactly one `ProgressionIndustryComponent`.
 
 Turntables generate deterministic pit node IDs at load time:
 
@@ -159,6 +163,25 @@ Asset and prefab references are URI strings:
 
 The current runtime directly understands `vanilla://`, `path://`, `scenery://`, and `empty://`. Other schemes may be reserved by tools or future loaders.
 
+Scenery can optionally set `anchorSpanIds` for track-bound props such as railroad crossings. RAIL averages the referenced span centers, aligns the scenery to the average span tangent, then applies `position` and `rotation` as offsets:
+
+```json
+{
+  "world": {
+    "scenery": {
+      "murphy:crossing:depot": {
+        "assetIdentifier": "scenery://crossing-board",
+        "anchorSpanIds": ["murphy:span:depot"],
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "rotation": { "x": 0, "y": 90, "z": 0 }
+      }
+    }
+  }
+}
+```
+
+`world.spawnPoints[]` registers Railroader `Character.SpawnPoint` components. `name` and `position` are required; `rotation`, `radius`, and `priority` mirror the base-game component fields. Higher priority spawn points sort ahead of lower-priority entries in the game's spawn-point list.
+
 Spliney `type` describes the physical spline family, not its material flavor:
 
 - `river`: water spline, with one river behavior family.
@@ -170,9 +193,26 @@ Converted Strange Customs `FlowyThingBuilder` data must inspect `style` and `pro
 
 Telegraph pole definitions use the existing Railroader telegraph pole and wire prefabs by default. `profile` selects the first vanilla pole prefab whose name contains that profile string. `polePrefab` and `wirePrefab` can override that with explicit prefab URIs.
 
-Industry components currently supported by the runtime include `loader`, `unloader`, `formulaic`, `repairTrack`, `teamTrack`, `interchange`, `interchangedLoader`, and `passengerStop`. Formulaic components are attached directly to the industry object to match Strange Customs behavior; other component types get child objects.
+`world.telegraphPoleMovements[]` adjusts existing base-game telegraph pole graph nodes by pole/node index. This is intentionally separate from `world.telegraphPoles`, which creates new pole sets. Use it for legacy `TelegraphPoleMover` style data:
 
-The converter emits canonical RAIL component type names. Legacy aliases such as `Model.Ops.IndustryLoader` and `AlinasMapMod.PaxStationComponent` are normalized at load time for compatibility, but new JSON should use the RAIL names above so it does not depend on AMM assemblies.
+```json
+{
+  "world": {
+    "telegraphPoleMovements": [
+      {
+        "poleIndices": [585, 583],
+        "offset": { "x": 0, "y": 3, "z": 0 }
+      }
+    ]
+  }
+}
+```
+
+RAIL applies pole movements idempotently per package, so snapshot reapply does not stack the same offset repeatedly. Unloading the package restores the captured base pole positions, then reapplies any remaining package claims.
+
+Industry components currently supported by the runtime include `loader`, `unloader`, `formulaic`, `repairTrack`, `teamTrack`, `interchange`, `interchangedLoader`, `interchangedUnloader`, `teleportLoading`, `progression`, and `passengerStop`. Formulaic components are attached directly to the industry object to match the base game component layout expectations; other component types get child objects.
+
+The converter emits canonical RAIL component type names. Legacy aliases such as `Model.Ops.IndustryLoader`, `Model.OpsNew.InterchangedIndustryUnloader`, and `AlinasMapMod.PaxStationComponent` are normalized at load time for compatibility, but new JSON should use the RAIL names above so it does not depend on external mod assemblies.
 
 Passenger stop components can carry timetable metadata:
 
@@ -222,6 +262,9 @@ RAIL treats these as overlays on top of the base game's `StreamingAssets/Maps/<d
 - `operations.loads` are applied at runtime by creating or updating `CarPrototypeLibrary.instance.opsLoads` entries. Use `units`, `density`, `unitWeightInPounds`, `importable`, `payPerQuantity`, and `costPerUnit` when the custom load needs full behavior parity with legacy mod data.
 - `world.mapMasks` are applied at runtime using the default behavior above.
 - `world.telegraphPoles` are applied at runtime by generating pole instances along the provided point path at the requested spacing.
+- `world.telegraphPoleMovements` are applied at runtime by translating existing base-game telegraph pole graph nodes by index. RAIL forces the telegraph manager to refresh when possible.
+- `world.spawnPoints` are applied at runtime by creating or updating `Character.SpawnPoint` components under a RAIL-owned world root.
+- `world.scenery.*.anchorSpanIds` makes the scenery track-bound at apply time. Missing spans produce warnings and the object falls back to its explicit transform if no anchor resolves.
 - `world.mapLabels` are applied at runtime as vanilla `MapLabel` clones. Labels with `style: "speedLimit"` are rendered as circled speed signs.
 - `world.mapTiles` are mounted into the live `MapStore` at map-load time and can override individual tile coordinates without copying files into `StreamingAssets`.
 - `world.sceneClones` are applied at runtime by cloning an existing scene object path or retargeting an existing object hierarchy. `localPosition`, `localRotation`, and `localScale` are optional; when omitted or `null`, RAIL now preserves the existing transform value instead of forcing zero or one. RAIL also strips unsupported mover components such as `PhysicsMover` from these clones so static visual copies do not register live physics controllers by accident.

@@ -7,8 +7,10 @@ namespace RAIL.Data
     public sealed class RailWorldDefinition
     {
         public Dictionary<string, RailScenery> Scenery { get; set; } = new Dictionary<string, RailScenery>();
+        public RailSpawnPoint[] SpawnPoints { get; set; } = Array.Empty<RailSpawnPoint>();
         public Dictionary<string, RailSpliney> Splineys { get; set; } = new Dictionary<string, RailSpliney>();
         public Dictionary<string, RailTelegraphPoles> TelegraphPoles { get; set; } = new Dictionary<string, RailTelegraphPoles>();
+        public RailTelegraphPoleMovement[] TelegraphPoleMovements { get; set; } = Array.Empty<RailTelegraphPoleMovement>();
         public Dictionary<string, RailMapLabel> MapLabels { get; set; } = new Dictionary<string, RailMapLabel>();
         public Dictionary<string, RailMapMask> MapMasks { get; set; } = new Dictionary<string, RailMapMask>();
         public Dictionary<string, RailMapTileSource> MapTiles { get; set; } = new Dictionary<string, RailMapTileSource>();
@@ -80,6 +82,16 @@ namespace RAIL.Data
         public Vector3 Position { get; set; }
         public Vector3 Rotation { get; set; }
         public Vector3 Scale { get; set; } = Vector3.one;
+        public string[] AnchorSpanIds { get; set; } = Array.Empty<string>();
+    }
+
+    public sealed class RailSpawnPoint
+    {
+        public string Name { get; set; }
+        public Vector3 Position { get; set; }
+        public Vector3 Rotation { get; set; }
+        public float? Radius { get; set; }
+        public int? Priority { get; set; }
     }
 
     public sealed class RailSpliney
@@ -107,6 +119,12 @@ namespace RAIL.Data
         public string WirePrefab { get; set; }
         public float? Spacing { get; set; }
         public Vector3[] Points { get; set; }
+    }
+
+    public sealed class RailTelegraphPoleMovement
+    {
+        public int[] PoleIndices { get; set; } = Array.Empty<int>();
+        public Vector3 Offset { get; set; }
     }
 
     public sealed class RailMapLabel

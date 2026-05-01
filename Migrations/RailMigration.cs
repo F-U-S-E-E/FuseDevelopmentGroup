@@ -5,6 +5,7 @@ using System.Linq;
 using RAIL.Data;
 using RAIL.Data.Common;
 using RAIL.Infrastructure;
+using UnityEngine;
 
 namespace RAIL.Migrations
 {
@@ -59,6 +60,7 @@ namespace RAIL.Migrations
             definition.Tracks = definition.Tracks ?? new RailTrackDefinition();
             definition.Operations = definition.Operations ?? new RailOperationsDefinition();
             definition.World = definition.World ?? new RailWorldDefinition();
+            definition.Audio = definition.Audio ?? new RailAudioRoot();
             definition.Progression = definition.Progression ?? new RailProgressionRoot();
             definition.Extensions = definition.Extensions ?? new Dictionary<string, object>();
 
@@ -78,8 +80,10 @@ namespace RAIL.Migrations
             definition.Operations.Stations = definition.Operations.Stations ?? new Dictionary<string, RailStation>();
 
             definition.World.Scenery = definition.World.Scenery ?? new Dictionary<string, RailScenery>();
+            definition.World.SpawnPoints = definition.World.SpawnPoints ?? Array.Empty<RailSpawnPoint>();
             definition.World.Splineys = definition.World.Splineys ?? new Dictionary<string, RailSpliney>();
             definition.World.TelegraphPoles = definition.World.TelegraphPoles ?? new Dictionary<string, RailTelegraphPoles>();
+            definition.World.TelegraphPoleMovements = definition.World.TelegraphPoleMovements ?? Array.Empty<RailTelegraphPoleMovement>();
             definition.World.MapLabels = definition.World.MapLabels ?? new Dictionary<string, RailMapLabel>();
             definition.World.MapMasks = definition.World.MapMasks ?? new Dictionary<string, RailMapMask>();
             definition.World.MapTiles = definition.World.MapTiles ?? new Dictionary<string, RailMapTileSource>();
@@ -98,8 +102,63 @@ namespace RAIL.Migrations
             definition.World.Removals.MapMasks = definition.World.Removals.MapMasks ?? Array.Empty<string>();
             definition.World.Removals.SceneClones = definition.World.Removals.SceneClones ?? Array.Empty<string>();
 
+            definition.Audio.Whistles = definition.Audio.Whistles ?? new Dictionary<string, RailWhistleAudio>();
+            definition.Audio.Horns = definition.Audio.Horns ?? new Dictionary<string, RailHornAudio>();
+            definition.Audio.Bells = definition.Audio.Bells ?? new Dictionary<string, RailBellAudio>();
+            foreach (var horn in definition.Audio.Horns.Values)
+            {
+                if (horn == null)
+                {
+                    continue;
+                }
+
+                horn.Layers = horn.Layers ?? Array.Empty<RailHornLayer>();
+                foreach (var layer in horn.Layers)
+                {
+                    if (layer == null)
+                    {
+                        continue;
+                    }
+
+                    layer.Keyframes = layer.Keyframes ?? Array.Empty<RailAudioKeyframe>();
+                }
+            }
+
+            foreach (var bell in definition.Audio.Bells.Values)
+            {
+                if (bell == null)
+                {
+                    continue;
+                }
+
+                bell.IndexTimes = bell.IndexTimes ?? Array.Empty<float>();
+            }
+
+            foreach (var movement in definition.World.TelegraphPoleMovements)
+            {
+                if (movement == null)
+                {
+                    continue;
+                }
+
+                movement.PoleIndices = movement.PoleIndices ?? Array.Empty<int>();
+            }
+
+            foreach (var scenery in definition.World.Scenery.Values)
+            {
+                if (scenery == null)
+                {
+                    continue;
+                }
+
+                scenery.AnchorSpanIds = scenery.AnchorSpanIds ?? Array.Empty<string>();
+                scenery.Scale = scenery.Scale == default ? Vector3.one : scenery.Scale;
+            }
+
             definition.Progression.Progressions = definition.Progression.Progressions ?? new Dictionary<string, RailProgression>();
+            definition.Progression.Sections = definition.Progression.Sections ?? Array.Empty<RailSection>();
             definition.Progression.MapFeatures = definition.Progression.MapFeatures ?? new Dictionary<string, RailMapFeature>();
+            NormalizeProgression(definition);
 
             foreach (var span in definition.Tracks.Spans.Values)
             {
@@ -121,15 +180,129 @@ namespace RAIL.Migrations
                         continue;
                     }
 
-                    component.Type = NormalizeIndustryComponentType(component.Type);
+                    component.Type = RailIndustryComponentTypes.Normalize(component.Type);
                     component.TrackSpanIds = component.TrackSpanIds ?? Array.Empty<string>();
                     component.InputSpanIds = component.InputSpanIds ?? Array.Empty<string>();
+                    component.OutputSpanIds = component.OutputSpanIds ?? Array.Empty<string>();
                     component.InputTermsPerDay = component.InputTermsPerDay ?? new Dictionary<string, float>();
                     component.OutputTermsPerDay = component.OutputTermsPerDay ?? new Dictionary<string, float>();
                     component.TeamProfiles = component.TeamProfiles ?? new Dictionary<string, RailTeamTrackEntry>();
                     component.NeighborIds = component.NeighborIds ?? Array.Empty<string>();
                     component.BranchDefinitions = component.BranchDefinitions ?? Array.Empty<RailPassengerBranch>();
                 }
+            }
+        }
+
+        private static void NormalizeProgression(RailModDefinition definition)
+        {
+            var root = definition.Progression;
+            var defaultProgressionId = string.IsNullOrWhiteSpace(root.ProgressionId)
+                ? GetPackageId(definition)
+                : root.ProgressionId.Trim();
+            root.ProgressionId = defaultProgressionId;
+
+            foreach (var rootSection in root.Sections ?? Array.Empty<RailSection>())
+            {
+                NormalizeSection(rootSection);
+                if (rootSection == null || string.IsNullOrWhiteSpace(rootSection.Id))
+                {
+                    continue;
+                }
+
+                var progressionId = string.IsNullOrWhiteSpace(rootSection.ProgressionId)
+                    ? defaultProgressionId
+                    : rootSection.ProgressionId.Trim();
+                rootSection.ProgressionId = progressionId;
+
+                RailProgression progression;
+                if (!root.Progressions.TryGetValue(progressionId, out progression) || progression == null)
+                {
+                    progression = new RailProgression();
+                    root.Progressions[progressionId] = progression;
+                }
+
+                progression.Sections = progression.Sections ?? new Dictionary<string, RailSection>();
+                progression.Sections[rootSection.Id] = rootSection;
+            }
+
+            foreach (var progressionEntry in root.Progressions)
+            {
+                if (progressionEntry.Value == null)
+                {
+                    continue;
+                }
+
+                progressionEntry.Value.Sections = progressionEntry.Value.Sections ?? new Dictionary<string, RailSection>();
+                foreach (var sectionEntry in progressionEntry.Value.Sections)
+                {
+                    var section = sectionEntry.Value;
+                    if (section == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(section.Id))
+                    {
+                        section.Id = sectionEntry.Key;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(section.ProgressionId))
+                    {
+                        section.ProgressionId = progressionEntry.Key;
+                    }
+
+                    NormalizeSection(section);
+                }
+            }
+
+            foreach (var feature in root.MapFeatures.Values)
+            {
+                if (feature == null)
+                {
+                    continue;
+                }
+
+                feature.GroupIds = feature.GroupIds ?? Array.Empty<string>();
+                feature.PrerequisiteFeatureIds = feature.PrerequisiteFeatureIds ?? Array.Empty<string>();
+                feature.TrackGroupsEnableOnUnlock = feature.TrackGroupsEnableOnUnlock ?? Array.Empty<string>();
+                feature.TrackGroupsAvailableOnUnlock = feature.TrackGroupsAvailableOnUnlock ?? Array.Empty<string>();
+                feature.AreasEnableOnUnlock = feature.AreasEnableOnUnlock ?? Array.Empty<string>();
+                feature.GameObjectsEnableOnUnlock = feature.GameObjectsEnableOnUnlock ?? Array.Empty<string>();
+                feature.UnlockIncludeIndustries = feature.UnlockIncludeIndustries ?? Array.Empty<string>();
+                feature.UnlockExcludeIndustries = feature.UnlockExcludeIndustries ?? Array.Empty<string>();
+                feature.UnlockIncludeIndustryComponents = feature.UnlockIncludeIndustryComponents ?? Array.Empty<string>();
+            }
+        }
+
+        private static void NormalizeSection(RailSection section)
+        {
+            if (section == null)
+            {
+                return;
+            }
+
+            section.PrerequisiteSectionIds = MergeAliasArray(section.PrerequisiteSectionIds, section.PrerequisiteSections);
+            section.PrerequisiteSections = null;
+            section.EnableFeaturesOnUnlock = section.EnableFeaturesOnUnlock ?? Array.Empty<string>();
+            section.DisableFeaturesOnUnlock = section.DisableFeaturesOnUnlock ?? Array.Empty<string>();
+            section.EnableFeaturesOnAvailable = section.EnableFeaturesOnAvailable ?? Array.Empty<string>();
+            section.UnlockIncludeIndustries = section.UnlockIncludeIndustries ?? Array.Empty<string>();
+            section.UnlockExcludeIndustries = section.UnlockExcludeIndustries ?? Array.Empty<string>();
+            section.UnlockIncludeIndustryComponents = section.UnlockIncludeIndustryComponents ?? Array.Empty<string>();
+            section.AreasEnableOnUnlock = section.AreasEnableOnUnlock ?? Array.Empty<string>();
+            section.GameObjectsEnableOnUnlock = section.GameObjectsEnableOnUnlock ?? Array.Empty<string>();
+            section.TrackGroupsEnableOnUnlock = section.TrackGroupsEnableOnUnlock ?? Array.Empty<string>();
+            section.TrackGroupsAvailableOnUnlock = section.TrackGroupsAvailableOnUnlock ?? Array.Empty<string>();
+            section.DeliveryPhases = section.DeliveryPhases ?? Array.Empty<RailDeliveryPhase>();
+
+            foreach (var phase in section.DeliveryPhases)
+            {
+                if (phase == null)
+                {
+                    continue;
+                }
+
+                phase.Deliveries = phase.Deliveries ?? Array.Empty<RailDelivery>();
             }
         }
 
@@ -302,46 +475,6 @@ namespace RAIL.Migrations
             }
 
             RailLog.Warning(message);
-        }
-
-        private static string NormalizeIndustryComponentType(string type)
-        {
-            if (string.IsNullOrWhiteSpace(type))
-            {
-                return type;
-            }
-
-            switch (type.Trim().ToLowerInvariant())
-            {
-                case "model.ops.industryloader":
-                case "industryloader":
-                    return "loader";
-                case "model.ops.industryunloader":
-                case "industryunloader":
-                    return "unloader";
-                case "model.ops.formulaicindustrycomponent":
-                case "formulaicindustrycomponent":
-                    return "formulaic";
-                case "model.ops.repairtrack":
-                case "repair-track":
-                    return "repairTrack";
-                case "model.ops.teamtrack":
-                case "team-track":
-                    return "teamTrack";
-                case "model.ops.interchange":
-                    return "interchange";
-                case "model.ops.interchangedindustryloader":
-                case "interchanged-loader":
-                    return "interchangedLoader";
-                case "alinasmapmod.paxstationcomponent":
-                case "alinasmapmod.stations.paxstationcomponent":
-                case "paxstationcomponent":
-                case "passenger-stop":
-                case "passengerstop":
-                    return "passengerStop";
-                default:
-                    return type.Trim();
-            }
         }
 
         private static string[] MergeAliasArray(string[] preferred, string[] alias)

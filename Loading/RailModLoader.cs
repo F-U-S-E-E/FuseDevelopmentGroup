@@ -155,6 +155,7 @@ namespace RAIL.Loading
                 // A definition is being replaced. Release any registry claims the
                 // prior version held; the upcoming apply will re-claim what it
                 // still owns. Otherwise stale claims would block the new apply.
+                RailAudioAPI.ReleasePackage(definition.Id);
                 RailWorldSuppressor.ReleasePackage(definition.Id);
                 var released = RailRegistry.ReleaseAllForPackage(definition.Id);
                 AppliedDefinitionIds.Remove(definition.Id);
@@ -273,6 +274,7 @@ namespace RAIL.Loading
                             "operation='single-graph-rebuild' skipped: no track mutations in this package.");
                         transaction.PostBind("graph", definition.Id, "rebuild-skipped");
                     }
+                    transaction.RunPhase("apply-audio", () => ApplyAudioDefinition(definition, loaded.FolderPath, transaction));
                     transaction.RunPhase("apply-world-objects", () => ApplyWorldDefinition(definition, loaded.FolderPath, loaded.DefinitionPath, transaction));
                     transaction.RunPhase("apply-operations", () =>
                     {
@@ -636,11 +638,38 @@ namespace RAIL.Loading
 
                 try
                 {
+                    RailAudioAPI.ReleasePackage(modId);
+                }
+                catch (Exception ex)
+                {
+                    RailLog.Exception($"RAIL failed to release audio definitions for unloaded mod '{modId}'", ex);
+                }
+
+                try
+                {
                     RailWorldSuppressor.ReleasePackage(modId);
                 }
                 catch (Exception ex)
                 {
                     RailLog.Exception($"RAIL failed to release world suppressions for unloaded mod '{modId}'", ex);
+                }
+
+                try
+                {
+                    MapAPI.ReleaseTelegraphPoleMovements(modId);
+                }
+                catch (Exception ex)
+                {
+                    RailLog.Exception($"RAIL failed to release telegraph pole movements for unloaded mod '{modId}'", ex);
+                }
+
+                try
+                {
+                    SpawnPointAPI.ReleasePackage(modId);
+                }
+                catch (Exception ex)
+                {
+                    RailLog.Exception($"RAIL failed to release spawn points for unloaded mod '{modId}'", ex);
                 }
 
                 // Release registry claims before any other unload work so other
@@ -704,6 +733,8 @@ namespace RAIL.Loading
             LoadedOrder.Clear();
             AppliedDefinitionIds.Clear();
             RailTrackRemovalSnapshotStore.ClearAll();
+            MapAPI.RestoreAllTelegraphPoleMovements("unload all");
+            SpawnPointAPI.ClearRuntimeCache();
             RailWorldSuppressor.RestoreAll("unload all");
             // Per-mod claims were released in UnloadMod; reset registry to drop
             // any orphaned shared claims and the conflict history.
@@ -1309,6 +1340,25 @@ namespace RAIL.Loading
                 }
             }
 
+            if (definition.World.SpawnPoints != null)
+            {
+                foreach (var spawnPoint in definition.World.SpawnPoints)
+                {
+                    if (spawnPoint == null || string.IsNullOrWhiteSpace(spawnPoint.Name))
+                    {
+                        transaction.Skipped("spawn point", definition.Id, "missing name");
+                        continue;
+                    }
+
+                    var key = definition.Id + "/" + spawnPoint.Name.Trim();
+                    var exists = SpawnPointAPI.GetSpawnPoint(definition.Id, spawnPoint.Name) != null;
+                    transaction.TryApply("spawn point", key, exists, () =>
+                    {
+                        SpawnPointAPI.AddOrUpdateSpawnPoint(definition.Id, spawnPoint);
+                    });
+                }
+            }
+
             if (definition.World.MapLabels != null)
             {
                 foreach (var label in definition.World.MapLabels)
@@ -1366,6 +1416,15 @@ namespace RAIL.Loading
                 }
             }
 
+            if (definition.World.TelegraphPoleMovements != null &&
+                (definition.World.TelegraphPoleMovements.Length > 0 || MapAPI.HasTelegraphPoleMovementClaim(definition.Id)))
+            {
+                transaction.TryApply("telegraph pole movements", definition.Id, MapAPI.HasTelegraphPoleMovementClaim(definition.Id), () =>
+                {
+                    MapAPI.ApplyTelegraphPoleMovements(definition.Id, definition.World.TelegraphPoleMovements);
+                });
+            }
+
             if (definition.World.MapMasks != null)
             {
                 foreach (var mask in definition.World.MapMasks)
@@ -1404,6 +1463,27 @@ namespace RAIL.Loading
                     });
                 }
             }
+        }
+
+        private static void ApplyAudioDefinition(RailModDefinition definition, string folderPath, RailApplyTransaction transaction)
+        {
+            if (definition?.Audio == null)
+            {
+                return;
+            }
+
+            var count = (definition.Audio.Whistles?.Count ?? 0) +
+                        (definition.Audio.Horns?.Count ?? 0) +
+                        (definition.Audio.Bells?.Count ?? 0);
+            if (count == 0)
+            {
+                return;
+            }
+
+            transaction.TryApply("audio package", definition.Id, RailAudioAPI.HasWhistles || RailAudioAPI.HasHorns || RailAudioAPI.HasBells, () =>
+            {
+                RailAudioAPI.RegisterDefinition(definition.Id, definition.Audio, folderPath, transaction);
+            });
         }
 
         private static void ApplyWorldRemovals(RailModDefinition definition, RailApplyTransaction transaction)

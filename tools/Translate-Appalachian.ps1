@@ -282,7 +282,21 @@ function Convert-TrackLocation {
         [hashtable]$SegmentIdMap
     )
 
-    $rawSegmentId = [string]$Location['segmentId']
+    $rawSegmentId = if ($Location.ContainsKey('segmentId')) {
+        [string]$Location['segmentId']
+    }
+    elseif ($Location.ContainsKey('segmentID')) {
+        [string]$Location['segmentID']
+    }
+    elseif ($Location.ContainsKey('SegmentId')) {
+        [string]$Location['SegmentId']
+    }
+    elseif ($Location.ContainsKey('SegmentID')) {
+        [string]$Location['SegmentID']
+    }
+    else {
+        [string]$Location['segment']
+    }
     $distance = [double]$Location['distance']
     $locationEnd = if ($Location.ContainsKey('end') -and -not [string]::IsNullOrWhiteSpace([string]$Location['end'])) {
         switch ([string]$Location['end']) {
@@ -318,7 +332,7 @@ function New-EmptyRailDefinition {
 
     return [ordered]@{
         '$schema' = '.\schemas\rail-mod.schema.json'
-        schemaVersion = 1
+        schemaVersion = '1.0'
         id = $Id
         name = $Name
         author = $Author
@@ -345,14 +359,17 @@ function New-EmptyRailDefinition {
         }
         world = [ordered]@{
             scenery = [ordered]@{}
+            spawnPoints = @()
             splineys = [ordered]@{}
             telegraphPoles = [ordered]@{}
+            telegraphPoleMovements = @()
             mapLabels = [ordered]@{}
             mapMasks = [ordered]@{}
             mapTiles = [ordered]@{}
             sceneClones = [ordered]@{}
         }
         progression = [ordered]@{
+            sections = @()
             progressions = [ordered]@{}
             mapFeatures = [ordered]@{}
         }
@@ -560,6 +577,12 @@ foreach ($rawId in ($merged['splineys'].Keys | Sort-Object)) {
         'AlinasMapMod.Turntable.TurntableBuilder' {
             continue
         }
+        'AlinasMapMod.TelegraphPoleMover' {
+            continue
+        }
+        'AlinasMapMod.TelegraphPoles.TelegraphPoleMover' {
+            continue
+        }
         default {
             $splineyIds[$rawId] = Convert-ToRailId -Source $rawId -Prefix 'kg.appalachian.spliney' -UsedIds $splineyUsed
         }
@@ -659,14 +682,36 @@ foreach ($areaRawId in ($merged['areas'].Keys | Sort-Object)) {
             $componentType = [string]$component['type']
             $railComponentType = switch ($componentType) {
                 'Model.Ops.IndustryLoader' { 'loader' }
+                'Model.OpsNew.IndustryLoader' { 'loader' }
                 'Model.Ops.IndustryUnloader' { 'unloader' }
+                'Model.OpsNew.IndustryUnloader' { 'unloader' }
                 'Model.Ops.FormulaicIndustryComponent' { 'formulaic' }
+                'Model.OpsNew.FormulaicIndustryComponent' { 'formulaic' }
                 'Model.Ops.RepairTrack' { 'repairTrack' }
+                'Model.OpsNew.RepairTrack' { 'repairTrack' }
                 'Model.Ops.TeamTrack' { 'teamTrack' }
+                'Model.OpsNew.TeamTrack' { 'teamTrack' }
                 'Model.Ops.Interchange' { 'interchange' }
+                'Model.OpsNew.Interchange' { 'interchange' }
                 'Model.Ops.InterchangedIndustryLoader' { 'interchangedLoader' }
+                'Model.OpsNew.InterchangedIndustryLoader' { 'interchangedLoader' }
+                'Model.Ops.InterchangedIndustryUnloader' { 'interchangedUnloader' }
+                'Model.OpsNew.InterchangedIndustryUnloader' { 'interchangedUnloader' }
+                'Model.Ops.TeleportLoadingIndustry' { 'teleportLoading' }
+                'Model.OpsNew.TeleportLoadingIndustry' { 'teleportLoading' }
+                'Model.Ops.ProgressionIndustryComponent' { 'progression' }
+                'Model.OpsNew.ProgressionIndustryComponent' { 'progression' }
                 'AlinasMapMod.PaxStationComponent' { 'passengerStop' }
                 default { 'custom' }
+            }
+
+            if ($railComponentType -eq 'custom') {
+                $unsupportedComponents[$industryId + '.' + $componentId] = [ordered]@{
+                    originalType = $componentType
+                    areaId = $areaRawId
+                    data = To-PlainJsonValue $component
+                }
+                continue
             }
 
             $trackSpanIds = @(Resolve-TrackSpanIds -Value $component['trackSpans'] -SpanIdMap $spanIds)
@@ -685,6 +730,10 @@ foreach ($areaRawId in ($merged['areas'].Keys | Sort-Object)) {
             if ($component.ContainsKey('carTransferRate')) { $railComponent['carTransferRate'] = [double]$component['carTransferRate'] }
             if ($component.ContainsKey('orderAroundEmpties')) { $railComponent['orderAroundEmpties'] = [bool]$component['orderAroundEmpties'] }
             if ($component.ContainsKey('orderAroundLoaded')) { $railComponent['orderAroundLoaded'] = [bool]$component['orderAroundLoaded'] }
+            if ($component.ContainsKey('inputSpanIds')) { $railComponent['inputSpanIds'] = @(Resolve-TrackSpanIds -Value $component['inputSpanIds'] -SpanIdMap $spanIds) }
+            if ($component.ContainsKey('outputSpanIds')) { $railComponent['outputSpanIds'] = @(Resolve-TrackSpanIds -Value $component['outputSpanIds'] -SpanIdMap $spanIds) }
+            if ($component.ContainsKey('carLoadPeriod')) { $railComponent['carLoadPeriod'] = [double]$component['carLoadPeriod'] }
+            if ($component.ContainsKey('carLengthFeet')) { $railComponent['carLengthFeet'] = [double]$component['carLengthFeet'] }
 
             switch ($railComponentType) {
                 'passengerStop' {
@@ -773,14 +822,6 @@ foreach ($areaRawId in ($merged['areas'].Keys | Sort-Object)) {
             }
 
             $railIndustry['components'][$componentId] = $railComponent
-
-            if ($railComponentType -eq 'custom') {
-                $unsupportedComponents[$industryId + '.' + $componentId] = [ordered]@{
-                    originalType = $componentType
-                    areaId = $areaRawId
-                    data = To-PlainJsonValue $component
-                }
-            }
         }
 
         $rail['operations']['industries'][$industryId] = $railIndustry
@@ -886,6 +927,19 @@ foreach ($rawId in ($merged['splineys'].Keys | Sort-Object)) {
                 passengerStopId = [string]$item['passengerStop']
             }
         }
+        'CUtil.RRCrossing' {
+            $assetIdentifier = if ($item.ContainsKey('assetIdentifier')) { [string]$item['assetIdentifier'] } elseif ($item.ContainsKey('modelIdentifier')) { 'scenery://' + [string]$item['modelIdentifier'] } elseif ($item.ContainsKey('prefab')) { [string]$item['prefab'] } else { 'empty://rr-crossing' }
+            $railScenery = [ordered]@{
+                assetIdentifier = $assetIdentifier
+                position = Convert-Vec3 $item['position']
+                rotation = Convert-Vec3 $item['rotation']
+                scale = Convert-Vec3 $item['scale']
+            }
+            if ($item.ContainsKey('spanIds')) { $railScenery['anchorSpanIds'] = @($item['spanIds']) }
+            if ($item.ContainsKey('trackSpanIds')) { $railScenery['anchorSpanIds'] = @(Resolve-TrackSpanIds -Value $item['trackSpanIds'] -SpanIdMap $spanIds) }
+            if ($item.ContainsKey('trackSpans')) { $railScenery['anchorSpanIds'] = @(Resolve-TrackSpanIds -Value $item['trackSpans'] -SpanIdMap $spanIds) }
+            $rail['world']['scenery'][$splineyIds[$rawId]] = $railScenery
+        }
         'AlinasMapMod.Turntable.TurntableBuilder' {
             $roundhouseStalls = if ($item.ContainsKey('roundhouseStalls')) { [int]$item['roundhouseStalls'] } else { 0 }
             $turntable = [ordered]@{
@@ -908,17 +962,72 @@ foreach ($rawId in ($merged['splineys'].Keys | Sort-Object)) {
 
             $rail['operations']['turntables'][$rawId] = $turntable
         }
+        'AlinasMapMod.TelegraphPoleMover' {
+            $groups = [ordered]@{}
+            $polesToMove = @($item['polesToMove'])
+            $poleMovement = @($item['poleMovement'])
+            for ($i = 0; $i -lt $polesToMove.Count; $i++) {
+                $movementRow = if ($i -lt $poleMovement.Count) { @($poleMovement[$i]) } else { @(0, 0, 0) }
+                $offset = [ordered]@{
+                    x = if ($movementRow.Count -gt 0) { [double]$movementRow[0] } else { 0.0 }
+                    y = if ($movementRow.Count -gt 1) { [double]$movementRow[1] } else { 0.0 }
+                    z = if ($movementRow.Count -gt 2) { [double]$movementRow[2] } else { 0.0 }
+                }
+                $key = "$($offset.x),$($offset.y),$($offset.z)"
+                if (-not $groups.Contains($key)) {
+                    $groups[$key] = [ordered]@{
+                        poleIndices = @()
+                        offset = $offset
+                    }
+                }
+                $groups[$key]['poleIndices'] += [int]$polesToMove[$i]
+            }
+
+            foreach ($movement in $groups.Values) {
+                $rail['world']['telegraphPoleMovements'] += ,$movement
+            }
+        }
+        'AlinasMapMod.TelegraphPoles.TelegraphPoleMover' {
+            $groups = [ordered]@{}
+            $polesToMove = @($item['polesToMove'])
+            $poleMovement = @($item['poleMovement'])
+            for ($i = 0; $i -lt $polesToMove.Count; $i++) {
+                $movementRow = if ($i -lt $poleMovement.Count) { @($poleMovement[$i]) } else { @(0, 0, 0) }
+                $offset = [ordered]@{
+                    x = if ($movementRow.Count -gt 0) { [double]$movementRow[0] } else { 0.0 }
+                    y = if ($movementRow.Count -gt 1) { [double]$movementRow[1] } else { 0.0 }
+                    z = if ($movementRow.Count -gt 2) { [double]$movementRow[2] } else { 0.0 }
+                }
+                $key = "$($offset.x),$($offset.y),$($offset.z)"
+                if (-not $groups.Contains($key)) {
+                    $groups[$key] = [ordered]@{
+                        poleIndices = @()
+                        offset = $offset
+                    }
+                }
+                $groups[$key]['poleIndices'] += [int]$polesToMove[$i]
+            }
+
+            foreach ($movement in $groups.Values) {
+                $rail['world']['telegraphPoleMovements'] += ,$movement
+            }
+        }
     }
 }
 
 foreach ($rawId in ($sceneryIds.Keys | Sort-Object)) {
     $item = $merged['scenery'][$rawId]
-    $rail['world']['scenery'][$sceneryIds[$rawId]] = [ordered]@{
+    $railScenery = [ordered]@{
         model = 'scenery://' + [string]$item['modelIdentifier']
         position = Convert-Vec3 $item['position']
         rotation = Convert-Vec3 $item['rotation']
         scale = Convert-Vec3 $item['scale']
     }
+    if ($item.ContainsKey('anchorSpanIds')) { $railScenery['anchorSpanIds'] = @($item['anchorSpanIds']) }
+    if ($item.ContainsKey('spanIds')) { $railScenery['anchorSpanIds'] = @($item['spanIds']) }
+    if ($item.ContainsKey('trackSpanIds')) { $railScenery['anchorSpanIds'] = @(Resolve-TrackSpanIds -Value $item['trackSpanIds'] -SpanIdMap $spanIds) }
+    if ($item.ContainsKey('trackSpans')) { $railScenery['anchorSpanIds'] = @(Resolve-TrackSpanIds -Value $item['trackSpans'] -SpanIdMap $spanIds) }
+    $rail['world']['scenery'][$sceneryIds[$rawId]] = $railScenery
 }
 
 foreach ($rawId in ($sceneCloneIds.Keys | Sort-Object)) {
@@ -963,6 +1072,7 @@ $rail['extensions']['dev.hunterr.translation'] = [ordered]@{
         translatedIndustryLoads = $rail['operations']['loads'].Count
         translatedWorldScenery = $rail['world']['scenery'].Count
         translatedWorldSplineys = $rail['world']['splineys'].Count
+        translatedTelegraphPoleMovements = $rail['world']['telegraphPoleMovements'].Count
         translatedLoaders = $rail['operations']['loaders'].Count
         translatedMapLabels = $rail['world']['mapLabels'].Count
         translatedStations = $rail['operations']['stations'].Count

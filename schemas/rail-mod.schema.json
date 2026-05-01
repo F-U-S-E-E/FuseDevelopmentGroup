@@ -68,6 +68,9 @@
     "world": {
       "$ref": "#/$defs/world"
     },
+    "audio": {
+      "$ref": "#/$defs/audio"
+    },
     "progression": {
       "$ref": "#/$defs/progression"
     },
@@ -190,15 +193,19 @@
     "trackRemovals": {
       "type": "object",
       "additionalProperties": false,
+      "description": "Exact graph object IDs to remove. For base-game track, use Railroader's raw track graph IDs, not UI labels such as siding, spur, station, or industry names.",
       "properties": {
         "nodes": {
-          "$ref": "#/$defs/idArray"
+          "$ref": "#/$defs/idArray",
+          "description": "TrackNode IDs to remove. Base-game node IDs are usually short alphanumeric graph IDs."
         },
         "segments": {
-          "$ref": "#/$defs/idArray"
+          "$ref": "#/$defs/idArray",
+          "description": "TrackSegment IDs to remove exactly as they appear in the graph."
         },
         "spans": {
-          "$ref": "#/$defs/idArray"
+          "$ref": "#/$defs/idArray",
+          "description": "TrackSpan IDs to remove exactly as they appear in the graph."
         }
       }
     },
@@ -311,7 +318,7 @@
             "Start",
             "End"
           ],
-          "description": "Which segment end the normalized or distance value is measured from. Omit for the default A/start orientation."
+          "description": "Which segment end the normalized or distance value is measured from. A/Start points toward the segment end; B/End points toward the segment start. Span endpoint arrows must face each other."
         },
         "offset": {
           "type": "number",
@@ -569,7 +576,6 @@
           "enum": [
             "loader",
             "unloader",
-            "storage",
             "formulaic",
             "repairTrack",
             "repair-track",
@@ -578,9 +584,15 @@
             "interchange",
             "interchangedLoader",
             "interchanged-loader",
+            "interchangedUnloader",
+            "interchanged-unloader",
+            "teleportLoading",
+            "teleport-loading",
+            "progression",
+            "progressionIndustry",
+            "progression-industry",
             "passengerStop",
-            "passenger-stop",
-            "custom"
+            "passenger-stop"
           ]
         },
         "name": {
@@ -618,6 +630,9 @@
           "type": "boolean"
         },
         "inputSpanIds": {
+          "$ref": "#/$defs/idArray"
+        },
+        "outputSpanIds": {
           "$ref": "#/$defs/idArray"
         },
         "inputTermsPerDay": {
@@ -662,6 +677,14 @@
             "$ref": "#/$defs/passengerBranch"
           },
           "default": []
+        },
+        "carLoadPeriod": {
+          "type": "number",
+          "minimum": 0
+        },
+        "carLengthFeet": {
+          "type": "number",
+          "minimum": 0
         }
       }
     },
@@ -883,6 +906,14 @@
           ],
           "default": {}
         },
+        "spawnPoints": {
+          "type": "array",
+          "description": "Custom player/consist spawn points registered as Railroader Character.SpawnPoint components.",
+          "items": {
+            "$ref": "#/$defs/spawnPoint"
+          },
+          "default": []
+        },
         "splineys": {
           "allOf": [
             {
@@ -908,6 +939,14 @@
             }
           ],
           "default": {}
+        },
+        "telegraphPoleMovements": {
+          "type": "array",
+          "description": "Offsets existing base-game telegraph pole graph nodes by node index/id. Covers legacy TelegraphPoleMover data without creating a new pole set.",
+          "items": {
+            "$ref": "#/$defs/telegraphPoleMovement"
+          },
+          "default": []
         },
         "mapLabels": {
           "allOf": [
@@ -1069,6 +1108,44 @@
             "y": 1,
             "z": 1
           }
+        },
+        "anchorSpanIds": {
+          "$ref": "#/$defs/idArray",
+          "description": "Optional track spans used as anchors. RAIL positions the scenery at the average span center, aligns it to the average span tangent, then applies position/rotation as offsets."
+        }
+      }
+    },
+    "spawnPoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "position"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/vec3",
+          "default": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        "radius": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 3
+        },
+        "priority": {
+          "type": "integer",
+          "default": 0
         }
       }
     },
@@ -1165,6 +1242,28 @@
           "items": {
             "$ref": "#/$defs/vec3"
           }
+        }
+      }
+    },
+    "telegraphPoleMovement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "poleIndices",
+        "offset"
+      ],
+      "properties": {
+        "poleIndices": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "offset": {
+          "$ref": "#/$defs/vec3"
         }
       }
     },
@@ -1365,10 +1464,190 @@
         }
       }
     },
+    "audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "whistles": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/audioWhistle"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "horns": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/audioHorn"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "bells": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/audioBell"
+              }
+            }
+          ],
+          "default": {}
+        }
+      }
+    },
+    "audioWhistle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "clip"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clip": {
+          "$ref": "#/$defs/uri",
+          "description": "Path to a loose WAV/MP3/OGG/AIFF file, relative to the RAIL package folder."
+        },
+        "model": {
+          "$ref": "#/$defs/audioAssetReference"
+        },
+        "rampUpPitch": {
+          "type": "number"
+        },
+        "lerpSpeed": {
+          "type": "number"
+        },
+        "airLerpSpeed": {
+          "type": "number"
+        }
+      }
+    },
+    "audioHorn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "layers"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "layers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/audioHornLayer"
+          }
+        }
+      }
+    },
+    "audioHornLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file"
+      ],
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/uri"
+        },
+        "keyframes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/audioKeyframe"
+          },
+          "default": []
+        }
+      }
+    },
+    "audioBell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "file"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "$ref": "#/$defs/uri"
+        },
+        "indexTimes": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          },
+          "default": []
+        }
+      }
+    },
+    "audioAssetReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "assetPackIdentifier": {
+          "type": "string"
+        },
+        "assetIdentifier": {
+          "type": "string"
+        }
+      }
+    },
+    "audioKeyframe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "value"
+      ],
+      "properties": {
+        "t": {
+          "type": "number"
+        },
+        "value": {
+          "type": "number"
+        }
+      }
+    },
     "progression": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "progressionId": {
+          "$ref": "#/$defs/idRef",
+          "description": "Default runtime Progression.identifier for root sections. If omitted, RAIL uses the package id."
+        },
+        "sections": {
+          "type": "array",
+          "description": "Flat authoring form for narrative progression sections. RAIL normalizes these into progressions.<progressionId>.sections at load time.",
+          "items": {
+            "$ref": "#/$defs/section"
+          },
+          "default": []
+        },
         "progressions": {
           "allOf": [
             {
@@ -1423,6 +1702,14 @@
         "displayName"
       ],
       "properties": {
+        "id": {
+          "$ref": "#/$defs/idRef",
+          "description": "Required for progression.sections[]; optional when the section is keyed inside progressions.*.sections."
+        },
+        "progressionId": {
+          "$ref": "#/$defs/idRef",
+          "description": "Optional override for root sections. Defaults to progression.progressionId or the package id."
+        },
         "displayName": {
           "type": "string",
           "minLength": 1
@@ -1430,8 +1717,13 @@
         "description": {
           "type": "string"
         },
+        "prerequisiteSections": {
+          "$ref": "#/$defs/idArray",
+          "description": "Alias for prerequisiteSectionIds; preferred for new root section authoring."
+        },
         "prerequisiteSectionIds": {
-          "$ref": "#/$defs/idArray"
+          "$ref": "#/$defs/idArray",
+          "description": "Legacy keyed-section prerequisite field. RAIL also accepts prerequisiteSections."
         },
         "enableFeaturesOnUnlock": {
           "$ref": "#/$defs/idArray"
@@ -1441,6 +1733,34 @@
         },
         "enableFeaturesOnAvailable": {
           "$ref": "#/$defs/idArray"
+        },
+        "unlockIncludeIndustries": {
+          "$ref": "#/$defs/idArray",
+          "description": "Section-level unlock payload. RAIL materializes this through a synthetic MapFeature enabled when the section unlocks."
+        },
+        "unlockExcludeIndustries": {
+          "$ref": "#/$defs/idArray",
+          "description": "Section-level unlock payload. RAIL materializes this through a synthetic MapFeature enabled when the section unlocks."
+        },
+        "unlockIncludeIndustryComponents": {
+          "$ref": "#/$defs/idArray",
+          "description": "Section-level unlock payload. RAIL materializes this through a synthetic MapFeature enabled when the section unlocks."
+        },
+        "areasEnableOnUnlock": {
+          "$ref": "#/$defs/idArray",
+          "description": "Section-level unlock payload. RAIL materializes this through a synthetic MapFeature enabled when the section unlocks."
+        },
+        "gameObjectsEnableOnUnlock": {
+          "$ref": "#/$defs/stringArray",
+          "description": "Scene paths to enable when this section unlocks."
+        },
+        "trackGroupsEnableOnUnlock": {
+          "$ref": "#/$defs/idArray",
+          "description": "Track groups to enable when this section unlocks."
+        },
+        "trackGroupsAvailableOnUnlock": {
+          "$ref": "#/$defs/idArray",
+          "description": "Track groups to mark available when this section unlocks."
         },
         "deliveryPhases": {
           "type": "array",
@@ -1491,6 +1811,16 @@
           "type": "integer",
           "minimum": 1
         },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "loadToIndustry",
+            "loadFromIndustry",
+            "import",
+            "export"
+          ],
+          "default": "loadToIndustry"
+        },
         "destinationIndustryId": {
           "$ref": "#/$defs/idRef"
         }
@@ -1515,6 +1845,31 @@
           "default": false
         },
         "groupIds": {
+          "$ref": "#/$defs/idArray",
+          "description": "Compatibility shortcut. If explicit trackGroups* arrays are absent, this fills both enable and available group arrays."
+        },
+        "prerequisiteFeatureIds": {
+          "$ref": "#/$defs/idArray"
+        },
+        "trackGroupsEnableOnUnlock": {
+          "$ref": "#/$defs/idArray"
+        },
+        "trackGroupsAvailableOnUnlock": {
+          "$ref": "#/$defs/idArray"
+        },
+        "areasEnableOnUnlock": {
+          "$ref": "#/$defs/idArray"
+        },
+        "gameObjectsEnableOnUnlock": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "unlockIncludeIndustries": {
+          "$ref": "#/$defs/idArray"
+        },
+        "unlockExcludeIndustries": {
+          "$ref": "#/$defs/idArray"
+        },
+        "unlockIncludeIndustryComponents": {
           "$ref": "#/$defs/idArray"
         }
       }

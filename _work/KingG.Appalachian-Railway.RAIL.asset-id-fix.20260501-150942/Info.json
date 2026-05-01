@@ -1,0 +1,29 @@
+{
+  "$schema": ".\\schemas\\umm-info.schema.json",
+  "Id": "KingG.Appalachian-Railway.RAIL",
+  "DisplayName": "Appalachian Railway & Surrounding Timberlands (RAIL)",
+  "Author": "KingG",
+  "Version": "1.0.4.6",
+  "ManagerVersion": "0.27.10",
+  "Requirements": [
+    "RAIL"
+  ],
+  "LoadAfter": [
+    "RAIL"
+  ],
+  "RailDataFiles": [
+    "loads.rail.json",
+    "bacon-game-graph.rail.json",
+    "copper-game-graph.rail.json",
+    "geep-game-graph.rail.json",
+    "kg-branch-game-graph.rail.json",
+    "industry.rail.json",
+    "kg-branch-game-graph-late.rail.json",
+    "splineys-late.rail.json",
+    "mandelas.rail.json",
+    "rivers.rail.json",
+    "roads.rail.json",
+    "scenery.rail.json",
+    "splineys.rail.json"
+  ]
+}
