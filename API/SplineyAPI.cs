@@ -34,6 +34,7 @@ namespace RAIL.API
             var root = new GameObject(id);
             ApplyDefinition(root, id, definition, false);
             RailSplineyRuntimeIndex.Instance.Set(id, root);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Spliney, id, definition);
             return root;
         }
 
@@ -47,6 +48,7 @@ namespace RAIL.API
 
             ApplyDefinition(root, id, definition, true);
             RailSplineyRuntimeIndex.Instance.Set(id, root);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Spliney, id, definition);
         }
 
         public static void RemoveSpliney(string id)
@@ -70,6 +72,7 @@ namespace RAIL.API
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
             RailSplineyRuntimeIndex.Instance.Remove(id);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Spliney, id);
             RailLog.Info($"RAIL removed spliney '{id}' from '{path}'.");
             return true;
         }
@@ -91,6 +94,61 @@ namespace RAIL.API
         public static IEnumerable<GameObject> GetAllSplineys()
         {
             return UnityEngine.Object.FindObjectsOfType<RailSplineyMarker>(true).Select(marker => marker.gameObject);
+        }
+
+        public static RailSpliney GetSplineyDefinition(string id)
+        {
+            return GetDefinition(GetSpliney(id));
+        }
+
+        public static RailSpliney GetDefinition(GameObject root)
+        {
+            if (root == null)
+            {
+                return null;
+            }
+
+            var marker = root.GetComponent<RailSplineyMarker>();
+            var id = marker != null ? marker.Id : root.name;
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Spliney, id, out RailSpliney definition);
+            definition = definition ?? new RailSpliney();
+
+            var riverPath = root.GetComponent<RiverPath>();
+            if (riverPath != null)
+            {
+                definition.Type = riverPath.style == RiverPath.RiverPathStyle.River ? "river" : "road";
+                definition.OffsetY = riverPath.yOffset;
+                var builder = root.GetComponent<RiverBuilder>();
+                var profile = builder != null ? RiverBuilderSplineProfileField?.GetValue(builder) as SplineProfile : null;
+                if (profile != null)
+                {
+                    definition.Profile = profile.name;
+                }
+
+                definition.Points = riverPath.TransformedPoints.Select(point => new RailSplineyPoint
+                {
+                    Position = point.position,
+                    Rotation = point.eulerAngles,
+                    Width = point.width
+                }).ToArray();
+                return definition;
+            }
+
+            var trestle = root.GetComponent<AutoTrestle.AutoTrestle>();
+            if (trestle != null)
+            {
+                definition.Type = "trestle";
+                definition.Profile = trestle.profile != null ? trestle.profile.name : definition.Profile;
+                definition.HeadStyle = trestle.headStyle.ToString();
+                definition.TailStyle = trestle.tailStyle.ToString();
+                definition.Points = trestle.controlPoints.Select(point => new RailSplineyPoint
+                {
+                    Position = root.transform.TransformPoint(point.position),
+                    Rotation = (root.transform.rotation * point.rotation).eulerAngles
+                }).ToArray();
+            }
+
+            return definition;
         }
 
         private static void ApplyDefinition(GameObject root, string id, RailSpliney definition, bool rebuildRuntime)

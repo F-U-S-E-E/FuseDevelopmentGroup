@@ -72,9 +72,10 @@ namespace RAIL.API
                 CanvasField?.SetValue(label, labelObject.GetComponent<Canvas>());
                 ApplyMapLabelDefinition(label, definition);
                 RailMapLabelRuntimeIndex.Instance.Set(id, label);
+                RailApiPersistence.RecordDefinition(RailDefinitionKind.MapLabel, id, definition);
                 return label;
             }
-            catch
+            catch (Exception ex)
             {
                 if (wrapper != null)
                 {
@@ -82,6 +83,7 @@ namespace RAIL.API
                 }
 
                 RailMapLabelRuntimeIndex.Instance.Remove(id);
+                RailLog.Warning($"RAIL failed to create map label '{id}' and cleaned up the partial object: {ex.Message}");
                 throw;
             }
         }
@@ -96,6 +98,7 @@ namespace RAIL.API
 
             ApplyMapLabelDefinition(label, definition);
             RailMapLabelRuntimeIndex.Instance.Set(id, label);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.MapLabel, id, definition);
         }
 
         public static void RemoveMapLabel(string id)
@@ -134,6 +137,7 @@ namespace RAIL.API
             wrapper.SetActive(false);
             UnityEngine.Object.Destroy(wrapper);
             RailMapLabelRuntimeIndex.Instance.Remove(id);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.MapLabel, id);
             RailLog.Info($"RAIL removed map label '{id}' from '{path}'.");
             return true;
         }
@@ -155,6 +159,34 @@ namespace RAIL.API
             return UnityEngine.Object.FindObjectsOfType<MapLabel>();
         }
 
+        public static RailMapLabel GetMapLabelDefinition(string id)
+        {
+            return GetDefinition(GetMapLabel(id));
+        }
+
+        public static RailMapLabel GetDefinition(MapLabel label)
+        {
+            if (label == null)
+            {
+                return null;
+            }
+
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.MapLabel, label.name, out RailMapLabel definition);
+            definition = definition ?? new RailMapLabel();
+            definition.Text = label.text;
+            var transform = label.transform.parent != null ? label.transform.parent : label.transform;
+            definition.Position = transform.localPosition;
+            definition.Rotation = transform.localEulerAngles;
+            var text = label.GetComponentInChildren<TMP_Text>();
+            if (text != null)
+            {
+                definition.Size = text.fontSize;
+                definition.Color = "#" + ColorUtility.ToHtmlStringRGBA(text.color);
+            }
+
+            return definition;
+        }
+
         public static GameObject AddMapMask(string id, RailMapMask definition)
         {
             RequireId(id, nameof(id));
@@ -171,6 +203,7 @@ namespace RAIL.API
             var root = new GameObject(id);
             root.transform.SetParent(GetOrCreateWorldRoot(MapMaskRootName, ref _fallbackMapMaskRoot), false);
             ApplyMapMaskDefinition(root, definition);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.MapMask, id, definition);
             return root;
         }
 
@@ -183,6 +216,7 @@ namespace RAIL.API
             }
 
             ApplyMapMaskDefinition(root, definition);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.MapMask, id, definition);
         }
 
         public static void RemoveMapMask(string id)
@@ -210,6 +244,7 @@ namespace RAIL.API
             var path = GetTransformPath(root.transform);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.MapMask, id);
             RailLog.Info($"RAIL removed map mask '{id}' from '{path}'.");
             return true;
         }
@@ -224,6 +259,61 @@ namespace RAIL.API
         public static IEnumerable<GameObject> GetAllMapMasks()
         {
             return GetChildren(GetOrCreateWorldRoot(MapMaskRootName, ref _fallbackMapMaskRoot));
+        }
+
+        public static RailMapMask GetMapMaskDefinition(string id)
+        {
+            return GetMapMaskDefinition(GetMapMask(id));
+        }
+
+        public static RailMapMask GetMapMaskDefinition(GameObject mapMask)
+        {
+            if (mapMask == null)
+            {
+                return null;
+            }
+
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.MapMask, mapMask.name, out RailMapMask definition);
+            definition = definition ?? new RailMapMask();
+            var circle = mapMask.GetComponent<CircleMapMask>();
+            if (circle != null)
+            {
+                definition.Type = "circle";
+                definition.Center = mapMask.transform.position;
+                definition.Radius = circle.radius;
+                return definition;
+            }
+
+            var rectangle = mapMask.GetComponent<RectangleMapMask>();
+            if (rectangle != null)
+            {
+                definition.Type = "rectangle";
+                definition.Center = mapMask.transform.position;
+                definition.Rotation = mapMask.transform.eulerAngles;
+                definition.Size = new Vector3(rectangle.sizeX, 0f, rectangle.sizeZ);
+                return definition;
+            }
+
+            var curves = mapMask.GetComponentsInChildren<CurveMapMask>(true);
+            if (curves.Length > 0)
+            {
+                definition.Type = "curve";
+                definition.Width = curves[0].radius;
+                var points = new List<Vector3>();
+                foreach (var curve in curves.OrderBy(curve => curve.name, StringComparer.OrdinalIgnoreCase))
+                {
+                    if (points.Count == 0)
+                    {
+                        points.Add(curve.positionA);
+                    }
+
+                    points.Add(curve.positionB);
+                }
+
+                definition.Points = points.ToArray();
+            }
+
+            return definition;
         }
 
         public static GameObject AddTelegraphPoles(string id, RailTelegraphPoles definition)
@@ -242,6 +332,7 @@ namespace RAIL.API
             var root = new GameObject(id);
             root.transform.SetParent(GetOrCreateWorldRoot(TelegraphRootName, ref _fallbackTelegraphRoot), false);
             ApplyTelegraphPolesDefinition(root, definition);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TelegraphPoles, id, definition);
             return root;
         }
 
@@ -254,6 +345,7 @@ namespace RAIL.API
             }
 
             ApplyTelegraphPolesDefinition(root, definition);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TelegraphPoles, id, definition);
         }
 
         public static void RemoveTelegraphPoles(string id)
@@ -281,6 +373,7 @@ namespace RAIL.API
             var path = GetTransformPath(root.transform);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.TelegraphPoles, id);
             RailLog.Info($"RAIL removed telegraph pole set '{id}' from '{path}'.");
             return true;
         }
@@ -295,6 +388,27 @@ namespace RAIL.API
         public static IEnumerable<GameObject> GetAllTelegraphPoles()
         {
             return GetChildren(GetOrCreateWorldRoot(TelegraphRootName, ref _fallbackTelegraphRoot));
+        }
+
+        public static RailTelegraphPoles GetTelegraphPolesDefinition(string id)
+        {
+            return GetTelegraphPolesDefinition(GetTelegraphPoles(id));
+        }
+
+        public static RailTelegraphPoles GetTelegraphPolesDefinition(GameObject telegraphPoles)
+        {
+            if (telegraphPoles == null)
+            {
+                return null;
+            }
+
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.TelegraphPoles, telegraphPoles.name, out RailTelegraphPoles definition);
+            definition = definition ?? new RailTelegraphPoles();
+            definition.Points = telegraphPoles.GetComponentsInChildren<TelegraphPole>(true)
+                .OrderBy(pole => pole.name, StringComparer.OrdinalIgnoreCase)
+                .Select(pole => pole.transform.position)
+                .ToArray();
+            return definition;
         }
 
         private static void ApplyMapLabelDefinition(MapLabel label, RailMapLabel definition)

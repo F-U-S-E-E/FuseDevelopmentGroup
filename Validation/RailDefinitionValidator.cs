@@ -25,7 +25,18 @@ namespace RAIL.Validation
 
             if (value.SchemaVersion != RailMigration.CurrentVersion)
             {
-                result.AddError("schemaVersion", $"Schema version must be {RailMigration.CurrentVersion}.", "rail.schema.version", value.SchemaVersion);
+                if (RailMigration.IsFutureSchemaVersion(value.SchemaVersion))
+                {
+                    result.AddWarning(
+                        "schemaVersion",
+                        $"Schema version {value.SchemaVersion} is newer than this runtime supports ({RailMigration.CurrentVersion}); RAIL will apply a best-effort load.",
+                        "rail.schema.version.future",
+                        value.SchemaVersion);
+                }
+                else
+                {
+                    result.AddError("schemaVersion", $"Schema version must be {RailMigration.CurrentVersion}.", "rail.schema.version", value.SchemaVersion);
+                }
             }
 
             ValidateOperations(result, value.Operations);
@@ -295,9 +306,20 @@ namespace RAIL.Validation
                 ValidateWorldRemovalTargets(result, "world.removals.sceneClones", world.Removals.SceneClones, world.SceneClones.Keys);
             }
 
+            ValidateSuppressionIds(result, "world.suppressBaseScenePaths", world.SuppressBaseScenePaths, "Scene suppression path is empty.", "rail.world.suppression.scenePath.empty");
+            ValidateSuppressionIds(result, "world.suppressBaseTrackGroups", world.SuppressBaseTrackGroups, "Track group suppression id is empty.", "rail.world.suppression.trackGroup.empty");
+            ValidateSuppressionIds(result, "world.suppressBaseAreas", world.SuppressBaseAreas, "Area suppression id is empty.", "rail.world.suppression.area.empty");
+
             foreach (var scenery in world.Scenery)
             {
-                Required(result, $"world.scenery.{scenery.Key}.model", scenery.Value.Model);
+                if (string.IsNullOrWhiteSpace(scenery.Value?.AssetIdentifier) &&
+                    string.IsNullOrWhiteSpace(scenery.Value?.Model))
+                {
+                    result.AddError(
+                        $"world.scenery.{scenery.Key}.assetIdentifier",
+                        "Scenery requires an AssetIdentifier (or legacy Model) to resolve a PrefabStore asset.",
+                        "rail.world.scenery.assetIdentifier.required");
+                }
             }
 
             foreach (var spliney in world.Splineys)
@@ -397,6 +419,25 @@ namespace RAIL.Validation
                 else if (definedIds.Contains(id))
                 {
                     result.AddError($"{path}[{index}]", "A world object cannot be defined and removed in the same RAIL document.", "rail.world.removal.conflict", id);
+                }
+
+                index++;
+            }
+        }
+
+        private static void ValidateSuppressionIds(ValidationResult result, string path, IEnumerable<string> values, string message, string code)
+        {
+            if (values == null)
+            {
+                return;
+            }
+
+            var index = 0;
+            foreach (var value in values)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    result.AddWarning($"{path}[{index}]", message, code);
                 }
 
                 index++;

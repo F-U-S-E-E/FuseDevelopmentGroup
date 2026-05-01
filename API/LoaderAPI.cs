@@ -34,6 +34,7 @@ namespace RAIL.API
             gameObject.transform.SetParent(GetLoaderRoot(), false);
             ApplyDefinition(gameObject, id, definition);
             RailLoaderRuntimeIndex.Instance.Set(id, gameObject);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Loader, id, definition);
             return gameObject;
         }
 
@@ -47,6 +48,7 @@ namespace RAIL.API
 
             ApplyDefinition(loader, id, definition);
             RailLoaderRuntimeIndex.Instance.Set(id, loader);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Loader, id, definition);
         }
 
         public static void RemoveLoader(string id)
@@ -55,6 +57,7 @@ namespace RAIL.API
             loader.SetActive(false);
             UnityEngine.Object.Destroy(loader);
             RailLoaderRuntimeIndex.Instance.Remove(id);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Loader, id);
         }
 
         public static GameObject GetLoader(string id)
@@ -70,6 +73,33 @@ namespace RAIL.API
         public static IEnumerable<GameObject> GetAllLoaders()
         {
             return RailLoaderRuntimeIndex.Instance.Values.Cast<GameObject>();
+        }
+
+        public static RailLoader GetLoaderDefinition(string id)
+        {
+            return GetDefinition(GetLoader(id));
+        }
+
+        public static RailLoader GetDefinition(GameObject loader)
+        {
+            if (loader == null)
+            {
+                return null;
+            }
+
+            var id = loader.name;
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Loader, id, out RailLoader definition);
+            definition = definition ?? new RailLoader();
+            definition.Position = loader.transform.localPosition;
+            definition.Rotation = loader.transform.localEulerAngles;
+
+            var targetLoader = loader.GetComponentInChildren<CarLoadTargetLoader>(true);
+            if (targetLoader?.sourceIndustry != null)
+            {
+                definition.IndustryId = targetLoader.sourceIndustry.identifier;
+            }
+
+            return definition;
         }
 
         private static void ApplyDefinition(GameObject loader, string id, RailLoader definition)
@@ -112,15 +142,17 @@ namespace RAIL.API
                 renderer.enabled = true;
             }
 
-            AttachIndustry(instance, definition.IndustryId);
+            var industry = AttachIndustry(instance, definition.IndustryId);
+            RailPrefabSanitizer.SanitizeLoader(instance, id, industry).Log($"RAIL loader '{id}'");
             instance.SetActive(true);
+            RailPrefabSanitizer.ValidateLoaderPostBind(loader, id, industry).Log($"RAIL loader '{id}' post-bind");
         }
 
-        private static void AttachIndustry(GameObject instance, string industryId)
+        private static Industry AttachIndustry(GameObject instance, string industryId)
         {
             if (string.IsNullOrWhiteSpace(industryId))
             {
-                return;
+                return null;
             }
 
             var industry = IndustryAPI.GetIndustry(industryId);
@@ -140,6 +172,8 @@ namespace RAIL.API
             {
                 IndustryHoverableIndustryField?.SetValue(hoverable, industry);
             }
+
+            return industry;
         }
 
         private static GameObject RequireLoader(string id)

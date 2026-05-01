@@ -36,7 +36,7 @@ namespace RAIL.Loading
                     return;
                 }
 
-                foreach (var packagePath in RailDataPackageDiscovery.DiscoverPackageFolders(modsRoot))
+                foreach (var packagePath in RailDataPackageDiscovery.DiscoverPackagesOnce())
                 {
                     try
                     {
@@ -103,10 +103,22 @@ namespace RAIL.Loading
                         continue;
                     }
 
-                    foreach (var tilePath in Directory.GetFiles(source.ResolvedFolder, "*.data", SearchOption.TopDirectoryOnly))
+                    string[] tilePaths;
+                    try
+                    {
+                        tilePaths = Directory.GetFiles(source.ResolvedFolder, "*.data", SearchOption.TopDirectoryOnly);
+                    }
+                    catch (Exception ex)
+                    {
+                        RailLog.Warning($"RAIL could not enumerate map tiles in '{source.ResolvedFolder}': {ex.Message}");
+                        continue;
+                    }
+
+                    foreach (var tilePath in tilePaths)
                     {
                         if (!TryParseTilePosition(tilePath, out var tilePosition))
                         {
+                            RailLog.Warning($"RAIL ignored map tile with unexpected filename '{tilePath}'.");
                             continue;
                         }
 
@@ -190,7 +202,17 @@ namespace RAIL.Loading
                     continue;
                 }
 
-                var resolvedFolder = ResolveSourceFolder(modFolder, tileSource.Value.SourceFolder);
+                string resolvedFolder;
+                try
+                {
+                    resolvedFolder = ResolveSourceFolder(modFolder, tileSource.Value.SourceFolder);
+                }
+                catch (Exception ex)
+                {
+                    RailLog.Warning($"Skipping map tile source '{tileSource.Key}' in '{modId}' because its sourceFolder threw while resolving: {ex.Message}");
+                    continue;
+                }
+
                 if (string.IsNullOrWhiteSpace(resolvedFolder))
                 {
                     RailLog.Warning($"Skipping map tile source '{tileSource.Key}' in '{modId}' because its sourceFolder could not be resolved.");

@@ -45,6 +45,28 @@ namespace RAIL.API
             return UnityEngine.Object.FindObjectsOfType<Turntable>();
         }
 
+        public static RailTurntable GetTurntableDefinition(string id)
+        {
+            return GetDefinition(GetTurntable(id));
+        }
+
+        public static RailTurntable GetDefinition(Turntable turntable)
+        {
+            if (turntable == null)
+            {
+                return null;
+            }
+
+            var id = GetDefinitionTurntableId(turntable);
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Turntable, id, out RailTurntable definition);
+            definition = definition ?? new RailTurntable();
+            definition.Position = turntable.transform.localPosition;
+            definition.Rotation = turntable.transform.localEulerAngles;
+            definition.Radius = turntable.radius;
+            definition.Subdivisions = turntable.subdivisions;
+            return definition;
+        }
+
         public static Turntable AddTurntable(string id, RailTurntable definition)
         {
             RequireId(id, nameof(id));
@@ -71,9 +93,14 @@ namespace RAIL.API
             turntable.subdivisions = definition.Subdivisions;
             ClearBridgeGroup(turntable);
 
-            var pitNodes = CreateOrUpdatePitNodes(turntable, definition);
+            List<TrackNode> pitNodes;
+            using (RailApiPersistence.SuppressRecording())
+            {
+                pitNodes = CreateOrUpdatePitNodes(turntable, definition);
+                CreateOrUpdateRoundhouseTracks(turntable, definition);
+            }
+
             NodesField?.SetValue(turntable, pitNodes);
-            CreateOrUpdateRoundhouseTracks(turntable, definition);
 
             AttachTurntableTemplate(root, turntable);
             ConfigureRoundhouse(root, definition);
@@ -83,11 +110,18 @@ namespace RAIL.API
 
             root.SetActive(true);
             RefreshTurntableTemplateVisuals(root);
+            RailPrefabSanitizer.SanitizeTurntable(root, id, turntable).Log($"RAIL turntable '{id}'");
             RailTurntableRuntimeIndex.Instance.Set(id, turntable);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Turntable, id, definition);
+            RailPrefabSanitizer.ValidateTurntablePostBind(root, id, turntable).Log($"RAIL turntable '{id}' post-bind");
             RailNodeRuntimeIndex.Instance.Rebuild();
             RailSegmentRuntimeIndex.Instance.Rebuild();
             InvalidateTurntableControllerCache();
-            TrackAPI.RebuildGraph();
+            if (!TrackAPI.IsBatching)
+            {
+                TrackAPI.RebuildGraph();
+            }
+
             return turntable;
         }
 
@@ -111,21 +145,32 @@ namespace RAIL.API
                 turntable.subdivisions = definition.Subdivisions;
             }
 
-            var pitNodes = CreateOrUpdatePitNodes(turntable, definition);
+            List<TrackNode> pitNodes;
+            using (RailApiPersistence.SuppressRecording())
+            {
+                pitNodes = CreateOrUpdatePitNodes(turntable, definition);
+                CreateOrUpdateRoundhouseTracks(turntable, definition);
+            }
+
             NodesField?.SetValue(turntable, pitNodes);
-            CreateOrUpdateRoundhouseTracks(turntable, definition);
             AttachTurntableTemplate(turntable.gameObject, turntable);
             ConfigureRoundhouse(turntable.gameObject, definition);
             ClearBridgeGroup(turntable);
             turntable.UpdateSegmentIndex(false);
             ClearBridgeGroup(turntable);
             RefreshTurntableTemplateVisuals(turntable.gameObject);
+            RailPrefabSanitizer.SanitizeTurntable(turntable.gameObject, id, turntable).Log($"RAIL turntable '{id}'");
 
             RailTurntableRuntimeIndex.Instance.Set(id, turntable);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Turntable, id, definition);
+            RailPrefabSanitizer.ValidateTurntablePostBind(turntable.gameObject, id, turntable).Log($"RAIL turntable '{id}' post-bind");
             RailNodeRuntimeIndex.Instance.Rebuild();
             RailSegmentRuntimeIndex.Instance.Rebuild();
             InvalidateTurntableControllerCache();
-            TrackAPI.RebuildGraph();
+            if (!TrackAPI.IsBatching)
+            {
+                TrackAPI.RebuildGraph();
+            }
         }
 
         public static void SetAngle(string id, float angle)
@@ -160,6 +205,7 @@ namespace RAIL.API
                 turntable.gameObject.SetActive(false);
                 UnityEngine.Object.Destroy(turntable.gameObject);
                 RailTurntableRuntimeIndex.Instance.Remove(id);
+                RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Turntable, id);
             }
             finally
             {

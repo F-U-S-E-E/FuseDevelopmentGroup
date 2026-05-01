@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -12,7 +13,28 @@ namespace RAIL.Data
         public Dictionary<string, RailMapMask> MapMasks { get; set; } = new Dictionary<string, RailMapMask>();
         public Dictionary<string, RailMapTileSource> MapTiles { get; set; } = new Dictionary<string, RailMapTileSource>();
         public Dictionary<string, RailSceneClone> SceneClones { get; set; } = new Dictionary<string, RailSceneClone>();
+        public string[] SuppressBaseScenePaths { get; set; } = Array.Empty<string>();
+        public string[] SuppressBaseTrackGroups { get; set; } = Array.Empty<string>();
+        public string[] SuppressBaseAreas { get; set; } = Array.Empty<string>();
+        public string[] SuppressScenePaths { get; set; }
+        public string[] SuppressGroups { get; set; }
+        public string[] SuppressAreas { get; set; }
         public RailWorldRemovals Removals { get; set; } = new RailWorldRemovals();
+
+        public bool ShouldSerializeSuppressScenePaths()
+        {
+            return false;
+        }
+
+        public bool ShouldSerializeSuppressGroups()
+        {
+            return false;
+        }
+
+        public bool ShouldSerializeSuppressAreas()
+        {
+            return false;
+        }
     }
 
     public sealed class RailWorldRemovals
@@ -27,7 +49,34 @@ namespace RAIL.Data
 
     public sealed class RailScenery
     {
+        /// <summary>
+        /// Display/label field. Never used as a PrefabStore asset key.
+        /// May contain user-facing names like "Camp 1" or "Mess Hall".
+        /// </summary>
         public string Model { get; set; }
+
+        /// <summary>
+        /// PrefabStore / SceneryAssetManager asset identifier (a.k.a. modelIdentifier).
+        /// This is the only field that may be passed to SceneryAssetInstance.identifier
+        /// or to SceneryAssetManager.LoadScenery.
+        /// </summary>
+        public string AssetIdentifier { get; set; }
+
+        /// <summary>
+        /// Alias kept for forward-compat with authoring tooling that uses
+        /// "definition identifier" terminology. Mirrors AssetIdentifier.
+        /// </summary>
+        public string DefinitionIdentifier
+        {
+            get { return AssetIdentifier; }
+            set { AssetIdentifier = value; }
+        }
+
+        public bool ShouldSerializeDefinitionIdentifier()
+        {
+            return false;
+        }
+
         public Vector3 Position { get; set; }
         public Vector3 Rotation { get; set; }
         public Vector3 Scale { get; set; } = Vector3.one;

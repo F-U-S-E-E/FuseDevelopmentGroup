@@ -52,7 +52,13 @@ namespace RAIL.Loading
 
         public static void Reset()
         {
+            if (!_mountComplete)
+            {
+                return;
+            }
+
             _mountComplete = false;
+            RailLog.Info("RAIL asset pack mount state reset.");
         }
 
         private static int MountAssetPacksFromPackage(string packagePath)
@@ -68,8 +74,9 @@ namespace RAIL.Loading
             {
                 info = JObject.Parse(File.ReadAllText(infoPath));
             }
-            catch
+            catch (Exception ex)
             {
+                RailLog.Warning($"RAIL ignored asset pack declaration in '{packagePath}' because Info.json could not be parsed: {ex.Message}");
                 return 0;
             }
 
@@ -82,7 +89,14 @@ namespace RAIL.Loading
             var mountedCount = 0;
             for (var index = 0; index < sourceRoots.Length; index++)
             {
-                mountedCount += MountAssetPackSource(packagePath, sourceRoots[index]);
+                try
+                {
+                    mountedCount += MountAssetPackSource(packagePath, sourceRoots[index]);
+                }
+                catch (Exception ex)
+                {
+                    RailLog.Exception($"RAIL failed to mount asset pack source '{sourceRoots[index]}' from '{packagePath}'", ex);
+                }
             }
 
             return mountedCount;
@@ -128,6 +142,12 @@ namespace RAIL.Loading
 
         private static int MountAssetPackSource(string packagePath, string relativeSource)
         {
+            if (string.IsNullOrWhiteSpace(relativeSource))
+            {
+                RailLog.Warning($"RAIL ignored blank asset pack source in '{packagePath}'.");
+                return 0;
+            }
+
             var packageRoot = Path.GetFullPath(packagePath);
             var sourcePath = Path.GetFullPath(Path.Combine(packageRoot, relativeSource));
             if (!sourcePath.StartsWith(packageRoot, StringComparison.OrdinalIgnoreCase))

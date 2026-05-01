@@ -1,13 +1,20 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using RAIL.Data;
 using RAIL.Data.Common;
+using RAIL.Infrastructure;
 
 namespace RAIL.Migrations
 {
     public static class RailMigration
     {
-        public const int CurrentVersion = 1;
+        public const string CurrentVersion = "1.0";
+
+        private static readonly Version CurrentSemanticVersion = new Version(1, 0);
+        private static readonly object WarningLock = new object();
+        private static readonly HashSet<string> WarningsEmitted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public static RailModDefinition Migrate(RailModDefinition definition)
         {
@@ -16,22 +23,25 @@ namespace RAIL.Migrations
                 throw new ArgumentNullException(nameof(definition));
             }
 
+            var packageId = GetPackageId(definition);
+            var sourceVersion = NormalizeSchemaVersion(definition, packageId, true);
+
+            if (sourceVersion.CompareTo(CurrentSemanticVersion) > 0)
+            {
+                WarnOnce(
+                    packageId,
+                    $"schema.future.{definition.SchemaVersion}",
+                    $"RAIL package '{packageId}' declares future schemaVersion '{definition.SchemaVersion}'. " +
+                    $"This runtime supports '{CurrentVersion}'; attempting best-effort load.");
+            }
+            else
+            {
+                RunVersionByVersionMigrations(definition, sourceVersion, packageId);
+            }
+
             Normalize(definition);
-
-            while (definition.SchemaVersion < CurrentVersion)
-            {
-                switch (definition.SchemaVersion)
-                {
-                    default:
-                        throw new InvalidOperationException($"Unknown RAIL schema version {definition.SchemaVersion}.");
-                }
-            }
-
-            if (definition.SchemaVersion > CurrentVersion)
-            {
-                throw new InvalidOperationException($"RAIL schema version {definition.SchemaVersion} is newer than this runtime supports ({CurrentVersion}).");
-            }
-
+            ApplyCompatibilityMigrations(definition, packageId);
+            Normalize(definition);
             return definition;
         }
 
@@ -42,10 +52,7 @@ namespace RAIL.Migrations
                 return;
             }
 
-            if (definition.SchemaVersion <= 0)
-            {
-                definition.SchemaVersion = CurrentVersion;
-            }
+            NormalizeSchemaVersion(definition, GetPackageId(definition), false);
 
             definition.CoordinateSpace = string.IsNullOrWhiteSpace(definition.CoordinateSpace) ? "world" : definition.CoordinateSpace;
             definition.ModVersion = string.IsNullOrWhiteSpace(definition.ModVersion) ? "1.0.0" : definition.ModVersion;
@@ -77,6 +84,12 @@ namespace RAIL.Migrations
             definition.World.MapMasks = definition.World.MapMasks ?? new Dictionary<string, RailMapMask>();
             definition.World.MapTiles = definition.World.MapTiles ?? new Dictionary<string, RailMapTileSource>();
             definition.World.SceneClones = definition.World.SceneClones ?? new Dictionary<string, RailSceneClone>();
+            definition.World.SuppressBaseScenePaths = MergeAliasArray(definition.World.SuppressBaseScenePaths, definition.World.SuppressScenePaths);
+            definition.World.SuppressBaseTrackGroups = MergeAliasArray(definition.World.SuppressBaseTrackGroups, definition.World.SuppressGroups);
+            definition.World.SuppressBaseAreas = MergeAliasArray(definition.World.SuppressBaseAreas, definition.World.SuppressAreas);
+            definition.World.SuppressScenePaths = null;
+            definition.World.SuppressGroups = null;
+            definition.World.SuppressAreas = null;
             definition.World.Removals = definition.World.Removals ?? new RailWorldRemovals();
             definition.World.Removals.Scenery = definition.World.Removals.Scenery ?? Array.Empty<string>();
             definition.World.Removals.Splineys = definition.World.Removals.Splineys ?? Array.Empty<string>();
@@ -120,6 +133,177 @@ namespace RAIL.Migrations
             }
         }
 
+        public static bool TryParseSchemaVersion(string value, out Version version)
+        {
+            string normalized;
+            return TryParseSchemaVersion(value, out version, out normalized);
+        }
+
+        public static bool IsFutureSchemaVersion(string value)
+        {
+            Version parsed;
+            return TryParseSchemaVersion(value, out parsed) && parsed.CompareTo(CurrentSemanticVersion) > 0;
+        }
+
+        private static void RunVersionByVersionMigrations(RailModDefinition definition, Version sourceVersion, string packageId)
+        {
+            var version = sourceVersion;
+            while (version.CompareTo(CurrentSemanticVersion) < 0)
+            {
+                Version nextVersion;
+                if (!TryMigrateOneVersion(definition, version, packageId, out nextVersion))
+                {
+                    WarnOnce(
+                        packageId,
+                        $"schema.unknownOlder.{FormatVersion(version)}",
+                        $"RAIL package '{packageId}' declares older unknown schemaVersion '{FormatVersion(version)}'. " +
+                        $"No exact migration exists; applying best-effort normalization as '{CurrentVersion}'.");
+                    definition.SchemaVersion = CurrentVersion;
+                    return;
+                }
+
+                version = nextVersion;
+            }
+
+            definition.SchemaVersion = CurrentVersion;
+        }
+
+        private static bool TryMigrateOneVersion(RailModDefinition definition, Version version, string packageId, out Version nextVersion)
+        {
+            nextVersion = version;
+
+            // Add version-specific migrations here as the schema advances.
+            // Deprecation policy: renamed fields stay readable for one minor version,
+            // emit one warning per package while they are migrated, and are removed in
+            // the following minor version after authored packages have had a release
+            // window to save with the new field name.
+            switch (FormatVersion(version))
+            {
+                case CurrentVersion:
+                    nextVersion = CurrentSemanticVersion;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static void ApplyCompatibilityMigrations(RailModDefinition definition, string packageId)
+        {
+            var migratedModelField = false;
+            foreach (var scenery in definition.World.Scenery.Values)
+            {
+                if (scenery == null ||
+                    !string.IsNullOrWhiteSpace(scenery.AssetIdentifier) ||
+                    string.IsNullOrWhiteSpace(scenery.Model))
+                {
+                    continue;
+                }
+
+                scenery.AssetIdentifier = scenery.Model;
+                migratedModelField = true;
+            }
+
+            if (migratedModelField)
+            {
+                WarnOnce(
+                    packageId,
+                    "deprecation.world.scenery.model",
+                    $"RAIL package '{packageId}' uses deprecated world.scenery.*.model as an asset identifier. " +
+                    "RAIL migrated it to assetIdentifier in memory; keep model only as a temporary compatibility field.");
+            }
+        }
+
+        private static Version NormalizeSchemaVersion(RailModDefinition definition, string packageId, bool logWarnings)
+        {
+            Version version;
+            string normalized;
+            if (TryParseSchemaVersion(definition.SchemaVersion, out version, out normalized))
+            {
+                definition.SchemaVersion = normalized;
+                return version;
+            }
+
+            definition.SchemaVersion = CurrentVersion;
+            if (logWarnings)
+            {
+                WarnOnce(
+                    packageId,
+                    "schema.invalid",
+                    $"RAIL package '{packageId}' has an invalid schemaVersion. Defaulting to '{CurrentVersion}' for best-effort load.");
+            }
+
+            return CurrentSemanticVersion;
+        }
+
+        private static bool TryParseSchemaVersion(string value, out Version version, out string normalized)
+        {
+            version = null;
+            normalized = null;
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var text = value.Trim();
+            var parts = text.Split('.');
+            if (parts.Length == 0 || parts.Length > 3)
+            {
+                return false;
+            }
+
+            int major;
+            if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out major) || major < 0)
+            {
+                return false;
+            }
+
+            var minor = 0;
+            if (parts.Length >= 2 &&
+                (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out minor) || minor < 0))
+            {
+                return false;
+            }
+
+            version = new Version(major, minor);
+            normalized = FormatVersion(version);
+            return true;
+        }
+
+        private static string FormatVersion(Version version)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0}.{1}", version.Major, Math.Max(version.Minor, 0));
+        }
+
+        private static string GetPackageId(RailModDefinition definition)
+        {
+            if (!string.IsNullOrWhiteSpace(definition?.Id))
+            {
+                return definition.Id.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(definition?.Name))
+            {
+                return definition.Name.Trim();
+            }
+
+            return "<unknown>";
+        }
+
+        private static void WarnOnce(string packageId, string code, string message)
+        {
+            var key = $"{packageId}:{code}";
+            lock (WarningLock)
+            {
+                if (!WarningsEmitted.Add(key))
+                {
+                    return;
+                }
+            }
+
+            RailLog.Warning(message);
+        }
+
         private static string NormalizeIndustryComponentType(string type)
         {
             if (string.IsNullOrWhiteSpace(type))
@@ -158,6 +342,14 @@ namespace RAIL.Migrations
                 default:
                     return type.Trim();
             }
+        }
+
+        private static string[] MergeAliasArray(string[] preferred, string[] alias)
+        {
+            return (preferred ?? Array.Empty<string>())
+                .Concat(alias ?? Array.Empty<string>())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
         }
 
         private static void NormalizeTrackLocation(RailTrackLocation location)

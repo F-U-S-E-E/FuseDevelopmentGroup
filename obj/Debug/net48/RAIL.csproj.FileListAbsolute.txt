@@ -13,3 +13,4 @@ C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\RAIL.AssemblyInfo.cs
 C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\RAIL.csproj.CoreCompileInputs.cache
 C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\RAIL.dll
 C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\RAIL.pdb
+C:\Hrogers_Railroader_mods_Projects\Rail\obj\Debug\net48\RAIL.sourcelink.json

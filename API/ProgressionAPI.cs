@@ -44,6 +44,7 @@ namespace RAIL.API
             ApplyMapFeatureDefinition(feature, definition);
             RailMapFeatureRuntimeIndex.Instance.Set(id, feature);
             RefreshMapFeatureManager(manager);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.MapFeature, id, definition);
             return feature;
         }
 
@@ -61,6 +62,7 @@ namespace RAIL.API
             {
                 RefreshMapFeatureManager(MapFeatureManager.Shared);
             }
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.MapFeature, id, definition);
         }
 
         public static void RemoveMapFeature(string id)
@@ -69,6 +71,7 @@ namespace RAIL.API
             feature.gameObject.SetActive(false);
             UnityEngine.Object.Destroy(feature.gameObject);
             RailMapFeatureRuntimeIndex.Instance.Remove(id);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.MapFeature, id);
             if (MapFeatureManager.Shared != null)
             {
                 RefreshMapFeatureManager(MapFeatureManager.Shared);
@@ -90,6 +93,27 @@ namespace RAIL.API
         public static IEnumerable<MapFeature> GetAllMapFeatures()
         {
             return UnityEngine.Object.FindObjectsOfType<MapFeature>();
+        }
+
+        public static RailMapFeature GetMapFeatureDefinition(string id)
+        {
+            return GetDefinition(GetMapFeature(id));
+        }
+
+        public static RailMapFeature GetDefinition(MapFeature feature)
+        {
+            if (feature == null)
+            {
+                return null;
+            }
+
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.MapFeature, feature.identifier, out RailMapFeature definition);
+            definition = definition ?? new RailMapFeature();
+            definition.DisplayName = feature.displayName;
+            definition.Description = feature.description;
+            definition.InitiallyEnabled = feature.defaultEnableInSandbox;
+            definition.GroupIds = feature.trackGroupsEnableOnUnlock ?? feature.trackGroupsAvailableOnUnlock;
+            return definition;
         }
 
         public static Progression AddProgression(string id, RailProgression definition)
@@ -115,6 +139,7 @@ namespace RAIL.API
             ApplyProgressionDefinition(progression, definition);
             RailProgressionRuntimeIndex.Instance.Set(id, progression);
             RefreshProgressionManager();
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Progression, id, definition);
             return progression;
         }
 
@@ -129,6 +154,7 @@ namespace RAIL.API
             ApplyProgressionDefinition(progression, definition);
             RailProgressionRuntimeIndex.Instance.Set(id, progression);
             RefreshProgressionManager();
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Progression, id, definition);
         }
 
         public static void RemoveProgression(string id)
@@ -137,6 +163,7 @@ namespace RAIL.API
             progression.gameObject.SetActive(false);
             UnityEngine.Object.Destroy(progression.gameObject);
             RailProgressionRuntimeIndex.Instance.Remove(id);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Progression, id);
             RefreshProgressionManager();
         }
 
@@ -155,6 +182,41 @@ namespace RAIL.API
         public static IEnumerable<Progression> GetAllProgressions()
         {
             return UnityEngine.Object.FindObjectsOfType<Progression>();
+        }
+
+        public static RailProgression GetProgressionDefinition(string id)
+        {
+            return GetDefinition(GetProgression(id));
+        }
+
+        public static RailProgression GetDefinition(Progression progression)
+        {
+            if (progression == null)
+            {
+                return null;
+            }
+
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Progression, progression.identifier, out RailProgression definition);
+            definition = definition ?? new RailProgression();
+            definition.Sections = definition.Sections ?? new Dictionary<string, RailSection>();
+
+            var sections = ProgressionSectionsField?.GetValue(progression) as Section[] ??
+                           progression.GetComponentsInChildren<Section>(true);
+            foreach (var section in sections.Where(section => section != null && !string.IsNullOrWhiteSpace(section.identifier)))
+            {
+                definition.Sections[section.identifier] = new RailSection
+                {
+                    DisplayName = section.displayName,
+                    Description = section.description,
+                    PrerequisiteSectionIds = ToSectionIds(section.prerequisiteSections),
+                    EnableFeaturesOnUnlock = ToFeatureIds(section.enableFeaturesOnUnlock),
+                    DisableFeaturesOnUnlock = ToFeatureIds(section.disableFeaturesOnUnlock),
+                    EnableFeaturesOnAvailable = ToFeatureIds(section.enableFeaturesOnAvailable),
+                    DeliveryPhases = ToDeliveryPhases(section.deliveryPhases)
+                };
+            }
+
+            return definition;
         }
 
         public static void SetFeatureEnabled(string id, bool enabled)
@@ -285,6 +347,44 @@ namespace RAIL.API
 
                 return value;
             }).ToArray();
+        }
+
+        private static string[] ToSectionIds(IEnumerable<Section> sections)
+        {
+            return sections?.Where(section => section != null && !string.IsNullOrWhiteSpace(section.identifier))
+                .Select(section => section.identifier)
+                .ToArray();
+        }
+
+        private static string[] ToFeatureIds(IEnumerable<MapFeature> features)
+        {
+            return features?.Where(feature => feature != null && !string.IsNullOrWhiteSpace(feature.identifier))
+                .Select(feature => feature.identifier)
+                .ToArray();
+        }
+
+        private static RailDeliveryPhase[] ToDeliveryPhases(IEnumerable<Section.DeliveryPhase> phases)
+        {
+            return phases?.Where(phase => phase != null)
+                .Select(phase => new RailDeliveryPhase
+                {
+                    Cost = phase.cost,
+                    IndustryComponentId = phase.industryComponent != null ? phase.industryComponent.Identifier : null,
+                    Deliveries = ToDeliveries(phase.deliveries)
+                })
+                .ToArray();
+        }
+
+        private static RailDelivery[] ToDeliveries(IEnumerable<Section.Delivery> deliveries)
+        {
+            return deliveries?.Where(delivery => delivery != null)
+                .Select(delivery => new RailDelivery
+                {
+                    CarTypeFilter = delivery.carTypeFilter.ToString(),
+                    LoadId = delivery.load != null ? delivery.load.id : null,
+                    Count = delivery.count
+                })
+                .ToArray();
         }
 
         private static Section GetSection(string id)

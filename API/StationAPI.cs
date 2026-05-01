@@ -41,6 +41,7 @@ namespace RAIL.API
             gameObject.transform.SetParent(GetStationRoot(), false);
             var stationAgent = ApplyDefinition(gameObject, id, definition);
             RailStationRuntimeIndex.Instance.Set(id, stationAgent);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Station, id, definition);
             return stationAgent;
         }
 
@@ -54,6 +55,7 @@ namespace RAIL.API
 
             ApplyDefinition(GetStationRootObject(agent, id), id, definition);
             RailStationRuntimeIndex.Instance.Set(id, RequireStationAgent(id));
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Station, id, definition);
         }
 
         public static void RemoveStationAgent(string id)
@@ -63,6 +65,7 @@ namespace RAIL.API
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
             RailStationRuntimeIndex.Instance.Remove(id);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Station, id);
         }
 
         public static StationAgent GetStationAgent(string id)
@@ -92,6 +95,34 @@ namespace RAIL.API
         public static IEnumerable<PassengerStop> GetAllPassengerStops()
         {
             return PassengerStop.FindAll();
+        }
+
+        public static RailStation GetStationDefinition(string id)
+        {
+            return GetDefinition(GetStationAgent(id));
+        }
+
+        public static RailStation GetDefinition(StationAgent stationAgent)
+        {
+            if (stationAgent == null)
+            {
+                return null;
+            }
+
+            var id = stationAgent.name;
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Station, id, out RailStation definition);
+            definition = definition ?? new RailStation();
+            var root = GetStationRootObject(stationAgent, id);
+            definition.Position = root.transform.localPosition;
+            definition.Rotation = root.transform.localEulerAngles;
+
+            var stop = PassengerStopField?.GetValue(stationAgent) as PassengerStop;
+            if (stop != null)
+            {
+                definition.PassengerStopId = stop.identifier;
+            }
+
+            return definition;
         }
 
         private static StationAgent ApplyDefinition(GameObject root, string id, RailStation definition)
@@ -166,6 +197,8 @@ namespace RAIL.API
             root.SetActive(true);
             instance.SetActive(true);
             ConfigureMapIcons(instance, stop, root.transform, id, definition.Prefab);
+            RailPrefabSanitizer.SanitizeStation(instance, id, stationAgent, area, stop).Log($"RAIL station '{id}'");
+            RailPrefabSanitizer.ValidateStationPostBind(root, id, stationAgent, area, stop).Log($"RAIL station '{id}' post-bind");
             return stationAgent;
         }
 

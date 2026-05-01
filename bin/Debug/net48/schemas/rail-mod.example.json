@@ -1,12 +1,12 @@
 {
   "$schema": "./rail-mod.schema.json",
   "schemaVersion": 1,
-  "id": "HunterR.MurphyBranch",
+  "id": "RAIL.Example.MurphyBranch",
   "name": "Murphy Branch",
-  "author": "Hunter Rogers",
+  "author": "RAIL Team",
   "modVersion": "1.0.0",
   "railroaderVersion": "2025.1",
-  "description": "Example RAIL JSON export.",
+  "description": "Compact RAIL JSON example covering track, ops, world, progression, and editor data.",
   "coordinateSpace": "world",
   "tracks": {
     "nodes": {
@@ -20,7 +20,11 @@
           "x": 0,
           "y": 180,
           "z": 0
-        }
+        },
+        "groupId": "murphy:main",
+        "tags": [
+          "mainline"
+        ]
       },
       "murphy:n:002": {
         "position": {
@@ -32,47 +36,154 @@
           "x": 0,
           "y": 180,
           "z": 0
-        }
+        },
+        "flipSwitchStand": true,
+        "groupId": "murphy:main"
+      },
+      "murphy:n:003": {
+        "position": {
+          "x": 68,
+          "y": 0.2,
+          "z": 12
+        },
+        "rotation": {
+          "x": 0,
+          "y": 150,
+          "z": 0
+        },
+        "groupId": "murphy:yard"
       }
     },
     "segments": {
-      "murphy:s:001": {
+      "murphy:s:main": {
         "startNodeId": "murphy:n:001",
         "endNodeId": "murphy:n:002",
         "style": "standard",
         "trackClass": "main",
-        "speedLimit": 25
+        "speedLimit": 25,
+        "priority": 10,
+        "groupId": "murphy:main",
+        "tags": [
+          "timetable"
+        ]
+      },
+      "murphy:s:siding": {
+        "startNodeId": "murphy:n:002",
+        "endNodeId": "murphy:n:003",
+        "style": "yard",
+        "trackClass": "yard",
+        "speedLimit": 10,
+        "priority": 5,
+        "groupId": "murphy:yard"
       }
     },
     "spans": {
       "murphy:span:depot": {
         "upper": {
-          "segmentId": "murphy:s:001",
-          "normalized": 0.1
+          "segmentId": "murphy:s:main",
+          "normalized": 0.2,
+          "end": "A"
         },
         "lower": {
-          "segmentId": "murphy:s:001",
-          "normalized": 0.8
+          "segmentId": "murphy:s:main",
+          "normalized": 0.65,
+          "end": "A"
         },
-        "normalize": true
+        "normalize": true,
+        "groupId": "murphy:main"
+      },
+      "murphy:span:team": {
+        "upper": {
+          "segmentId": "murphy:s:siding",
+          "distance": 3,
+          "end": "A"
+        },
+        "lower": {
+          "segmentId": "murphy:s:siding",
+          "distance": 3,
+          "end": "B"
+        },
+        "normalize": true,
+        "groupId": "murphy:yard"
       }
     },
-    "areas": {}
+    "areas": {
+      "murphy:area:town": {
+        "name": "Murphy",
+        "position": {
+          "x": 25,
+          "y": 0,
+          "z": 0
+        },
+        "radius": 350,
+        "tagColor": [
+          0.18,
+          0.55,
+          0.9,
+          1
+        ],
+        "order": 0,
+        "spanIds": [
+          "murphy:span:depot",
+          "murphy:span:team"
+        ],
+        "groupId": "murphy:main"
+      }
+    },
+    "removals": {
+      "nodes": [],
+      "segments": [],
+      "spans": []
+    }
   },
   "operations": {
     "loads": {
       "pulpwood": {
         "name": "Pulpwood",
-        "carTypeFilter": "flatcar"
+        "units": "Pounds",
+        "density": 38,
+        "unitWeightInPounds": 0,
+        "importable": true,
+        "payPerQuantity": 0,
+        "costPerUnit": 0,
+        "carTypeFilter": "flatcar",
+        "emptyCarType": "flatcar-empty",
+        "loadedCarType": "flatcar-pulpwood"
+      },
+      "lumber": {
+        "name": "Lumber",
+        "units": "Pounds",
+        "density": 32,
+        "importable": false,
+        "carTypeFilter": "boxcar"
+      },
+      "passengers": {
+        "name": "Passengers",
+        "units": "Quantity",
+        "density": 1,
+        "importable": true
+      },
+      "repair-parts": {
+        "name": "Repair Parts",
+        "units": "Quantity",
+        "importable": true,
+        "carTypeFilter": "boxcar"
       }
     },
     "industries": {
       "murphy:ind:sawmill": {
-        "name": "Sawmill",
+        "name": "Murphy Sawmill",
+        "areaId": "murphy:area:town",
+        "order": 0,
         "position": {
           "x": 20,
           "y": 0,
           "z": 15
+        },
+        "rotation": {
+          "x": 0,
+          "y": 90,
+          "z": 0
         },
         "usesContract": true,
         "components": {
@@ -80,10 +191,107 @@
             "type": "unloader",
             "name": "Logs Inbound",
             "trackSpanIds": [
-              "murphy:span:depot"
+              "murphy:span:team"
             ],
             "loadId": "pulpwood",
-            "maxStorage": 200
+            "sharedStorage": true,
+            "storageChangeRate": 8,
+            "maxStorage": 200,
+            "carTransferRate": 3,
+            "orderAroundEmpties": true,
+            "orderAroundLoaded": false
+          },
+          "sawmill-process": {
+            "type": "formulaic",
+            "name": "Sawmill Process",
+            "inputTermsPerDay": {
+              "pulpwood": 14
+            },
+            "outputTermsPerDay": {
+              "lumber": 7
+            }
+          },
+          "team-track": {
+            "type": "teamTrack",
+            "name": "Murphy Team Track",
+            "trackSpanIds": [
+              "murphy:span:team"
+            ],
+            "idealCars": 3,
+            "teamProfiles": {
+              "lumber-out": {
+                "isExport": true,
+                "loadId": "lumber",
+                "loadingTimeDays": 1.5,
+                "carTypeFilter": "boxcar"
+              }
+            }
+          }
+        }
+      },
+      "murphy:ind:depot": {
+        "name": "Murphy Depot",
+        "areaId": "murphy:area:town",
+        "order": 1,
+        "position": {
+          "x": 12,
+          "y": 0,
+          "z": -9
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "components": {
+          "passenger-stop": {
+            "type": "passengerStop",
+            "name": "Murphy Passenger Stop",
+            "trackSpanIds": [
+              "murphy:span:depot"
+            ],
+            "loadId": "passengers",
+            "passengerStopId": "murphy:depot",
+            "timetableCode": "MUR",
+            "basePopulation": 120,
+            "neighborIds": [
+              "andrews:depot"
+            ],
+            "branch": "Murphy Branch",
+            "branchDefinitions": [
+              {
+                "branch": "Murphy Branch",
+                "traverseTimeToNext": 18,
+                "mapFeature": "murphy:feature:branch",
+                "intermediates": {
+                  "notla": {
+                    "code": "NOT",
+                    "traverseTimeToNext": 9
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "murphy:ind:engine-service": {
+        "name": "Murphy Engine Service",
+        "areaId": "murphy:area:town",
+        "order": 2,
+        "position": {
+          "x": 82,
+          "y": 0,
+          "z": 22
+        },
+        "components": {
+          "repair": {
+            "type": "repairTrack",
+            "name": "Repair Track",
+            "trackSpanIds": [
+              "murphy:span:team"
+            ],
+            "loadId": "repair-parts",
+            "canOverhaul": true
           }
         }
       }
@@ -101,11 +309,51 @@
           "z": 0
         },
         "prefab": "vanilla://waterTower",
-        "industryId": "murphy:ind:sawmill"
+        "industryId": "murphy:ind:engine-service"
       }
     },
-    "turntables": {},
-    "stations": {}
+    "turntables": {
+      "murphy:turntable": {
+        "position": {
+          "x": 90,
+          "y": 0,
+          "z": 25
+        },
+        "rotation": {
+          "x": 0,
+          "y": 180,
+          "z": 0
+        },
+        "radius": 15,
+        "subdivisions": 16,
+        "legacyIdentifier": "MurphyTurntable",
+        "roundhouse": {
+          "stalls": 3,
+          "startAngle": -18,
+          "stallAngle": 12,
+          "trackLength": 46,
+          "startPrefab": "vanilla://roundhouseStart",
+          "endPrefab": "vanilla://roundhouseEnd",
+          "stallPrefab": "vanilla://roundhouseStall"
+        }
+      }
+    },
+    "stations": {
+      "murphy:station-agent": {
+        "position": {
+          "x": 14,
+          "y": 0,
+          "z": -7
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "prefab": "empty://stationAgent",
+        "passengerStopId": "murphy:depot"
+      }
+    }
   },
   "world": {
     "scenery": {
@@ -151,9 +399,80 @@
             "width": 8
           }
         ]
+      },
+      "murphy:road:001": {
+        "type": "terrainRoad",
+        "style": "gravel",
+        "points": [
+          {
+            "position": {
+              "x": -8,
+              "y": 0,
+              "z": 8
+            },
+            "width": 5
+          },
+          {
+            "position": {
+              "x": 70,
+              "y": 0,
+              "z": 12
+            },
+            "width": 5
+          }
+        ]
+      },
+      "murphy:trestle:001": {
+        "type": "trestle",
+        "profile": "wood",
+        "headStyle": "bent",
+        "tailStyle": "block",
+        "points": [
+          {
+            "position": {
+              "x": 32,
+              "y": 4,
+              "z": -30
+            },
+            "rotation": {
+              "x": 0,
+              "y": 85,
+              "z": 0
+            }
+          },
+          {
+            "position": {
+              "x": 58,
+              "y": 4,
+              "z": -28
+            },
+            "rotation": {
+              "x": 0,
+              "y": 85,
+              "z": 0
+            }
+          }
+        ]
       }
     },
-    "telegraphPoles": {},
+    "telegraphPoles": {
+      "murphy:telegraph:main": {
+        "profile": "wood",
+        "spacing": 38,
+        "points": [
+          {
+            "x": 0,
+            "y": 0,
+            "z": 6
+          },
+          {
+            "x": 75,
+            "y": 0,
+            "z": 11
+          }
+        ]
+      }
+    },
     "mapLabels": {
       "murphy:label:town": {
         "text": "Murphy",
@@ -162,7 +481,23 @@
           "y": 0,
           "z": -4
         },
-        "size": 1.2
+        "size": 1.2,
+        "color": "#FFFFFF"
+      },
+      "murphy:label:speed15": {
+        "text": "15",
+        "style": "speedLimit",
+        "speedLimitMph": 15,
+        "position": {
+          "x": 44,
+          "y": 0,
+          "z": 2
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
       }
     },
     "mapMasks": {
@@ -173,12 +508,90 @@
           "y": 0,
           "z": 0
         },
+        "rotation": {
+          "x": 0,
+          "y": 8,
+          "z": 0
+        },
         "size": {
           "x": 80,
           "y": 1,
           "z": 30
         }
+      },
+      "murphy:mask:depot": {
+        "type": "circle",
+        "center": {
+          "x": 12,
+          "y": 0,
+          "z": -9
+        },
+        "radius": 24
+      },
+      "murphy:mask:road": {
+        "type": "curve",
+        "width": 6,
+        "points": [
+          {
+            "x": -8,
+            "y": 0,
+            "z": 8
+          },
+          {
+            "x": 70,
+            "y": 0,
+            "z": 12
+          }
+        ]
       }
+    },
+    "mapTiles": {
+      "murphy:tiles:appalachian-overlay": {
+        "directory": "BushnellWhittier",
+        "sourceFolder": "Maps/BushnellWhittier",
+        "priority": 100
+      }
+    },
+    "sceneClones": {
+      "murphy:clone:coal-conveyor": {
+        "targetPath": "World/Large Scenery/Murphy/Coal Conveyor",
+        "source": "path://scene/World/Large Scenery/Whittier/Coal Conveyor",
+        "enabled": true,
+        "localPosition": {
+          "x": 3,
+          "y": 0,
+          "z": -12
+        },
+        "localRotation": {
+          "x": 0,
+          "y": 45,
+          "z": 0
+        },
+        "localScale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "murphy:clone:preserve-existing-transform": {
+        "targetPath": "World/Large Scenery/Murphy/Existing Sign",
+        "enabled": true,
+        "localPosition": null,
+        "localRotation": null,
+        "localScale": null
+      }
+    },
+    "removals": {
+      "scenery": [
+        "World/Large Scenery/Murphy/Old Depot"
+      ],
+      "splineys": [
+        "World/Large Scenery/Murphy/Old Road"
+      ],
+      "telegraphPoles": [],
+      "mapLabels": [],
+      "mapMasks": [],
+      "sceneClones": []
     }
   },
   "progression": {
@@ -188,6 +601,12 @@
           "murphy:section:phase1": {
             "displayName": "Murphy Branch Phase 1",
             "description": "Initial construction.",
+            "enableFeaturesOnAvailable": [
+              "murphy:feature:branch"
+            ],
+            "enableFeaturesOnUnlock": [
+              "murphy:feature:branch"
+            ],
             "deliveryPhases": [
               {
                 "cost": 25000,
@@ -206,10 +625,41 @@
         }
       }
     },
-    "mapFeatures": {}
+    "mapFeatures": {
+      "murphy:feature:branch": {
+        "displayName": "Murphy Branch",
+        "description": "Shows Murphy Branch features on the map.",
+        "initiallyEnabled": false,
+        "groupIds": [
+          "murphy:main",
+          "murphy:yard"
+        ]
+      }
+    }
   },
   "editor": {
     "projectName": "Murphy Branch",
-    "lastEditedUtc": "2026-04-27T02:00:00Z"
+    "lastEditedUtc": "2026-04-28T17:30:00Z",
+    "viewport": {
+      "position": {
+        "x": 32,
+        "y": 120,
+        "z": -85
+      },
+      "rotation": {
+        "x": 65,
+        "y": 0,
+        "z": 0
+      }
+    },
+    "selectedObject": {
+      "id": "murphy:ind:sawmill",
+      "type": "industry"
+    }
+  },
+  "extensions": {
+    "dev.rail.example": {
+      "source": "hand-authored sample"
+    }
   }
 }

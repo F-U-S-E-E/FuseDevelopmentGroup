@@ -117,6 +117,17 @@
         }
       ],
       "description": "RAIL-specific relative folder or folders containing Railroader AssetPack Runtime stores, for example SCAssetPacks."
+    },
+    "Settings": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "EnableExperimentalEarlyScenePathSuppression": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental. Gates Unity async scene activation so world.suppressBaseScenePaths can be applied as early as Unity exposes scene objects. Disabled by default because a failed gate can wedge scene loading."
+        }
+      }
     }
   },
   "dependentRequired": {

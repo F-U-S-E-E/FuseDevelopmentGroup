@@ -22,7 +22,13 @@ Top-level object groups:
 
 All editable game objects are stored in dictionaries keyed by object ID. The ID is not repeated inside the object body. This keeps editor updates simple: replacing `tracks.nodes["murphy:n:001"]` updates exactly one object without array searches or ID duplication.
 
-`schemaVersion` is the RAIL data format version and drives migrations. `modVersion` is the author's release version and should not be used for schema migration decisions.
+`schemaVersion` is the RAIL data format version and drives migrations. Use the string form, for example `"1.0"`. Integer `1` remains accepted by the runtime for v1.0 packages already in the wild. `modVersion` is the author's release version and should not be used for schema migration decisions.
+
+## Versioning And Deprecation
+
+RAIL migrations run version by version on load. Unknown future schema versions are logged as warnings and loaded on a best-effort basis instead of failing immediately.
+
+When a field is renamed, RAIL keeps the old field readable for one minor version, logs one deprecation warning per package when it migrates that field, and removes the old field in the following minor version. For example, scenery asset keys were renamed from `model` to `assetIdentifier`; v1.0 packages with only `model` still load, and RAIL fills `assetIdentifier` in memory.
 
 Areas are defined under `tracks.areas` and can be used to group industries in the company window. `order` controls the display order of areas and industries:
 

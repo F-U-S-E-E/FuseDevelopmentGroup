@@ -1,10 +1,14 @@
 ﻿using System.Collections.Generic;
 
+using Newtonsoft.Json;
+using RAIL.Serialization.Converters;
+
 namespace RAIL.Data
 {
     public sealed class RailModDefinition
     {
-        public int SchemaVersion { get; set; } = 1;
+        [JsonConverter(typeof(RailSchemaVersionJsonConverter))]
+        public string SchemaVersion { get; set; } = "1.0";
         public string Id { get; set; }
         public string Name { get; set; }
         public string Author { get; set; }

@@ -1,8 +1,7 @@
 using System;
 using HarmonyLib;
-using RAIL.Cache;
 using RAIL.Infrastructure;
-using RAIL.Loading;
+using RAIL.Lifecycle;
 
 namespace RAIL.Patches
 {
@@ -13,20 +12,24 @@ namespace RAIL.Patches
         {
             try
             {
-                var loadedCount = RailDataPackageDiscovery.LoadAllAvailablePackages();
-                RailCacheRegistry.RebuildAll();
-                var reappliedCount = RailDataPackageDiscovery.ReapplyLoadedPackages("before turntable restore");
-                RailLog.Info($"RAIL ensured data packages before turntable restore ({loadedCount} package folder(s) loaded from disk, {reappliedCount} loaded definition(s) reapplied).");
+                RailRuntimeRebindService.RebindAfterSnapshot("before turntable restore");
             }
             catch (Exception ex)
             {
-                RailLog.Exception("RAIL failed to load data packages before turntable restore.", ex);
+                RailLog.Exception("RAIL turntable rebind (prefix) failed.", ex);
             }
         }
 
         private static void Postfix()
         {
-            RailLog.Info("RAIL turntable restore completed.");
+            try
+            {
+                RailRuntimeRebindService.RebindAfterSnapshot("after turntable restore");
+            }
+            catch (Exception ex)
+            {
+                RailLog.Exception("RAIL turntable rebind (postfix) failed.", ex);
+            }
         }
     }
 }

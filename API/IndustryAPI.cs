@@ -69,6 +69,7 @@ namespace RAIL.API
             }
 
             RailEvents.RaiseIndustryAdded(industry);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Industry, id, definition);
             return industry;
         }
 
@@ -108,6 +109,7 @@ namespace RAIL.API
             }
 
             RailEvents.RaiseIndustryUpdated(industry);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Industry, id, definition);
         }
 
         public static void RemoveIndustry(string id)
@@ -117,6 +119,7 @@ namespace RAIL.API
             UnityEngine.Object.Destroy(industry.gameObject);
             RailIndustryRuntimeIndex.Instance.Remove(id);
             RailCreatedIndustryIds.Remove(id);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Industry, id);
             RefreshIndustriesAfterBatch("RemoveIndustry:" + id);
             RailEvents.RaiseIndustryRemoved(id);
         }
@@ -146,6 +149,132 @@ namespace RAIL.API
         public static IEnumerable<Industry> GetAllIndustries()
         {
             return UnityEngine.Object.FindObjectsOfType<Industry>();
+        }
+
+        public static RailIndustry GetIndustryDefinition(string id)
+        {
+            return GetDefinition(GetIndustry(id));
+        }
+
+        public static RailIndustry GetDefinition(Industry industry)
+        {
+            if (industry == null)
+            {
+                return null;
+            }
+
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Industry, industry.identifier, out RailIndustry definition);
+            definition = definition ?? new RailIndustry();
+            definition.Name = industry.name;
+            definition.Position = industry.transform.localPosition;
+            definition.Rotation = industry.transform.localEulerAngles;
+            definition.UsesContract = industry.usesContract;
+
+            var area = industry.GetComponentInParent<Area>(true);
+            if (area != null)
+            {
+                definition.AreaId = area.identifier;
+            }
+
+            definition.Components = definition.Components ?? new Dictionary<string, RailIndustryComponent>();
+            foreach (var component in industry.GetComponentsInChildren<IndustryComponent>(true)
+                         .Where(component => component != null && !string.IsNullOrWhiteSpace(component.subIdentifier)))
+            {
+                definition.Components[component.subIdentifier] = GetDefinition(component);
+            }
+
+            return definition;
+        }
+
+        public static RailIndustryComponent GetComponentDefinition(string industryId, string subId)
+        {
+            var industry = GetIndustry(industryId);
+            return industry == null ? null : GetDefinition(GetComponent(industry, subId));
+        }
+
+        public static RailIndustryComponent GetDefinition(IndustryComponent component)
+        {
+            if (component == null)
+            {
+                return null;
+            }
+
+            var industryId = component.Industry != null ? component.Industry.identifier : string.Empty;
+            var key = GetComponentDefinitionKey(industryId, component.subIdentifier);
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.IndustryComponent, key, out RailIndustryComponent definition);
+            definition = definition ?? new RailIndustryComponent();
+            definition.Type = GetComponentTypeAlias(component);
+            definition.Name = component.name;
+            definition.TrackSpanIds = component.trackSpans?
+                .Where(span => span != null && !string.IsNullOrWhiteSpace(span.id))
+                .Select(span => span.id)
+                .ToArray();
+            definition.CarTypeFilter = component.carTypeFilter.ToString();
+            definition.SharedStorage = component.sharedStorage;
+
+            var loader = component as IndustryLoader;
+            if (loader != null)
+            {
+                definition.LoadId = loader.load != null ? loader.load.id : definition.LoadId;
+                definition.StorageChangeRate = loader.productionRate;
+                definition.MaxStorage = loader.maxStorage;
+                definition.CarTransferRate = loader.carLoadRate;
+                definition.OrderAroundEmpties = loader.orderEmpties;
+                definition.OrderAroundLoaded = loader.orderAwayLoaded;
+                return definition;
+            }
+
+            var loaderBase = component as IndustryLoaderBase;
+            if (loaderBase != null)
+            {
+                definition.LoadId = loaderBase.load != null ? loaderBase.load.id : definition.LoadId;
+                definition.StorageChangeRate = loaderBase.productionRate;
+                definition.MaxStorage = loaderBase.maxStorage;
+                definition.OrderAroundEmpties = loaderBase.orderEmpties;
+            }
+
+            var unloader = component as IndustryUnloader;
+            if (unloader != null)
+            {
+                definition.LoadId = unloader.load != null ? unloader.load.id : definition.LoadId;
+                definition.StorageChangeRate = unloader.storageConsumptionRate;
+                definition.MaxStorage = unloader.maxStorage;
+                definition.CarTransferRate = unloader.carUnloadRate;
+                definition.OrderAroundEmpties = unloader.orderAwayEmpties;
+                definition.OrderAroundLoaded = unloader.orderLoads;
+                return definition;
+            }
+
+            var formulaic = component as FormulaicIndustryComponent;
+            if (formulaic != null)
+            {
+                definition.InputTermsPerDay = ToFormulaTerms(formulaic.inputTerms);
+                definition.OutputTermsPerDay = ToFormulaTerms(formulaic.outputTerms);
+                return definition;
+            }
+
+            var repairTrack = component as RepairTrack;
+            if (repairTrack != null)
+            {
+                definition.CanOverhaul = repairTrack.canOverhaul;
+                var repairLoad = RepairPartsLoadField?.GetValue(repairTrack) as Load;
+                definition.LoadId = repairLoad != null ? repairLoad.id : definition.LoadId;
+                return definition;
+            }
+
+            var passengerStop = component as RailPassengerStopComponent;
+            if (passengerStop != null)
+            {
+                definition.PassengerStopId = passengerStop.PassengerStopId;
+                definition.TimetableCode = passengerStop.TimetableCode;
+                definition.BasePopulation = passengerStop.BasePopulation;
+                definition.NeighborIds = passengerStop.NeighborIds;
+                definition.Branch = passengerStop.Branch;
+                definition.BranchDefinitions = passengerStop.BranchDefinitions;
+                definition.LoadId = passengerStop.PassengerLoad != null ? passengerStop.PassengerLoad.id : definition.LoadId;
+            }
+
+            return definition;
         }
 
         public static IndustryComponent AddComponent(string industryId, string subId, RailIndustryComponent definition)
@@ -178,6 +307,7 @@ namespace RAIL.API
             RailIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, component), component);
             RefreshIndustriesAfterBatch("UpdateComponent:" + industry.identifier + "." + subId);
             RailEvents.RaiseIndustryComponentUpdated(component);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, subId), definition);
         }
 
         public static void RemoveComponent(string industryId, string subId)
@@ -207,6 +337,7 @@ namespace RAIL.API
             }
 
             RailIndustryComponentRuntimeIndex.Instance.Remove(identifier);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, subId));
             if (notify)
             {
                 InvalidateIndustryComponents(industry);
@@ -251,6 +382,7 @@ namespace RAIL.API
 
             RailIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, component), component);
             RailLog.Info($"RAIL created industry component '{industry.identifier}.{subId}' type='{componentType.FullName}' attachedTo='{(attachToIndustryObject ? "industry" : "child")}' host='{gameObject.name}' trackSpanCount={component.trackSpans?.Length ?? 0} loadId='{definition.LoadId ?? string.Empty}'.");
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, subId), definition);
             if (notify)
             {
                 InvalidateIndustryComponents(industry);
@@ -295,6 +427,7 @@ namespace RAIL.API
                         {
                             ApplyComponentDefinition(runtime, component.Value);
                             RailIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, runtime), runtime);
+                            RailApiPersistence.RecordDefinition(RailDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, component.Key), component.Value);
                         }
                     }
                     catch (Exception ex)
@@ -468,6 +601,77 @@ namespace RAIL.API
             }
 
             throw new NotSupportedException($"Industry component type '{type}' is not implemented yet.");
+        }
+
+        private static string GetComponentTypeAlias(IndustryComponent component)
+        {
+            if (component is IndustryLoader)
+            {
+                return "loader";
+            }
+
+            if (component is IndustryUnloader)
+            {
+                return "unloader";
+            }
+
+            if (component is FormulaicIndustryComponent)
+            {
+                return "formulaic";
+            }
+
+            if (component is RepairTrack)
+            {
+                return "repairTrack";
+            }
+
+            if (component is TeamTrack)
+            {
+                return "teamTrack";
+            }
+
+            if (component is Interchange)
+            {
+                return "interchange";
+            }
+
+            if (component is InterchangedIndustryLoader)
+            {
+                return "interchangedLoader";
+            }
+
+            if (component is RailPassengerStopComponent)
+            {
+                return "passengerStop";
+            }
+
+            return component.GetType().FullName;
+        }
+
+        private static Dictionary<string, float> ToFormulaTerms(IEnumerable<FormulaicIndustryComponent.Term> terms)
+        {
+            var result = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+            if (terms == null)
+            {
+                return result;
+            }
+
+            foreach (var term in terms)
+            {
+                if (term.load == null || string.IsNullOrWhiteSpace(term.load.id))
+                {
+                    continue;
+                }
+
+                result[term.load.id] = term.unitsPerDay;
+            }
+
+            return result;
+        }
+
+        private static string GetComponentDefinitionKey(string industryId, string subId)
+        {
+            return (industryId ?? string.Empty) + "/" + (subId ?? string.Empty);
         }
 
         private static List<FormulaicIndustryComponent.Term> BuildFormulaTerms(IDictionary<string, float> terms)
@@ -838,8 +1042,9 @@ namespace RAIL.API
                     return component.Identifier;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                RailLog.Warning($"RAIL could not read industry component Identifier for '{component.name}': {ex.Message}");
             }
 
             return string.IsNullOrWhiteSpace(component.subIdentifier) ? component.name : component.subIdentifier;

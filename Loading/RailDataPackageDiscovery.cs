@@ -10,8 +10,9 @@ namespace RAIL.Loading
     public static class RailDataPackageDiscovery
     {
         private static bool _discoveryComplete;
-        private static bool _packagesLoadedFromDisk;
+        private static bool _definitionsLoadedFromDisk;
         private static string[] _discoveredPackageFolders = Array.Empty<string>();
+        private static RailPackageManifest[] _discoveredPackageManifests = Array.Empty<RailPackageManifest>();
 
         public static int LoadAllAvailablePackages()
         {
@@ -35,61 +36,149 @@ namespace RAIL.Loading
                 return _discoveredPackageFolders;
             }
 
-            RailAssetPackRegistry.MountAllAvailableAssetPacks();
+            try
+            {
+                _discoveredPackageManifests = DiscoverPackageManifests(modsRoot).ToArray();
+                _discoveredPackageFolders = _discoveredPackageManifests.Select(manifest => manifest.FolderPath).ToArray();
+            }
+            catch (Exception ex)
+            {
+                RailLog.Exception($"RAIL failed while discovering data packages in '{modsRoot}'", ex);
+                _discoveredPackageFolders = Array.Empty<string>();
+                _discoveredPackageManifests = Array.Empty<RailPackageManifest>();
+            }
 
-            _discoveredPackageFolders = DiscoverPackageFolders(modsRoot).ToArray();
             _discoveryComplete = true;
             RailLog.Info($"RAIL discovered {_discoveredPackageFolders.Length} candidate data package(s) in '{modsRoot}'.");
+            for (var index = 0; index < _discoveredPackageFolders.Length; index++)
+            {
+                var manifest = index < _discoveredPackageManifests.Length ? _discoveredPackageManifests[index] : null;
+                var status = manifest == null
+                    ? "unknown"
+                    : manifest.Disabled
+                        ? "disabled"
+                        : manifest.HasBlockingFaults
+                            ? "faulted"
+                            : "ready";
+                RailLog.Info($"RAIL discovered package[{index}] '{Path.GetFileName(_discoveredPackageFolders[index])}' id='{manifest?.Id ?? string.Empty}' status='{status}' priority={manifest?.Priority ?? 0} path='{_discoveredPackageFolders[index]}'.");
+            }
+
             return _discoveredPackageFolders;
+        }
+
+        public static IReadOnlyList<string> RefreshDiscoveredPackages()
+        {
+            ResetDiscovery();
+            return DiscoverPackagesOnce();
         }
 
         public static int LoadPackagesFromDisk(bool forceReload)
         {
-            if (_packagesLoadedFromDisk && !forceReload)
+            if (_definitionsLoadedFromDisk && !forceReload)
             {
                 RailLog.Info($"RAIL package disk load skipped because {RailModLoader.LoadedDefinitionCount} definition(s) are already loaded.");
+                RailPackageFaultRegistry.LogFinalReport("disk load skipped", RailModLoader.LoadedDefinitionCount);
                 return 0;
             }
 
             if (forceReload)
             {
-                RailLog.Info("RAIL forced package disk reload requested.");
+                RailLog.Info("RAIL forced package disk reload requested; using existing discovery cache.");
                 RailModLoader.UnloadAll(resetDiscovery: false);
-                _packagesLoadedFromDisk = false;
+                RailPackageFaultRegistry.Reset();
+                _definitionsLoadedFromDisk = false;
             }
 
             var packagePaths = DiscoverPackagesOnce();
             if (packagePaths.Count == 0)
             {
-                _packagesLoadedFromDisk = true;
+                _definitionsLoadedFromDisk = true;
+                RailLog.Info("RAIL loaded 0 package definition(s) from disk because discovery found no packages.");
+                RailPackageFaultRegistry.LogFinalReport("disk load", RailModLoader.LoadedDefinitionCount);
                 return 0;
             }
 
-            var loadedCount = 0;
-            foreach (var packagePath in packagePaths)
+            try
             {
+                RailAssetPackRegistry.MountAllAvailableAssetPacks();
+            }
+            catch (Exception ex)
+            {
+                RailLog.Exception("RAIL asset pack mount failed before package disk load; continuing with definition loading.", ex);
+            }
+
+            var loadedCount = 0;
+            var manifests = _discoveredPackageManifests.Length > 0
+                ? _discoveredPackageManifests
+                : packagePaths.Select(path => new RailPackageManifest
+                {
+                    Id = Path.GetFileName(path),
+                    FolderPath = path
+                }).ToArray();
+
+            foreach (var manifest in manifests)
+            {
+                var packagePath = manifest.FolderPath;
+                if (manifest.Disabled)
+                {
+                    RailPackageFaultRegistry.MarkDisabled(manifest.Id, manifest.DisabledReason);
+                    RailPackageFaultRegistry.MarkSkipped(manifest.Id, manifest.DisabledReason);
+                    RailLog.Warning($"RAIL skipped disabled data package '{manifest.Id}' path='{packagePath}' reason='{manifest.DisabledReason}'.");
+                    continue;
+                }
+
+                if (manifest.HasBlockingFaults)
+                {
+                    foreach (var fault in manifest.Faults)
+                    {
+                        RailPackageFaultRegistry.RecordFault(manifest.Id, "dependency/load-order", fault);
+                    }
+
+                    RailPackageFaultRegistry.MarkSkipped(manifest.Id, "dependency/load-order fault");
+                    RailLog.Warning($"RAIL skipped faulted data package '{manifest.Id}' path='{packagePath}' faultCount={manifest.Faults.Count}.");
+                    continue;
+                }
+
                 try
                 {
                     RailModLoader.LoadMod(packagePath);
-                    RailLog.Info($"RAIL loaded-from-disk data package '{Path.GetFileName(packagePath)}'.");
+                    RailPackageFaultRegistry.MarkLoadedFromDisk(manifest.Id);
+                    RailLog.Info($"RAIL loaded package '{Path.GetFileName(packagePath)}' id='{manifest.Id}' from disk into resident definitions. Runtime apply has not run in this step.");
                     loadedCount++;
                 }
                 catch (Exception ex)
                 {
-                    RailLog.Exception($"Failed to load RAIL data package '{packagePath}'", ex);
+                    RailPackageFaultRegistry.RecordFault(manifest.Id, "deserialization", ex.Message, ex);
+                    RailPackageFaultRegistry.MarkSkipped(manifest.Id, "deserialization failed");
+                    RailLog.Exception($"Failed to deserialize RAIL data package '{packagePath}' from disk", ex);
                 }
             }
 
-            _packagesLoadedFromDisk = true;
-            RailLog.Info($"RAIL loaded {loadedCount} data package folder(s) from disk; {RailModLoader.LoadedDefinitionCount} definition(s) are resident.");
+            _definitionsLoadedFromDisk = true;
+            RailLog.Info($"RAIL loaded {loadedCount} data package folder(s) from disk; {RailModLoader.LoadedDefinitionCount} resident definition(s). Runtime apply is separate.");
+            RailPackageFaultRegistry.LogFinalReport("disk load", RailModLoader.LoadedDefinitionCount);
             return loadedCount;
+        }
+
+        public static int ApplyLoadedPackages(string reason)
+        {
+            var appliedCount = RailModLoader.ApplyLoadedDefinitions(reason);
+            RailLog.Info($"RAIL applied {appliedCount} resident definition(s) to runtime for '{reason ?? "unspecified"}'.");
+            RailPackageFaultRegistry.LogFinalReport(reason ?? "runtime apply", RailModLoader.LoadedDefinitionCount);
+            return appliedCount;
         }
 
         public static int ReapplyLoadedPackages(string reason)
         {
-            var reappliedCount = RailModLoader.ReapplyLoadedDefinitions(reason);
-            RailLog.Info($"RAIL reapplied {reappliedCount} loaded definition(s) to runtime for '{reason ?? "unspecified"}'.");
-            return reappliedCount;
+            return ApplyLoadedPackages(reason);
+        }
+
+        public static int LoadAndApplyAvailablePackages(string reason, bool forceReload = false)
+        {
+            var loadedCount = LoadPackagesFromDisk(forceReload);
+            var appliedCount = ApplyLoadedPackages(reason);
+            RailLog.Info($"RAIL load/apply complete for '{reason ?? "unspecified"}': loadedFromDisk={loadedCount}, appliedToRuntime={appliedCount}.");
+            return appliedCount;
         }
 
         public static void ReloadPackagesFromDisk()
@@ -99,20 +188,48 @@ namespace RAIL.Loading
 
         public static void ResetDiscovery()
         {
+            if (!_discoveryComplete && !_definitionsLoadedFromDisk && _discoveredPackageFolders.Length == 0)
+            {
+                return;
+            }
+
             _discoveryComplete = false;
-            _packagesLoadedFromDisk = false;
+            _definitionsLoadedFromDisk = false;
             _discoveredPackageFolders = Array.Empty<string>();
+            _discoveredPackageManifests = Array.Empty<RailPackageManifest>();
+            RailPackageFaultRegistry.Reset();
+            RailLog.Info("RAIL package discovery state reset.");
         }
 
         public static IEnumerable<string> DiscoverPackageFolders(string modsRoot)
         {
+            return DiscoverPackageManifests(modsRoot)
+                .Select(manifest => manifest.FolderPath)
+                .ToArray();
+        }
+
+        private static IEnumerable<RailPackageManifest> DiscoverPackageManifests(string modsRoot)
+        {
             if (string.IsNullOrWhiteSpace(modsRoot) || !Directory.Exists(modsRoot))
             {
-                return Enumerable.Empty<string>();
+                return Enumerable.Empty<RailPackageManifest>();
             }
 
             var manifests = new List<RailPackageManifest>();
-            foreach (var packagePath in Directory.GetDirectories(modsRoot).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            string[] packagePaths;
+            try
+            {
+                packagePaths = Directory.GetDirectories(modsRoot)
+                    .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+            catch (Exception ex)
+            {
+                RailLog.Exception($"RAIL could not enumerate Mods folder '{modsRoot}' for data packages", ex);
+                return Enumerable.Empty<RailPackageManifest>();
+            }
+
+            foreach (var packagePath in packagePaths)
             {
                 if (TryReadRailPackageManifest(packagePath, out var manifest))
                 {
@@ -121,7 +238,6 @@ namespace RAIL.Loading
             }
 
             return SortPackages(manifests)
-                .Select(manifest => manifest.FolderPath)
                 .ToArray();
         }
 
@@ -144,8 +260,9 @@ namespace RAIL.Loading
             {
                 info = JObject.Parse(File.ReadAllText(infoPath));
             }
-            catch
+            catch (Exception ex)
             {
+                RailLog.Warning($"RAIL ignored package '{folderPath}' because Info.json could not be parsed: {ex.Message}");
                 return false;
             }
 
@@ -169,7 +286,9 @@ namespace RAIL.Loading
                 FolderPath = folderPath,
                 Priority = ReadPriority(info["RailLoadPriority"]),
                 LoadAfter = ReadDependencyIds(info["RailLoadAfter"]),
-                LoadBefore = ReadDependencyIds(info["RailLoadBefore"])
+                LoadBefore = ReadDependencyIds(info["RailLoadBefore"]),
+                Disabled = ReadDisabled(info),
+                DisabledReason = ReadDisabledReason(info)
             };
             return true;
         }
@@ -195,7 +314,9 @@ namespace RAIL.Loading
                     continue;
                 }
 
-                RailLog.Warning($"RAIL package id '{package.Id}' appears more than once; dependency ordering will target the first matching package.");
+                var message = $"Package id '{package.Id}' appears more than once; dependency ordering will target the first matching package.";
+                package.Faults.Add(message);
+                RailLog.Warning($"RAIL {message}");
             }
 
             var outgoing = fallbackOrder.ToDictionary(package => package, _ => new HashSet<RailPackageManifest>());
@@ -207,11 +328,21 @@ namespace RAIL.Loading
                 {
                     if (byId.TryGetValue(dependencyId, out var dependency))
                     {
+                        if (dependency.Disabled)
+                        {
+                            var message = $"Package '{package.Id}' declares RailLoadAfter '{dependencyId}', but that package is disabled.";
+                            package.Faults.Add(message);
+                            RailLog.Warning($"RAIL {message}");
+                            continue;
+                        }
+
                         AddPackageOrderEdge(dependency, package, outgoing, incomingCount);
                     }
                     else
                     {
-                        RailLog.Warning($"RAIL package '{package.Id}' declares RailLoadAfter '{dependencyId}', but no matching RAIL data package was discovered.");
+                        var message = $"Package '{package.Id}' declares RailLoadAfter '{dependencyId}', but no matching RAIL data package was discovered.";
+                        package.Faults.Add(message);
+                        RailLog.Warning($"RAIL {message}");
                     }
                 }
 
@@ -219,11 +350,21 @@ namespace RAIL.Loading
                 {
                     if (byId.TryGetValue(dependencyId, out var dependency))
                     {
+                        if (dependency.Disabled)
+                        {
+                            var message = $"Package '{package.Id}' declares RailLoadBefore '{dependencyId}', but that package is disabled.";
+                            package.Faults.Add(message);
+                            RailLog.Warning($"RAIL {message}");
+                            continue;
+                        }
+
                         AddPackageOrderEdge(package, dependency, outgoing, incomingCount);
                     }
                     else
                     {
-                        RailLog.Warning($"RAIL package '{package.Id}' declares RailLoadBefore '{dependencyId}', but no matching RAIL data package was discovered.");
+                        var message = $"Package '{package.Id}' declares RailLoadBefore '{dependencyId}', but no matching RAIL data package was discovered.";
+                        package.Faults.Add(message);
+                        RailLog.Warning($"RAIL {message}");
                     }
                 }
             }
@@ -252,7 +393,13 @@ namespace RAIL.Loading
             if (result.Count != fallbackOrder.Length)
             {
                 var cycle = fallbackOrder.Where(package => !result.Contains(package)).ToArray();
-                RailLog.Warning($"RAIL package load-order cycle detected among: {string.Join(", ", cycle.Select(package => package.Id).ToArray())}. Appending those packages by priority/name fallback order.");
+                var cycleIds = string.Join(", ", cycle.Select(package => package.Id).ToArray());
+                RailLog.Warning($"RAIL package load-order cycle detected among: {cycleIds}. Appending those packages by priority/name fallback order as faulted packages.");
+                foreach (var package in cycle)
+                {
+                    package.Faults.Add($"Load-order cycle detected among: {cycleIds}.");
+                }
+
                 result.AddRange(cycle);
             }
 
@@ -307,6 +454,64 @@ namespace RAIL.Loading
             }
 
             return int.TryParse(token.ToString(), out var priority) ? priority : 0;
+        }
+
+        private static bool ReadDisabled(JObject info)
+        {
+            if (info == null)
+            {
+                return false;
+            }
+
+            if (ReadBooleanFlag(info["RailDisabled"], false) ||
+                ReadBooleanFlag(info["Disabled"], false) ||
+                ReadBooleanFlag(info["disabled"], false))
+            {
+                return true;
+            }
+
+            return !ReadBooleanFlag(info["Enabled"], true) ||
+                   !ReadBooleanFlag(info["enabled"], true);
+        }
+
+        private static string ReadDisabledReason(JObject info)
+        {
+            if (info == null)
+            {
+                return "disabled by package manifest";
+            }
+
+            var reason =
+                (string)info["RailDisabledReason"] ??
+                (string)info["DisabledReason"] ??
+                (string)info["disabledReason"];
+            return string.IsNullOrWhiteSpace(reason) ? "disabled by package manifest" : reason.Trim();
+        }
+
+        private static bool ReadBooleanFlag(JToken token, bool defaultValue)
+        {
+            if (token == null)
+            {
+                return defaultValue;
+            }
+
+            if (token.Type == JTokenType.Boolean)
+            {
+                return (bool)token;
+            }
+
+            var value = token.ToString();
+            if (bool.TryParse(value, out var boolean))
+            {
+                return boolean;
+            }
+
+            if (int.TryParse(value, out var integer))
+            {
+                return integer != 0;
+            }
+
+            return defaultValue;
         }
 
         private static string[] ReadDependencyIds(JToken token)
@@ -389,13 +594,21 @@ namespace RAIL.Loading
 
         private static bool HasRootDefinitionFile(string folderPath)
         {
-            if (Directory.GetFiles(folderPath, "*.bson", SearchOption.TopDirectoryOnly).Length > 0)
+            try
             {
-                return true;
-            }
+                if (Directory.GetFiles(folderPath, "*.bson", SearchOption.TopDirectoryOnly).Length > 0)
+                {
+                    return true;
+                }
 
-            return Directory.GetFiles(folderPath, "*.json", SearchOption.TopDirectoryOnly)
-                .Any(path => !string.Equals(Path.GetFileName(path), "Info.json", StringComparison.OrdinalIgnoreCase));
+                return Directory.GetFiles(folderPath, "*.json", SearchOption.TopDirectoryOnly)
+                    .Any(path => !string.Equals(Path.GetFileName(path), "Info.json", StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception ex)
+            {
+                RailLog.Warning($"RAIL could not inspect package root definition files in '{folderPath}': {ex.Message}");
+                return false;
+            }
         }
 
         private static bool ContainsRailReference(JToken token)
@@ -503,8 +716,9 @@ namespace RAIL.Loading
                 return Directory.GetDirectories(path)
                     .Any(child => File.Exists(Path.Combine(child, "Info.json")));
             }
-            catch
+            catch (Exception ex)
             {
+                RailLog.Warning($"RAIL could not inspect potential Mods root '{path}': {ex.Message}");
                 return false;
             }
         }
@@ -516,6 +730,10 @@ namespace RAIL.Loading
             public int Priority { get; set; }
             public string[] LoadAfter { get; set; } = Array.Empty<string>();
             public string[] LoadBefore { get; set; } = Array.Empty<string>();
+            public bool Disabled { get; set; }
+            public string DisabledReason { get; set; } = string.Empty;
+            public List<string> Faults { get; } = new List<string>();
+            public bool HasBlockingFaults => Faults.Count > 0;
         }
     }
 }

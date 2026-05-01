@@ -57,6 +57,7 @@ namespace RAIL.API
             }
 
             RailLoadRuntimeIndex.Instance.Set(load.id, load);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.Load, id, definition);
             return load;
         }
 
@@ -81,6 +82,31 @@ namespace RAIL.API
             }
 
             RailLoadRuntimeIndex.Instance.Remove(id);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Load, id);
+        }
+
+        public static RailLoad GetLoadDefinition(string id)
+        {
+            return GetDefinition(GetLoad(id));
+        }
+
+        public static RailLoad GetDefinition(Load load)
+        {
+            if (load == null)
+            {
+                return null;
+            }
+
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Load, load.id, out RailLoad definition);
+            definition = definition ?? new RailLoad();
+            definition.Name = load.description;
+            definition.Units = load.units.ToString();
+            definition.Density = load.density;
+            definition.UnitWeightInPounds = load.unitWeightInPounds;
+            definition.Importable = load.importable;
+            definition.PayPerQuantity = load.payPerQuantity;
+            definition.CostPerUnit = load.costPerUnit;
+            return definition;
         }
 
         private static void ApplyDefinition(Load load, RailLoad definition)

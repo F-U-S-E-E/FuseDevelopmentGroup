@@ -55,43 +55,68 @@
     "Requirements": {
       "type": "array",
       "items": {
-        "oneOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "object",
-            "additionalProperties": true,
-            "required": [
-              "Id"
-            ],
-            "properties": {
-              "Id": {
-                "$ref": "#/$defs/id"
-              },
-              "Version": {
-                "type": "string"
-              },
-              "NotBefore": {
-                "type": "string"
-              }
-            }
-          }
-        ]
+        "$ref": "#/$defs/dependency"
       },
       "default": []
     },
     "LoadAfter": {
       "type": "array",
       "items": {
-        "type": "string"
+        "$ref": "#/$defs/dependency"
       },
       "default": []
+    },
+    "RailLoadPriority": {
+      "type": "integer",
+      "default": 0,
+      "description": "RAIL-specific package ordering priority. Lower values load earlier; ties fall back to dependency order, then package id."
+    },
+    "RailLoadAfter": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      },
+      "default": [],
+      "description": "RAIL-specific data package ids that must load before this package."
+    },
+    "RailLoadBefore": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      },
+      "default": [],
+      "description": "RAIL-specific data package ids that must load after this package."
     },
     "RailDataFile": {
       "type": "string",
       "pattern": "^.+\\.(bson|json)$",
-      "description": "RAIL-specific pointer to the mod definition file in this UMM folder."
+      "description": "RAIL-specific pointer to one mod definition file in this UMM folder."
+    },
+    "RailDataFiles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^.+\\.(bson|json)$"
+      },
+      "default": [],
+      "description": "RAIL-specific ordered list of definition fragments to load from this UMM folder."
+    },
+    "RailAssetPacks": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      ],
+      "description": "RAIL-specific relative folder or folders containing Railroader AssetPack Runtime stores, for example SCAssetPacks."
     }
   },
   "dependentRequired": {
@@ -107,6 +132,28 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "dependency": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "Id"
+          ],
+          "properties": {
+            "Id": {
+              "$ref": "#/$defs/id"
+            },
+            "NotBefore": {
+              "type": "string"
+            }
+          }
+        }
+      ]
     }
   }
 }

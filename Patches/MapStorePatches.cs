@@ -52,7 +52,14 @@ namespace RAIL.Patches
         [HarmonyPostfix]
         private static void MapManagerUnloadStorePostfix()
         {
-            RailMapTileRegistry.ClearActiveTilePaths();
+            try
+            {
+                RailMapTileRegistry.ClearActiveTilePaths();
+            }
+            catch (Exception ex)
+            {
+                RailLog.Exception("RAIL failed to clear active map tile paths after MapManager.UnloadStore.", ex);
+            }
         }
     }
 }

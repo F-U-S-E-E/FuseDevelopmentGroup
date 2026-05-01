@@ -1,10 +1,13 @@
 ﻿using System;
+using System.Linq;
 using System.Reflection;
 using HarmonyLib;
+using RAIL.Console;
 using RAIL.Events;
 using RAIL.Infrastructure;
 using RAIL.Lifecycle;
 using RAIL.Loading;
+using RAIL.Patches;
 using UnityModManagerNet;
 
 namespace RAIL
@@ -26,14 +29,32 @@ namespace RAIL
             ModEntry = modEntry;
             RailLog.Initialize(modEntry?.Logger);
 
+            if (modEntry == null)
+            {
+                RailLog.Error("RAIL failed to load because Unity Mod Manager did not provide a mod entry.");
+                return false;
+            }
+
+            if (_isLoaded)
+            {
+                RailLog.Warning("RAIL Load was called while RAIL is already loaded; ignoring duplicate load request.");
+                return true;
+            }
+
             try
             {
+                RailSettings.Load(modEntry);
                 RailAssetPackRegistry.MountAllAvailableAssetPacks();
 
                 _harmony = new Harmony(HarmonyId);
-                _harmony.PatchAll(Assembly.GetExecutingAssembly());
+                RailPatchResilience.ApplyAll(_harmony, Assembly.GetExecutingAssembly());
+                RailEarlyLoader.SetPatchAvailable(RailPatchResilience.Applied.Any(patch =>
+                    string.Equals(patch.TypeName, "RAIL.Patches.RailEarlyLoaderSceneManagerPatch", StringComparison.Ordinal)));
                 _lifecycle = new RailLifecycle();
                 _lifecycle.Register();
+                // Console handler may not exist yet during early load; the lifecycle
+                // re-attempts registration on the first map load.
+                RailConsoleRegistrar.TryRegisterAll();
 
                 modEntry.OnUnload = OnUnload;
                 _isLoaded = true;
@@ -59,13 +80,29 @@ namespace RAIL
         {
             if (_harmony != null)
             {
-                _harmony.UnpatchAll(HarmonyId);
+                try
+                {
+                    _harmony.UnpatchAll(HarmonyId);
+                }
+                catch (Exception ex)
+                {
+                    RailLog.Exception("RAIL failed while unpatching Harmony hooks during shutdown", ex);
+                }
+
                 _harmony = null;
             }
 
             if (_lifecycle != null)
             {
-                _lifecycle.Unregister();
+                try
+                {
+                    _lifecycle.Unregister();
+                }
+                catch (Exception ex)
+                {
+                    RailLog.Exception("RAIL failed while unregistering lifecycle handlers during shutdown", ex);
+                }
+
                 _lifecycle = null;
             }
 

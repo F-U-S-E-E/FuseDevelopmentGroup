@@ -16,6 +16,18 @@ Current runtime coverage includes:
 
 Map tile packages can ship extra `tile_XXX_YYY.data` files inside a normal RAIL mod package and mount them with `world.mapTiles`. Those overlays are applied directly to Railroader's `MapStore`, so converted tile mods do not need to copy files into `StreamingAssets`.
 
+## Experimental Early Scene-Path Suppression
+
+`world.suppressBaseScenePaths` has an optional early-loader runtime path. It is marked experimental and is disabled by default:
+
+```json
+"Settings": {
+  "EnableExperimentalEarlyScenePathSuppression": false
+}
+```
+
+When enabled in RAIL's `Info.json`, RAIL gates selected Unity async scene loads with `AsyncOperation.allowSceneActivation`, primes RAIL package definitions before activation, then suppresses requested base scene paths as early as Unity exposes them. This carries a non-zero risk of wedging a scene load. RAIL has a hard 8-second timeout and will release activation, disable additional gates for the session, and log loudly if the gate exceeds the timeout. If the Harmony patch fails to apply, scene-path suppression no-ops and normal loading continues; group and area suppression remain available.
+
 ## Build
 
 ```powershell

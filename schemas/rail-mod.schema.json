@@ -16,9 +16,19 @@
       "type": "string"
     },
     "schemaVersion": {
-      "type": "integer",
-      "const": 1,
-      "description": "RAIL data schema version. This drives migrations and is separate from modVersion."
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "1.0"
+        },
+        {
+          "type": "integer",
+          "const": 1,
+          "deprecated": true
+        }
+      ],
+      "default": "1.0",
+      "description": "RAIL data schema version. This drives migrations and is separate from modVersion. Use the string form, for example \"1.0\"; integer 1 remains accepted for v1.0 compatibility."
     },
     "id": {
       "$ref": "#/$defs/id"
@@ -951,6 +961,30 @@
           ],
           "default": {}
         },
+        "suppressBaseScenePaths": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Base-game scene paths to hide or disable when this package applies."
+        },
+        "suppressBaseTrackGroups": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Base-game track group IDs to suppress when this package applies."
+        },
+        "suppressBaseAreas": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Base-game area IDs to suppress when this package applies."
+        },
+        "suppressScenePaths": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Deprecated alias for suppressBaseScenePaths. RAIL normalizes it on load."
+        },
+        "suppressGroups": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Deprecated alias for suppressBaseTrackGroups. RAIL normalizes it on load."
+        },
+        "suppressAreas": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Deprecated alias for suppressBaseAreas. RAIL normalizes it on load."
+        },
         "removals": {
           "$ref": "#/$defs/worldRemovals",
           "default": {
@@ -993,11 +1027,28 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "model",
         "position"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "assetIdentifier"
+          ]
+        },
+        {
+          "required": [
+            "model"
+          ]
+        }
       ],
       "properties": {
         "model": {
+          "type": "string",
+          "minLength": 1,
+          "deprecated": true,
+          "description": "Deprecated v1.0 compatibility field. If assetIdentifier is missing, RAIL treats model as the asset identifier and logs one deprecation warning per package."
+        },
+        "assetIdentifier": {
           "$ref": "#/$defs/uri"
         },
         "position": {
@@ -1514,6 +1565,14 @@
       "default": []
     },
     "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "suppressionStringArray": {
       "type": "array",
       "items": {
         "type": "string"

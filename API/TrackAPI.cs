@@ -40,6 +40,7 @@ namespace RAIL.API
             RailNodeRuntimeIndex.Instance.Set(id, node);
             RailEvents.RaiseNodeAdded(node);
             RequestRebuild();
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackNode, id, GetDefinition(node));
             return node;
         }
 
@@ -50,7 +51,9 @@ namespace RAIL.API
                 throw new ArgumentNullException(nameof(definition));
             }
 
-            return AddNode(id, definition.Position, definition.Rotation, definition.FlipSwitchStand, definition.GroupId);
+            var node = AddNode(id, definition.Position, definition.Rotation, definition.FlipSwitchStand, definition.GroupId);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackNode, id, definition);
+            return node;
         }
 
         public static void UpdateNode(string id, Vector3 position, Vector3 rotation, bool? flipStand = null)
@@ -67,6 +70,7 @@ namespace RAIL.API
             RailNodeRuntimeIndex.Instance.Set(id, node);
             RailEvents.RaiseNodeUpdated(node);
             RequestRebuild();
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackNode, id, GetDefinition(node));
         }
 
         public static void UpdateNode(string id, RailNode definition)
@@ -77,6 +81,7 @@ namespace RAIL.API
             }
 
             UpdateNode(id, definition.Position, definition.Rotation, definition.FlipSwitchStand);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackNode, id, definition);
         }
 
         public static void RemoveNode(string id)
@@ -89,6 +94,7 @@ namespace RAIL.API
 
             RemoveRuntimeObject(node);
             RailNodeRuntimeIndex.Instance.Remove(id);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.TrackNode, id);
             RailEvents.RaiseNodeRemoved(id);
             RequestRebuild();
         }
@@ -103,6 +109,26 @@ namespace RAIL.API
         {
             var graph = Graph.Shared;
             return graph != null ? graph.Nodes : Enumerable.Empty<TrackNode>();
+        }
+
+        public static RailNode GetNodeDefinition(string id)
+        {
+            return GetDefinition(GetNode(id));
+        }
+
+        public static RailNode GetDefinition(TrackNode node)
+        {
+            if (node == null)
+            {
+                return null;
+            }
+
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.TrackNode, node.id, out RailNode definition);
+            definition = definition ?? new RailNode();
+            definition.Position = node.transform.localPosition;
+            definition.Rotation = node.transform.localEulerAngles;
+            definition.FlipSwitchStand = node.flipSwitchStand;
+            return definition;
         }
 
         public static TrackSegment AddSegment(string id, string startNodeId, string endNodeId, TrackSegment.Style style = TrackSegment.Style.Standard, int speedLimit = 45, string groupId = null, TrackClass trackClass = TrackClass.Mainline, int priority = 0)
@@ -130,6 +156,7 @@ namespace RAIL.API
             RailSegmentRuntimeIndex.Instance.Set(id, segment);
             RailEvents.RaiseSegmentAdded(segment);
             RequestRebuild();
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSegment, id, GetDefinition(segment));
             return segment;
         }
 
@@ -140,7 +167,7 @@ namespace RAIL.API
                 throw new ArgumentNullException(nameof(definition));
             }
 
-            return AddSegment(
+            var segment = AddSegment(
                 id,
                 definition.StartNodeId,
                 definition.EndNodeId,
@@ -149,6 +176,8 @@ namespace RAIL.API
                 definition.GroupId,
                 ParseTrackClass(definition.TrackClass),
                 definition.Priority);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSegment, id, definition);
+            return segment;
         }
 
         public static void UpdateSegment(string id, TrackSegment.Style style, int speedLimit, TrackClass? trackClass = null, int? priority = null, string groupId = null)
@@ -177,6 +206,7 @@ namespace RAIL.API
             RailSegmentRuntimeIndex.Instance.Set(id, segment);
             RailEvents.RaiseSegmentUpdated(segment);
             RequestRebuild();
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSegment, id, GetDefinition(segment));
         }
 
         public static void UpdateSegment(string id, RailSegment definition)
@@ -193,6 +223,7 @@ namespace RAIL.API
                 ParseTrackClass(definition.TrackClass),
                 definition.Priority,
                 definition.GroupId);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSegment, id, definition);
         }
 
         public static void RemoveSegment(string id)
@@ -200,6 +231,7 @@ namespace RAIL.API
             var segment = RequireSegment(id);
             RemoveRuntimeObject(segment);
             RailSegmentRuntimeIndex.Instance.Remove(id);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.TrackSegment, id);
             RailEvents.RaiseSegmentRemoved(id);
             RequestRebuild();
         }
@@ -214,6 +246,30 @@ namespace RAIL.API
         {
             var graph = Graph.Shared;
             return graph != null ? graph.Segments : Enumerable.Empty<TrackSegment>();
+        }
+
+        public static RailSegment GetSegmentDefinition(string id)
+        {
+            return GetDefinition(GetSegment(id));
+        }
+
+        public static RailSegment GetDefinition(TrackSegment segment)
+        {
+            if (segment == null)
+            {
+                return null;
+            }
+
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.TrackSegment, segment.id, out RailSegment definition);
+            definition = definition ?? new RailSegment();
+            definition.StartNodeId = segment.a != null ? segment.a.id : null;
+            definition.EndNodeId = segment.b != null ? segment.b.id : null;
+            definition.Style = segment.style.ToString();
+            definition.TrackClass = segment.trackClass == TrackClass.Mainline ? "main" : segment.trackClass.ToString();
+            definition.SpeedLimit = segment.speedLimit;
+            definition.Priority = segment.priority;
+            definition.GroupId = segment.groupId;
+            return definition;
         }
 
         public static TrackSpan AddSpan(string id, RailTrackLocation upper, RailTrackLocation lower, bool normalize = true)
@@ -237,6 +293,7 @@ namespace RAIL.API
             RailSpanRuntimeIndex.Instance.Set(id, span);
             RailEvents.RaiseSpanAdded(span);
             RequestRebuild();
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, GetDefinition(span));
             return span;
         }
 
@@ -247,7 +304,9 @@ namespace RAIL.API
                 throw new ArgumentNullException(nameof(definition));
             }
 
-            return AddSpan(id, definition.Upper, definition.Lower, definition.Normalize);
+            var span = AddSpan(id, definition.Upper, definition.Lower, definition.Normalize);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, definition);
+            return span;
         }
 
         public static void UpdateSpan(string id, RailTrackLocation upper, RailTrackLocation lower, bool normalize = true)
@@ -264,6 +323,7 @@ namespace RAIL.API
             RailSpanRuntimeIndex.Instance.Set(id, span);
             RailEvents.RaiseSpanUpdated(span);
             RequestRebuild();
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, GetDefinition(span));
         }
 
         public static void UpdateSpan(string id, RailSpan definition)
@@ -274,6 +334,7 @@ namespace RAIL.API
             }
 
             UpdateSpan(id, definition.Upper, definition.Lower, definition.Normalize);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, definition);
         }
 
         public static void RemoveSpan(string id)
@@ -281,6 +342,7 @@ namespace RAIL.API
             var span = RequireSpan(id);
             RemoveRuntimeObject(span);
             RailSpanRuntimeIndex.Instance.Remove(id);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.TrackSpan, id);
             RailEvents.RaiseSpanRemoved(id);
             RequestRebuild();
         }
@@ -294,6 +356,31 @@ namespace RAIL.API
 
             var graph = Graph.Shared;
             return graph != null && !string.IsNullOrWhiteSpace(id) ? graph.SpanForId(id) : null;
+        }
+
+        public static IEnumerable<TrackSpan> GetAllSpans()
+        {
+            return UnityEngine.Object.FindObjectsOfType<TrackSpan>(true)
+                .Where(span => span != null && !string.IsNullOrWhiteSpace(span.id));
+        }
+
+        public static RailSpan GetSpanDefinition(string id)
+        {
+            return GetDefinition(GetSpan(id));
+        }
+
+        public static RailSpan GetDefinition(TrackSpan span)
+        {
+            if (span == null)
+            {
+                return null;
+            }
+
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.TrackSpan, span.id, out RailSpan definition);
+            definition = definition ?? new RailSpan();
+            definition.Upper = span.upper.HasValue ? ToDefinition(span.upper.Value) : null;
+            definition.Lower = span.lower.HasValue ? ToDefinition(span.lower.Value) : null;
+            return definition;
         }
 
         public static Area AddArea(string id, RailArea definition)
@@ -318,6 +405,7 @@ namespace RAIL.API
             RememberAreaOrder(id, definition.Order);
             RailAreaRuntimeIndex.Instance.Set(id, area);
             RailLog.Info($"RAIL created area '{id}' name='{displayName}' parent='{DescribeAreaParent(area.transform.parent)}' position={area.transform.localPosition} radius={area.radius}.");
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackArea, id, definition);
             return area;
         }
 
@@ -333,6 +421,7 @@ namespace RAIL.API
             RememberAreaOrder(id, definition.Order);
             RailAreaRuntimeIndex.Instance.Set(id, area);
             RailLog.Info($"RAIL updated area '{id}' name='{area.name}' position={area.transform.localPosition} radius={area.radius}.");
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackArea, id, definition);
         }
 
         public static Area GetArea(string id)
@@ -372,6 +461,27 @@ namespace RAIL.API
             return UnityEngine.Object.FindObjectsOfType<Area>(true).Where(area => area != null);
         }
 
+        public static RailArea GetAreaDefinition(string id)
+        {
+            return GetDefinition(GetArea(id));
+        }
+
+        public static RailArea GetDefinition(Area area)
+        {
+            if (area == null)
+            {
+                return null;
+            }
+
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.TrackArea, area.identifier, out RailArea definition);
+            definition = definition ?? new RailArea();
+            definition.Name = area.name;
+            definition.Position = area.transform.localPosition;
+            definition.Radius = area.radius;
+            definition.TagColor = new[] { area.tagColor.r, area.tagColor.g, area.tagColor.b, area.tagColor.a };
+            return definition;
+        }
+
         public static void ApplyAreaOrdering()
         {
             var orderedAreas = GetAllAreas()
@@ -406,13 +516,18 @@ namespace RAIL.API
 
         public static void EndBatch()
         {
+            EndBatch(true);
+        }
+
+        public static void EndBatch(bool rebuild)
+        {
             if (_batchDepth == 0)
             {
                 return;
             }
 
             _batchDepth--;
-            if (_batchDepth == 0 && _rebuildRequested)
+            if (_batchDepth == 0 && _rebuildRequested && rebuild)
             {
                 RebuildGraph();
             }
@@ -470,6 +585,21 @@ namespace RAIL.API
                 segment,
                 Mathf.Clamp(distance, 0f, segment.GetLength()),
                 ParseLocationEnd(definition.End));
+        }
+
+        private static RailTrackLocation ToDefinition(Location location)
+        {
+            if (location.segment == null)
+            {
+                return null;
+            }
+
+            return new RailTrackLocation
+            {
+                SegmentId = location.segment.id,
+                End = location.end == TrackSegment.End.B ? "B" : "A",
+                Distance = location.distance
+            };
         }
 
         private static TrackSegment.End ParseLocationEnd(string value)

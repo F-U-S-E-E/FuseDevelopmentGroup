@@ -1,6 +1,6 @@
 {
   "$schema": "./rail-mod.schema.json",
-  "schemaVersion": 1,
+  "schemaVersion": "1.0",
   "id": "RAIL.Example.MurphyBranch",
   "name": "Murphy Branch",
   "author": "RAIL Team",
@@ -358,7 +358,7 @@
   "world": {
     "scenery": {
       "murphy:scenery:depot": {
-        "model": "vanilla://depotSmall",
+        "assetIdentifier": "vanilla://depotSmall",
         "position": {
           "x": 12,
           "y": 0,

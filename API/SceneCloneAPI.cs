@@ -58,6 +58,7 @@ namespace RAIL.API
             var path = GetTransformPath(root.transform);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
+            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.SceneClone, id);
             RailLog.Info($"RAIL removed scene clone '{id}' from '{path}'.");
             return true;
         }
@@ -72,6 +73,30 @@ namespace RAIL.API
             return UnityEngine.Object.FindObjectsOfType<RailSceneCloneMarker>(true)
                 .FirstOrDefault(marker => string.Equals(marker.Id, id, StringComparison.OrdinalIgnoreCase))
                 ?.gameObject;
+        }
+
+        public static RailSceneClone GetSceneCloneDefinition(string id)
+        {
+            return GetDefinition(GetSceneClone(id));
+        }
+
+        public static RailSceneClone GetDefinition(GameObject sceneClone)
+        {
+            if (sceneClone == null)
+            {
+                return null;
+            }
+
+            var marker = sceneClone.GetComponent<RailSceneCloneMarker>();
+            var id = marker != null ? marker.Id : sceneClone.name;
+            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.SceneClone, id, out RailSceneClone definition);
+            definition = definition ?? new RailSceneClone();
+            definition.TargetPath = !string.IsNullOrWhiteSpace(marker?.TargetPath) ? marker.TargetPath : GetTransformPath(sceneClone.transform);
+            definition.Enabled = sceneClone.activeSelf;
+            definition.LocalPosition = sceneClone.transform.localPosition;
+            definition.LocalRotation = sceneClone.transform.localEulerAngles;
+            definition.LocalScale = sceneClone.transform.localScale;
+            return definition;
         }
 
         private static GameObject FindRemovableSceneClone(string id)
@@ -164,7 +189,14 @@ namespace RAIL.API
                 ForceRenderable(id, targetObject);
             }
 
+            if (clonedFromSource)
+            {
+                RailPrefabSanitizer.SanitizeSceneClone(targetObject, id).Log($"RAIL scene clone '{id}'");
+            }
+
+            RailPrefabSanitizer.ValidateSceneClonePostBind(targetObject, id).Log($"RAIL scene clone '{id}' post-bind");
             RailLog.Info($"RAIL scene clone '{id}' materialized at {targetObject.transform.position}; {DescribeRendererState(targetObject)}.");
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.SceneClone, id, definition);
             return targetObject;
         }
 

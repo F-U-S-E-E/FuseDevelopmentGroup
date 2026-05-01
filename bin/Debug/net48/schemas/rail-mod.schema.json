@@ -83,7 +83,7 @@
     "uri": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(vanilla|asset|rail|file)://.+$"
+      "pattern": "^(vanilla|path|scenery|asset|rail|file|empty)://.*$"
     },
     "vec3": {
       "type": "object",
@@ -166,6 +166,29 @@
             }
           ],
           "default": {}
+        },
+        "removals": {
+          "$ref": "#/$defs/trackRemovals",
+          "default": {
+            "nodes": [],
+            "segments": [],
+            "spans": []
+          }
+        }
+      }
+    },
+    "trackRemovals": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "$ref": "#/$defs/idArray"
+        },
+        "segments": {
+          "$ref": "#/$defs/idArray"
+        },
+        "spans": {
+          "$ref": "#/$defs/idArray"
         }
       }
     },
@@ -223,7 +246,7 @@
         },
         "speedLimit": {
           "type": "integer",
-          "minimum": 1,
+          "minimum": 0,
           "maximum": 80,
           "default": 45
         },
@@ -270,6 +293,16 @@
           "type": "number",
           "minimum": 0
         },
+        "end": {
+          "type": "string",
+          "enum": [
+            "A",
+            "B",
+            "Start",
+            "End"
+          ],
+          "description": "Which segment end the normalized or distance value is measured from. Omit for the default A/start orientation."
+        },
         "offset": {
           "type": "number",
           "default": 0
@@ -305,6 +338,27 @@
       "properties": {
         "name": {
           "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/vec3"
+        },
+        "radius": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tagColor": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 4,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
         },
         "spanIds": {
           "$ref": "#/$defs/idArray"
@@ -396,6 +450,39 @@
           "type": "string",
           "minLength": 1
         },
+        "units": {
+          "type": "string",
+          "enum": [
+            "Pounds",
+            "Gallons",
+            "Quantity"
+          ],
+          "default": "Pounds"
+        },
+        "density": {
+          "type": "number",
+          "minimum": 0,
+          "default": 62.4
+        },
+        "unitWeightInPounds": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0
+        },
+        "importable": {
+          "type": "boolean",
+          "default": true
+        },
+        "payPerQuantity": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0
+        },
+        "costPerUnit": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0
+        },
         "carTypeFilter": {
           "type": "string"
         },
@@ -421,6 +508,13 @@
         "name": {
           "type": "string",
           "minLength": 1
+        },
+        "areaId": {
+          "$ref": "#/$defs/idRef"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
         },
         "position": {
           "$ref": "#/$defs/vec3"
@@ -467,6 +561,15 @@
             "unloader",
             "storage",
             "formulaic",
+            "repairTrack",
+            "repair-track",
+            "teamTrack",
+            "team-track",
+            "interchange",
+            "interchangedLoader",
+            "interchanged-loader",
+            "passengerStop",
+            "passenger-stop",
             "custom"
           ]
         },
@@ -506,6 +609,124 @@
         },
         "inputSpanIds": {
           "$ref": "#/$defs/idArray"
+        },
+        "inputTermsPerDay": {
+          "$ref": "#/$defs/loadRateMap"
+        },
+        "outputTermsPerDay": {
+          "$ref": "#/$defs/loadRateMap"
+        },
+        "idealCars": {
+          "type": "number",
+          "minimum": 0
+        },
+        "teamProfiles": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/teamTrackEntry"
+          },
+          "default": {}
+        },
+        "canOverhaul": {
+          "type": "boolean"
+        },
+        "passengerStopId": {
+          "$ref": "#/$defs/idRef"
+        },
+        "timetableCode": {
+          "type": "string"
+        },
+        "basePopulation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "neighborIds": {
+          "$ref": "#/$defs/idArray"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "branchDefinitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/passengerBranch"
+          },
+          "default": []
+        }
+      }
+    },
+    "loadRateMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      },
+      "default": {}
+    },
+    "teamTrackEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "loadId"
+      ],
+      "properties": {
+        "isExport": {
+          "type": "boolean",
+          "default": false
+        },
+        "loadId": {
+          "$ref": "#/$defs/idRef"
+        },
+        "loadingTimeDays": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1
+        },
+        "carTypeFilter": {
+          "type": "string"
+        }
+      }
+    },
+    "passengerBranch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "traverseTimeToNext": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "mapFeature": {
+          "$ref": "#/$defs/idRef"
+        },
+        "intermediates": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/passengerIntermediate"
+          },
+          "default": {}
+        }
+      }
+    },
+    "passengerIntermediate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "traverseTimeToNext": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
         }
       }
     },
@@ -565,6 +786,10 @@
           "maximum": 32,
           "default": 16
         },
+        "legacyIdentifier": {
+          "type": "string",
+          "description": "Optional legacy turntable identifier used to reproduce existing helper node and roundhouse segment IDs."
+        },
         "roundhouse": {
           "$ref": "#/$defs/roundhouse"
         }
@@ -587,6 +812,11 @@
         },
         "stallAngle": {
           "type": "number"
+        },
+        "trackLength": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 46
         },
         "startPrefab": {
           "$ref": "#/$defs/uri"
@@ -694,6 +924,92 @@
             }
           ],
           "default": {}
+        },
+        "mapTiles": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/mapTileSource"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "sceneClones": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/dictionary"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/sceneClone"
+              }
+            }
+          ],
+          "default": {}
+        },
+        "suppressBaseScenePaths": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Base-game scene paths to hide or disable when this package applies."
+        },
+        "suppressBaseTrackGroups": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Base-game track group IDs to suppress when this package applies."
+        },
+        "suppressBaseAreas": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Base-game area IDs to suppress when this package applies."
+        },
+        "suppressScenePaths": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Deprecated alias for suppressBaseScenePaths. RAIL normalizes it on load."
+        },
+        "suppressGroups": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Deprecated alias for suppressBaseTrackGroups. RAIL normalizes it on load."
+        },
+        "suppressAreas": {
+          "$ref": "#/$defs/suppressionStringArray",
+          "description": "Deprecated alias for suppressBaseAreas. RAIL normalizes it on load."
+        },
+        "removals": {
+          "$ref": "#/$defs/worldRemovals",
+          "default": {
+            "scenery": [],
+            "splineys": [],
+            "telegraphPoles": [],
+            "mapLabels": [],
+            "mapMasks": [],
+            "sceneClones": []
+          }
+        }
+      }
+    },
+    "worldRemovals": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Scene-path or RAIL-id removals for world objects. Use this to carry source JSON null entries through conversion.",
+      "properties": {
+        "scenery": {
+          "$ref": "#/$defs/worldRemovalArray"
+        },
+        "splineys": {
+          "$ref": "#/$defs/worldRemovalArray"
+        },
+        "telegraphPoles": {
+          "$ref": "#/$defs/worldRemovalArray"
+        },
+        "mapLabels": {
+          "$ref": "#/$defs/worldRemovalArray"
+        },
+        "mapMasks": {
+          "$ref": "#/$defs/worldRemovalArray"
+        },
+        "sceneClones": {
+          "$ref": "#/$defs/worldRemovalArray"
         }
       }
     },
@@ -742,7 +1058,9 @@
           "enum": [
             "river",
             "road",
-            "trestle"
+            "terrainRoad",
+            "trestle",
+            "waterfall"
           ]
         },
         "profile": {
@@ -834,6 +1152,20 @@
         "text": {
           "type": "string",
           "minLength": 1
+        },
+        "style": {
+          "type": "string",
+          "enum": [
+            "label",
+            "speedLimit",
+            "speed-limit"
+          ],
+          "default": "label"
+        },
+        "speedLimitMph": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 80
         },
         "position": {
           "$ref": "#/$defs/vec3"
@@ -929,6 +1261,80 @@
           "items": {
             "$ref": "#/$defs/vec3"
           }
+        }
+      }
+    },
+    "mapTileSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directory",
+        "sourceFolder"
+      ],
+      "properties": {
+        "directory": {
+          "type": "string",
+          "minLength": 1,
+          "description": "MapManager.directoryName this tile source extends, for example BushnellWhittier."
+        },
+        "sourceFolder": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Package-relative folder that contains tile_XXX_YYY.data files. Absolute paths are supported for local migration workflows."
+        },
+        "priority": {
+          "type": "integer",
+          "default": 0,
+          "description": "Higher-priority sources override lower-priority sources when they provide the same tile coordinate."
+        }
+      }
+    },
+    "sceneClone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetPath"
+      ],
+      "properties": {
+        "targetPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "$ref": "#/$defs/uri"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "localPosition": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/vec3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localRotation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/vec3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "localScale": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/vec3"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -1135,6 +1541,23 @@
       "type": "array",
       "items": {
         "type": "string"
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "suppressionStringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "worldRemovalArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
       },
       "uniqueItems": true,
       "default": []
