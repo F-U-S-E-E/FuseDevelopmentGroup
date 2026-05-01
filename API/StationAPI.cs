@@ -284,6 +284,24 @@ namespace RAIL.API
 
         private static MapIcon CreateStationMapIcon(Transform stationRoot, string id)
         {
+            // Prefer cloning the entire MapIcon GameObject from a real
+            // PassengerStop. The whole assembly — Canvas, Image material,
+            // sizing, sorting, layer, sprite — is set up by the base game to
+            // render correctly through the map camera. Rebuilding from scratch
+            // and only borrowing the sprite produces an invisible icon because
+            // the default UI material does not render through the map view.
+            var cloned = TryCloneMapIconFromPassengerStop(stationRoot, id);
+            if (cloned != null)
+            {
+                return cloned;
+            }
+
+            // Fallback: legacy procedural construction. Visually inconsistent
+            // with base-game stations but never produces a missing icon.
+            RailLog.Warning(
+                $"RAIL station map icon: could not clone a base-game MapIcon for station '{id}'; " +
+                "using RAIL procedural construction (visual mismatch likely).");
+
             var iconObject = new GameObject("RAIL Station MapIcon", typeof(RectTransform));
             iconObject.transform.SetParent(stationRoot, false);
             var canvas = iconObject.AddComponent<Canvas>();
@@ -315,6 +333,79 @@ namespace RAIL.API
             return icon;
         }
 
+        /// <summary>
+        /// Finds a base-game PassengerStop's MapIcon GameObject, clones it whole,
+        /// reparents the clone to our station, resets transform, and returns the
+        /// cloned MapIcon component. Returns null if no clonable source is found.
+        /// </summary>
+        private static MapIcon TryCloneMapIconFromPassengerStop(Transform stationRoot, string id)
+        {
+            try
+            {
+                MapIcon source = null;
+                var stops = UnityEngine.Object.FindObjectsOfType<PassengerStop>(true);
+                foreach (var stop in stops)
+                {
+                    if (stop == null || stop.gameObject == null)
+                    {
+                        continue;
+                    }
+
+                    var icons = stop.GetComponentsInChildren<MapIcon>(true);
+                    foreach (var icon in icons)
+                    {
+                        if (icon == null || icon.gameObject == null)
+                        {
+                            continue;
+                        }
+
+                        var name = icon.gameObject.name ?? string.Empty;
+                        if (name.StartsWith("RAIL Station MapIcon", StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        source = icon;
+                        break;
+                    }
+
+                    if (source != null)
+                    {
+                        break;
+                    }
+                }
+
+                if (source == null)
+                {
+                    return null;
+                }
+
+                var clone = UnityEngine.Object.Instantiate(source.gameObject, stationRoot, false);
+                clone.transform.localPosition = Vector3.zero;
+                clone.transform.localRotation = Quaternion.identity;
+                clone.transform.localScale = source.transform.lossyScale != Vector3.zero
+                    ? source.transform.lossyScale
+                    : Vector3.one;
+                clone.name = $"RAIL Station MapIcon - {id}";
+                clone.SetActive(true);
+
+                var clonedIcon = clone.GetComponent<MapIcon>();
+                if (clonedIcon == null)
+                {
+                    clonedIcon = clone.AddComponent<MapIcon>();
+                }
+
+                return clonedIcon;
+            }
+            catch (Exception ex)
+            {
+                RailLog.Warning(
+                    $"RAIL station map icon: failed to clone MapIcon for '{id}': {ex.Message}. " +
+                    "Falling back to procedural construction.");
+                return null;
+            }
+        }
+
         private static void AddMapIconCollider(GameObject iconObject)
         {
             var boxColliderType = Type.GetType("UnityEngine.BoxCollider, UnityEngine.PhysicsModule");
@@ -335,6 +426,25 @@ namespace RAIL.API
             {
                 return _stationIconSprite;
             }
+
+            // Prefer the game's built-in passenger-station map icon over RAIL's
+            // procedural fallback. We locate any existing MapIcon in the scene
+            // (skipping ones we created ourselves), lift the sprite off its child
+            // Image, cache it, and reuse it. Stations RAIL adds will then render
+            // visually identical to base-game stations.
+            var found = TryFindGameStationIconSprite();
+            if (found != null)
+            {
+                _stationIconSprite = found;
+                RailLog.Info(
+                    $"RAIL station icon: bound to existing game sprite='{found.name ?? string.Empty}' " +
+                    "operation='station map icon' message='reusing base-game MapIcon sprite'.");
+                return _stationIconSprite;
+            }
+
+            RailLog.Warning(
+                "RAIL station icon: no base-game MapIcon sprite found at runtime; " +
+                "falling back to RAIL procedural sprite. Stations may not visually match base-game icons.");
 
             const int size = 64;
             const float center = (size - 1) * 0.5f;
@@ -382,6 +492,136 @@ namespace RAIL.API
             _stationIconSprite = Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), size);
             _stationIconSprite.name = "RAIL Station Icon";
             return _stationIconSprite;
+        }
+
+        /// <summary>
+        /// Finds the sprite the game uses for passenger-station map icons.
+        /// We have to be selective: Resources.FindObjectsOfTypeAll&lt;MapIcon&gt;
+        /// returns icons for characters, industries, signals, etc. — picking
+        /// the first one gives us, e.g., MapCharacterIcon (a conductor head)
+        /// instead of a station marker.
+        ///
+        /// Lookup order:
+        ///   1. MapIcon nested under a PassengerStop in the active scene.
+        ///   2. MapIcon under a StationAgent (rare, but covers some prefabs).
+        ///   3. Any MapIcon whose owning GameObject name suggests a station.
+        ///   4. null → caller falls back to RAIL's procedural sprite.
+        /// </summary>
+        private static Sprite TryFindGameStationIconSprite()
+        {
+            try
+            {
+                var stops = UnityEngine.Object.FindObjectsOfType<PassengerStop>(true);
+                foreach (var stop in stops)
+                {
+                    var sprite = ExtractStationSpriteFromHost(stop != null ? stop.gameObject : null);
+                    if (sprite != null)
+                    {
+                        return sprite;
+                    }
+                }
+
+                var agents = UnityEngine.Object.FindObjectsOfType<StationAgent>(true);
+                foreach (var agent in agents)
+                {
+                    var sprite = ExtractStationSpriteFromHost(agent != null ? agent.gameObject : null);
+                    if (sprite != null)
+                    {
+                        return sprite;
+                    }
+                }
+
+                // Final pass over every MapIcon, ranked by name. Avoids picking
+                // up MapCharacterIcon and similar non-station icons.
+                var icons = Resources.FindObjectsOfTypeAll<MapIcon>();
+                MapIcon nameMatch = null;
+                foreach (var icon in icons)
+                {
+                    if (icon == null || icon.gameObject == null)
+                    {
+                        continue;
+                    }
+
+                    var name = icon.gameObject.name ?? string.Empty;
+                    if (name.StartsWith("RAIL Station MapIcon", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    if (LooksLikeStationIconName(name) || LooksLikeStationIconName(icon.transform.parent != null ? icon.transform.parent.name : string.Empty))
+                    {
+                        var sprite = ExtractSpriteFromMapIcon(icon);
+                        if (sprite != null)
+                        {
+                            nameMatch = icon;
+                            break;
+                        }
+                    }
+                }
+
+                return nameMatch != null ? ExtractSpriteFromMapIcon(nameMatch) : null;
+            }
+            catch (Exception ex)
+            {
+                RailLog.Warning(
+                    $"RAIL station icon: failed to scan for an existing MapIcon sprite: {ex.Message}. " +
+                    "Falling back to procedural sprite.");
+                return null;
+            }
+        }
+
+        private static Sprite ExtractStationSpriteFromHost(GameObject host)
+        {
+            if (host == null)
+            {
+                return null;
+            }
+
+            var icons = host.GetComponentsInChildren<MapIcon>(true);
+            foreach (var icon in icons)
+            {
+                if (icon == null || icon.gameObject == null)
+                {
+                    continue;
+                }
+
+                var name = icon.gameObject.name ?? string.Empty;
+                if (name.StartsWith("RAIL Station MapIcon", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var sprite = ExtractSpriteFromMapIcon(icon);
+                if (sprite != null)
+                {
+                    return sprite;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool LooksLikeStationIconName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            return name.IndexOf("Station", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("Depot", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("PassengerStop", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static Sprite ExtractSpriteFromMapIcon(MapIcon icon)
+        {
+            if (icon == null)
+            {
+                return null;
+            }
+
+            var image = icon.GetComponentInChildren<Image>(true);
+            return image != null && image.sprite != null ? image.sprite : null;
         }
 
         private static bool IsStationGlyphPixel(int x, int y)

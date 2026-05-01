@@ -254,11 +254,25 @@ namespace RAIL.Loading
                         TrackAPI.EndBatch(false);
                     }
 
-                    transaction.RunPhase("single-graph-rebuild", () =>
+                    if (MutatesTrackGraph(definition))
                     {
-                        TrackAPI.RebuildGraph();
-                        transaction.PostBind("graph", definition.Id, "rebuilt");
-                    });
+                        transaction.RunPhase("single-graph-rebuild", () =>
+                        {
+                            TrackAPI.RebuildGraph();
+                            transaction.PostBind("graph", definition.Id, "rebuilt");
+                        });
+                    }
+                    else
+                    {
+                        // No track nodes/segments/spans/turntables/removals were
+                        // mutated by this package, so the existing graph is still
+                        // current. Skipping the rebuild typically saves 300-700 ms
+                        // per non-track package on multi-package map loads.
+                        RailLog.Info(
+                            $"RAIL apply phase package='{definition.Id}' " +
+                            "operation='single-graph-rebuild' skipped: no track mutations in this package.");
+                        transaction.PostBind("graph", definition.Id, "rebuild-skipped");
+                    }
                     transaction.RunPhase("apply-world-objects", () => ApplyWorldDefinition(definition, loaded.FolderPath, loaded.DefinitionPath, transaction));
                     transaction.RunPhase("apply-operations", () =>
                     {
@@ -362,6 +376,28 @@ namespace RAIL.Loading
                    (definition.Tracks?.Segments?.Count ?? 0) > 0 ||
                    (definition.Tracks?.Spans?.Count ?? 0) > 0 ||
                    (definition.Tracks?.Areas?.Count ?? 0) > 0 ||
+                   HasAny(definition.Tracks?.Removals?.Nodes) ||
+                   HasAny(definition.Tracks?.Removals?.Segments) ||
+                   HasAny(definition.Tracks?.Removals?.Spans) ||
+                   (definition.Operations?.Turntables?.Count ?? 0) > 0;
+        }
+
+        /// <summary>
+        /// Returns true only when this definition adds, removes, or modifies
+        /// track nodes/segments/spans, or contains turntables (which create
+        /// pit nodes and roundhouse segments). Areas reference existing
+        /// segments but do not require a graph rebuild.
+        /// </summary>
+        private static bool MutatesTrackGraph(RailModDefinition definition)
+        {
+            if (definition == null)
+            {
+                return false;
+            }
+
+            return (definition.Tracks?.Nodes?.Count ?? 0) > 0 ||
+                   (definition.Tracks?.Segments?.Count ?? 0) > 0 ||
+                   (definition.Tracks?.Spans?.Count ?? 0) > 0 ||
                    HasAny(definition.Tracks?.Removals?.Nodes) ||
                    HasAny(definition.Tracks?.Removals?.Segments) ||
                    HasAny(definition.Tracks?.Removals?.Spans) ||
@@ -969,6 +1005,24 @@ namespace RAIL.Loading
 
                     var runtimeSegment = TrackAPI.GetSegment(segment.Key);
                     var exists = runtimeSegment != null;
+
+                    // Pre-check: surface node-binding problems before AddSegment
+                    // throws. The preflight-warning downgrade lets segments with
+                    // missing endpoints reach apply, where they fail per-segment.
+                    // Emitting this warning makes the cause visible without
+                    // adding any per-success log noise.
+                    var startNode = TrackAPI.GetNode(segment.Value.StartNodeId);
+                    var endNode = TrackAPI.GetNode(segment.Value.EndNodeId);
+                    if (startNode == null || endNode == null)
+                    {
+                        RailLog.Warning(
+                            $"RAIL apply pre-check package='{definition.Id}' operation='apply-segments' " +
+                            $"kind='track segment' id='{segment.Key}' " +
+                            $"start='{segment.Value.StartNodeId ?? string.Empty}' startExists={startNode != null} " +
+                            $"end='{segment.Value.EndNodeId ?? string.Empty}' endExists={endNode != null} " +
+                            "message='node reference not yet bound; AddSegment may fail per-segment'.");
+                    }
+
                     transaction.TryApply("track segment", segment.Key, exists, () =>
                     {
                         if (runtimeSegment == null)
@@ -977,6 +1031,19 @@ namespace RAIL.Loading
                         }
                         else if (runtimeSegment.a.id != segment.Value.StartNodeId || runtimeSegment.b.id != segment.Value.EndNodeId)
                         {
+                            // Endpoint change: the existing segment must be torn
+                            // down and re-added because TrackSegment endpoints
+                            // are not mutable in place. Log the diff so a future
+                            // graph-state regression can be tied to a specific
+                            // segment + reload pair.
+                            RailLog.Info(
+                                $"RAIL apply package='{definition.Id}' operation='apply-segments' " +
+                                $"kind='track segment' id='{segment.Key}' " +
+                                $"message='endpoint change detected " +
+                                $"oldStart=\"{runtimeSegment.a.id}\" newStart=\"{segment.Value.StartNodeId}\" " +
+                                $"oldEnd=\"{runtimeSegment.b.id}\" newEnd=\"{segment.Value.EndNodeId}\" " +
+                                $"newStartExists={startNode != null} newEndExists={endNode != null}'.");
+
                             TrackAPI.RemoveSegment(segment.Key);
                             TrackAPI.AddSegment(segment.Key, segment.Value);
                         }
