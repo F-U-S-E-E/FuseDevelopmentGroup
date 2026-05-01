@@ -373,9 +373,29 @@
           "x": 1,
           "y": 1,
           "z": 1
-        }
+        },
+        "anchorSpanIds": [
+          "murphy:span:depot"
+        ]
       }
     },
+    "spawnPoints": [
+      {
+        "name": "Murphy Depot",
+        "position": {
+          "x": 12,
+          "y": 0,
+          "z": -9
+        },
+        "rotation": {
+          "x": 0,
+          "y": 90,
+          "z": 0
+        },
+        "radius": 3,
+        "priority": 10
+      }
+    ],
     "splineys": {
       "murphy:river:001": {
         "type": "river",
@@ -473,6 +493,19 @@
         ]
       }
     },
+    "telegraphPoleMovements": [
+      {
+        "poleIndices": [
+          585,
+          583
+        ],
+        "offset": {
+          "x": 0,
+          "y": 3,
+          "z": 0
+        }
+      }
+    ],
     "mapLabels": {
       "murphy:label:town": {
         "text": "Murphy",
@@ -594,44 +627,112 @@
       "sceneClones": []
     }
   },
-  "progression": {
-    "progressions": {
-      "murphy": {
-        "sections": {
-          "murphy:section:phase1": {
-            "displayName": "Murphy Branch Phase 1",
-            "description": "Initial construction.",
-            "enableFeaturesOnAvailable": [
-              "murphy:feature:branch"
-            ],
-            "enableFeaturesOnUnlock": [
-              "murphy:feature:branch"
-            ],
-            "deliveryPhases": [
+  "audio": {
+    "whistles": {
+      "murphy:whistle:single": {
+        "name": "Murphy Single Chime",
+        "clip": "Audio/whistles/murphy-single.wav"
+      }
+    },
+    "horns": {
+      "murphy:horn:two-layer": {
+        "name": "Murphy Two Layer Horn",
+        "layers": [
+          {
+            "file": "Audio/horns/murphy-quiet.wav",
+            "keyframes": [
               {
-                "cost": 25000,
-                "industryComponentId": "murphy:ind:sawmill.progression",
-                "deliveries": [
-                  {
-                    "carTypeFilter": "flatcar",
-                    "loadId": "pulpwood",
-                    "count": 3,
-                    "destinationIndustryId": "murphy:ind:sawmill"
-                  }
-                ]
+                "t": 0,
+                "value": 1
+              },
+              {
+                "t": 1,
+                "value": 0
+              }
+            ]
+          },
+          {
+            "file": "Audio/horns/murphy-full.wav",
+            "keyframes": [
+              {
+                "t": 0,
+                "value": 0
+              },
+              {
+                "t": 1,
+                "value": 1
               }
             ]
           }
-        }
+        ]
       }
     },
+    "bells": {
+      "murphy:bell:shop": {
+        "name": "Murphy Shop Bell",
+        "file": "Audio/bells/murphy-shop.wav",
+        "indexTimes": [
+          0.42,
+          0.86
+        ]
+      }
+    }
+  },
+  "progression": {
+    "progressionId": "murphy",
+    "sections": [
+      {
+        "id": "murphy:section:phase1",
+        "displayName": "Murphy Branch Phase 1",
+        "description": "Initial construction.",
+        "prerequisiteSections": [],
+        "enableFeaturesOnAvailable": [
+          "murphy:feature:branch"
+        ],
+        "enableFeaturesOnUnlock": [
+          "murphy:feature:branch"
+        ],
+        "trackGroupsEnableOnUnlock": [
+          "murphy:main"
+        ],
+        "trackGroupsAvailableOnUnlock": [
+          "murphy:yard"
+        ],
+        "areasEnableOnUnlock": [
+          "murphy:area:town"
+        ],
+        "unlockIncludeIndustries": [
+          "murphy:ind:sawmill"
+        ],
+        "unlockIncludeIndustryComponents": [
+          "murphy:ind:sawmill.progression"
+        ],
+        "deliveryPhases": [
+          {
+            "cost": 25000,
+            "deliveries": [
+              {
+                "carTypeFilter": "flatcar",
+                "loadId": "pulpwood",
+                "count": 3,
+                "direction": "loadToIndustry",
+                "destinationIndustryId": "murphy:ind:sawmill"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "progressions": {},
     "mapFeatures": {
       "murphy:feature:branch": {
         "displayName": "Murphy Branch",
         "description": "Shows Murphy Branch features on the map.",
         "initiallyEnabled": false,
-        "groupIds": [
-          "murphy:main",
+        "trackGroupsEnableOnUnlock": [
+          "murphy:main"
+        ],
+        "trackGroupsAvailableOnUnlock": [
           "murphy:yard"
         ]
       }

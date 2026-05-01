@@ -588,47 +588,38 @@ namespace RAIL.API
 
         private static Type ResolveComponentType(string type)
         {
-            if (string.Equals(type, "loader", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Model.Ops.IndustryLoader", StringComparison.OrdinalIgnoreCase))
+            var normalized = RailIndustryComponentTypes.Normalize(type);
+            if (string.Equals(normalized, RailIndustryComponentTypes.Loader, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(IndustryLoader);
             }
 
-            if (string.Equals(type, "unloader", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Model.Ops.IndustryUnloader", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, RailIndustryComponentTypes.Unloader, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(IndustryUnloader);
             }
 
-            if (string.Equals(type, "formulaic", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Model.Ops.FormulaicIndustryComponent", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, RailIndustryComponentTypes.Formulaic, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(FormulaicIndustryComponent);
             }
 
-            if (string.Equals(type, "repairTrack", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "repair-track", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Model.Ops.RepairTrack", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, RailIndustryComponentTypes.RepairTrack, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(RepairTrack);
             }
 
-            if (string.Equals(type, "teamTrack", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "team-track", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Model.Ops.TeamTrack", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, RailIndustryComponentTypes.TeamTrack, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(TeamTrack);
             }
 
-            if (string.Equals(type, "interchange", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Model.Ops.Interchange", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, RailIndustryComponentTypes.Interchange, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(Interchange);
             }
 
-            if (string.Equals(type, "interchangedLoader", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "interchanged-loader", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Model.Ops.InterchangedIndustryLoader", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, RailIndustryComponentTypes.InterchangedLoader, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(InterchangedIndustryLoader);
             }
@@ -637,9 +628,7 @@ namespace RAIL.API
             // reflectively so RAIL still compiles and runs when Assembly-CSharp
             // doesn't ship them. If the resolver returns null, we fall through
             // to the NotSupportedException at the bottom.
-            if (string.Equals(type, "interchangedUnloader", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "interchanged-unloader", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Model.Ops.InterchangedIndustryUnloader", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, RailIndustryComponentTypes.InterchangedUnloader, StringComparison.OrdinalIgnoreCase))
             {
                 var resolved = Type.GetType("Model.Ops.InterchangedIndustryUnloader, Assembly-CSharp", false, true);
                 if (resolved != null)
@@ -648,9 +637,7 @@ namespace RAIL.API
                 }
             }
 
-            if (string.Equals(type, "teleportLoading", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "teleport-loading", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Model.Ops.TeleportLoadingIndustry", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, RailIndustryComponentTypes.TeleportLoading, StringComparison.OrdinalIgnoreCase))
             {
                 var resolved = Type.GetType("Model.Ops.TeleportLoadingIndustry, Assembly-CSharp", false, true);
                 if (resolved != null)
@@ -659,10 +646,7 @@ namespace RAIL.API
                 }
             }
 
-            if (string.Equals(type, "progression", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "progressionIndustry", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "progression-industry", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "Model.Ops.ProgressionIndustryComponent", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, RailIndustryComponentTypes.Progression, StringComparison.OrdinalIgnoreCase))
             {
                 var resolved = Type.GetType("Model.Ops.ProgressionIndustryComponent, Assembly-CSharp", false, true);
                 if (resolved != null)
@@ -671,118 +655,88 @@ namespace RAIL.API
                 }
             }
 
-            if (string.Equals(type, "passengerStop", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "passenger-stop", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "AlinasMapMod.PaxStationComponent", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(type, "AlinasMapMod.Stations.PaxStationComponent", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, RailIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(RailPassengerStopComponent);
             }
 
-            // Model.OpsNew.* aliases — resolved reflectively because the OpsNew
-            // namespace may or may not exist depending on game version. Fall
-            // back to Model.Ops siblings for cross-compat.
-            var opsNew = TryResolveOpsNewType(type);
-            if (opsNew != null)
+            var reflected = TryResolveIndustryComponentType(type);
+            if (reflected != null)
             {
-                return opsNew;
+                return reflected;
             }
 
             throw new NotSupportedException($"Industry component type '{type}' is not implemented yet.");
         }
 
-        private static Type TryResolveOpsNewType(string type)
+        private static Type TryResolveIndustryComponentType(string type)
         {
             if (string.IsNullOrWhiteSpace(type))
             {
                 return null;
             }
 
-            // Direct fully-qualified name lookup against the loaded game assembly.
             var direct = Type.GetType(type + ", Assembly-CSharp", false, true);
-            if (direct != null)
-            {
-                return direct;
-            }
-
-            // OpsNew → Ops fallback. Common aliases the legacy mods emit.
-            if (string.Equals(type, "Model.OpsNew.Interchange", StringComparison.OrdinalIgnoreCase))
-            {
-                return typeof(Interchange);
-            }
-
-            if (string.Equals(type, "Model.OpsNew.InterchangedIndustryLoader", StringComparison.OrdinalIgnoreCase))
-            {
-                return typeof(InterchangedIndustryLoader);
-            }
-
-            if (string.Equals(type, "Model.OpsNew.InterchangedIndustryUnloader", StringComparison.OrdinalIgnoreCase))
-            {
-                var resolved = Type.GetType("Model.Ops.InterchangedIndustryUnloader, Assembly-CSharp", false, true);
-                if (resolved != null)
-                {
-                    return resolved;
-                }
-            }
-
-            return null;
+            return direct != null && typeof(IndustryComponent).IsAssignableFrom(direct)
+                ? direct
+                : null;
         }
 
         private static string GetComponentTypeAlias(IndustryComponent component)
         {
             if (component is IndustryLoader)
             {
-                return "loader";
+                return RailIndustryComponentTypes.Loader;
             }
 
             if (component is IndustryUnloader)
             {
-                return "unloader";
+                return RailIndustryComponentTypes.Unloader;
             }
 
             if (component is FormulaicIndustryComponent)
             {
-                return "formulaic";
+                return RailIndustryComponentTypes.Formulaic;
             }
 
             if (component is RepairTrack)
             {
-                return "repairTrack";
+                return RailIndustryComponentTypes.RepairTrack;
             }
 
             if (component is TeamTrack)
             {
-                return "teamTrack";
+                return RailIndustryComponentTypes.TeamTrack;
             }
 
             if (component is Interchange)
             {
-                return "interchange";
+                return RailIndustryComponentTypes.Interchange;
             }
 
             if (component is InterchangedIndustryLoader)
             {
-                return "interchangedLoader";
+                return RailIndustryComponentTypes.InterchangedLoader;
             }
 
             if (IsType(component, "Model.Ops.InterchangedIndustryUnloader"))
             {
-                return "interchangedUnloader";
+                return RailIndustryComponentTypes.InterchangedUnloader;
             }
 
             if (IsType(component, "Model.Ops.TeleportLoadingIndustry"))
             {
-                return "teleportLoading";
+                return RailIndustryComponentTypes.TeleportLoading;
             }
 
             if (IsType(component, "Model.Ops.ProgressionIndustryComponent"))
             {
-                return "progression";
+                return RailIndustryComponentTypes.Progression;
             }
 
             if (component is RailPassengerStopComponent)
             {
-                return "passengerStop";
+                return RailIndustryComponentTypes.PassengerStop;
             }
 
             return component.GetType().FullName;

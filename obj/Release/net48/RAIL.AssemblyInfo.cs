@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("RAIL")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2b9a7ec99dbe50c72cbc66e5cce52f477044bf81")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+db97ac61a2f321a2eb828ee4740eab6d4928faae")]
 [assembly: System.Reflection.AssemblyProductAttribute("RAIL")]
 [assembly: System.Reflection.AssemblyTitleAttribute("RAIL")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

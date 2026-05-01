@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Helpers;
+using Model.Definition.Data;
 using RAIL.Cache;
 using RAIL.Data;
 using RAIL.Infrastructure;
+using Track;
 using UnityEngine;
 
 namespace RAIL.API
@@ -149,6 +151,7 @@ namespace RAIL.API
             definition.Position = scenery.transform.localPosition;
             definition.Rotation = scenery.transform.localEulerAngles;
             definition.Scale = scenery.transform.localScale == default ? Vector3.one : scenery.transform.localScale;
+            definition.AnchorSpanIds = definition.AnchorSpanIds ?? Array.Empty<string>();
             return definition;
         }
 
@@ -168,26 +171,25 @@ namespace RAIL.API
             // Prefer the explicit asset identifier. The Model field may carry a display
             // name (e.g. "Camp 1", "Mess Hall") and must never be used directly.
             var candidate = NormalizeSceneryIdentifier(definition.AssetIdentifier);
-            if (!string.IsNullOrWhiteSpace(candidate) && IsKnownSceneryAssetIdentifier(candidate))
+            if (!string.IsNullOrWhiteSpace(candidate) && TryResolveKnownSceneryAssetIdentifier(candidate, out assetIdentifier))
             {
-                assetIdentifier = candidate;
                 return true;
             }
 
             // Backward-compat fallback: treat Model as an asset identifier ONLY if
             // the manager actually recognises it. Otherwise it is a display name.
             var modelCandidate = NormalizeSceneryIdentifier(definition.Model);
-            if (!string.IsNullOrWhiteSpace(modelCandidate) && IsKnownSceneryAssetIdentifier(modelCandidate))
+            if (!string.IsNullOrWhiteSpace(modelCandidate) && TryResolveKnownSceneryAssetIdentifier(modelCandidate, out assetIdentifier))
             {
-                assetIdentifier = modelCandidate;
                 return true;
             }
 
             return false;
         }
 
-        private static bool IsKnownSceneryAssetIdentifier(string candidate)
+        private static bool TryResolveKnownSceneryAssetIdentifier(string candidate, out string resolvedIdentifier)
         {
+            resolvedIdentifier = null;
             if (string.IsNullOrWhiteSpace(candidate))
             {
                 return false;
@@ -201,7 +203,31 @@ namespace RAIL.API
                 return false;
             }
 
-            var known = manager.GetSceneryDefinitionIdentifiers();
+            try
+            {
+                SceneryDefinition definition;
+                if (manager.TryGetSceneryDefinition(candidate, out definition) && definition != null)
+                {
+                    resolvedIdentifier = candidate;
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                RailLog.Warning($"RAIL scenery asset direct lookup failed for '{candidate}': {ex.Message}");
+            }
+
+            IEnumerable<string> known;
+            try
+            {
+                known = manager.GetSceneryDefinitionIdentifiers();
+            }
+            catch (Exception ex)
+            {
+                RailLog.Warning($"RAIL scenery asset registry enumeration failed while resolving '{candidate}': {ex.Message}");
+                return false;
+            }
+
             if (known == null)
             {
                 return false;
@@ -211,6 +237,13 @@ namespace RAIL.API
             {
                 if (string.Equals(id, candidate, StringComparison.Ordinal))
                 {
+                    resolvedIdentifier = id;
+                    return true;
+                }
+
+                if (string.Equals(id, candidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    resolvedIdentifier = id;
                     return true;
                 }
             }
@@ -223,9 +256,96 @@ namespace RAIL.API
             // Only the validated asset identifier ever reaches scenery.identifier /
             // SceneryAssetManager.LoadScenery. Display names are kept on the definition.
             scenery.identifier = assetIdentifier;
-            scenery.transform.localPosition = definition.Position;
-            scenery.transform.localRotation = Quaternion.Euler(definition.Rotation);
+            Vector3 position;
+            Quaternion rotation;
+            if (TryResolveSpanAnchor(definition, out position, out rotation))
+            {
+                scenery.transform.localPosition = position;
+                scenery.transform.localRotation = rotation;
+            }
+            else
+            {
+                scenery.transform.localPosition = definition.Position;
+                scenery.transform.localRotation = Quaternion.Euler(definition.Rotation);
+            }
+
             scenery.transform.localScale = definition.Scale == default ? Vector3.one : definition.Scale;
+        }
+
+        private static bool TryResolveSpanAnchor(RailScenery definition, out Vector3 position, out Quaternion rotation)
+        {
+            position = default;
+            rotation = default;
+            var anchorSpanIds = definition?.AnchorSpanIds;
+            if (anchorSpanIds == null || anchorSpanIds.Length == 0)
+            {
+                return false;
+            }
+
+            var points = new List<Vector3>();
+            var tangents = new List<Vector3>();
+            foreach (var spanId in anchorSpanIds)
+            {
+                if (string.IsNullOrWhiteSpace(spanId))
+                {
+                    continue;
+                }
+
+                var span = TrackAPI.GetSpan(spanId);
+                if (span == null)
+                {
+                    RailLog.Warning($"RAIL span-anchored scenery skipped missing span '{spanId}'.");
+                    continue;
+                }
+
+                var spanPoints = span.GetPoints()?.ToArray();
+                if (spanPoints == null || spanPoints.Length == 0)
+                {
+                    RailLog.Warning($"RAIL span-anchored scenery skipped span '{spanId}' because it has no points.");
+                    continue;
+                }
+
+                points.Add(span.GetCenterPoint());
+                if (spanPoints.Length >= 2)
+                {
+                    var tangent = spanPoints[spanPoints.Length - 1] - spanPoints[0];
+                    if (tangent.sqrMagnitude > 0.0001f)
+                    {
+                        tangents.Add(tangent);
+                    }
+                }
+            }
+
+            if (points.Count == 0)
+            {
+                return false;
+            }
+
+            position = Average(points) + definition.Position;
+            var direction = tangents.Count > 0 ? Average(tangents) : Vector3.forward;
+            if (direction.sqrMagnitude <= 0.0001f)
+            {
+                direction = Vector3.forward;
+            }
+
+            rotation = Quaternion.LookRotation(direction.normalized, Vector3.up) * Quaternion.Euler(definition.Rotation);
+            return true;
+        }
+
+        private static Vector3 Average(IReadOnlyCollection<Vector3> values)
+        {
+            if (values == null || values.Count == 0)
+            {
+                return Vector3.zero;
+            }
+
+            var total = Vector3.zero;
+            foreach (var value in values)
+            {
+                total += value;
+            }
+
+            return total / values.Count;
         }
 
         private static string NormalizeSceneryIdentifier(string model)

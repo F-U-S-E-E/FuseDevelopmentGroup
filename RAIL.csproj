@@ -60,6 +60,10 @@
       <HintPath>$(UnityManagedDir)\Map.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="SimpleGraph.Runtime" Condition="Exists('$(UnityManagedDir)\SimpleGraph.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\SimpleGraph.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Unity.Mathematics" Condition="Exists('$(UnityManagedDir)\Unity.Mathematics.dll')">
       <HintPath>$(UnityManagedDir)\Unity.Mathematics.dll</HintPath>
       <Private>false</Private>
@@ -72,12 +76,24 @@
       <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.AudioModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.AudioModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.IMGUIModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.UIModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.UIModule.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.UnityWebRequestModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestAudioModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.UnityWebRequestAudioModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.UnityWebRequestAudioModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.UI" Condition="Exists('$(UnityManagedDir)\UnityEngine.UI.dll')">
@@ -105,6 +121,7 @@
     <Error Condition="!Exists('$(UnityManagedDir)\Definition.dll')" Text="Definition.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\KeyValue.Runtime.dll')" Text="KeyValue.Runtime.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Map.Runtime.dll')" Text="Map.Runtime.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\SimpleGraph.Runtime.dll')" Text="SimpleGraph.Runtime.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Unity.TextMeshPro.dll')" Text="Unity.TextMeshPro.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')" Text="UnityEngine.IMGUIModule.dll was not found in the Railroader Managed folder." />

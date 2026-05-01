@@ -14,6 +14,8 @@ namespace RAIL.API
 {
     public static class TrackAPI
     {
+        private const float SpanDistanceTolerance = 0.001f;
+
         private static int _batchDepth;
         private static bool _rebuildRequested;
         private static Transform _fallbackAreaRoot;
@@ -281,13 +283,27 @@ namespace RAIL.API
                 throw new InvalidOperationException($"Track span '{id}' already exists.");
             }
 
+            var upperLocation = MakeLocation(graph, upper);
+            var lowerLocation = MakeLocation(graph, lower);
+            ValidateSpanEndpointPair(id, upperLocation, lowerLocation);
+
             var span = CreateGraphChild<TrackSpan>(graph, "Span-" + id);
-            span.id = id;
-            span.upper = MakeLocation(graph, upper);
-            span.lower = MakeLocation(graph, lower);
-            if (normalize)
+            try
             {
-                span.NormalizeUpperLower();
+                span.id = id;
+                span.upper = upperLocation;
+                span.lower = lowerLocation;
+                if (normalize)
+                {
+                    span.NormalizeUpperLower();
+                }
+
+                ValidateSpanRoute(id, span);
+            }
+            catch
+            {
+                RemoveRuntimeObject(span);
+                throw;
             }
 
             RailSpanRuntimeIndex.Instance.Set(id, span);
@@ -305,7 +321,7 @@ namespace RAIL.API
             }
 
             var span = AddSpan(id, definition.Upper, definition.Lower, definition.Normalize);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, definition);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, GetDefinition(span));
             return span;
         }
 
@@ -313,11 +329,28 @@ namespace RAIL.API
         {
             var span = RequireSpan(id);
             var graph = RequireGraph();
-            span.upper = MakeLocation(graph, upper);
-            span.lower = MakeLocation(graph, lower);
-            if (normalize)
+            var upperLocation = MakeLocation(graph, upper);
+            var lowerLocation = MakeLocation(graph, lower);
+            ValidateSpanEndpointPair(id, upperLocation, lowerLocation);
+
+            var originalUpper = span.upper;
+            var originalLower = span.lower;
+            try
             {
-                span.NormalizeUpperLower();
+                span.upper = upperLocation;
+                span.lower = lowerLocation;
+                if (normalize)
+                {
+                    span.NormalizeUpperLower();
+                }
+
+                ValidateSpanRoute(id, span);
+            }
+            catch
+            {
+                span.upper = originalUpper;
+                span.lower = originalLower;
+                throw;
             }
 
             RailSpanRuntimeIndex.Instance.Set(id, span);
@@ -334,7 +367,7 @@ namespace RAIL.API
             }
 
             UpdateSpan(id, definition.Upper, definition.Lower, definition.Normalize);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, definition);
+            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, GetSpanDefinition(id));
         }
 
         public static void RemoveSpan(string id)
@@ -579,12 +612,73 @@ namespace RAIL.API
                 throw new InvalidOperationException($"Track segment '{definition.SegmentId}' was not found.");
             }
 
-            var distance = definition.Distance ?? ((definition.Normalized ?? 0f) * segment.GetLength());
+            var segmentLength = segment.GetLength();
+            var distance = definition.Distance ?? ((definition.Normalized ?? 0f) * segmentLength);
             distance += definition.Offset;
+            if (distance < -SpanDistanceTolerance || distance > segmentLength + SpanDistanceTolerance)
+            {
+                throw new InvalidOperationException(
+                    $"Track location on segment '{definition.SegmentId}' is outside the segment length. distance={distance:0.###}, segmentLength={segmentLength:0.###}, end='{definition.End ?? "A"}'.");
+            }
+
             return new Location(
                 segment,
-                Mathf.Clamp(distance, 0f, segment.GetLength()),
+                Mathf.Clamp(distance, 0f, segmentLength),
                 ParseLocationEnd(definition.End));
+        }
+
+        private static void ValidateSpanEndpointPair(string spanId, Location upper, Location lower)
+        {
+            if (upper.segment == null || lower.segment == null)
+            {
+                throw new InvalidOperationException($"Track span '{spanId}' has a null endpoint segment.");
+            }
+
+            if (upper.segment != lower.segment)
+            {
+                return;
+            }
+
+            if (upper.EndIsA == lower.EndIsA)
+            {
+                throw new InvalidOperationException(
+                    $"Track span '{spanId}' has same-segment endpoints that point the same direction on segment '{upper.segment.id}'. Use Start/A for one side and End/B for the other so the arrows face each other.");
+            }
+
+            var upperFromA = DistanceFromSegmentA(upper);
+            var lowerFromA = DistanceFromSegmentA(lower);
+            var startSide = upper.EndIsA ? upperFromA : lowerFromA;
+            var endSide = upper.EndIsA ? lowerFromA : upperFromA;
+            if (startSide > endSide + SpanDistanceTolerance)
+            {
+                throw new InvalidOperationException(
+                    $"Track span '{spanId}' has crossed endpoints on segment '{upper.segment.id}'. Start/A side distance from A is {startSide:0.###}, End/B side distance from A is {endSide:0.###}.");
+            }
+
+            if (Mathf.Abs(startSide - endSide) <= SpanDistanceTolerance)
+            {
+                throw new InvalidOperationException($"Track span '{spanId}' has zero length on segment '{upper.segment.id}'.");
+            }
+        }
+
+        private static float DistanceFromSegmentA(Location location)
+        {
+            var length = location.segment.GetLength();
+            return location.EndIsA ? location.distance : length - location.distance;
+        }
+
+        private static void ValidateSpanRoute(string spanId, TrackSpan span)
+        {
+            if (span == null || !span.IsValid)
+            {
+                throw new InvalidOperationException($"Track span '{spanId}' has invalid endpoints.");
+            }
+
+            var points = span.GetPoints();
+            if (points == null || points.Count < 2 || span.Length <= SpanDistanceTolerance)
+            {
+                throw new InvalidOperationException($"Track span '{spanId}' did not resolve to a valid route. Check that the endpoint arrows face each other and the segments are connected.");
+            }
         }
 
         private static RailTrackLocation ToDefinition(Location location)

@@ -1,9 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using RAIL.API;
 using RAIL.Data;
 using RAIL.Data.Common;
 using RAIL.Migrations;
+using UnityEngine;
 
 namespace RAIL.Validation
 {
@@ -42,6 +44,7 @@ namespace RAIL.Validation
             ValidateOperations(result, value.Operations);
             ValidateTrack(result, value.Tracks, value.Operations);
             ValidateWorld(result, value.World);
+            ValidateAudio(result, value.Audio);
             ValidateProgression(result, value.Progression);
             return result;
         }
@@ -86,8 +89,16 @@ namespace RAIL.Validation
 
             foreach (var span in tracks.Spans)
             {
-                ValidateTrackLocation(result, $"tracks.spans.{span.Key}.upper", span.Value.Upper, tracks.Segments, generatedSegmentIds);
-                ValidateTrackLocation(result, $"tracks.spans.{span.Key}.lower", span.Value.Lower, tracks.Segments, generatedSegmentIds);
+                var path = $"tracks.spans.{span.Key}";
+                if (span.Value == null)
+                {
+                    result.AddError(path, "Track span is required.", "rail.track.span.required");
+                    continue;
+                }
+
+                ValidateTrackLocation(result, $"{path}.upper", span.Value.Upper, tracks.Segments, generatedSegmentIds);
+                ValidateTrackLocation(result, $"{path}.lower", span.Value.Lower, tracks.Segments, generatedSegmentIds);
+                ValidateSameSegmentSpan(result, path, span.Value, tracks.Segments, tracks.Nodes);
             }
 
             foreach (var area in tracks.Areas)
@@ -123,17 +134,25 @@ namespace RAIL.Validation
             {
                 result.AddError(path, "Track location must set either normalized or distance.", "rail.track.location.measure");
             }
+            else if (location.Normalized != null && location.Distance != null)
+            {
+                result.AddError(path, "Track location must set normalized or distance, not both.", "rail.track.location.measure.exclusive");
+            }
 
             if (location.Normalized != null && (location.Normalized < 0f || location.Normalized > 1f))
             {
                 result.AddError($"{path}.normalized", "Normalized location must be between 0 and 1.", "rail.track.location.normalized", location.Normalized);
             }
 
-            if (!string.IsNullOrWhiteSpace(location.End) &&
-                location.End != "A" &&
-                location.End != "B")
+            if (location.Distance != null && location.Distance.Value < 0f)
             {
-                result.AddError($"{path}.end", "Track location end must be A or B.", "rail.track.location.end", location.End);
+                result.AddError($"{path}.distance", "Distance must be greater than or equal to 0.", "rail.track.location.distance", location.Distance);
+            }
+
+            if (!string.IsNullOrWhiteSpace(location.End) &&
+                NormalizeLocationEnd(location.End) == null)
+            {
+                result.AddError($"{path}.end", "Track location end must be A/B or Start/End.", "rail.track.location.end", location.End);
             }
 
             if (!string.IsNullOrWhiteSpace(location.SegmentId) &&
@@ -142,6 +161,129 @@ namespace RAIL.Validation
             {
                 result.AddWarning($"{path}.segmentId", "Segment is not defined in this RAIL document. It must exist in the base game graph at runtime.", "rail.track.segment.external", location.SegmentId);
             }
+        }
+
+        private static void ValidateSameSegmentSpan(ValidationResult result, string path, RailSpan span, IDictionary<string, RailSegment> segments, IDictionary<string, RailNode> nodes)
+        {
+            if (span?.Upper == null || span.Lower == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(span.Upper.SegmentId) ||
+                string.IsNullOrWhiteSpace(span.Lower.SegmentId) ||
+                !string.Equals(span.Upper.SegmentId, span.Lower.SegmentId, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var upperEnd = NormalizeLocationEnd(span.Upper.End) ?? "A";
+            var lowerEnd = NormalizeLocationEnd(span.Lower.End) ?? "A";
+            if (string.Equals(upperEnd, lowerEnd, StringComparison.OrdinalIgnoreCase))
+            {
+                result.AddError(path, "Same-segment span endpoints must face each other. Use Start/A for one endpoint and End/B for the other.", "rail.track.span.sameSegment.sameDirection", span.Upper.SegmentId);
+                return;
+            }
+
+            RailSegment segment;
+            if (!segments.TryGetValue(span.Upper.SegmentId, out segment) || segment == null)
+            {
+                return;
+            }
+
+            var length = EstimateSegmentLength(segment, nodes);
+            if (!length.HasValue || length.Value <= 0f)
+            {
+                return;
+            }
+
+            var upperDistance = GetLocationDistance(span.Upper, length.Value);
+            var lowerDistance = GetLocationDistance(span.Lower, length.Value);
+            if (!upperDistance.HasValue || !lowerDistance.HasValue)
+            {
+                return;
+            }
+
+            if (upperDistance.Value < 0f || upperDistance.Value > length.Value)
+            {
+                result.AddError($"{path}.upper.distance", "Upper track location is outside the estimated segment length.", "rail.track.span.upper.distance", upperDistance.Value);
+            }
+
+            if (lowerDistance.Value < 0f || lowerDistance.Value > length.Value)
+            {
+                result.AddError($"{path}.lower.distance", "Lower track location is outside the estimated segment length.", "rail.track.span.lower.distance", lowerDistance.Value);
+            }
+
+            var upperFromA = string.Equals(upperEnd, "A", StringComparison.OrdinalIgnoreCase)
+                ? upperDistance.Value
+                : length.Value - upperDistance.Value;
+            var lowerFromA = string.Equals(lowerEnd, "A", StringComparison.OrdinalIgnoreCase)
+                ? lowerDistance.Value
+                : length.Value - lowerDistance.Value;
+            var startSide = string.Equals(upperEnd, "A", StringComparison.OrdinalIgnoreCase) ? upperFromA : lowerFromA;
+            var endSide = string.Equals(upperEnd, "A", StringComparison.OrdinalIgnoreCase) ? lowerFromA : upperFromA;
+            if (startSide >= endSide)
+            {
+                result.AddError(path, "Same-segment span endpoints cross or produce a zero-length span. The Start/A endpoint must be before the End/B endpoint.", "rail.track.span.sameSegment.crossed", span.Upper.SegmentId);
+            }
+        }
+
+        private static string NormalizeLocationEnd(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "A";
+            }
+
+            switch (value.Trim().ToUpperInvariant())
+            {
+                case "A":
+                case "START":
+                    return "A";
+                case "B":
+                case "END":
+                    return "B";
+                default:
+                    return null;
+            }
+        }
+
+        private static float? GetLocationDistance(RailTrackLocation location, float segmentLength)
+        {
+            if (location == null)
+            {
+                return null;
+            }
+
+            var distance = location.Distance ?? ((location.Normalized ?? 0f) * segmentLength);
+            distance += location.Offset;
+            return distance;
+        }
+
+        private static float? EstimateSegmentLength(RailSegment segment, IDictionary<string, RailNode> nodes)
+        {
+            if (segment == null ||
+                nodes == null ||
+                string.IsNullOrWhiteSpace(segment.StartNodeId) ||
+                string.IsNullOrWhiteSpace(segment.EndNodeId))
+            {
+                return null;
+            }
+
+            RailNode start;
+            RailNode end;
+            if (!nodes.TryGetValue(segment.StartNodeId, out start) ||
+                !nodes.TryGetValue(segment.EndNodeId, out end) ||
+                start == null ||
+                end == null)
+            {
+                return null;
+            }
+
+            // Full graph curvature is only known at runtime. The straight-line
+            // estimate catches obviously crossed same-segment spans in authored
+            // JSON; TrackAPI performs the authoritative runtime check.
+            return Vector3.Distance(start.Position, end.Position);
         }
 
         private static void ValidateTrackRemovalTargets(ValidationResult result, string path, IEnumerable<string> removals, IEnumerable<string> definitions)
@@ -224,41 +366,15 @@ namespace RAIL.Validation
                 foreach (var component in industry.Value.Components)
                 {
                     var componentPath = $"operations.industries.{industry.Key}.components.{component.Key}";
+                    if (component.Value == null)
+                    {
+                        result.AddError(componentPath, "Industry component definition is required.", "rail.operations.component.required");
+                        continue;
+                    }
+
                     Required(result, $"{componentPath}.type", component.Value.Type);
                     Required(result, $"{componentPath}.name", component.Value.Name);
-
-                    var componentType = (component.Value.Type ?? string.Empty).ToLowerInvariant();
-                    switch (componentType)
-                    {
-                        case "passengerstop":
-                        case "passenger-stop":
-                        case "alinasmapmod.paxstationcomponent":
-                            Required(result, $"{componentPath}.timetableCode", component.Value.TimetableCode);
-                            if ((component.Value.TrackSpanIds == null || component.Value.TrackSpanIds.Length == 0) &&
-                                (component.Value.InputSpanIds == null || component.Value.InputSpanIds.Length == 0))
-                            {
-                                result.AddError($"{componentPath}.trackSpanIds", "Passenger stop components require at least one track span.", "rail.operations.passengerStop.trackSpanIds");
-                            }
-                            break;
-
-                        case "formulaic":
-                        case "model.ops.formulaicindustrycomponent":
-                            if ((component.Value.InputTermsPerDay == null || component.Value.InputTermsPerDay.Count == 0) &&
-                                (component.Value.OutputTermsPerDay == null || component.Value.OutputTermsPerDay.Count == 0))
-                            {
-                                result.AddError($"{componentPath}.inputTermsPerDay", "Formulaic components require inputTermsPerDay and/or outputTermsPerDay.", "rail.operations.formulaic.terms");
-                            }
-                            break;
-
-                        case "teamtrack":
-                        case "team-track":
-                        case "model.ops.teamtrack":
-                            if (component.Value.TeamProfiles == null || component.Value.TeamProfiles.Count == 0)
-                            {
-                                result.AddError($"{componentPath}.teamProfiles", "Team track components require at least one team profile entry.", "rail.operations.teamTrack.profile");
-                            }
-                            break;
-                    }
+                    ValidateIndustryComponent(result, componentPath, component.Value);
                 }
             }
 
@@ -320,6 +436,32 @@ namespace RAIL.Validation
                         "Scenery requires an AssetIdentifier (or legacy Model) to resolve a PrefabStore asset.",
                         "rail.world.scenery.assetIdentifier.required");
                 }
+
+                ValidateNoBlank(result, $"world.scenery.{scenery.Key}.anchorSpanIds", scenery.Value?.AnchorSpanIds, "rail.world.scenery.anchorSpan.empty");
+            }
+
+            var spawnPoints = world.SpawnPoints ?? Array.Empty<RailSpawnPoint>();
+            var seenSpawnPoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (var spawnIndex = 0; spawnIndex < spawnPoints.Length; spawnIndex++)
+            {
+                var spawnPoint = spawnPoints[spawnIndex];
+                var path = $"world.spawnPoints[{spawnIndex}]";
+                if (spawnPoint == null)
+                {
+                    result.AddError(path, "Spawn point is required.", "rail.world.spawnPoint.required");
+                    continue;
+                }
+
+                Required(result, $"{path}.name", spawnPoint.Name);
+                if (!string.IsNullOrWhiteSpace(spawnPoint.Name) && !seenSpawnPoints.Add(spawnPoint.Name.Trim()))
+                {
+                    result.AddError($"{path}.name", "Spawn point names must be unique within a package.", "rail.world.spawnPoint.duplicate", spawnPoint.Name);
+                }
+
+                if (spawnPoint.Radius.HasValue && spawnPoint.Radius.Value <= 0f)
+                {
+                    result.AddError($"{path}.radius", "Spawn point radius must be greater than 0.", "rail.world.spawnPoint.radius", spawnPoint.Radius);
+                }
             }
 
             foreach (var spliney in world.Splineys)
@@ -336,6 +478,43 @@ namespace RAIL.Validation
                 if (telegraph.Value.Points == null || telegraph.Value.Points.Length < 2)
                 {
                     result.AddError($"world.telegraphPoles.{telegraph.Key}.points", "Telegraph pole sets require at least two points.", "rail.telegraph.points");
+                }
+            }
+
+            var telegraphMovements = world.TelegraphPoleMovements ?? Array.Empty<RailTelegraphPoleMovement>();
+            for (var movementIndex = 0; movementIndex < telegraphMovements.Length; movementIndex++)
+            {
+                var movement = telegraphMovements[movementIndex];
+                var path = $"world.telegraphPoleMovements[{movementIndex}]";
+                if (movement == null)
+                {
+                    result.AddError(path, "Telegraph pole movement is required.", "rail.telegraphPoleMovement.required");
+                    continue;
+                }
+
+                if (movement.PoleIndices == null || movement.PoleIndices.Length == 0)
+                {
+                    result.AddError($"{path}.poleIndices", "Telegraph pole movement requires at least one pole index.", "rail.telegraphPoleMovement.poleIndices");
+                    continue;
+                }
+
+                var seenPoleIndices = new HashSet<int>();
+                for (var poleIndex = 0; poleIndex < movement.PoleIndices.Length; poleIndex++)
+                {
+                    var value = movement.PoleIndices[poleIndex];
+                    if (value < 0)
+                    {
+                        result.AddError($"{path}.poleIndices[{poleIndex}]", "Telegraph pole index must be greater than or equal to 0.", "rail.telegraphPoleMovement.poleIndex", value);
+                    }
+                    else if (!seenPoleIndices.Add(value))
+                    {
+                        result.AddWarning($"{path}.poleIndices[{poleIndex}]", "Telegraph pole index is listed more than once in the same movement.", "rail.telegraphPoleMovement.duplicatePoleIndex", value);
+                    }
+                }
+
+                if (movement.Offset == default(Vector3))
+                {
+                    result.AddWarning($"{path}.offset", "Telegraph pole movement offset is zero.", "rail.telegraphPoleMovement.zeroOffset");
                 }
             }
 
@@ -446,40 +625,319 @@ namespace RAIL.Validation
 
         private static void ValidateProgression(ValidationResult result, RailProgressionRoot progression)
         {
+            var rootSectionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var rootSections = progression.Sections ?? Array.Empty<RailSection>();
+            for (var index = 0; index < rootSections.Length; index++)
+            {
+                var section = rootSections[index];
+                var path = $"progression.sections[{index}]";
+                if (section == null)
+                {
+                    result.AddError(path, "Progression section is required.", "rail.progression.section.required");
+                    continue;
+                }
+
+                Required(result, $"{path}.id", section.Id);
+                if (!string.IsNullOrWhiteSpace(section.Id) && !rootSectionIds.Add(section.Id))
+                {
+                    result.AddError($"{path}.id", "Root progression section IDs must be unique within a package.", "rail.progression.section.duplicate", section.Id);
+                }
+            }
+
             foreach (var progressionEntry in progression.Progressions)
             {
+                if (progressionEntry.Value == null)
+                {
+                    result.AddError($"progression.progressions.{progressionEntry.Key}", "Progression definition is required.", "rail.progression.required");
+                    continue;
+                }
+
                 foreach (var section in progressionEntry.Value.Sections)
                 {
-                    Required(result, $"progression.progressions.{progressionEntry.Key}.sections.{section.Key}.displayName", section.Value.DisplayName);
-                    var phases = section.Value.DeliveryPhases;
-                    if (phases == null)
+                    ValidateProgressionSection(
+                        result,
+                        $"progression.progressions.{progressionEntry.Key}.sections.{section.Key}",
+                        section.Value,
+                        requireId: false);
+                }
+            }
+
+            foreach (var feature in progression.MapFeatures)
+            {
+                var path = $"progression.mapFeatures.{feature.Key}";
+                if (feature.Value == null)
+                {
+                    result.AddError(path, "Map feature definition is required.", "rail.progression.mapFeature.required");
+                    continue;
+                }
+
+                Required(result, $"{path}.displayName", feature.Value.DisplayName);
+                ValidateNoBlank(result, $"{path}.trackGroupsEnableOnUnlock", feature.Value.TrackGroupsEnableOnUnlock, "rail.progression.mapFeature.trackGroup.empty");
+                ValidateNoBlank(result, $"{path}.trackGroupsAvailableOnUnlock", feature.Value.TrackGroupsAvailableOnUnlock, "rail.progression.mapFeature.trackGroup.empty");
+                ValidateNoBlank(result, $"{path}.areasEnableOnUnlock", feature.Value.AreasEnableOnUnlock, "rail.progression.mapFeature.area.empty");
+                ValidateNoBlank(result, $"{path}.gameObjectsEnableOnUnlock", feature.Value.GameObjectsEnableOnUnlock, "rail.progression.mapFeature.gameObject.empty");
+                ValidateNoBlank(result, $"{path}.unlockIncludeIndustries", feature.Value.UnlockIncludeIndustries, "rail.progression.mapFeature.industry.empty");
+                ValidateNoBlank(result, $"{path}.unlockExcludeIndustries", feature.Value.UnlockExcludeIndustries, "rail.progression.mapFeature.industry.empty");
+                ValidateNoBlank(result, $"{path}.unlockIncludeIndustryComponents", feature.Value.UnlockIncludeIndustryComponents, "rail.progression.mapFeature.industryComponent.empty");
+            }
+        }
+
+        private static void ValidateAudio(ValidationResult result, RailAudioRoot audio)
+        {
+            if (audio == null)
+            {
+                return;
+            }
+
+            foreach (var whistle in audio.Whistles ?? new Dictionary<string, RailWhistleAudio>())
+            {
+                var path = $"audio.whistles.{whistle.Key}";
+                if (whistle.Value == null)
+                {
+                    result.AddError(path, "Whistle audio definition is required.", "rail.audio.whistle.required");
+                    continue;
+                }
+
+                Required(result, $"{path}.name", whistle.Value.Name);
+                Required(result, $"{path}.clip", whistle.Value.Clip);
+            }
+
+            foreach (var horn in audio.Horns ?? new Dictionary<string, RailHornAudio>())
+            {
+                var path = $"audio.horns.{horn.Key}";
+                if (horn.Value == null)
+                {
+                    result.AddError(path, "Horn audio definition is required.", "rail.audio.horn.required");
+                    continue;
+                }
+
+                Required(result, $"{path}.name", horn.Value.Name);
+                if (horn.Value.Layers == null || horn.Value.Layers.Length == 0)
+                {
+                    result.AddError($"{path}.layers", "Horn audio requires at least one layer.", "rail.audio.horn.layers");
+                    continue;
+                }
+
+                for (var layerIndex = 0; layerIndex < horn.Value.Layers.Length; layerIndex++)
+                {
+                    var layer = horn.Value.Layers[layerIndex];
+                    var layerPath = $"{path}.layers[{layerIndex}]";
+                    if (layer == null)
                     {
+                        result.AddError(layerPath, "Horn audio layer is required.", "rail.audio.horn.layer.required");
                         continue;
                     }
 
-                    for (var phaseIndex = 0; phaseIndex < phases.Length; phaseIndex++)
+                    Required(result, $"{layerPath}.file", layer.File);
+                    if (layer.Keyframes == null || layer.Keyframes.Length == 0)
                     {
-                        var phase = phases[phaseIndex];
-                        var deliveries = phase.Deliveries;
-                        if (deliveries != null && deliveries.Length > 0)
-                        {
-                            Required(result, $"progression.progressions.{progressionEntry.Key}.sections.{section.Key}.deliveryPhases[{phaseIndex}].industryComponentId", phase.IndustryComponentId);
-                        }
+                        result.AddWarning($"{layerPath}.keyframes", "Horn layer has no keyframes; RAIL will use a constant volume curve.", "rail.audio.horn.keyframes.empty");
+                    }
+                }
+            }
 
-                        if (deliveries == null)
-                        {
-                            continue;
-                        }
+            foreach (var bell in audio.Bells ?? new Dictionary<string, RailBellAudio>())
+            {
+                var path = $"audio.bells.{bell.Key}";
+                if (bell.Value == null)
+                {
+                    result.AddError(path, "Bell audio definition is required.", "rail.audio.bell.required");
+                    continue;
+                }
 
-                        for (var deliveryIndex = 0; deliveryIndex < deliveries.Length; deliveryIndex++)
+                Required(result, $"{path}.name", bell.Value.Name);
+                Required(result, $"{path}.file", bell.Value.File);
+            }
+        }
+
+        private static void ValidateProgressionSection(ValidationResult result, string path, RailSection section, bool requireId)
+        {
+            if (section == null)
+            {
+                result.AddError(path, "Progression section is required.", "rail.progression.section.required");
+                return;
+            }
+
+            if (requireId)
+            {
+                Required(result, $"{path}.id", section.Id);
+            }
+
+            Required(result, $"{path}.displayName", section.DisplayName);
+            ValidateNoBlank(result, $"{path}.trackGroupsEnableOnUnlock", section.TrackGroupsEnableOnUnlock, "rail.progression.section.trackGroup.empty");
+            ValidateNoBlank(result, $"{path}.trackGroupsAvailableOnUnlock", section.TrackGroupsAvailableOnUnlock, "rail.progression.section.trackGroup.empty");
+            ValidateNoBlank(result, $"{path}.areasEnableOnUnlock", section.AreasEnableOnUnlock, "rail.progression.section.area.empty");
+            ValidateNoBlank(result, $"{path}.gameObjectsEnableOnUnlock", section.GameObjectsEnableOnUnlock, "rail.progression.section.gameObject.empty");
+            ValidateNoBlank(result, $"{path}.unlockIncludeIndustries", section.UnlockIncludeIndustries, "rail.progression.section.industry.empty");
+            ValidateNoBlank(result, $"{path}.unlockExcludeIndustries", section.UnlockExcludeIndustries, "rail.progression.section.industry.empty");
+            ValidateNoBlank(result, $"{path}.unlockIncludeIndustryComponents", section.UnlockIncludeIndustryComponents, "rail.progression.section.industryComponent.empty");
+
+            var phases = section.DeliveryPhases;
+            if (phases == null)
+            {
+                return;
+            }
+
+            for (var phaseIndex = 0; phaseIndex < phases.Length; phaseIndex++)
+            {
+                var phase = phases[phaseIndex];
+                var phasePath = $"{path}.deliveryPhases[{phaseIndex}]";
+                if (phase == null)
+                {
+                    result.AddError(phasePath, "Delivery phase is required.", "rail.progression.deliveryPhase.required");
+                    continue;
+                }
+
+                if (phase.Cost < 0)
+                {
+                    result.AddError($"{phasePath}.cost", "Delivery phase cost must be greater than or equal to 0.", "rail.progression.deliveryPhase.cost", phase.Cost);
+                }
+
+                var deliveries = phase.Deliveries;
+                if (deliveries != null && deliveries.Length > 0)
+                {
+                    var hasDestination = deliveries.Any(delivery => !string.IsNullOrWhiteSpace(delivery?.DestinationIndustryId));
+                    if (string.IsNullOrWhiteSpace(phase.IndustryComponentId) && !hasDestination)
+                    {
+                        result.AddError($"{phasePath}.industryComponentId", "Delivery phases with deliveries require industryComponentId, or delivery destinationIndustryId for runtime inference.", "rail.progression.deliveryPhase.industryComponentId");
+                    }
+                }
+
+                if (deliveries == null)
+                {
+                    continue;
+                }
+
+                for (var deliveryIndex = 0; deliveryIndex < deliveries.Length; deliveryIndex++)
+                {
+                    var delivery = deliveries[deliveryIndex];
+                    var deliveryPath = $"{phasePath}.deliveries[{deliveryIndex}]";
+                    if (delivery == null)
+                    {
+                        result.AddError(deliveryPath, "Delivery is required.", "rail.progression.delivery.required");
+                        continue;
+                    }
+
+                    if (delivery.Count < 1)
+                    {
+                        result.AddError($"{deliveryPath}.count", "Delivery count must be greater than 0.", "rail.progression.delivery.count", delivery.Count);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(delivery.Direction))
+                    {
+                        var direction = delivery.Direction.Trim().ToLowerInvariant();
+                        if (direction != "loadtoindustry" &&
+                            direction != "toindustry" &&
+                            direction != "to" &&
+                            direction != "import" &&
+                            direction != "loadfromindustry" &&
+                            direction != "fromindustry" &&
+                            direction != "from" &&
+                            direction != "export")
                         {
-                            var delivery = deliveries[deliveryIndex];
-                            if (delivery.Count < 1)
-                            {
-                                result.AddError($"progression.progressions.{progressionEntry.Key}.sections.{section.Key}.deliveryPhases[{phaseIndex}].deliveries[{deliveryIndex}].count", "Delivery count must be greater than 0.", "rail.progression.delivery.count", delivery.Count);
-                            }
+                            result.AddError($"{deliveryPath}.direction", "Delivery direction must be loadToIndustry or loadFromIndustry.", "rail.progression.delivery.direction", delivery.Direction);
                         }
                     }
+                }
+            }
+        }
+
+        private static void ValidateNoBlank(ValidationResult result, string path, IEnumerable<string> values, string code)
+        {
+            if (values == null)
+            {
+                return;
+            }
+
+            var index = 0;
+            foreach (var value in values)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    result.AddWarning($"{path}[{index}]", "Value should not be blank.", code);
+                }
+
+                index++;
+            }
+        }
+
+        private static void ValidateIndustryComponent(ValidationResult result, string path, RailIndustryComponent component)
+        {
+            var type = RailIndustryComponentTypes.Normalize(component.Type);
+            if (!string.IsNullOrWhiteSpace(type) && !RailIndustryComponentTypes.IsKnown(type))
+            {
+                result.AddError(
+                    $"{path}.type",
+                    $"Industry component type must be one of: {RailIndustryComponentTypes.KnownTypesForMessage()}.",
+                    "rail.operations.component.type",
+                    component.Type);
+                return;
+            }
+
+            if (RailIndustryComponentTypes.UsesTrackSpanIds(type) &&
+                (component.TrackSpanIds == null || component.TrackSpanIds.Length == 0))
+            {
+                result.AddError($"{path}.trackSpanIds", $"Industry component type '{type}' requires at least one track span.", "rail.operations.component.trackSpanIds");
+            }
+
+            if (RailIndustryComponentTypes.UsesLoadId(type))
+            {
+                if (string.IsNullOrWhiteSpace(component.LoadId))
+                {
+                    result.AddWarning($"{path}.loadId", $"Industry component type '{type}' usually needs a loadId to function.", "rail.operations.component.loadId");
+                }
+            }
+
+            if (component.StorageChangeRate.HasValue && component.StorageChangeRate.Value < 0f)
+            {
+                result.AddError($"{path}.storageChangeRate", "Storage change rate must be greater than or equal to 0.", "rail.operations.component.storageChangeRate", component.StorageChangeRate.Value);
+            }
+
+            if (component.MaxStorage.HasValue && component.MaxStorage.Value < 0f)
+            {
+                result.AddError($"{path}.maxStorage", "Max storage must be greater than or equal to 0.", "rail.operations.component.maxStorage", component.MaxStorage.Value);
+            }
+
+            if (component.CarTransferRate.HasValue && component.CarTransferRate.Value < 0f)
+            {
+                result.AddError($"{path}.carTransferRate", "Car transfer rate must be greater than or equal to 0.", "rail.operations.component.carTransferRate", component.CarTransferRate.Value);
+            }
+
+            if (string.Equals(type, RailIndustryComponentTypes.Formulaic, StringComparison.OrdinalIgnoreCase) &&
+                (component.InputTermsPerDay == null || component.InputTermsPerDay.Count == 0) &&
+                (component.OutputTermsPerDay == null || component.OutputTermsPerDay.Count == 0))
+            {
+                result.AddError($"{path}.inputTermsPerDay", "Formulaic components require inputTermsPerDay and/or outputTermsPerDay.", "rail.operations.formulaic.terms");
+            }
+
+            if (string.Equals(type, RailIndustryComponentTypes.TeamTrack, StringComparison.OrdinalIgnoreCase) &&
+                (component.TeamProfiles == null || component.TeamProfiles.Count == 0))
+            {
+                result.AddError($"{path}.teamProfiles", "Team track components require at least one team profile entry.", "rail.operations.teamTrack.profile");
+            }
+
+            if (string.Equals(type, RailIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase))
+            {
+                Required(result, $"{path}.passengerStopId", component.PassengerStopId);
+                Required(result, $"{path}.timetableCode", component.TimetableCode);
+            }
+
+            if (string.Equals(type, RailIndustryComponentTypes.TeleportLoading, StringComparison.OrdinalIgnoreCase))
+            {
+                if ((component.InputSpanIds == null || component.InputSpanIds.Length == 0) &&
+                    (component.OutputSpanIds == null || component.OutputSpanIds.Length == 0))
+                {
+                    result.AddError($"{path}.inputSpanIds", "Teleport loading components require inputSpanIds and/or outputSpanIds.", "rail.operations.teleportLoading.spans");
+                }
+
+                if (component.CarLoadPeriod.HasValue && component.CarLoadPeriod.Value < 0f)
+                {
+                    result.AddError($"{path}.carLoadPeriod", "Car load period must be greater than or equal to 0.", "rail.operations.teleportLoading.carLoadPeriod", component.CarLoadPeriod.Value);
+                }
+
+                if (component.CarLengthFeet.HasValue && component.CarLengthFeet.Value < 0f)
+                {
+                    result.AddError($"{path}.carLengthFeet", "Car length feet must be greater than or equal to 0.", "rail.operations.teleportLoading.carLengthFeet", component.CarLengthFeet.Value);
                 }
             }
         }

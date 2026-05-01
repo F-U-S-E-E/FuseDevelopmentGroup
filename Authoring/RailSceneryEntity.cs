@@ -37,6 +37,9 @@ namespace RAIL.Authoring
         [RailHidden]
         public Bounds RuntimeBounds { get; private set; }
 
+        [RailEditable("Anchor Spans", Group = "Scenery", Order = 12)]
+        public string[] AnchorSpanIds { get; set; } = System.Array.Empty<string>();
+
         public void LoadDefinition(RailScenery definition)
         {
             if (definition == null)
@@ -53,6 +56,7 @@ namespace RAIL.Authoring
             Position = definition.Position;
             Rotation = definition.Rotation;
             Scale = definition.Scale == default ? Vector3.one : definition.Scale;
+            AnchorSpanIds = definition.AnchorSpanIds ?? System.Array.Empty<string>();
             ClearDirty();
         }
 
@@ -81,7 +85,8 @@ namespace RAIL.Authoring
                 AssetIdentifier = AssetIdentifier,
                 Position = Position,
                 Rotation = Rotation,
-                Scale = Scale == default ? Vector3.one : Scale
+                Scale = Scale == default ? Vector3.one : Scale,
+                AnchorSpanIds = AnchorSpanIds ?? System.Array.Empty<string>()
             };
         }
 

@@ -13,6 +13,7 @@ namespace RAIL.API
         public const string Turntable = "operations.turntable";
         public const string Station = "operations.station";
         public const string Scenery = "world.scenery";
+        public const string SpawnPoint = "world.spawnPoint";
         public const string Spliney = "world.spliney";
         public const string TelegraphPoles = "world.telegraphPoles";
         public const string MapLabel = "world.mapLabel";

@@ -1,15 +1,15 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Hrogers_Railroader_mods_Projects\\Rail\\RAIL.csproj": {}
+    "C:\\Hrogers_Railroader_mods_Projects\\Rail\\Rail.csproj": {}
   },
   "projects": {
-    "C:\\Hrogers_Railroader_mods_Projects\\Rail\\RAIL.csproj": {
+    "C:\\Hrogers_Railroader_mods_Projects\\Rail\\Rail.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Hrogers_Railroader_mods_Projects\\Rail\\RAIL.csproj",
+        "projectUniqueName": "C:\\Hrogers_Railroader_mods_Projects\\Rail\\Rail.csproj",
         "projectName": "RAIL",
-        "projectPath": "C:\\Hrogers_Railroader_mods_Projects\\Rail\\RAIL.csproj",
+        "projectPath": "C:\\Hrogers_Railroader_mods_Projects\\Rail\\Rail.csproj",
         "packagesPath": "C:\\Users\\roger\\.nuget\\packages\\",
         "outputPath": "C:\\Hrogers_Railroader_mods_Projects\\Rail\\obj\\",
         "projectStyle": "PackageReference",

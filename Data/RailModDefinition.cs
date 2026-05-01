@@ -19,6 +19,7 @@ namespace RAIL.Data
         public RailTrackDefinition Tracks { get; set; } = new RailTrackDefinition();
         public RailOperationsDefinition Operations { get; set; } = new RailOperationsDefinition();
         public RailWorldDefinition World { get; set; } = new RailWorldDefinition();
+        public RailAudioRoot Audio { get; set; } = new RailAudioRoot();
         public RailProgressionRoot Progression { get; set; } = new RailProgressionRoot();
         public RailEditorState Editor { get; set; }
         public Dictionary<string, object> Extensions { get; set; } = new Dictionary<string, object>();
