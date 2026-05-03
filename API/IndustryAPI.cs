@@ -7,14 +7,14 @@ using Game.Events;
 using Model;
 using Model.Ops;
 using Model.Ops.Definition;
-using RAIL.Cache;
-using RAIL.Data;
-using RAIL.Events;
-using RAIL.Infrastructure;
+using FUSE.Cache;
+using FUSE.Data;
+using FUSE.Events;
+using FUSE.Infrastructure;
 using Track;
 using UnityEngine;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class IndustryAPI
     {
@@ -23,15 +23,15 @@ namespace RAIL.API
         private static readonly FieldInfo ComponentIdentifierField = typeof(IndustryComponent).GetField("_identifier", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo RepairPartsLoadField = typeof(RepairTrack).GetField("repairPartsLoad", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly Dictionary<string, int> IndustryOrders = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        private static readonly HashSet<string> RailCreatedIndustryIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> FuseCreatedIndustryIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static Transform _fallbackRoot;
 
-        public static Industry AddIndustry(string id, RailIndustry definition)
+        public static Industry AddIndustry(string id, FuseIndustry definition)
         {
             return AddIndustry(id, definition, true);
         }
 
-        internal static Industry AddIndustry(string id, RailIndustry definition, bool notify)
+        internal static Industry AddIndustry(string id, FuseIndustry definition, bool notify)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -58,9 +58,9 @@ namespace RAIL.API
             industry.usesContract = definition.UsesContract;
 
             RememberIndustryOrder(id, definition.Order);
-            RailCreatedIndustryIds.Add(id);
-            RailIndustryRuntimeIndex.Instance.Set(id, industry);
-            RailLog.Info($"RAIL created industry '{id}' name='{displayName}' parent='{DescribeIndustryParent(root)}' componentDefinitionCount={definition.Components?.Count ?? 0}.");
+            FuseCreatedIndustryIds.Add(id);
+            FuseIndustryRuntimeIndex.Instance.Set(id, industry);
+            FuseLog.Info($"FUSE created industry '{id}' name='{displayName}' parent='{DescribeIndustryParent(root)}' componentDefinitionCount={definition.Components?.Count ?? 0}.");
             AddOrUpdateComponents(industry, definition.Components);
             gameObject.SetActive(true);
             if (notify)
@@ -68,17 +68,17 @@ namespace RAIL.API
                 RefreshIndustriesAfterBatch("AddIndustry:" + id);
             }
 
-            RailEvents.RaiseIndustryAdded(industry);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Industry, id, definition);
+            FuseEvents.RaiseIndustryAdded(industry);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Industry, id, definition);
             return industry;
         }
 
-        public static void UpdateIndustry(string id, RailIndustry definition)
+        public static void UpdateIndustry(string id, FuseIndustry definition)
         {
             UpdateIndustry(id, definition, true);
         }
 
-        internal static void UpdateIndustry(string id, RailIndustry definition, bool notify)
+        internal static void UpdateIndustry(string id, FuseIndustry definition, bool notify)
         {
             var industry = RequireIndustry(id);
             if (definition == null)
@@ -91,7 +91,7 @@ namespace RAIL.API
             if (root != null && industry.transform.parent != root)
             {
                 industry.transform.SetParent(root, false);
-                RailLog.Info($"RAIL reparented industry '{id}' to '{DescribeIndustryParent(root)}'.");
+                FuseLog.Info($"FUSE reparented industry '{id}' to '{DescribeIndustryParent(root)}'.");
             }
 
             industry.gameObject.name = displayName;
@@ -100,16 +100,16 @@ namespace RAIL.API
             industry.transform.localRotation = Quaternion.Euler(definition.Rotation);
             industry.usesContract = definition.UsesContract;
             RememberIndustryOrder(id, definition.Order);
-            RailCreatedIndustryIds.Add(id);
+            FuseCreatedIndustryIds.Add(id);
             AddOrUpdateComponents(industry, definition.Components);
-            RailIndustryRuntimeIndex.Instance.Set(id, industry);
+            FuseIndustryRuntimeIndex.Instance.Set(id, industry);
             if (notify)
             {
                 RefreshIndustriesAfterBatch("UpdateIndustry:" + id);
             }
 
-            RailEvents.RaiseIndustryUpdated(industry);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Industry, id, definition);
+            FuseEvents.RaiseIndustryUpdated(industry);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Industry, id, definition);
         }
 
         public static void RemoveIndustry(string id)
@@ -117,16 +117,16 @@ namespace RAIL.API
             var industry = RequireIndustry(id);
             industry.gameObject.SetActive(false);
             UnityEngine.Object.Destroy(industry.gameObject);
-            RailIndustryRuntimeIndex.Instance.Remove(id);
-            RailCreatedIndustryIds.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Industry, id);
+            FuseIndustryRuntimeIndex.Instance.Remove(id);
+            FuseCreatedIndustryIds.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.Industry, id);
             RefreshIndustriesAfterBatch("RemoveIndustry:" + id);
-            RailEvents.RaiseIndustryRemoved(id);
+            FuseEvents.RaiseIndustryRemoved(id);
         }
 
         public static Industry GetIndustry(string id)
         {
-            if (RailIndustryRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseIndustryRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Industry)cached;
             }
@@ -141,7 +141,7 @@ namespace RAIL.API
                 }
             }
 
-            return RailCacheRegistry.IsReady && !string.IsNullOrWhiteSpace(id)
+            return FuseCacheRegistry.IsReady && !string.IsNullOrWhiteSpace(id)
                 ? UnityEngine.Object.FindObjectsOfType<Industry>(true).FirstOrDefault(industry => industry.identifier == id)
                 : null;
         }
@@ -151,20 +151,20 @@ namespace RAIL.API
             return UnityEngine.Object.FindObjectsOfType<Industry>();
         }
 
-        public static RailIndustry GetIndustryDefinition(string id)
+        public static FuseIndustry GetIndustryDefinition(string id)
         {
             return GetDefinition(GetIndustry(id));
         }
 
-        public static RailIndustry GetDefinition(Industry industry)
+        public static FuseIndustry GetDefinition(Industry industry)
         {
             if (industry == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Industry, industry.identifier, out RailIndustry definition);
-            definition = definition ?? new RailIndustry();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Industry, industry.identifier, out FuseIndustry definition);
+            definition = definition ?? new FuseIndustry();
             definition.Name = industry.name;
             definition.Position = industry.transform.localPosition;
             definition.Rotation = industry.transform.localEulerAngles;
@@ -176,7 +176,7 @@ namespace RAIL.API
                 definition.AreaId = area.identifier;
             }
 
-            definition.Components = definition.Components ?? new Dictionary<string, RailIndustryComponent>();
+            definition.Components = definition.Components ?? new Dictionary<string, FuseIndustryComponent>();
             foreach (var component in industry.GetComponentsInChildren<IndustryComponent>(true)
                          .Where(component => component != null && !string.IsNullOrWhiteSpace(component.subIdentifier)))
             {
@@ -186,13 +186,13 @@ namespace RAIL.API
             return definition;
         }
 
-        public static RailIndustryComponent GetComponentDefinition(string industryId, string subId)
+        public static FuseIndustryComponent GetComponentDefinition(string industryId, string subId)
         {
             var industry = GetIndustry(industryId);
             return industry == null ? null : GetDefinition(GetComponent(industry, subId));
         }
 
-        public static RailIndustryComponent GetDefinition(IndustryComponent component)
+        public static FuseIndustryComponent GetDefinition(IndustryComponent component)
         {
             if (component == null)
             {
@@ -201,8 +201,8 @@ namespace RAIL.API
 
             var industryId = component.Industry != null ? component.Industry.identifier : string.Empty;
             var key = GetComponentDefinitionKey(industryId, component.subIdentifier);
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.IndustryComponent, key, out RailIndustryComponent definition);
-            definition = definition ?? new RailIndustryComponent();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.IndustryComponent, key, out FuseIndustryComponent definition);
+            definition = definition ?? new FuseIndustryComponent();
             definition.Type = GetComponentTypeAlias(component);
             definition.Name = component.name;
             definition.TrackSpanIds = component.trackSpans?
@@ -275,7 +275,7 @@ namespace RAIL.API
                 return definition;
             }
 
-            var passengerStop = component as RailPassengerStopComponent;
+            var passengerStop = component as FusePassengerStopComponent;
             if (passengerStop != null)
             {
                 definition.PassengerStopId = passengerStop.PassengerStopId;
@@ -290,12 +290,12 @@ namespace RAIL.API
             return definition;
         }
 
-        public static IndustryComponent AddComponent(string industryId, string subId, RailIndustryComponent definition)
+        public static IndustryComponent AddComponent(string industryId, string subId, FuseIndustryComponent definition)
         {
             return AddComponent(RequireIndustry(industryId), subId, definition, true);
         }
 
-        public static void UpdateComponent(string industryId, string subId, RailIndustryComponent definition)
+        public static void UpdateComponent(string industryId, string subId, FuseIndustryComponent definition)
         {
             var industry = RequireIndustry(industryId);
             var component = GetComponent(industry, subId);
@@ -317,10 +317,10 @@ namespace RAIL.API
 
             ApplyComponentDefinition(component, definition);
             InvalidateIndustryComponents(industry);
-            RailIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, component), component);
+            FuseIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, component), component);
             RefreshIndustriesAfterBatch("UpdateComponent:" + industry.identifier + "." + subId);
-            RailEvents.RaiseIndustryComponentUpdated(component);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, subId), definition);
+            FuseEvents.RaiseIndustryComponentUpdated(component);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, subId), definition);
         }
 
         public static void RemoveComponent(string industryId, string subId)
@@ -349,18 +349,18 @@ namespace RAIL.API
                 UnityEngine.Object.DestroyImmediate(component.gameObject);
             }
 
-            RailIndustryComponentRuntimeIndex.Instance.Remove(identifier);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, subId));
+            FuseIndustryComponentRuntimeIndex.Instance.Remove(identifier);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, subId));
             if (notify)
             {
                 InvalidateIndustryComponents(industry);
                 RefreshIndustriesAfterBatch("RemoveComponent:" + identifier);
             }
 
-            RailEvents.RaiseIndustryComponentRemoved(identifier);
+            FuseEvents.RaiseIndustryComponentRemoved(identifier);
         }
 
-        private static IndustryComponent AddComponent(Industry industry, string subId, RailIndustryComponent definition, bool notify)
+        private static IndustryComponent AddComponent(Industry industry, string subId, FuseIndustryComponent definition, bool notify)
         {
             RequireId(subId, nameof(subId));
             if (definition == null)
@@ -393,20 +393,20 @@ namespace RAIL.API
                 gameObject.SetActive(true);
             }
 
-            RailIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, component), component);
-            RailLog.Info($"RAIL created industry component '{industry.identifier}.{subId}' type='{componentType.FullName}' attachedTo='{(attachToIndustryObject ? "industry" : "child")}' host='{gameObject.name}' trackSpanCount={component.trackSpans?.Length ?? 0} loadId='{definition.LoadId ?? string.Empty}'.");
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, subId), definition);
+            FuseIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, component), component);
+            FuseLog.Info($"FUSE created industry component '{industry.identifier}.{subId}' type='{componentType.FullName}' attachedTo='{(attachToIndustryObject ? "industry" : "child")}' host='{gameObject.name}' trackSpanCount={component.trackSpans?.Length ?? 0} loadId='{definition.LoadId ?? string.Empty}'.");
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, subId), definition);
             if (notify)
             {
                 InvalidateIndustryComponents(industry);
                 RefreshIndustriesAfterBatch("AddComponent:" + industry.identifier + "." + subId);
             }
 
-            RailEvents.RaiseIndustryComponentAdded(component);
+            FuseEvents.RaiseIndustryComponentAdded(component);
             return component;
         }
 
-        private static void AddOrUpdateComponents(Industry industry, IDictionary<string, RailIndustryComponent> components)
+        private static void AddOrUpdateComponents(Industry industry, IDictionary<string, FuseIndustryComponent> components)
         {
             var wasActive = industry.gameObject.activeSelf;
             industry.gameObject.SetActive(false);
@@ -439,8 +439,8 @@ namespace RAIL.API
                         else
                         {
                             ApplyComponentDefinition(runtime, component.Value);
-                            RailIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, runtime), runtime);
-                            RailApiPersistence.RecordDefinition(RailDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, component.Key), component.Value);
+                            FuseIndustryComponentRuntimeIndex.Instance.Set(GetComponentIdentifier(industry, runtime), runtime);
+                            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.IndustryComponent, GetComponentDefinitionKey(industry.identifier, component.Key), component.Value);
                         }
                     }
                     catch (Exception ex)
@@ -456,7 +456,7 @@ namespace RAIL.API
             }
         }
 
-        private static void ApplyComponentDefinition(IndustryComponent component, RailIndustryComponent definition)
+        private static void ApplyComponentDefinition(IndustryComponent component, FuseIndustryComponent definition)
         {
             if (definition == null)
             {
@@ -550,8 +550,8 @@ namespace RAIL.API
 
             if (TryApplyOptionalType(component, "Model.Ops.ProgressionIndustryComponent", obj =>
             {
-                RailLog.Info(
-                    $"RAIL applied package='{definition.Type ?? "<unspecified>"}' " +
+                FuseLog.Info(
+                    $"FUSE applied package='{definition.Type ?? "<unspecified>"}' " +
                     $"operation='industry component apply' kind='progression' " +
                     $"id='{DescribeComponent(component)}' " +
                     "message='progression industry component bound'.");
@@ -563,11 +563,11 @@ namespace RAIL.API
             var interchange = component as Interchange;
             if (interchange != null)
             {
-                RailLog.Info($"RAIL applied generic interchange setup for component '{DescribeComponent(component)}' trackSpanCount={component.trackSpans?.Length ?? 0}.");
+                FuseLog.Info($"FUSE applied generic interchange setup for component '{DescribeComponent(component)}' trackSpanCount={component.trackSpans?.Length ?? 0}.");
                 return;
             }
 
-            var passengerStop = component as RailPassengerStopComponent;
+            var passengerStop = component as FusePassengerStopComponent;
             if (passengerStop != null)
             {
                 passengerStop.PassengerStopId = definition.PassengerStopId;
@@ -576,59 +576,59 @@ namespace RAIL.API
                 passengerStop.BasePopulation = definition.BasePopulation ?? passengerStop.BasePopulation;
                 passengerStop.NeighborIds = definition.NeighborIds ?? Array.Empty<string>();
                 passengerStop.Branch = definition.Branch;
-                passengerStop.BranchDefinitions = definition.BranchDefinitions ?? Array.Empty<RailPassengerBranch>();
+                passengerStop.BranchDefinitions = definition.BranchDefinitions ?? Array.Empty<FusePassengerBranch>();
             }
 
-            var appliedComponent = component as IRailAppliedComponent;
+            var appliedComponent = component as IFuseAppliedComponent;
             if (appliedComponent != null)
             {
-                appliedComponent.OnRailDefinitionApplied();
+                appliedComponent.OnFuseDefinitionApplied();
             }
         }
 
         private static Type ResolveComponentType(string type)
         {
-            var normalized = RailIndustryComponentTypes.Normalize(type);
-            if (string.Equals(normalized, RailIndustryComponentTypes.Loader, StringComparison.OrdinalIgnoreCase))
+            var normalized = FuseIndustryComponentTypes.Normalize(type);
+            if (string.Equals(normalized, FuseIndustryComponentTypes.Loader, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(IndustryLoader);
             }
 
-            if (string.Equals(normalized, RailIndustryComponentTypes.Unloader, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, FuseIndustryComponentTypes.Unloader, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(IndustryUnloader);
             }
 
-            if (string.Equals(normalized, RailIndustryComponentTypes.Formulaic, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, FuseIndustryComponentTypes.Formulaic, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(FormulaicIndustryComponent);
             }
 
-            if (string.Equals(normalized, RailIndustryComponentTypes.RepairTrack, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, FuseIndustryComponentTypes.RepairTrack, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(RepairTrack);
             }
 
-            if (string.Equals(normalized, RailIndustryComponentTypes.TeamTrack, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, FuseIndustryComponentTypes.TeamTrack, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(TeamTrack);
             }
 
-            if (string.Equals(normalized, RailIndustryComponentTypes.Interchange, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, FuseIndustryComponentTypes.Interchange, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(Interchange);
             }
 
-            if (string.Equals(normalized, RailIndustryComponentTypes.InterchangedLoader, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, FuseIndustryComponentTypes.InterchangedLoader, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(InterchangedIndustryLoader);
             }
 
             // The next three types may not exist in every game build. Resolve
-            // reflectively so RAIL still compiles and runs when Assembly-CSharp
+            // reflectively so FUSE still compiles and runs when Assembly-CSharp
             // doesn't ship them. If the resolver returns null, we fall through
             // to the NotSupportedException at the bottom.
-            if (string.Equals(normalized, RailIndustryComponentTypes.InterchangedUnloader, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, FuseIndustryComponentTypes.InterchangedUnloader, StringComparison.OrdinalIgnoreCase))
             {
                 var resolved = Type.GetType("Model.Ops.InterchangedIndustryUnloader, Assembly-CSharp", false, true);
                 if (resolved != null)
@@ -637,7 +637,7 @@ namespace RAIL.API
                 }
             }
 
-            if (string.Equals(normalized, RailIndustryComponentTypes.TeleportLoading, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, FuseIndustryComponentTypes.TeleportLoading, StringComparison.OrdinalIgnoreCase))
             {
                 var resolved = Type.GetType("Model.Ops.TeleportLoadingIndustry, Assembly-CSharp", false, true);
                 if (resolved != null)
@@ -646,7 +646,7 @@ namespace RAIL.API
                 }
             }
 
-            if (string.Equals(normalized, RailIndustryComponentTypes.Progression, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, FuseIndustryComponentTypes.Progression, StringComparison.OrdinalIgnoreCase))
             {
                 var resolved = Type.GetType("Model.Ops.ProgressionIndustryComponent, Assembly-CSharp", false, true);
                 if (resolved != null)
@@ -655,9 +655,9 @@ namespace RAIL.API
                 }
             }
 
-            if (string.Equals(normalized, RailIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, FuseIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase))
             {
-                return typeof(RailPassengerStopComponent);
+                return typeof(FusePassengerStopComponent);
             }
 
             var reflected = TryResolveIndustryComponentType(type);
@@ -686,57 +686,57 @@ namespace RAIL.API
         {
             if (component is IndustryLoader)
             {
-                return RailIndustryComponentTypes.Loader;
+                return FuseIndustryComponentTypes.Loader;
             }
 
             if (component is IndustryUnloader)
             {
-                return RailIndustryComponentTypes.Unloader;
+                return FuseIndustryComponentTypes.Unloader;
             }
 
             if (component is FormulaicIndustryComponent)
             {
-                return RailIndustryComponentTypes.Formulaic;
+                return FuseIndustryComponentTypes.Formulaic;
             }
 
             if (component is RepairTrack)
             {
-                return RailIndustryComponentTypes.RepairTrack;
+                return FuseIndustryComponentTypes.RepairTrack;
             }
 
             if (component is TeamTrack)
             {
-                return RailIndustryComponentTypes.TeamTrack;
+                return FuseIndustryComponentTypes.TeamTrack;
             }
 
             if (component is Interchange)
             {
-                return RailIndustryComponentTypes.Interchange;
+                return FuseIndustryComponentTypes.Interchange;
             }
 
             if (component is InterchangedIndustryLoader)
             {
-                return RailIndustryComponentTypes.InterchangedLoader;
+                return FuseIndustryComponentTypes.InterchangedLoader;
             }
 
             if (IsType(component, "Model.Ops.InterchangedIndustryUnloader"))
             {
-                return RailIndustryComponentTypes.InterchangedUnloader;
+                return FuseIndustryComponentTypes.InterchangedUnloader;
             }
 
             if (IsType(component, "Model.Ops.TeleportLoadingIndustry"))
             {
-                return RailIndustryComponentTypes.TeleportLoading;
+                return FuseIndustryComponentTypes.TeleportLoading;
             }
 
             if (IsType(component, "Model.Ops.ProgressionIndustryComponent"))
             {
-                return RailIndustryComponentTypes.Progression;
+                return FuseIndustryComponentTypes.Progression;
             }
 
-            if (component is RailPassengerStopComponent)
+            if (component is FusePassengerStopComponent)
             {
-                return RailIndustryComponentTypes.PassengerStop;
+                return FuseIndustryComponentTypes.PassengerStop;
             }
 
             return component.GetType().FullName;
@@ -777,7 +777,7 @@ namespace RAIL.API
             }
         }
 
-        private static void ApplyTeleportLoadingFields(IndustryComponent component, RailIndustryComponent definition)
+        private static void ApplyTeleportLoadingFields(IndustryComponent component, FuseIndustryComponent definition)
         {
             var type = component.GetType();
             type.GetField("inputSpans", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?
@@ -797,7 +797,7 @@ namespace RAIL.API
             }
         }
 
-        private static void ReadTeleportLoadingFields(IndustryComponent component, RailIndustryComponent definition)
+        private static void ReadTeleportLoadingFields(IndustryComponent component, FuseIndustryComponent definition)
         {
             var type = component.GetType();
             var inputSpans = type.GetField("inputSpans", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?
@@ -890,7 +890,7 @@ namespace RAIL.API
             return result;
         }
 
-        private static TeamTrackProfile BuildTeamTrackProfile(IDictionary<string, RailTeamTrackEntry> entries)
+        private static TeamTrackProfile BuildTeamTrackProfile(IDictionary<string, FuseTeamTrackEntry> entries)
         {
             var profile = ScriptableObject.CreateInstance<TeamTrackProfile>();
             profile.entries = new List<TeamTrackProfile.Entry>();
@@ -928,7 +928,7 @@ namespace RAIL.API
                 var span = TrackAPI.GetSpan(id);
                 if (span == null)
                 {
-                    RailLog.Warning($"RAIL track span '{id}' was not found while resolving industry component spans; continuing without it.");
+                    FuseLog.Warning($"FUSE track span '{id}' was not found while resolving industry component spans; continuing without it.");
                     continue;
                 }
 
@@ -948,11 +948,11 @@ namespace RAIL.API
             var load = CarPrototypeLibrary.instance?.LoadForId(loadId);
             if (load == null)
             {
-                RailLog.Warning($"RAIL load '{loadId}' was not found while resolving industry component load data; continuing with null load.");
+                FuseLog.Warning($"FUSE load '{loadId}' was not found while resolving industry component load data; continuing with null load.");
                 return null;
             }
 
-            RailLoadRuntimeIndex.Instance.Set(load.id, load);
+            FuseLoadRuntimeIndex.Instance.Set(load.id, load);
             return load;
         }
 
@@ -975,18 +975,18 @@ namespace RAIL.API
 
             foreach (var subId in staleSubIds)
             {
-                RailLog.Info($"RAIL removing stale industry component '{industry.identifier}.{subId}' because it is not present in the current definition.");
+                FuseLog.Info($"FUSE removing stale industry component '{industry.identifier}.{subId}' because it is not present in the current definition.");
                 RemoveComponent(industry, subId, false);
             }
         }
 
-        private static void LogComponentLoadFailure(Industry industry, string subId, RailIndustryComponent definition, Exception ex)
+        private static void LogComponentLoadFailure(Industry industry, string subId, FuseIndustryComponent definition, Exception ex)
         {
             var spanIds = definition?.TrackSpanIds == null
                 ? string.Empty
                 : string.Join(",", definition.TrackSpanIds);
-            RailLog.Warning(
-                $"RAIL failed to load industry component industry='{industry?.identifier ?? "<unknown>"}' " +
+            FuseLog.Warning(
+                $"FUSE failed to load industry component industry='{industry?.identifier ?? "<unknown>"}' " +
                 $"subId='{subId ?? string.Empty}' type='{definition?.Type ?? string.Empty}' " +
                 $"loadId='{definition?.LoadId ?? string.Empty}' trackSpanIds='{spanIds}' " +
                 $"error='{ex?.Message ?? "<no message>"}'");
@@ -1008,7 +1008,7 @@ namespace RAIL.API
             return industry.GetComponentsInChildren<IndustryComponent>(true).FirstOrDefault(component => component.subIdentifier == subId);
         }
 
-        private static Transform GetIndustryRoot(RailIndustry definition)
+        private static Transform GetIndustryRoot(FuseIndustry definition)
         {
             var areas = UnityEngine.Object.FindObjectsOfType<Area>(true);
             if (!string.IsNullOrWhiteSpace(definition?.AreaId))
@@ -1028,7 +1028,7 @@ namespace RAIL.API
                     .FirstOrDefault();
                 if (nearestArea != null)
                 {
-                    RailLog.Warning($"RAIL could not find Area '{definition.AreaId}' for industry '{definition.Name ?? "<unnamed>"}'; using nearest Area '{nearestArea.identifier ?? nearestArea.name}'.");
+                    FuseLog.Warning($"FUSE could not find Area '{definition.AreaId}' for industry '{definition.Name ?? "<unnamed>"}'; using nearest Area '{nearestArea.identifier ?? nearestArea.name}'.");
                     return nearestArea.transform;
                 }
             }
@@ -1048,7 +1048,7 @@ namespace RAIL.API
 
             if (_fallbackRoot == null)
             {
-                _fallbackRoot = new GameObject("RAIL Industries").transform;
+                _fallbackRoot = new GameObject("FUSE Industries").transform;
                 UnityEngine.Object.DontDestroyOnLoad(_fallbackRoot.gameObject);
             }
 
@@ -1079,7 +1079,7 @@ namespace RAIL.API
                 refreshedCount++;
             }
 
-            RailLog.Info($"RAIL invalidated industry component caches for '{industry.identifier}' cachedComponentsCleared={clearedIndustryComponentList} componentIdentityRefreshed={refreshedCount}.");
+            FuseLog.Info($"FUSE invalidated industry component caches for '{industry.identifier}' cachedComponentsCleared={clearedIndustryComponentList} componentIdentityRefreshed={refreshedCount}.");
         }
 
         private static string GetComponentIdentifier(Industry industry, IndustryComponent component)
@@ -1113,23 +1113,23 @@ namespace RAIL.API
         {
             ApplyIndustryOrdering();
             Messenger.Default.Send(default(IndustriesDidChange));
-            RailIndustryRuntimeIndex.Instance.Rebuild();
-            RailIndustryComponentRuntimeIndex.Instance.Rebuild();
+            FuseIndustryRuntimeIndex.Instance.Rebuild();
+            FuseIndustryComponentRuntimeIndex.Instance.Rebuild();
             var industryCount = UnityEngine.Object.FindObjectsOfType<Industry>(true).Length;
             var componentCount = UnityEngine.Object.FindObjectsOfType<IndustryComponent>(true).Length;
-            RailLog.Info($"RAIL refreshed industries after '{source}' sceneIndustryCount={industryCount} sceneIndustryComponentCount={componentCount} cacheIndustryCount={RailIndustryRuntimeIndex.Instance.Count} cacheIndustryComponentCount={RailIndustryComponentRuntimeIndex.Instance.Count}.");
-            foreach (var industryId in RailCreatedIndustryIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray())
+            FuseLog.Info($"FUSE refreshed industries after '{source}' sceneIndustryCount={industryCount} sceneIndustryComponentCount={componentCount} cacheIndustryCount={FuseIndustryRuntimeIndex.Instance.Count} cacheIndustryComponentCount={FuseIndustryComponentRuntimeIndex.Instance.Count}.");
+            foreach (var industryId in FuseCreatedIndustryIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray())
             {
                 var industry = GetIndustry(industryId);
                 if (industry == null)
                 {
-                    RailLog.Warning($"RAIL-created industry '{industryId}' was not found after '{source}'.");
+                    FuseLog.Warning($"FUSE-created industry '{industryId}' was not found after '{source}'.");
                     continue;
                 }
 
                 var railComponentCount = industry.GetComponentsInChildren<IndustryComponent>(true)
                     .Count(component => component != null && !string.IsNullOrWhiteSpace(component.subIdentifier));
-                RailLog.Info($"RAIL-created industry '{industryId}' name='{industry.name}' componentCount={railComponentCount}.");
+                FuseLog.Info($"FUSE-created industry '{industryId}' name='{industry.name}' componentCount={railComponentCount}.");
             }
         }
 
@@ -1181,7 +1181,7 @@ namespace RAIL.API
 
             if (orderedCount > 0)
             {
-                RailLog.Info($"RAIL applied industry ordering for {orderedCount} industry object(s).");
+                FuseLog.Info($"FUSE applied industry ordering for {orderedCount} industry object(s).");
             }
         }
 
@@ -1234,7 +1234,7 @@ namespace RAIL.API
             }
             catch (Exception ex)
             {
-                RailLog.Warning($"RAIL could not read industry component Identifier for '{component.name}': {ex.Message}");
+                FuseLog.Warning($"FUSE could not read industry component Identifier for '{component.name}': {ex.Message}");
             }
 
             return string.IsNullOrWhiteSpace(component.subIdentifier) ? component.name : component.subIdentifier;

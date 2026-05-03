@@ -5,9 +5,9 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using Map.Runtime.MapModifiers;
 using Map.Runtime.MaskComponents;
-using RAIL.Cache;
-using RAIL.Data;
-using RAIL.Infrastructure;
+using FUSE.Cache;
+using FUSE.Data;
+using FUSE.Infrastructure;
 using TelegraphPoles;
 using TMPro;
 using UI.Map;
@@ -15,13 +15,13 @@ using UnityEngine;
 using UnityEngine.UI;
 using RuntimeSimpleGraph = SimpleGraph.Runtime.SimpleGraph;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class MapAPI
     {
-        private const string MapMaskRootName = "RAIL Map Masks";
-        private const string TelegraphRootName = "RAIL Telegraph Poles";
-        private const string SpeedLimitCircleName = "RAIL Speed Limit Circle";
+        private const string MapMaskRootName = "FUSE Map Masks";
+        private const string TelegraphRootName = "FUSE Telegraph Poles";
+        private const string SpeedLimitCircleName = "FUSE Speed Limit Circle";
 
         private static readonly FieldInfo CanvasField = typeof(MapLabel).GetField("_canvas", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo PolePrefabsField = typeof(TelegraphPoleManager).GetField("polePrefabs", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -30,15 +30,15 @@ namespace RAIL.API
         private static readonly Regex SpeedLimitTextPattern = new Regex(@"^\s*(?<mph>\d{1,3})\s*MPH\.?\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex SpeedLimitNumberPattern = new Regex(@"^\s*(?<mph>\d{1,3})\s*$", RegexOptions.Compiled);
 
-        private static readonly Dictionary<string, RailTelegraphPoleMovement[]> TelegraphPoleMovementClaims =
-            new Dictionary<string, RailTelegraphPoleMovement[]>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, FuseTelegraphPoleMovement[]> TelegraphPoleMovementClaims =
+            new Dictionary<string, FuseTelegraphPoleMovement[]>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<int, Vector3> TelegraphPoleOriginalPositions = new Dictionary<int, Vector3>();
 
         private static Transform _fallbackMapMaskRoot;
         private static Transform _fallbackTelegraphRoot;
         private static Sprite _speedLimitCircleSprite;
 
-        public static MapLabel AddMapLabel(string id, RailMapLabel definition)
+        public static MapLabel AddMapLabel(string id, FuseMapLabel definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -77,8 +77,8 @@ namespace RAIL.API
                 label.name = id;
                 CanvasField?.SetValue(label, labelObject.GetComponent<Canvas>());
                 ApplyMapLabelDefinition(label, definition);
-                RailMapLabelRuntimeIndex.Instance.Set(id, label);
-                RailApiPersistence.RecordDefinition(RailDefinitionKind.MapLabel, id, definition);
+                FuseMapLabelRuntimeIndex.Instance.Set(id, label);
+                FuseApiPersistence.RecordDefinition(FuseDefinitionKind.MapLabel, id, definition);
                 return label;
             }
             catch (Exception ex)
@@ -88,13 +88,13 @@ namespace RAIL.API
                     UnityEngine.Object.Destroy(wrapper);
                 }
 
-                RailMapLabelRuntimeIndex.Instance.Remove(id);
-                RailLog.Warning($"RAIL failed to create map label '{id}' and cleaned up the partial object: {ex.Message}");
+                FuseMapLabelRuntimeIndex.Instance.Remove(id);
+                FuseLog.Warning($"FUSE failed to create map label '{id}' and cleaned up the partial object: {ex.Message}");
                 throw;
             }
         }
 
-        public static void UpdateMapLabel(string id, RailMapLabel definition)
+        public static void UpdateMapLabel(string id, FuseMapLabel definition)
         {
             var label = RequireMapLabel(id);
             if (definition == null)
@@ -103,8 +103,8 @@ namespace RAIL.API
             }
 
             ApplyMapLabelDefinition(label, definition);
-            RailMapLabelRuntimeIndex.Instance.Set(id, label);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.MapLabel, id, definition);
+            FuseMapLabelRuntimeIndex.Instance.Set(id, label);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.MapLabel, id, definition);
         }
 
         public static void RemoveMapLabel(string id)
@@ -130,27 +130,27 @@ namespace RAIL.API
             }
             else
             {
-                wrapper = RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
+                wrapper = FusePrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
             }
 
             if (wrapper == null)
             {
-                RailLog.Warning($"RAIL world removal skipped missing map label '{id}'.");
+                FuseLog.Warning($"FUSE world removal skipped missing map label '{id}'.");
                 return false;
             }
 
             var path = GetTransformPath(wrapper.transform);
             wrapper.SetActive(false);
             UnityEngine.Object.Destroy(wrapper);
-            RailMapLabelRuntimeIndex.Instance.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.MapLabel, id);
-            RailLog.Info($"RAIL removed map label '{id}' from '{path}'.");
+            FuseMapLabelRuntimeIndex.Instance.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.MapLabel, id);
+            FuseLog.Info($"FUSE removed map label '{id}' from '{path}'.");
             return true;
         }
 
         public static MapLabel GetMapLabel(string id)
         {
-            if (RailMapLabelRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseMapLabelRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (MapLabel)cached;
             }
@@ -165,20 +165,20 @@ namespace RAIL.API
             return UnityEngine.Object.FindObjectsOfType<MapLabel>();
         }
 
-        public static RailMapLabel GetMapLabelDefinition(string id)
+        public static FuseMapLabel GetMapLabelDefinition(string id)
         {
             return GetDefinition(GetMapLabel(id));
         }
 
-        public static RailMapLabel GetDefinition(MapLabel label)
+        public static FuseMapLabel GetDefinition(MapLabel label)
         {
             if (label == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.MapLabel, label.name, out RailMapLabel definition);
-            definition = definition ?? new RailMapLabel();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.MapLabel, label.name, out FuseMapLabel definition);
+            definition = definition ?? new FuseMapLabel();
             definition.Text = label.text;
             var transform = label.transform.parent != null ? label.transform.parent : label.transform;
             definition.Position = transform.localPosition;
@@ -193,7 +193,7 @@ namespace RAIL.API
             return definition;
         }
 
-        public static GameObject AddMapMask(string id, RailMapMask definition)
+        public static GameObject AddMapMask(string id, FuseMapMask definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -209,11 +209,11 @@ namespace RAIL.API
             var root = new GameObject(id);
             root.transform.SetParent(GetOrCreateWorldRoot(MapMaskRootName, ref _fallbackMapMaskRoot), false);
             ApplyMapMaskDefinition(root, definition);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.MapMask, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.MapMask, id, definition);
             return root;
         }
 
-        public static void UpdateMapMask(string id, RailMapMask definition)
+        public static void UpdateMapMask(string id, FuseMapMask definition)
         {
             var root = RequireMapMask(id);
             if (definition == null)
@@ -222,7 +222,7 @@ namespace RAIL.API
             }
 
             ApplyMapMaskDefinition(root, definition);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.MapMask, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.MapMask, id, definition);
         }
 
         public static void RemoveMapMask(string id)
@@ -240,18 +240,18 @@ namespace RAIL.API
                 return false;
             }
 
-            var root = GetMapMask(id) ?? RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
+            var root = GetMapMask(id) ?? FusePrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
             if (root == null)
             {
-                RailLog.Warning($"RAIL world removal skipped missing map mask '{id}'.");
+                FuseLog.Warning($"FUSE world removal skipped missing map mask '{id}'.");
                 return false;
             }
 
             var path = GetTransformPath(root.transform);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.MapMask, id);
-            RailLog.Info($"RAIL removed map mask '{id}' from '{path}'.");
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.MapMask, id);
+            FuseLog.Info($"FUSE removed map mask '{id}' from '{path}'.");
             return true;
         }
 
@@ -267,20 +267,20 @@ namespace RAIL.API
             return GetChildren(GetOrCreateWorldRoot(MapMaskRootName, ref _fallbackMapMaskRoot));
         }
 
-        public static RailMapMask GetMapMaskDefinition(string id)
+        public static FuseMapMask GetMapMaskDefinition(string id)
         {
             return GetMapMaskDefinition(GetMapMask(id));
         }
 
-        public static RailMapMask GetMapMaskDefinition(GameObject mapMask)
+        public static FuseMapMask GetMapMaskDefinition(GameObject mapMask)
         {
             if (mapMask == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.MapMask, mapMask.name, out RailMapMask definition);
-            definition = definition ?? new RailMapMask();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.MapMask, mapMask.name, out FuseMapMask definition);
+            definition = definition ?? new FuseMapMask();
             var circle = mapMask.GetComponent<CircleMapMask>();
             if (circle != null)
             {
@@ -322,7 +322,7 @@ namespace RAIL.API
             return definition;
         }
 
-        public static GameObject AddTelegraphPoles(string id, RailTelegraphPoles definition)
+        public static GameObject AddTelegraphPoles(string id, FuseTelegraphPoles definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -338,11 +338,11 @@ namespace RAIL.API
             var root = new GameObject(id);
             root.transform.SetParent(GetOrCreateWorldRoot(TelegraphRootName, ref _fallbackTelegraphRoot), false);
             ApplyTelegraphPolesDefinition(root, definition);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TelegraphPoles, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TelegraphPoles, id, definition);
             return root;
         }
 
-        public static void UpdateTelegraphPoles(string id, RailTelegraphPoles definition)
+        public static void UpdateTelegraphPoles(string id, FuseTelegraphPoles definition)
         {
             var root = RequireTelegraphPoles(id);
             if (definition == null)
@@ -351,7 +351,7 @@ namespace RAIL.API
             }
 
             ApplyTelegraphPolesDefinition(root, definition);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TelegraphPoles, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TelegraphPoles, id, definition);
         }
 
         public static void RemoveTelegraphPoles(string id)
@@ -369,18 +369,18 @@ namespace RAIL.API
                 return false;
             }
 
-            var root = GetTelegraphPoles(id) ?? RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
+            var root = GetTelegraphPoles(id) ?? FusePrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
             if (root == null)
             {
-                RailLog.Warning($"RAIL world removal skipped missing telegraph pole set '{id}'.");
+                FuseLog.Warning($"FUSE world removal skipped missing telegraph pole set '{id}'.");
                 return false;
             }
 
             var path = GetTransformPath(root.transform);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.TelegraphPoles, id);
-            RailLog.Info($"RAIL removed telegraph pole set '{id}' from '{path}'.");
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.TelegraphPoles, id);
+            FuseLog.Info($"FUSE removed telegraph pole set '{id}' from '{path}'.");
             return true;
         }
 
@@ -396,20 +396,20 @@ namespace RAIL.API
             return GetChildren(GetOrCreateWorldRoot(TelegraphRootName, ref _fallbackTelegraphRoot));
         }
 
-        public static RailTelegraphPoles GetTelegraphPolesDefinition(string id)
+        public static FuseTelegraphPoles GetTelegraphPolesDefinition(string id)
         {
             return GetTelegraphPolesDefinition(GetTelegraphPoles(id));
         }
 
-        public static RailTelegraphPoles GetTelegraphPolesDefinition(GameObject telegraphPoles)
+        public static FuseTelegraphPoles GetTelegraphPolesDefinition(GameObject telegraphPoles)
         {
             if (telegraphPoles == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.TelegraphPoles, telegraphPoles.name, out RailTelegraphPoles definition);
-            definition = definition ?? new RailTelegraphPoles();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.TelegraphPoles, telegraphPoles.name, out FuseTelegraphPoles definition);
+            definition = definition ?? new FuseTelegraphPoles();
             definition.Points = telegraphPoles.GetComponentsInChildren<TelegraphPole>(true)
                 .OrderBy(pole => pole.name, StringComparer.OrdinalIgnoreCase)
                 .Select(pole => pole.transform.position)
@@ -417,14 +417,14 @@ namespace RAIL.API
             return definition;
         }
 
-        public static void ApplyTelegraphPoleMovements(string packageId, RailTelegraphPoleMovement[] movements)
+        public static void ApplyTelegraphPoleMovements(string packageId, FuseTelegraphPoleMovement[] movements)
         {
             if (string.IsNullOrWhiteSpace(packageId))
             {
                 throw new ArgumentException("Package id is required.", nameof(packageId));
             }
 
-            var normalized = (movements ?? Array.Empty<RailTelegraphPoleMovement>())
+            var normalized = (movements ?? Array.Empty<FuseTelegraphPoleMovement>())
                 .Where(movement => movement != null && movement.PoleIndices != null && movement.PoleIndices.Length > 0)
                 .ToArray();
 
@@ -484,7 +484,7 @@ namespace RAIL.API
 
             TelegraphPoleOriginalPositions.Clear();
             TelegraphPoleMovementClaims.Clear();
-            RailLog.Info($"RAIL restored telegraph pole movements for '{reason ?? "unspecified"}' restored={restored}.");
+            FuseLog.Info($"FUSE restored telegraph pole movements for '{reason ?? "unspecified"}' restored={restored}.");
         }
 
         private static void ReapplyTelegraphPoleMovements(string reason)
@@ -492,21 +492,21 @@ namespace RAIL.API
             var manager = FindTelegraphPoleManager();
             if (manager == null)
             {
-                RailLog.Warning($"RAIL telegraph pole movement skipped for '{reason}' because TelegraphPoleManager was not found.");
+                FuseLog.Warning($"FUSE telegraph pole movement skipped for '{reason}' because TelegraphPoleManager was not found.");
                 return;
             }
 
             var graph = manager.GetComponent<RuntimeSimpleGraph>();
             if (graph == null)
             {
-                RailLog.Warning($"RAIL telegraph pole movement skipped for '{reason}' because TelegraphPoleManager has no SimpleGraph.");
+                FuseLog.Warning($"FUSE telegraph pole movement skipped for '{reason}' because TelegraphPoleManager has no SimpleGraph.");
                 return;
             }
 
             var aggregate = new Dictionary<int, Vector3>();
             foreach (var package in TelegraphPoleMovementClaims)
             {
-                foreach (var movement in package.Value ?? Array.Empty<RailTelegraphPoleMovement>())
+                foreach (var movement in package.Value ?? Array.Empty<FuseTelegraphPoleMovement>())
                 {
                     if (movement?.PoleIndices == null)
                     {
@@ -517,7 +517,7 @@ namespace RAIL.API
                     {
                         if (poleIndex < 0)
                         {
-                            RailLog.Warning($"RAIL telegraph pole movement skipped invalid pole index package='{package.Key}' poleIndex={poleIndex}.");
+                            FuseLog.Warning($"FUSE telegraph pole movement skipped invalid pole index package='{package.Key}' poleIndex={poleIndex}.");
                             continue;
                         }
 
@@ -556,7 +556,7 @@ namespace RAIL.API
                 var node = graph.NodeForId(movement.Key);
                 if (node == null)
                 {
-                    RailLog.Warning($"RAIL telegraph pole movement skipped missing base pole node package='<aggregate>' poleIndex={movement.Key}.");
+                    FuseLog.Warning($"FUSE telegraph pole movement skipped missing base pole node package='<aggregate>' poleIndex={movement.Key}.");
                     continue;
                 }
 
@@ -571,7 +571,7 @@ namespace RAIL.API
             }
 
             NotifyTelegraphNodesChanged(manager, graph, touched);
-            RailLog.Info($"RAIL applied telegraph pole movements for '{reason}' moved={moved} restored={restored} activePackages={TelegraphPoleMovementClaims.Count}.");
+            FuseLog.Info($"FUSE applied telegraph pole movements for '{reason}' moved={moved} restored={restored} activePackages={TelegraphPoleMovementClaims.Count}.");
         }
 
         private static TelegraphPoleManager FindTelegraphPoleManager()
@@ -592,7 +592,7 @@ namespace RAIL.API
             }
             catch (Exception ex)
             {
-                RailLog.Warning($"RAIL telegraph pole movement could not notify node changes: {ex.Message}");
+                FuseLog.Warning($"FUSE telegraph pole movement could not notify node changes: {ex.Message}");
             }
 
             if (manager == null || !manager.isActiveAndEnabled || TelegraphRebuildMethod == null)
@@ -606,11 +606,11 @@ namespace RAIL.API
             }
             catch (Exception ex)
             {
-                RailLog.Warning($"RAIL telegraph pole movement could not force telegraph manager rebuild: {ex.GetBaseException().Message}");
+                FuseLog.Warning($"FUSE telegraph pole movement could not force telegraph manager rebuild: {ex.GetBaseException().Message}");
             }
         }
 
-        private static void ApplyMapLabelDefinition(MapLabel label, RailMapLabel definition)
+        private static void ApplyMapLabelDefinition(MapLabel label, FuseMapLabel definition)
         {
             if (label.transform.parent != null)
             {
@@ -647,7 +647,7 @@ namespace RAIL.API
             }
         }
 
-        private static bool TryGetSpeedLimitMph(RailMapLabel definition, string text, out int speedLimitMph)
+        private static bool TryGetSpeedLimitMph(FuseMapLabel definition, string text, out int speedLimitMph)
         {
             speedLimitMph = 0;
             if (definition?.SpeedLimitMph is int explicitSpeed && explicitSpeed > 0)
@@ -788,7 +788,7 @@ namespace RAIL.API
             const float innerRadius = 25f;
             var texture = new Texture2D(size, size, TextureFormat.ARGB32, false)
             {
-                name = "RAIL Speed Limit Circle",
+                name = "FUSE Speed Limit Circle",
                 filterMode = FilterMode.Bilinear,
                 wrapMode = TextureWrapMode.Clamp
             };
@@ -824,11 +824,11 @@ namespace RAIL.API
             texture.SetPixels32(pixels);
             texture.Apply(false, true);
             _speedLimitCircleSprite = Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), size);
-            _speedLimitCircleSprite.name = "RAIL Speed Limit Circle";
+            _speedLimitCircleSprite.name = "FUSE Speed Limit Circle";
             return _speedLimitCircleSprite;
         }
 
-        private static void ApplyMapMaskDefinition(GameObject root, RailMapMask definition)
+        private static void ApplyMapMaskDefinition(GameObject root, FuseMapMask definition)
         {
             ClearComponents<MapMaskBase>(root);
             DestroyChildren(root.transform);
@@ -911,7 +911,7 @@ namespace RAIL.API
             root.SetActive(true);
         }
 
-        private static void ApplyTelegraphPolesDefinition(GameObject root, RailTelegraphPoles definition)
+        private static void ApplyTelegraphPolesDefinition(GameObject root, FuseTelegraphPoles definition)
         {
             if (definition.Points == null || definition.Points.Length < 2)
             {
@@ -1022,11 +1022,11 @@ namespace RAIL.API
             return wireIndex;
         }
 
-        private static TelegraphPole ResolveTelegraphPolePrefab(RailTelegraphPoles definition)
+        private static TelegraphPole ResolveTelegraphPolePrefab(FuseTelegraphPoles definition)
         {
             if (!string.IsNullOrWhiteSpace(definition.PolePrefab))
             {
-                var prefab = RailPrefabResolver.Resolve(definition.PolePrefab);
+                var prefab = FusePrefabResolver.Resolve(definition.PolePrefab);
                 if (prefab == null)
                 {
                     return null;
@@ -1054,11 +1054,11 @@ namespace RAIL.API
             return prefabs.FirstOrDefault(prefab => prefab != null);
         }
 
-        private static TelegraphWire ResolveTelegraphWirePrefab(RailTelegraphPoles definition)
+        private static TelegraphWire ResolveTelegraphWirePrefab(FuseTelegraphPoles definition)
         {
             if (!string.IsNullOrWhiteSpace(definition.WirePrefab))
             {
-                var prefab = RailPrefabResolver.Resolve(definition.WirePrefab);
+                var prefab = FusePrefabResolver.Resolve(definition.WirePrefab);
                 if (prefab == null)
                 {
                     return null;

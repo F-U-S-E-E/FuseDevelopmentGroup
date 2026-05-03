@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 
-namespace RAIL.Serialization.Converters
+namespace FUSE.Serialization.Converters
 {
     public sealed class FlexibleStringArrayJsonConverter : JsonConverter
     {

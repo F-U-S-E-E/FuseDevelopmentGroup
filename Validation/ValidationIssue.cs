@@ -1,4 +1,4 @@
-﻿namespace RAIL.Validation
+namespace FUSE.Validation
 {
     public sealed class ValidationIssue
     {

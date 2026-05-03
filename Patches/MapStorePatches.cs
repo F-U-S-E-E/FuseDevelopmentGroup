@@ -2,11 +2,11 @@ using System;
 using System.IO;
 using HarmonyLib;
 using Map.Runtime;
-using RAIL.Infrastructure;
-using RAIL.Loading;
+using FUSE.Infrastructure;
+using FUSE.Loading;
 using UnityEngine;
 
-namespace RAIL.Patches
+namespace FUSE.Patches
 {
     [HarmonyPatch]
     internal static class MapStorePatches
@@ -17,17 +17,17 @@ namespace RAIL.Patches
         {
             try
             {
-                RailMapTileRegistry.RefreshFromAvailablePackages();
+                FuseMapTileRegistry.RefreshFromAvailablePackages();
                 var directoryName = Path.GetFileName(basePath?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                var mountedCount = RailMapTileRegistry.MountIntoStore(__instance, directoryName);
+                var mountedCount = FuseMapTileRegistry.MountIntoStore(__instance, directoryName);
                 if (mountedCount > 0)
                 {
-                    RailLog.Info($"Mounted {mountedCount} RAIL map tile(s) for '{directoryName}'.");
+                    FuseLog.Info($"Mounted {mountedCount} FUSE map tile(s) for '{directoryName}'.");
                 }
             }
             catch (Exception ex)
             {
-                RailLog.Exception("RAIL map tile mount failed after MapStore.Load.", ex);
+                FuseLog.Exception("FUSE map tile mount failed after MapStore.Load.", ex);
             }
         }
 
@@ -37,14 +37,14 @@ namespace RAIL.Patches
         {
             try
             {
-                if (RailMapTileRegistry.TryGetMountedTilePath(tp, out var tilePath))
+                if (FuseMapTileRegistry.TryGetMountedTilePath(tp, out var tilePath))
                 {
                     __result = tilePath;
                 }
             }
             catch (Exception ex)
             {
-                RailLog.Exception("RAIL map tile path override failed.", ex);
+                FuseLog.Exception("FUSE map tile path override failed.", ex);
             }
         }
 
@@ -54,11 +54,11 @@ namespace RAIL.Patches
         {
             try
             {
-                RailMapTileRegistry.ClearActiveTilePaths();
+                FuseMapTileRegistry.ClearActiveTilePaths();
             }
             catch (Exception ex)
             {
-                RailLog.Exception("RAIL failed to clear active map tile paths after MapManager.UnloadStore.", ex);
+                FuseLog.Exception("FUSE failed to clear active map tile paths after MapManager.UnloadStore.", ex);
             }
         }
     }

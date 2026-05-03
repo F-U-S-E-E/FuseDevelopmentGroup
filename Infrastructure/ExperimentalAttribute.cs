@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace RAIL.Infrastructure
+namespace FUSE.Infrastructure
 {
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method | AttributeTargets.Property)]
     internal sealed class ExperimentalAttribute : Attribute
@@ -20,7 +20,7 @@ namespace RAIL.Infrastructure
     /// <see cref="WarnFirstUse"/> from the implementation so the user sees
     /// the notice exactly once even if the API is invoked many times.
     /// </summary>
-    public static class RailExperimentalLog
+    public static class FuseExperimentalLog
     {
         private static readonly object Sync = new object();
         private static readonly HashSet<string> WarnedKeys =
@@ -42,8 +42,8 @@ namespace RAIL.Infrastructure
             }
 
             var detail = string.IsNullOrWhiteSpace(note) ? string.Empty : $" note='{note}'";
-            RailLog.Warning(
-                $"RAIL experimental surface in use: '{key}'.{detail} " +
+            FuseLog.Warning(
+                $"FUSE experimental surface in use: '{key}'.{detail} " +
                 "This API may change or be removed without notice.");
         }
 

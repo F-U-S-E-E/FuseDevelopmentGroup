@@ -2,15 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Model.Ops;
-using RAIL.Cache;
-using RAIL.Data;
-using RAIL.Data.Common;
-using RAIL.Events;
-using RAIL.Infrastructure;
+using FUSE.Cache;
+using FUSE.Data;
+using FUSE.Data.Common;
+using FUSE.Events;
+using FUSE.Infrastructure;
 using Track;
 using UnityEngine;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class TrackAPI
     {
@@ -39,14 +39,14 @@ namespace RAIL.API
             node.flipSwitchStand = flipStand;
 
             graph.AddNode(node);
-            RailNodeRuntimeIndex.Instance.Set(id, node);
-            RailEvents.RaiseNodeAdded(node);
+            FuseNodeRuntimeIndex.Instance.Set(id, node);
+            FuseEvents.RaiseNodeAdded(node);
             RequestRebuild();
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackNode, id, GetDefinition(node));
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackNode, id, GetDefinition(node));
             return node;
         }
 
-        public static TrackNode AddNode(string id, RailNode definition)
+        public static TrackNode AddNode(string id, FuseNode definition)
         {
             if (definition == null)
             {
@@ -54,7 +54,7 @@ namespace RAIL.API
             }
 
             var node = AddNode(id, definition.Position, definition.Rotation, definition.FlipSwitchStand, definition.GroupId);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackNode, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackNode, id, definition);
             return node;
         }
 
@@ -69,13 +69,13 @@ namespace RAIL.API
             }
 
             Graph.Shared.OnNodeDidChange(node);
-            RailNodeRuntimeIndex.Instance.Set(id, node);
-            RailEvents.RaiseNodeUpdated(node);
+            FuseNodeRuntimeIndex.Instance.Set(id, node);
+            FuseEvents.RaiseNodeUpdated(node);
             RequestRebuild();
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackNode, id, GetDefinition(node));
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackNode, id, GetDefinition(node));
         }
 
-        public static void UpdateNode(string id, RailNode definition)
+        public static void UpdateNode(string id, FuseNode definition)
         {
             if (definition == null)
             {
@@ -83,7 +83,7 @@ namespace RAIL.API
             }
 
             UpdateNode(id, definition.Position, definition.Rotation, definition.FlipSwitchStand);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackNode, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackNode, id, definition);
         }
 
         public static void RemoveNode(string id)
@@ -95,9 +95,9 @@ namespace RAIL.API
             }
 
             RemoveRuntimeObject(node);
-            RailNodeRuntimeIndex.Instance.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.TrackNode, id);
-            RailEvents.RaiseNodeRemoved(id);
+            FuseNodeRuntimeIndex.Instance.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.TrackNode, id);
+            FuseEvents.RaiseNodeRemoved(id);
             RequestRebuild();
         }
 
@@ -113,20 +113,20 @@ namespace RAIL.API
             return graph != null ? graph.Nodes : Enumerable.Empty<TrackNode>();
         }
 
-        public static RailNode GetNodeDefinition(string id)
+        public static FuseNode GetNodeDefinition(string id)
         {
             return GetDefinition(GetNode(id));
         }
 
-        public static RailNode GetDefinition(TrackNode node)
+        public static FuseNode GetDefinition(TrackNode node)
         {
             if (node == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.TrackNode, node.id, out RailNode definition);
-            definition = definition ?? new RailNode();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.TrackNode, node.id, out FuseNode definition);
+            definition = definition ?? new FuseNode();
             definition.Position = node.transform.localPosition;
             definition.Rotation = node.transform.localEulerAngles;
             definition.FlipSwitchStand = node.flipSwitchStand;
@@ -155,14 +155,14 @@ namespace RAIL.API
             segment.groupId = groupId;
 
             graph.AddSegment(segment, true);
-            RailSegmentRuntimeIndex.Instance.Set(id, segment);
-            RailEvents.RaiseSegmentAdded(segment);
+            FuseSegmentRuntimeIndex.Instance.Set(id, segment);
+            FuseEvents.RaiseSegmentAdded(segment);
             RequestRebuild();
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSegment, id, GetDefinition(segment));
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSegment, id, GetDefinition(segment));
             return segment;
         }
 
-        public static TrackSegment AddSegment(string id, RailSegment definition)
+        public static TrackSegment AddSegment(string id, FuseSegment definition)
         {
             if (definition == null)
             {
@@ -178,7 +178,7 @@ namespace RAIL.API
                 definition.GroupId,
                 ParseTrackClass(definition.TrackClass),
                 definition.Priority);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSegment, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSegment, id, definition);
             return segment;
         }
 
@@ -205,13 +205,13 @@ namespace RAIL.API
             segment.InvalidateCurve();
             Graph.Shared.InvalidateNode(segment.a);
             Graph.Shared.InvalidateNode(segment.b);
-            RailSegmentRuntimeIndex.Instance.Set(id, segment);
-            RailEvents.RaiseSegmentUpdated(segment);
+            FuseSegmentRuntimeIndex.Instance.Set(id, segment);
+            FuseEvents.RaiseSegmentUpdated(segment);
             RequestRebuild();
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSegment, id, GetDefinition(segment));
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSegment, id, GetDefinition(segment));
         }
 
-        public static void UpdateSegment(string id, RailSegment definition)
+        public static void UpdateSegment(string id, FuseSegment definition)
         {
             if (definition == null)
             {
@@ -225,16 +225,16 @@ namespace RAIL.API
                 ParseTrackClass(definition.TrackClass),
                 definition.Priority,
                 definition.GroupId);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSegment, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSegment, id, definition);
         }
 
         public static void RemoveSegment(string id)
         {
             var segment = RequireSegment(id);
             RemoveRuntimeObject(segment);
-            RailSegmentRuntimeIndex.Instance.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.TrackSegment, id);
-            RailEvents.RaiseSegmentRemoved(id);
+            FuseSegmentRuntimeIndex.Instance.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.TrackSegment, id);
+            FuseEvents.RaiseSegmentRemoved(id);
             RequestRebuild();
         }
 
@@ -250,20 +250,20 @@ namespace RAIL.API
             return graph != null ? graph.Segments : Enumerable.Empty<TrackSegment>();
         }
 
-        public static RailSegment GetSegmentDefinition(string id)
+        public static FuseSegment GetSegmentDefinition(string id)
         {
             return GetDefinition(GetSegment(id));
         }
 
-        public static RailSegment GetDefinition(TrackSegment segment)
+        public static FuseSegment GetDefinition(TrackSegment segment)
         {
             if (segment == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.TrackSegment, segment.id, out RailSegment definition);
-            definition = definition ?? new RailSegment();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.TrackSegment, segment.id, out FuseSegment definition);
+            definition = definition ?? new FuseSegment();
             definition.StartNodeId = segment.a != null ? segment.a.id : null;
             definition.EndNodeId = segment.b != null ? segment.b.id : null;
             definition.Style = segment.style.ToString();
@@ -274,7 +274,7 @@ namespace RAIL.API
             return definition;
         }
 
-        public static TrackSpan AddSpan(string id, RailTrackLocation upper, RailTrackLocation lower, bool normalize = true)
+        public static TrackSpan AddSpan(string id, FuseTrackLocation upper, FuseTrackLocation lower, bool normalize = true)
         {
             RequireId(id, nameof(id));
             var graph = RequireGraph();
@@ -306,14 +306,14 @@ namespace RAIL.API
                 throw;
             }
 
-            RailSpanRuntimeIndex.Instance.Set(id, span);
-            RailEvents.RaiseSpanAdded(span);
+            FuseSpanRuntimeIndex.Instance.Set(id, span);
+            FuseEvents.RaiseSpanAdded(span);
             RequestRebuild();
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, GetDefinition(span));
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSpan, id, GetDefinition(span));
             return span;
         }
 
-        public static TrackSpan AddSpan(string id, RailSpan definition)
+        public static TrackSpan AddSpan(string id, FuseSpan definition)
         {
             if (definition == null)
             {
@@ -321,11 +321,11 @@ namespace RAIL.API
             }
 
             var span = AddSpan(id, definition.Upper, definition.Lower, definition.Normalize);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, GetDefinition(span));
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSpan, id, GetDefinition(span));
             return span;
         }
 
-        public static void UpdateSpan(string id, RailTrackLocation upper, RailTrackLocation lower, bool normalize = true)
+        public static void UpdateSpan(string id, FuseTrackLocation upper, FuseTrackLocation lower, bool normalize = true)
         {
             var span = RequireSpan(id);
             var graph = RequireGraph();
@@ -353,13 +353,13 @@ namespace RAIL.API
                 throw;
             }
 
-            RailSpanRuntimeIndex.Instance.Set(id, span);
-            RailEvents.RaiseSpanUpdated(span);
+            FuseSpanRuntimeIndex.Instance.Set(id, span);
+            FuseEvents.RaiseSpanUpdated(span);
             RequestRebuild();
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, GetDefinition(span));
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSpan, id, GetDefinition(span));
         }
 
-        public static void UpdateSpan(string id, RailSpan definition)
+        public static void UpdateSpan(string id, FuseSpan definition)
         {
             if (definition == null)
             {
@@ -367,22 +367,22 @@ namespace RAIL.API
             }
 
             UpdateSpan(id, definition.Upper, definition.Lower, definition.Normalize);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackSpan, id, GetSpanDefinition(id));
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSpan, id, GetSpanDefinition(id));
         }
 
         public static void RemoveSpan(string id)
         {
             var span = RequireSpan(id);
             RemoveRuntimeObject(span);
-            RailSpanRuntimeIndex.Instance.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.TrackSpan, id);
-            RailEvents.RaiseSpanRemoved(id);
+            FuseSpanRuntimeIndex.Instance.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.TrackSpan, id);
+            FuseEvents.RaiseSpanRemoved(id);
             RequestRebuild();
         }
 
         public static TrackSpan GetSpan(string id)
         {
-            if (RailSpanRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseSpanRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (TrackSpan)cached;
             }
@@ -397,26 +397,26 @@ namespace RAIL.API
                 .Where(span => span != null && !string.IsNullOrWhiteSpace(span.id));
         }
 
-        public static RailSpan GetSpanDefinition(string id)
+        public static FuseSpan GetSpanDefinition(string id)
         {
             return GetDefinition(GetSpan(id));
         }
 
-        public static RailSpan GetDefinition(TrackSpan span)
+        public static FuseSpan GetDefinition(TrackSpan span)
         {
             if (span == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.TrackSpan, span.id, out RailSpan definition);
-            definition = definition ?? new RailSpan();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.TrackSpan, span.id, out FuseSpan definition);
+            definition = definition ?? new FuseSpan();
             definition.Upper = span.upper.HasValue ? ToDefinition(span.upper.Value) : null;
             definition.Lower = span.lower.HasValue ? ToDefinition(span.lower.Value) : null;
             return definition;
         }
 
-        public static Area AddArea(string id, RailArea definition)
+        public static Area AddArea(string id, FuseArea definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -436,13 +436,13 @@ namespace RAIL.API
             area.identifier = id;
             ApplyAreaDefinition(area, definition);
             RememberAreaOrder(id, definition.Order);
-            RailAreaRuntimeIndex.Instance.Set(id, area);
-            RailLog.Info($"RAIL created area '{id}' name='{displayName}' parent='{DescribeAreaParent(area.transform.parent)}' position={area.transform.localPosition} radius={area.radius}.");
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackArea, id, definition);
+            FuseAreaRuntimeIndex.Instance.Set(id, area);
+            FuseLog.Info($"FUSE created area '{id}' name='{displayName}' parent='{DescribeAreaParent(area.transform.parent)}' position={area.transform.localPosition} radius={area.radius}.");
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackArea, id, definition);
             return area;
         }
 
-        public static void UpdateArea(string id, RailArea definition)
+        public static void UpdateArea(string id, FuseArea definition)
         {
             var area = RequireArea(id);
             if (definition == null)
@@ -452,9 +452,9 @@ namespace RAIL.API
 
             ApplyAreaDefinition(area, definition);
             RememberAreaOrder(id, definition.Order);
-            RailAreaRuntimeIndex.Instance.Set(id, area);
-            RailLog.Info($"RAIL updated area '{id}' name='{area.name}' position={area.transform.localPosition} radius={area.radius}.");
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.TrackArea, id, definition);
+            FuseAreaRuntimeIndex.Instance.Set(id, area);
+            FuseLog.Info($"FUSE updated area '{id}' name='{area.name}' position={area.transform.localPosition} radius={area.radius}.");
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackArea, id, definition);
         }
 
         public static Area GetArea(string id)
@@ -464,7 +464,7 @@ namespace RAIL.API
                 return null;
             }
 
-            if (RailAreaRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseAreaRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Area)cached;
             }
@@ -478,7 +478,7 @@ namespace RAIL.API
                      string.Equals(candidate.name, id, StringComparison.OrdinalIgnoreCase)));
                 if (area != null)
                 {
-                    RailAreaRuntimeIndex.Instance.Set(area.identifier, area);
+                    FuseAreaRuntimeIndex.Instance.Set(area.identifier, area);
                     return area;
                 }
             }
@@ -494,20 +494,20 @@ namespace RAIL.API
             return UnityEngine.Object.FindObjectsOfType<Area>(true).Where(area => area != null);
         }
 
-        public static RailArea GetAreaDefinition(string id)
+        public static FuseArea GetAreaDefinition(string id)
         {
             return GetDefinition(GetArea(id));
         }
 
-        public static RailArea GetDefinition(Area area)
+        public static FuseArea GetDefinition(Area area)
         {
             if (area == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.TrackArea, area.identifier, out RailArea definition);
-            definition = definition ?? new RailArea();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.TrackArea, area.identifier, out FuseArea definition);
+            definition = definition ?? new FuseArea();
             definition.Name = area.name;
             definition.Position = area.transform.localPosition;
             definition.Radius = area.radius;
@@ -533,7 +533,7 @@ namespace RAIL.API
                 orderedAreas[index].transform.SetSiblingIndex(firstIndex + index);
             }
 
-            RailLog.Info($"RAIL applied area ordering for {orderedAreas.Length} area(s).");
+            FuseLog.Info($"FUSE applied area ordering for {orderedAreas.Length} area(s).");
         }
 
         public static void SetGroupEnabled(string groupId, bool enabled)
@@ -579,7 +579,7 @@ namespace RAIL.API
                 RequireGraph().RebuildCollections();
             }
 
-            RailEvents.RaiseGraphRebuilt();
+            FuseEvents.RaiseGraphRebuilt();
         }
 
         private static void RequestRebuild()
@@ -599,7 +599,7 @@ namespace RAIL.API
             return gameObject.AddComponent<T>();
         }
 
-        private static Location MakeLocation(Graph graph, RailTrackLocation definition)
+        private static Location MakeLocation(Graph graph, FuseTrackLocation definition)
         {
             if (definition == null)
             {
@@ -681,14 +681,14 @@ namespace RAIL.API
             }
         }
 
-        private static RailTrackLocation ToDefinition(Location location)
+        private static FuseTrackLocation ToDefinition(Location location)
         {
             if (location.segment == null)
             {
                 return null;
             }
 
-            return new RailTrackLocation
+            return new FuseTrackLocation
             {
                 SegmentId = location.segment.id,
                 End = location.end == TrackSegment.End.B ? "B" : "A",
@@ -771,7 +771,7 @@ namespace RAIL.API
             return area;
         }
 
-        private static void ApplyAreaDefinition(Area area, RailArea definition)
+        private static void ApplyAreaDefinition(Area area, FuseArea definition)
         {
             var displayName = string.IsNullOrWhiteSpace(definition.Name) ? area.identifier : definition.Name;
             area.name = displayName;
@@ -821,7 +821,7 @@ namespace RAIL.API
 
             if (_fallbackAreaRoot == null)
             {
-                _fallbackAreaRoot = new GameObject("RAIL Areas").transform;
+                _fallbackAreaRoot = new GameObject("FUSE Areas").transform;
                 UnityEngine.Object.DontDestroyOnLoad(_fallbackAreaRoot.gameObject);
             }
 

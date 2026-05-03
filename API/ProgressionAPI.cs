@@ -6,12 +6,12 @@ using Game.Progression;
 using Model;
 using Model.Ops;
 using Model.Ops.Definition;
-using RAIL.Cache;
-using RAIL.Data;
-using RAIL.Infrastructure;
+using FUSE.Cache;
+using FUSE.Data;
+using FUSE.Infrastructure;
 using UnityEngine;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class ProgressionAPI
     {
@@ -19,7 +19,7 @@ namespace RAIL.API
         private static readonly FieldInfo ManagerProgressionsField = typeof(ProgressionManager).GetField("_progressions", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ProgressionSectionsField = typeof(Progression).GetField("<Sections>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
 
-        public static MapFeature AddMapFeature(string id, RailMapFeature definition)
+        public static MapFeature AddMapFeature(string id, FuseMapFeature definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -43,13 +43,13 @@ namespace RAIL.API
             var feature = gameObject.AddComponent<MapFeature>();
             feature.identifier = id;
             ApplyMapFeatureDefinition(feature, definition);
-            RailMapFeatureRuntimeIndex.Instance.Set(id, feature);
+            FuseMapFeatureRuntimeIndex.Instance.Set(id, feature);
             RefreshMapFeatureManager(manager);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.MapFeature, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.MapFeature, id, definition);
             return feature;
         }
 
-        public static void UpdateMapFeature(string id, RailMapFeature definition)
+        public static void UpdateMapFeature(string id, FuseMapFeature definition)
         {
             var feature = RequireMapFeature(id);
             if (definition == null)
@@ -58,12 +58,12 @@ namespace RAIL.API
             }
 
             ApplyMapFeatureDefinition(feature, definition);
-            RailMapFeatureRuntimeIndex.Instance.Set(id, feature);
+            FuseMapFeatureRuntimeIndex.Instance.Set(id, feature);
             if (MapFeatureManager.Shared != null)
             {
                 RefreshMapFeatureManager(MapFeatureManager.Shared);
             }
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.MapFeature, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.MapFeature, id, definition);
         }
 
         public static void RemoveMapFeature(string id)
@@ -71,8 +71,8 @@ namespace RAIL.API
             var feature = RequireMapFeature(id);
             feature.gameObject.SetActive(false);
             UnityEngine.Object.Destroy(feature.gameObject);
-            RailMapFeatureRuntimeIndex.Instance.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.MapFeature, id);
+            FuseMapFeatureRuntimeIndex.Instance.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.MapFeature, id);
             if (MapFeatureManager.Shared != null)
             {
                 RefreshMapFeatureManager(MapFeatureManager.Shared);
@@ -81,7 +81,7 @@ namespace RAIL.API
 
         public static MapFeature GetMapFeature(string id)
         {
-            if (RailMapFeatureRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseMapFeatureRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (MapFeature)cached;
             }
@@ -96,20 +96,20 @@ namespace RAIL.API
             return UnityEngine.Object.FindObjectsOfType<MapFeature>();
         }
 
-        public static RailMapFeature GetMapFeatureDefinition(string id)
+        public static FuseMapFeature GetMapFeatureDefinition(string id)
         {
             return GetDefinition(GetMapFeature(id));
         }
 
-        public static RailMapFeature GetDefinition(MapFeature feature)
+        public static FuseMapFeature GetDefinition(MapFeature feature)
         {
             if (feature == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.MapFeature, feature.identifier, out RailMapFeature definition);
-            definition = definition ?? new RailMapFeature();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.MapFeature, feature.identifier, out FuseMapFeature definition);
+            definition = definition ?? new FuseMapFeature();
             definition.DisplayName = feature.displayName;
             definition.Description = feature.description;
             definition.InitiallyEnabled = feature.defaultEnableInSandbox;
@@ -125,7 +125,7 @@ namespace RAIL.API
             return definition;
         }
 
-        public static Progression AddProgression(string id, RailProgression definition)
+        public static Progression AddProgression(string id, FuseProgression definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -146,13 +146,13 @@ namespace RAIL.API
             progression.mapFeatureManager = MapFeatureManager.Shared;
 
             ApplyProgressionDefinition(progression, definition);
-            RailProgressionRuntimeIndex.Instance.Set(id, progression);
+            FuseProgressionRuntimeIndex.Instance.Set(id, progression);
             RefreshProgressionManager();
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Progression, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Progression, id, definition);
             return progression;
         }
 
-        public static void UpdateProgression(string id, RailProgression definition)
+        public static void UpdateProgression(string id, FuseProgression definition)
         {
             var progression = RequireProgression(id);
             if (definition == null)
@@ -161,9 +161,9 @@ namespace RAIL.API
             }
 
             ApplyProgressionDefinition(progression, definition);
-            RailProgressionRuntimeIndex.Instance.Set(id, progression);
+            FuseProgressionRuntimeIndex.Instance.Set(id, progression);
             RefreshProgressionManager();
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Progression, id, definition);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Progression, id, definition);
         }
 
         public static void RemoveProgression(string id)
@@ -171,14 +171,14 @@ namespace RAIL.API
             var progression = RequireProgression(id);
             progression.gameObject.SetActive(false);
             UnityEngine.Object.Destroy(progression.gameObject);
-            RailProgressionRuntimeIndex.Instance.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Progression, id);
+            FuseProgressionRuntimeIndex.Instance.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.Progression, id);
             RefreshProgressionManager();
         }
 
         public static Progression GetProgression(string id)
         {
-            if (RailProgressionRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseProgressionRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Progression)cached;
             }
@@ -193,28 +193,28 @@ namespace RAIL.API
             return UnityEngine.Object.FindObjectsOfType<Progression>();
         }
 
-        public static RailProgression GetProgressionDefinition(string id)
+        public static FuseProgression GetProgressionDefinition(string id)
         {
             return GetDefinition(GetProgression(id));
         }
 
-        public static RailProgression GetDefinition(Progression progression)
+        public static FuseProgression GetDefinition(Progression progression)
         {
             if (progression == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Progression, progression.identifier, out RailProgression definition);
-            definition = definition ?? new RailProgression();
-            definition.Sections = definition.Sections ?? new Dictionary<string, RailSection>();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Progression, progression.identifier, out FuseProgression definition);
+            definition = definition ?? new FuseProgression();
+            definition.Sections = definition.Sections ?? new Dictionary<string, FuseSection>();
 
             var sections = ProgressionSectionsField?.GetValue(progression) as Section[] ??
                            progression.GetComponentsInChildren<Section>(true);
             foreach (var section in sections.Where(section => section != null && !string.IsNullOrWhiteSpace(section.identifier)))
             {
                 definition.Sections.TryGetValue(section.identifier, out var existingSection);
-                definition.Sections[section.identifier] = new RailSection
+                definition.Sections[section.identifier] = new FuseSection
                 {
                     Id = section.identifier,
                     ProgressionId = progression.identifier,
@@ -249,7 +249,7 @@ namespace RAIL.API
             manager.SetFeatureEnabled(id, enabled);
         }
 
-        private static void ApplyMapFeatureDefinition(MapFeature feature, RailMapFeature definition)
+        private static void ApplyMapFeatureDefinition(MapFeature feature, FuseMapFeature definition)
         {
             feature.displayName = string.IsNullOrWhiteSpace(definition.DisplayName) ? feature.identifier : definition.DisplayName;
             feature.description = definition.Description ?? string.Empty;
@@ -264,14 +264,14 @@ namespace RAIL.API
             feature.unlockIncludeIndustryComponents = ResolveIndustryComponents(definition.UnlockIncludeIndustryComponents);
         }
 
-        private static void ApplyProgressionDefinition(Progression progression, RailProgression definition)
+        private static void ApplyProgressionDefinition(Progression progression, FuseProgression definition)
         {
             if (progression.mapFeatureManager == null)
             {
                 progression.mapFeatureManager = MapFeatureManager.Shared;
             }
 
-            var sectionDefinitions = definition.Sections ?? new Dictionary<string, RailSection>();
+            var sectionDefinitions = definition.Sections ?? new Dictionary<string, FuseSection>();
             foreach (var sectionDefinition in sectionDefinitions)
             {
                 var section = GetSection(sectionDefinition.Key);
@@ -283,7 +283,7 @@ namespace RAIL.API
                     section.identifier = sectionDefinition.Key;
                 }
 
-                RailSectionRuntimeIndex.Instance.Set(section.identifier, section);
+                FuseSectionRuntimeIndex.Instance.Set(section.identifier, section);
             }
 
             foreach (var sectionDefinition in sectionDefinitions)
@@ -295,13 +295,13 @@ namespace RAIL.API
                 }
 
                 ApplySectionDefinition(section, sectionDefinition.Value);
-                RailSectionRuntimeIndex.Instance.Set(section.identifier, section);
+                FuseSectionRuntimeIndex.Instance.Set(section.identifier, section);
             }
 
             ProgressionSectionsField?.SetValue(progression, progression.GetComponentsInChildren<Section>());
         }
 
-        private static void ApplySectionDefinition(Section section, RailSection definition)
+        private static void ApplySectionDefinition(Section section, FuseSection definition)
         {
             if (definition == null)
             {
@@ -318,10 +318,10 @@ namespace RAIL.API
                 sectionUnlockFeature);
             section.enableFeaturesOnAvailable = ResolveMapFeatures(definition.EnableFeaturesOnAvailable);
             section.disableFeaturesOnUnlock = ResolveMapFeatures(definition.DisableFeaturesOnUnlock);
-            section.deliveryPhases = (definition.DeliveryPhases ?? Array.Empty<RailDeliveryPhase>()).Select(CreateDeliveryPhase).ToArray();
+            section.deliveryPhases = (definition.DeliveryPhases ?? Array.Empty<FuseDeliveryPhase>()).Select(CreateDeliveryPhase).ToArray();
         }
 
-        private static MapFeature EnsureSectionUnlockFeature(Section section, RailSection definition)
+        private static MapFeature EnsureSectionUnlockFeature(Section section, FuseSection definition)
         {
             if (section == null || definition == null || !HasSectionUnlockFeaturePayload(definition))
             {
@@ -329,7 +329,7 @@ namespace RAIL.API
             }
 
             var featureId = GetSectionUnlockFeatureId(section.identifier);
-            var featureDefinition = new RailMapFeature
+            var featureDefinition = new FuseMapFeature
             {
                 DisplayName = string.IsNullOrWhiteSpace(definition.DisplayName) ? section.identifier : definition.DisplayName,
                 Description = definition.Description,
@@ -347,23 +347,23 @@ namespace RAIL.API
             if (existing != null)
             {
                 ApplyMapFeatureDefinition(existing, featureDefinition);
-                RailMapFeatureRuntimeIndex.Instance.Set(featureId, existing);
+                FuseMapFeatureRuntimeIndex.Instance.Set(featureId, existing);
                 if (MapFeatureManager.Shared != null)
                 {
                     RefreshMapFeatureManager(MapFeatureManager.Shared);
                 }
 
-                RailApiPersistence.RecordDefinition(RailDefinitionKind.MapFeature, featureId, featureDefinition);
-                RailLog.Info($"RAIL refreshed progression section unlock feature '{featureId}' for section '{section.identifier}'.");
+                FuseApiPersistence.RecordDefinition(FuseDefinitionKind.MapFeature, featureId, featureDefinition);
+                FuseLog.Info($"FUSE refreshed progression section unlock feature '{featureId}' for section '{section.identifier}'.");
                 return existing;
             }
 
             var created = AddMapFeature(featureId, featureDefinition);
-            RailLog.Info($"RAIL created progression section unlock feature '{featureId}' for section '{section.identifier}'.");
+            FuseLog.Info($"FUSE created progression section unlock feature '{featureId}' for section '{section.identifier}'.");
             return created;
         }
 
-        private static bool HasSectionUnlockFeaturePayload(RailSection definition)
+        private static bool HasSectionUnlockFeaturePayload(FuseSection definition)
         {
             return HasAny(definition.TrackGroupsEnableOnUnlock) ||
                    HasAny(definition.TrackGroupsAvailableOnUnlock) ||
@@ -376,7 +376,7 @@ namespace RAIL.API
 
         private static string GetSectionUnlockFeatureId(string sectionId)
         {
-            return "rail.progression.section." + (sectionId ?? string.Empty) + ".unlock";
+            return "fuse.progression.section." + (sectionId ?? string.Empty) + ".unlock";
         }
 
         private static MapFeature[] AppendFeature(MapFeature[] features, MapFeature feature)
@@ -394,9 +394,9 @@ namespace RAIL.API
                 .ToArray();
         }
 
-        private static Section.DeliveryPhase CreateDeliveryPhase(RailDeliveryPhase definition)
+        private static Section.DeliveryPhase CreateDeliveryPhase(FuseDeliveryPhase definition)
         {
-            var deliveries = definition.Deliveries ?? Array.Empty<RailDelivery>();
+            var deliveries = definition.Deliveries ?? Array.Empty<FuseDelivery>();
             var phase = new Section.DeliveryPhase
             {
                 cost = definition.Cost,
@@ -413,7 +413,7 @@ namespace RAIL.API
             return phase;
         }
 
-        private static Section.Delivery CreateDelivery(RailDelivery definition)
+        private static Section.Delivery CreateDelivery(FuseDelivery definition)
         {
             return new Section.Delivery
             {
@@ -424,9 +424,9 @@ namespace RAIL.API
             };
         }
 
-        private static ProgressionIndustryComponent ResolveDeliveryPhaseIndustryComponent(RailDeliveryPhase definition)
+        private static ProgressionIndustryComponent ResolveDeliveryPhaseIndustryComponent(FuseDeliveryPhase definition)
         {
-            var destinationIds = (definition.Deliveries ?? Array.Empty<RailDelivery>())
+            var destinationIds = (definition.Deliveries ?? Array.Empty<FuseDelivery>())
                 .Select(delivery => delivery?.DestinationIndustryId)
                 .Where(id => !string.IsNullOrWhiteSpace(id))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -558,7 +558,7 @@ namespace RAIL.API
 
         private static IndustryComponent ResolveAnyIndustryComponent(string id)
         {
-            if (RailIndustryComponentRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseIndustryComponentRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return cached as IndustryComponent;
             }
@@ -655,10 +655,10 @@ namespace RAIL.API
                 .ToArray();
         }
 
-        private static RailDeliveryPhase[] ToDeliveryPhases(IEnumerable<Section.DeliveryPhase> phases)
+        private static FuseDeliveryPhase[] ToDeliveryPhases(IEnumerable<Section.DeliveryPhase> phases)
         {
             return phases?.Where(phase => phase != null)
-                .Select(phase => new RailDeliveryPhase
+                .Select(phase => new FuseDeliveryPhase
                 {
                     Cost = phase.cost,
                     IndustryComponentId = phase.industryComponent != null ? phase.industryComponent.Identifier : null,
@@ -667,10 +667,10 @@ namespace RAIL.API
                 .ToArray();
         }
 
-        private static RailDelivery[] ToDeliveries(IEnumerable<Section.Delivery> deliveries)
+        private static FuseDelivery[] ToDeliveries(IEnumerable<Section.Delivery> deliveries)
         {
             return deliveries?.Where(delivery => delivery != null)
-                .Select(delivery => new RailDelivery
+                .Select(delivery => new FuseDelivery
                 {
                     CarTypeFilter = delivery.carTypeFilter.ToString(),
                     LoadId = delivery.load != null ? delivery.load.id : null,
@@ -682,7 +682,7 @@ namespace RAIL.API
 
         private static Section GetSection(string id)
         {
-            if (RailSectionRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseSectionRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Section)cached;
             }
@@ -694,7 +694,7 @@ namespace RAIL.API
 
         private static ProgressionIndustryComponent ResolveIndustryComponent(string id)
         {
-            if (!RailIndustryComponentRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (!FuseIndustryComponentRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 cached = UnityEngine.Object.FindObjectsOfType<IndustryComponent>().FirstOrDefault(component => component.Identifier == id);
             }
@@ -721,7 +721,7 @@ namespace RAIL.API
                 throw new InvalidOperationException($"Load '{loadId}' was not found.");
             }
 
-            RailLoadRuntimeIndex.Instance.Set(load.id, load);
+            FuseLoadRuntimeIndex.Instance.Set(load.id, load);
             return load;
         }
 

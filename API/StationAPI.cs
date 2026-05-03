@@ -5,15 +5,15 @@ using System.Reflection;
 using Helpers;
 using Model;
 using Model.Ops;
-using RAIL.Cache;
-using RAIL.Data;
-using RAIL.Infrastructure;
+using FUSE.Cache;
+using FUSE.Data;
+using FUSE.Infrastructure;
 using TMPro;
 using UI.Map;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class StationAPI
     {
@@ -29,7 +29,7 @@ namespace RAIL.API
         private static Sprite _stationIconSprite;
         private static Material _stationIconMaterial;
 
-        public static StationAgent AddStationAgent(string id, RailStation definition)
+        public static StationAgent AddStationAgent(string id, FuseStation definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -45,12 +45,12 @@ namespace RAIL.API
             var gameObject = new GameObject(id);
             gameObject.transform.SetParent(GetStationRoot(), false);
             var stationAgent = ApplyDefinition(gameObject, id, definition);
-            RailStationRuntimeIndex.Instance.Set(id, stationAgent);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Station, id, definition);
+            FuseStationRuntimeIndex.Instance.Set(id, stationAgent);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Station, id, definition);
             return stationAgent;
         }
 
-        public static void UpdateStationAgent(string id, RailStation definition)
+        public static void UpdateStationAgent(string id, FuseStation definition)
         {
             var agent = RequireStationAgent(id);
             if (definition == null)
@@ -59,8 +59,8 @@ namespace RAIL.API
             }
 
             ApplyDefinition(GetStationRootObject(agent, id), id, definition);
-            RailStationRuntimeIndex.Instance.Set(id, RequireStationAgent(id));
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Station, id, definition);
+            FuseStationRuntimeIndex.Instance.Set(id, RequireStationAgent(id));
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Station, id, definition);
         }
 
         public static void RemoveStationAgent(string id)
@@ -69,13 +69,13 @@ namespace RAIL.API
             var root = GetStationRootObject(agent, id);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
-            RailStationRuntimeIndex.Instance.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Station, id);
+            FuseStationRuntimeIndex.Instance.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.Station, id);
         }
 
         public static StationAgent GetStationAgent(string id)
         {
-            if (RailStationRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseStationRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (StationAgent)cached;
             }
@@ -102,12 +102,12 @@ namespace RAIL.API
             return PassengerStop.FindAll();
         }
 
-        public static RailStation GetStationDefinition(string id)
+        public static FuseStation GetStationDefinition(string id)
         {
             return GetDefinition(GetStationAgent(id));
         }
 
-        public static RailStation GetDefinition(StationAgent stationAgent)
+        public static FuseStation GetDefinition(StationAgent stationAgent)
         {
             if (stationAgent == null)
             {
@@ -115,8 +115,8 @@ namespace RAIL.API
             }
 
             var id = stationAgent.name;
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Station, id, out RailStation definition);
-            definition = definition ?? new RailStation();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Station, id, out FuseStation definition);
+            definition = definition ?? new FuseStation();
             var root = GetStationRootObject(stationAgent, id);
             definition.Position = root.transform.localPosition;
             definition.Rotation = root.transform.localEulerAngles;
@@ -130,12 +130,12 @@ namespace RAIL.API
             return definition;
         }
 
-        private static StationAgent ApplyDefinition(GameObject root, string id, RailStation definition)
+        private static StationAgent ApplyDefinition(GameObject root, string id, FuseStation definition)
         {
             root.transform.localPosition = definition.Position;
             root.transform.localRotation = Quaternion.Euler(definition.Rotation);
 
-            var prefab = RailPrefabResolver.Resolve(definition.Prefab);
+            var prefab = FusePrefabResolver.Resolve(definition.Prefab);
             if (prefab == null)
             {
                 throw new InvalidOperationException($"Station prefab '{definition.Prefab}' was not found.");
@@ -202,8 +202,8 @@ namespace RAIL.API
             root.SetActive(true);
             instance.SetActive(true);
             ConfigureMapIcons(instance, stop, root.transform, id, definition.Prefab);
-            RailPrefabSanitizer.SanitizeStation(instance, id, stationAgent, area, stop).Log($"RAIL station '{id}'");
-            RailPrefabSanitizer.ValidateStationPostBind(root, id, stationAgent, area, stop).Log($"RAIL station '{id}' post-bind");
+            FusePrefabSanitizer.SanitizeStation(instance, id, stationAgent, area, stop).Log($"FUSE station '{id}'");
+            FusePrefabSanitizer.ValidateStationPostBind(root, id, stationAgent, area, stop).Log($"FUSE station '{id}' post-bind");
             return stationAgent;
         }
 
@@ -226,12 +226,12 @@ namespace RAIL.API
             var icons = generated != null
                 ? new List<MapIcon> { generated }
                 : new List<MapIcon>();
-            RailLog.Info($"RAIL station '{id}' prefab '{prefab}' using generated schematic map icon at station prefab position.");
+            FuseLog.Info($"FUSE station '{id}' prefab '{prefab}' using generated schematic map icon at station prefab position.");
 
             var mapLayer = LayerMask.NameToLayer("Map");
             if (mapLayer < 0)
             {
-                RailLog.Warning($"RAIL station '{id}' map icon could not find Unity layer 'Map'; icon may render but map clicking may fail.");
+                FuseLog.Warning($"FUSE station '{id}' map icon could not find Unity layer 'Map'; icon may render but map clicking may fail.");
             }
 
             foreach (var icon in icons)
@@ -309,7 +309,7 @@ namespace RAIL.API
             }
             catch (Exception ex)
             {
-                RailLog.Warning($"RAIL station map icon could not calculate track-aligned rotation; using fixed rotation. {ex.Message}");
+                FuseLog.Warning($"FUSE station map icon could not calculate track-aligned rotation; using fixed rotation. {ex.Message}");
             }
 
             direction = Vector3.zero;
@@ -346,7 +346,7 @@ namespace RAIL.API
             }
             catch (Exception ex)
             {
-                RailLog.Warning($"RAIL station map icon could not calculate station-side graphic offset; using centered icon. {ex.Message}");
+                FuseLog.Warning($"FUSE station map icon could not calculate station-side graphic offset; using centered icon. {ex.Message}");
                 return Vector3.zero;
             }
         }
@@ -366,7 +366,7 @@ namespace RAIL.API
             }
             catch (Exception ex)
             {
-                RailLog.Warning($"RAIL could not place station map icon from station transform; using fallback. {ex.Message}");
+                FuseLog.Warning($"FUSE could not place station map icon from station transform; using fallback. {ex.Message}");
                 return stationRoot != null
                     ? stationRoot.position + Vector3.up * MapIconElevation
                     : Vector3.up * MapIconElevation;
@@ -420,7 +420,7 @@ namespace RAIL.API
             // render correctly through the map camera. Rebuilding from scratch
             // and only borrowing the sprite produces an invisible icon because
             // the default UI material does not render through the map view.
-            var iconObject = new GameObject("RAIL Station MapIcon", typeof(RectTransform));
+            var iconObject = new GameObject("FUSE Station MapIcon", typeof(RectTransform));
             iconObject.transform.SetParent(stationRoot, false);
             var canvas = iconObject.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.WorldSpace;
@@ -434,7 +434,7 @@ namespace RAIL.API
             CreateStationIconMesh(iconObject.transform, graphicOffset);
 
             AddMapIconCollider(iconObject, graphicOffset);
-            iconObject.name = $"RAIL Station MapIcon - {id}";
+            iconObject.name = $"FUSE Station MapIcon - {id}";
             return icon;
         }
 
@@ -458,7 +458,7 @@ namespace RAIL.API
                 clone.transform.localPosition = Vector3.zero;
                 clone.transform.localRotation = Quaternion.identity;
                 clone.transform.localScale = Vector3.one;
-                clone.name = $"RAIL Station MapIcon - {id}";
+                clone.name = $"FUSE Station MapIcon - {id}";
                 clone.SetActive(true);
 
                 var clonedIcon = clone.GetComponent<MapIcon>();
@@ -471,8 +471,8 @@ namespace RAIL.API
             }
             catch (Exception ex)
             {
-                RailLog.Warning(
-                    $"RAIL station map icon: failed to clone MapIcon for '{id}': {ex.Message}. " +
+                FuseLog.Warning(
+                    $"FUSE station map icon: failed to clone MapIcon for '{id}': {ex.Message}. " +
                     "Falling back to procedural construction.");
                 return null;
             }
@@ -580,7 +580,7 @@ namespace RAIL.API
             }
 
             var hierarchyName = GetHierarchyName(icon.transform);
-            return !hierarchyName.Contains("RAIL Station MapIcon") &&
+            return !hierarchyName.Contains("FUSE Station MapIcon") &&
                    !LooksLikeNonStationIconName(hierarchyName);
         }
 
@@ -663,7 +663,7 @@ namespace RAIL.API
 
             var mesh = new Mesh
             {
-                name = "RAIL Station MapIcon Mesh"
+                name = "FUSE Station MapIcon Mesh"
             };
             mesh.SetVertices(vertices);
             mesh.SetTriangles(triangles, 0);
@@ -703,13 +703,13 @@ namespace RAIL.API
             var shader = Shader.Find("Unlit/Color") ?? Shader.Find("Sprites/Default") ?? Shader.Find("UI/Default");
             if (shader == null)
             {
-                RailLog.Warning("RAIL station map icon: no compatible unlit shader was found; generated station icon may not render.");
+                FuseLog.Warning("FUSE station map icon: no compatible unlit shader was found; generated station icon may not render.");
                 return null;
             }
 
             _stationIconMaterial = new Material(shader)
             {
-                name = "RAIL Station MapIcon Material",
+                name = "FUSE Station MapIcon Material",
                 hideFlags = HideFlags.DontSave,
                 color = Color.white,
                 renderQueue = 3000
@@ -733,7 +733,7 @@ namespace RAIL.API
             var boxColliderType = Type.GetType("UnityEngine.BoxCollider, UnityEngine.PhysicsModule");
             if (boxColliderType == null)
             {
-                RailLog.Warning("RAIL station map icon click collider could not be created because UnityEngine.PhysicsModule was not available.");
+                FuseLog.Warning("FUSE station map icon click collider could not be created because UnityEngine.PhysicsModule was not available.");
                 return;
             }
 
@@ -749,24 +749,24 @@ namespace RAIL.API
                 return _stationIconSprite;
             }
 
-            // Prefer the game's built-in passenger-station map icon over RAIL's
+            // Prefer the game's built-in passenger-station map icon over FUSE's
             // procedural fallback. We locate any existing MapIcon in the scene
             // (skipping ones we created ourselves), lift the sprite off its child
-            // Image, cache it, and reuse it. Stations RAIL adds will then render
+            // Image, cache it, and reuse it. Stations FUSE adds will then render
             // visually identical to base-game stations.
             var found = TryFindGameStationIconSprite();
             if (found != null)
             {
                 _stationIconSprite = found;
-                RailLog.Info(
-                    $"RAIL station icon: bound to existing game sprite='{found.name ?? string.Empty}' " +
+                FuseLog.Info(
+                    $"FUSE station icon: bound to existing game sprite='{found.name ?? string.Empty}' " +
                     "operation='station map icon' message='reusing base-game MapIcon sprite'.");
                 return _stationIconSprite;
             }
 
-            RailLog.Warning(
-                "RAIL station icon: no base-game MapIcon sprite found at runtime; " +
-                "falling back to RAIL procedural sprite. Stations may not visually match base-game icons.");
+            FuseLog.Warning(
+                "FUSE station icon: no base-game MapIcon sprite found at runtime; " +
+                "falling back to FUSE procedural sprite. Stations may not visually match base-game icons.");
 
             const int size = 64;
             const float center = (size - 1) * 0.5f;
@@ -774,7 +774,7 @@ namespace RAIL.API
             const float innerRadius = 24f;
             var texture = new Texture2D(size, size, TextureFormat.ARGB32, false)
             {
-                name = "RAIL Station Icon",
+                name = "FUSE Station Icon",
                 filterMode = FilterMode.Bilinear,
                 wrapMode = TextureWrapMode.Clamp
             };
@@ -812,7 +812,7 @@ namespace RAIL.API
             texture.SetPixels32(pixels);
             texture.Apply(false, true);
             _stationIconSprite = Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), size);
-            _stationIconSprite.name = "RAIL Station Icon";
+            _stationIconSprite.name = "FUSE Station Icon";
             return _stationIconSprite;
         }
 
@@ -827,7 +827,7 @@ namespace RAIL.API
         ///   1. MapIcon nested under a PassengerStop in the active scene.
         ///   2. MapIcon under a StationAgent (rare, but covers some prefabs).
         ///   3. Any MapIcon whose owning GameObject name suggests a station.
-        ///   4. null → caller falls back to RAIL's procedural sprite.
+        ///   4. null → caller falls back to FUSE's procedural sprite.
         /// </summary>
         private static Sprite TryFindGameStationIconSprite()
         {
@@ -865,7 +865,7 @@ namespace RAIL.API
                     }
 
                     var name = icon.gameObject.name ?? string.Empty;
-                    if (name.StartsWith("RAIL Station MapIcon", StringComparison.Ordinal))
+                    if (name.StartsWith("FUSE Station MapIcon", StringComparison.Ordinal))
                     {
                         continue;
                     }
@@ -885,8 +885,8 @@ namespace RAIL.API
             }
             catch (Exception ex)
             {
-                RailLog.Warning(
-                    $"RAIL station icon: failed to scan for an existing MapIcon sprite: {ex.Message}. " +
+                FuseLog.Warning(
+                    $"FUSE station icon: failed to scan for an existing MapIcon sprite: {ex.Message}. " +
                     "Falling back to procedural sprite.");
                 return null;
             }
@@ -908,7 +908,7 @@ namespace RAIL.API
                 }
 
                 var name = icon.gameObject.name ?? string.Empty;
-                if (name.StartsWith("RAIL Station MapIcon", StringComparison.Ordinal))
+                if (name.StartsWith("FUSE Station MapIcon", StringComparison.Ordinal))
                 {
                     continue;
                 }

@@ -1,16 +1,16 @@
-# Legacy Migration Plan
+﻿# Legacy Migration Plan
 
-Goal: Convert legacy Railroader mod packages into Rail-native packages without copying legacy code or preserving legacy implementation structure. Legacy formats are input data only. Rail output should use Rail schema, Rail names, and Rail runtime APIs.
+Goal: Convert legacy Railroader mod packages into FUSE-native packages without copying legacy code or preserving legacy implementation structure. Legacy formats are input data only. FUSE output should use FUSE schema, FUSE names, and FUSE runtime APIs.
 
 ## Migration Principles
 
 1. Keep one converted file per source concern when possible.
 2. Preserve source object IDs when they are true game graph or scene IDs.
-3. Use Rail-native type names in output.
+3. Use FUSE-native type names in output.
 4. Keep legacy aliases only as compatibility input, not as new authoring style.
 5. Emit conversion warnings for skipped fields and manual-fix items.
 6. Validate converted packages before copying them to the live Mods folder.
-7. Test conversion in game with the Rail load report, not only by schema validation.
+7. Test conversion in game with the FUSE load report, not only by schema validation.
 
 ## Legacy Families
 
@@ -28,7 +28,7 @@ Typical inputs:
 - Turntables and roundhouses.
 - Passenger stations and passenger stop components.
 
-Rail target:
+FUSE target:
 
 - `tracks.nodes`, `tracks.segments`, `tracks.spans`, `tracks.areas`, `tracks.removals`.
 - `operations.loads`, `operations.industries`, `operations.loaders`, `operations.turntables`, `operations.stations`.
@@ -55,9 +55,9 @@ Typical inputs:
 - Horn, whistle, and bell loose-file packs.
 - Railroad crossing helpers.
 
-Rail target:
+FUSE target:
 
-- `world.splineys` with Rail type `road`, `terrainRoad`, `river`, `waterfall`, or `trestle`.
+- `world.splineys` with FUSE type `road`, `terrainRoad`, `river`, `waterfall`, or `trestle`.
 - `world.telegraphPoleMovements`.
 - `audio.whistles`, `audio.horns`, `audio.bells`.
 - `world.scenery` with optional `anchorSpanIds`.
@@ -66,10 +66,10 @@ High-risk items:
 
 - `FlowyThingBuilder` can mean road or river. Use style/profile to infer type.
 - Roads have material families such as dirt/pavement through style/profile. River is its own type.
-- Audio source files must be copied into the Rail package.
+- Audio source files must be copied into the FUSE package.
 - Prime mover audio is not covered by horn/whistle/bell conversion.
 
-### RailLoader / Asset Pack Style Mods
+### FuseLoader / Asset Pack Style Mods
 
 Typical inputs:
 
@@ -77,9 +77,9 @@ Typical inputs:
 - Data packages that depend on separate shared assets.
 - Map tile overlays.
 
-Rail target:
+FUSE target:
 
-- `Info.json` with `RailAssetPacks`.
+- `Info.json` with `FuseAssetPacks`.
 - `world.scenery.*.assetIdentifier`.
 - `world.mapTiles`.
 
@@ -87,11 +87,11 @@ High-risk items:
 
 - Asset identifier mismatches.
 - Asset pack load order.
-- Packages that contain rolling stock definitions Rail does not yet model.
+- Packages that contain rolling stock definitions FUSE does not yet model.
 
 ### Loose Scenery And Object Packs
 
-Rail target:
+FUSE target:
 
 - Asset-pack wrappers first.
 - Optional world examples that place one object from the pack.
@@ -105,57 +105,57 @@ High-risk items:
 
 Current status: PARTIAL / MISSING
 
-Rail supports horn, whistle, and bell audio packages. Rail does not yet provide a complete car/locomotive definition migration path or prime mover audio replacement schema.
+FUSE supports horn, whistle, and bell audio packages. FUSE does not yet provide a complete car/locomotive definition migration path or prime mover audio replacement schema.
 
 Migration rule for now:
 
-- Convert horn/whistle/bell packs with `tools/convert_rail_audio.py`.
-- Leave prime mover and full rolling stock packages in legacy stack until Rail has a dedicated design.
+- Convert horn/whistle/bell packs with `tools/convert_fuse_audio.py`.
+- Leave prime mover and full rolling stock packages in legacy stack until FUSE has a dedicated design.
 
 ## Standard Conversion Workflow
 
 1. Inventory the source package.
 2. Identify required legacy dependencies.
 3. Choose converter:
-   - Route/world JSON: `tools/rail_convert.py`.
-   - Horn/whistle/bell loose audio: `tools/convert_rail_audio.py`.
-   - Asset-pack-only package: wrapper package with `RailAssetPacks`.
-4. Convert into a new `.RAIL` folder.
-5. Preserve one Rail data file per source file unless the source file is empty.
-6. Validate JSON against `schemas/rail-mod.schema.json`.
-7. Load in game with only Rail and the converted package if possible.
-8. Check the Rail toast and `/rail.report`.
+   - Route/world JSON: `tools/fuse_convert.py`.
+   - Horn/whistle/bell loose audio: `tools/convert_fuse_audio.py`.
+   - Asset-pack-only package: wrapper package with `FuseAssetPacks`.
+4. Convert into a new `.FUSE` folder.
+5. Preserve one FUSE data file per source file unless the source file is empty.
+6. Validate JSON against `schemas/fuse-mod.schema.json`.
+7. Load in game with only FUSE and the converted package if possible.
+8. Check the FUSE toast and `/fuse.report`.
 9. Test in-game features.
 10. Save, exit to menu, reload, and retest.
-11. Remove the legacy dependency only after equivalent Rail behavior is verified.
+11. Remove the legacy dependency only after equivalent FUSE behavior is verified.
 
 ## Package Naming
 
 Recommended converted package folder:
 
 ```text
-Original.Mod.Id.RAIL/
+Original.Mod.Id.FUSE/
   Info.json
-  track.rail.json
-  industry.rail.json
-  scenery.rail.json
-  splineys.rail.json
+  track.fuse.json
+  industry.fuse.json
+  scenery.fuse.json
+  splineys.fuse.json
 ```
 
 `Info.json`:
 
 ```json
 {
-  "Id": "Original.Mod.Id.RAIL",
-  "DisplayName": "Original Mod Name (RAIL)",
-  "Requirements": ["RAIL"],
-  "LoadAfter": ["RAIL"],
-  "RailLoadPriority": 100,
-  "RailDataFiles": [
-    "loads.rail.json",
-    "game-graph.rail.json",
-    "industry.rail.json",
-    "scenery.rail.json"
+  "Id": "Original.Mod.Id.FUSE",
+  "DisplayName": "Original Mod Name (FUSE)",
+  "Requirements": ["FUSE"],
+  "LoadAfter": ["FUSE"],
+  "FuseLoadPriority": 100,
+  "FuseDataFiles": [
+    "loads.fuse.json",
+    "game-graph.fuse.json",
+    "industry.fuse.json",
+    "scenery.fuse.json"
   ]
 }
 ```
@@ -212,7 +212,7 @@ Passenger stations usually require both:
 - A passenger stop industry component.
 - A station agent entry bound to that passenger stop.
 
-Rail creates map icons for Rail-created stations. Validate icon location, scale, rotation, and click behavior in map view.
+FUSE creates map icons for FUSE-created stations. Validate icon location, scale, rotation, and click behavior in map view.
 
 ### Turntables
 
@@ -233,7 +233,7 @@ Set `legacyIdentifier` when converted track references legacy turntable helper I
 
 ## Acceptance Criteria For A Converted Legacy Route
 
-- Package loads without fatal Rail faults.
+- Package loads without fatal FUSE faults.
 - Track graph rebuild succeeds.
 - Route opens from a new game and from a saved game.
 - Areas and industries appear in correct order.
@@ -242,5 +242,6 @@ Set `legacyIdentifier` when converted track references legacy turntable helper I
 - Turntables and roundhouses render and function.
 - Roads, rivers, trestles, map masks, and scene clones appear.
 - Map tiles mount.
-- Rail report shows no unknown scenery assets unless intentionally accepted.
+- FUSE report shows no unknown scenery assets unless intentionally accepted.
 - Legacy mod dependency can be removed without missing type errors.
+

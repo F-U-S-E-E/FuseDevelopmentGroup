@@ -1,8 +1,8 @@
-# RAIL
+# FUSE
 
 Railroader API Integration Layer.
 
-RAIL is the Unity Mod Manager backend API for editor-first Railroader map modding. The first implementation phase establishes the mod package, schema model, serialization, validation primitives, cache base classes, and lifecycle events.
+FUSE is the Unity Mod Manager backend API for editor-first Railroader map modding. The first implementation phase establishes the mod package, schema model, serialization, validation primitives, cache base classes, and lifecycle events.
 
 Current runtime coverage includes:
 
@@ -14,7 +14,7 @@ Current runtime coverage includes:
 - scenery, splineys, map labels, circled speed-limit map signs, map masks, passenger stations, telegraph pole sets, scene clones, and map tile overlays
 - progression sections and map features
 
-Map tile packages can ship extra `tile_XXX_YYY.data` files inside a normal RAIL mod package and mount them with `world.mapTiles`. Those overlays are applied directly to Railroader's `MapStore`, so converted tile mods do not need to copy files into `StreamingAssets`.
+Map tile packages can ship extra `tile_XXX_YYY.data` files inside a normal FUSE mod package and mount them with `world.mapTiles`. Those overlays are applied directly to Railroader's `MapStore`, so converted tile mods do not need to copy files into `StreamingAssets`.
 
 ## Experimental Early Scene-Path Suppression
 
@@ -26,7 +26,7 @@ Map tile packages can ship extra `tile_XXX_YYY.data` files inside a normal RAIL 
 }
 ```
 
-When enabled in RAIL's `Info.json`, RAIL gates selected Unity async scene loads with `AsyncOperation.allowSceneActivation`, primes RAIL package definitions before activation, then suppresses requested base scene paths as early as Unity exposes them. This carries a non-zero risk of wedging a scene load. RAIL has a hard 8-second timeout and will release activation, disable additional gates for the session, and log loudly if the gate exceeds the timeout. If the Harmony patch fails to apply, scene-path suppression no-ops and normal loading continues; group and area suppression remain available.
+When enabled in FUSE's `Info.json`, FUSE gates selected Unity async scene loads with `AsyncOperation.allowSceneActivation`, primes FUSE package definitions before activation, then suppresses requested base scene paths as early as Unity exposes them. This carries a non-zero risk of wedging a scene load. FUSE has a hard 8-second timeout and will release activation, disable additional gates for the session, and log loudly if the gate exceeds the timeout. If the Harmony patch fails to apply, scene-path suppression no-ops and normal loading continues; group and area suppression remain available.
 
 ## Build
 
@@ -45,5 +45,5 @@ Copy `Local.Build.props.example` to `Local.Build.props` if your install path dif
 To build and deploy directly into Unity Mod Manager's mod folder:
 
 ```powershell
-dotnet build .\RAIL.csproj -c Release /p:EnableModDeploy=true
+dotnet build .\FUSE.csproj -c Release /p:EnableModDeploy=true
 ```

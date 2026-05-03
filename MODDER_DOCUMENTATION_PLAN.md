@@ -1,14 +1,14 @@
-# Modder Documentation Plan
+﻿# Modder Documentation Plan
 
-Goal: Make Rail usable by modders who do not already know the current codebase, the legacy stack, or the debugging history.
+Goal: Make FUSE usable by modders who do not already know the current codebase, the legacy stack, or the debugging history.
 
 ## Documentation Set
 
 | Document | Status | Priority | Audience | Purpose |
 | --- | --- | --- | --- | --- |
-| Quickstart: First Rail Data Package | MISSING | Critical | New Rail modders | Create a minimal UMM data package and see it load in game. |
-| Package Layout And `Info.json` | PARTIAL | Critical | All modders | Explain `RailDataFile`, `RailDataFiles`, `RailAssetPacks`, dependencies, disabled packages, and load priority. |
-| Schema Reference | PARTIAL | High | Data authors and tool authors | Expand `schemas/RAIL_JSON_SCHEMA.md` with all current fields and examples. |
+| Quickstart: First FUSE Data Package | MISSING | Critical | New FUSE modders | Create a minimal UMM data package and see it load in game. |
+| Package Layout And `Info.json` | PARTIAL | Critical | All modders | Explain `FuseDataFile`, `FuseDataFiles`, `FuseAssetPacks`, dependencies, disabled packages, and load priority. |
+| Schema Reference | PARTIAL | High | Data authors and tool authors | Expand `schemas/FUSE_JSON_SCHEMA.md` with all current fields and examples. |
 | Track Graph Authoring | MISSING | Critical | Route authors | Explain nodes, segments, spans, areas, groups, removals, and graph IDs. |
 | Span Authoring Diagrams | MISSING | Critical | Route authors | Explain upper/lower, Start/A, End/B, distance, normalized, and invalid crossings. |
 | Operations And Industries | MISSING | Critical | Route authors | Explain loads, industries, areas, component types, loaders, stations, and ordering. |
@@ -19,13 +19,13 @@ Goal: Make Rail usable by modders who do not already know the current codebase, 
 | World Suppression | PARTIAL | High | Route authors | Explain group, area, and experimental scene-path suppression with risks. |
 | Authoring/Editor API | MISSING | High | Tool authors | Explain authoring entities, editable attributes, registry, persistence, save, capture, and rebuild. |
 | Runtime API Reference | MISSING | High | C# mod authors | List public API methods, call timing, errors, and examples. |
-| Console Commands | MISSING | Medium | Users and testers | Explain `/rail.report`, `/rail.loaded`, `/rail.conflicts`, `/rail.patches`, `/rail.reapply`, `/rail.restore`, and related commands. |
+| Console Commands | MISSING | Medium | Users and testers | Explain `/fuse.report`, `/fuse.loaded`, `/fuse.conflicts`, `/fuse.patches`, `/fuse.reapply`, `/fuse.restore`, and related commands. |
 | Troubleshooting | MISSING | Critical | Everyone | Diagnose faulted packages, unknown assets, missing spans, dependency cycles, patch failures, and map-load reports. |
 | Legacy Migration Guide | PARTIAL | Critical | Legacy mod authors | Explain conversion steps, unsupported features, and manual fix points. |
 
 ## Recommended Writing Order
 
-1. Quickstart: First Rail Data Package.
+1. Quickstart: First FUSE Data Package.
 2. Package Layout And `Info.json`.
 3. Track Graph Authoring plus Span Authoring Diagrams.
 4. Operations And Industries.
@@ -59,7 +59,7 @@ Each example should be small enough to paste into a package and test.
 
 ### Track IDs
 
-Base-game removals must use actual graph IDs. Modders should not write friendly names like `Old Spur` or `Sold-siding` unless those are real graph IDs in the live graph. Rail-authored objects can use descriptive package-owned IDs.
+Base-game removals must use actual graph IDs. Modders should not write friendly names like `Old Spur` or `Sold-siding` unless those are real graph IDs in the live graph. FUSE-authored objects can use descriptive package-owned IDs.
 
 ### Spans
 
@@ -67,11 +67,11 @@ A span is not a siding name. It is two measured locations on one or more track s
 
 ### Legacy Names
 
-Docs should teach Rail-native names. Legacy names can be documented as converter input only:
+Docs should teach FUSE-native names. Legacy names can be documented as converter input only:
 
 - `AlinasMapMod.PaxStationComponent` -> `passengerStop`
 - Strange Customs `FlowyThingBuilder` -> `road` or `river` based on style/profile
-- Legacy `mandelas` -> Rail `world.sceneClones`
+- Legacy `mandelas` -> FUSE `world.sceneClones`
 
 ### Experimental Features
 
@@ -79,18 +79,18 @@ Docs must mark the following as experimental or alpha-risk:
 
 - Early scene-path suppression.
 - Runtime authoring mutations.
-- `/rail.reapply`.
-- `/rail.restore`.
+- `/fuse.reapply`.
+- `/fuse.restore`.
 
 ### Conversion Troubleshooting
 
 Every conversion guide should explain how to read:
 
 - The in-game map-load toast.
-- `/rail.report`.
-- `/rail.loaded`.
-- `/rail.conflicts`.
-- `Player.log` for stack traces only after the Rail report points at a package.
+- `/fuse.report`.
+- `/fuse.loaded`.
+- `/fuse.conflicts`.
+- `Player.log` for stack traces only after the FUSE report points at a package.
 
 ## Documentation Folder Proposal
 
@@ -112,7 +112,7 @@ docs/
   troubleshooting.md
   legacy-migration.md
 examples/
-  HelloRail/
+  HelloFuse/
   TrackBasics/
   IndustryBasics/
   WorldBasics/
@@ -122,8 +122,9 @@ examples/
 
 ## Definition Of Done For Public Alpha Docs
 
-- A new modder can install Rail, copy an example package, and see an object in game.
+- A new modder can install FUSE, copy an example package, and see an object in game.
 - A route author can understand spans without reading C#.
 - A converter user can tell whether a problem is a schema error, runtime missing asset, dependency issue, or unsupported legacy feature.
 - A C# modder can tell which APIs are stable and when to call them.
 - Known unsupported legacy features are named directly.
+

@@ -4,17 +4,17 @@ using System.Linq;
 using Model.Definition.Data;
 using Model;
 using Model.Ops.Definition;
-using RAIL.Cache;
-using RAIL.Data;
+using FUSE.Cache;
+using FUSE.Data;
 using UnityEngine;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class LoadAPI
     {
         public static Load GetLoad(string id)
         {
-            if (RailLoadRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseLoadRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Load)cached;
             }
@@ -22,7 +22,7 @@ namespace RAIL.API
             var load = !string.IsNullOrWhiteSpace(id) ? CarPrototypeLibrary.instance?.LoadForId(id) : null;
             if (load != null)
             {
-                RailLoadRuntimeIndex.Instance.Set(load.id, load);
+                FuseLoadRuntimeIndex.Instance.Set(load.id, load);
             }
 
             return load;
@@ -33,7 +33,7 @@ namespace RAIL.API
             return CarPrototypeLibrary.instance?.opsLoads?.Where(load => load != null) ?? Enumerable.Empty<Load>();
         }
 
-        public static Load AddLoad(string id, RailLoad definition)
+        public static Load AddLoad(string id, FuseLoad definition)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -56,12 +56,12 @@ namespace RAIL.API
                 library.opsLoads = currentLoads.Concat(new[] { load }).ToArray();
             }
 
-            RailLoadRuntimeIndex.Instance.Set(load.id, load);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Load, id, definition);
+            FuseLoadRuntimeIndex.Instance.Set(load.id, load);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Load, id, definition);
             return load;
         }
 
-        public static Load UpdateLoad(string id, RailLoad definition)
+        public static Load UpdateLoad(string id, FuseLoad definition)
         {
             return AddLoad(id, definition);
         }
@@ -81,24 +81,24 @@ namespace RAIL.API
                     .ToArray();
             }
 
-            RailLoadRuntimeIndex.Instance.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Load, id);
+            FuseLoadRuntimeIndex.Instance.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.Load, id);
         }
 
-        public static RailLoad GetLoadDefinition(string id)
+        public static FuseLoad GetLoadDefinition(string id)
         {
             return GetDefinition(GetLoad(id));
         }
 
-        public static RailLoad GetDefinition(Load load)
+        public static FuseLoad GetDefinition(Load load)
         {
             if (load == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Load, load.id, out RailLoad definition);
-            definition = definition ?? new RailLoad();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Load, load.id, out FuseLoad definition);
+            definition = definition ?? new FuseLoad();
             definition.Name = load.description;
             definition.Units = load.units.ToString();
             definition.Density = load.density;
@@ -109,7 +109,7 @@ namespace RAIL.API
             return definition;
         }
 
-        private static void ApplyDefinition(Load load, RailLoad definition)
+        private static void ApplyDefinition(Load load, FuseLoad definition)
         {
             if (load == null)
             {

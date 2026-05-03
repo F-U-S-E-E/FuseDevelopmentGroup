@@ -3,15 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using Helpers;
 using KeyValue.Runtime;
-using RAIL.Data;
-using RAIL.Infrastructure;
+using FUSE.Data;
+using FUSE.Infrastructure;
 using UnityEngine;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class SceneCloneAPI
     {
-        public static GameObject AddSceneClone(string id, RailSceneClone definition)
+        public static GameObject AddSceneClone(string id, FuseSceneClone definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -27,7 +27,7 @@ namespace RAIL.API
             return ApplyDefinition(id, definition);
         }
 
-        public static void UpdateSceneClone(string id, RailSceneClone definition)
+        public static void UpdateSceneClone(string id, FuseSceneClone definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -51,15 +51,15 @@ namespace RAIL.API
             var root = FindRemovableSceneClone(id);
             if (root == null)
             {
-                RailLog.Warning($"RAIL world removal skipped missing scene clone '{id}'.");
+                FuseLog.Warning($"FUSE world removal skipped missing scene clone '{id}'.");
                 return false;
             }
 
             var path = GetTransformPath(root.transform);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.SceneClone, id);
-            RailLog.Info($"RAIL removed scene clone '{id}' from '{path}'.");
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.SceneClone, id);
+            FuseLog.Info($"FUSE removed scene clone '{id}' from '{path}'.");
             return true;
         }
 
@@ -70,27 +70,27 @@ namespace RAIL.API
                 return null;
             }
 
-            return UnityEngine.Object.FindObjectsOfType<RailSceneCloneMarker>(true)
+            return UnityEngine.Object.FindObjectsOfType<FuseSceneCloneMarker>(true)
                 .FirstOrDefault(marker => string.Equals(marker.Id, id, StringComparison.OrdinalIgnoreCase))
                 ?.gameObject;
         }
 
-        public static RailSceneClone GetSceneCloneDefinition(string id)
+        public static FuseSceneClone GetSceneCloneDefinition(string id)
         {
             return GetDefinition(GetSceneClone(id));
         }
 
-        public static RailSceneClone GetDefinition(GameObject sceneClone)
+        public static FuseSceneClone GetDefinition(GameObject sceneClone)
         {
             if (sceneClone == null)
             {
                 return null;
             }
 
-            var marker = sceneClone.GetComponent<RailSceneCloneMarker>();
+            var marker = sceneClone.GetComponent<FuseSceneCloneMarker>();
             var id = marker != null ? marker.Id : sceneClone.name;
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.SceneClone, id, out RailSceneClone definition);
-            definition = definition ?? new RailSceneClone();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.SceneClone, id, out FuseSceneClone definition);
+            definition = definition ?? new FuseSceneClone();
             definition.TargetPath = !string.IsNullOrWhiteSpace(marker?.TargetPath) ? marker.TargetPath : GetTransformPath(sceneClone.transform);
             definition.Enabled = sceneClone.activeSelf;
             definition.LocalPosition = sceneClone.transform.localPosition;
@@ -106,17 +106,17 @@ namespace RAIL.API
                 return null;
             }
 
-            return GetSceneClone(id) ?? RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
+            return GetSceneClone(id) ?? FusePrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
         }
 
-        private static GameObject ApplyDefinition(string id, RailSceneClone definition)
+        private static GameObject ApplyDefinition(string id, FuseSceneClone definition)
         {
             if (string.IsNullOrWhiteSpace(definition.TargetPath))
             {
                 throw new InvalidOperationException($"Scene clone '{id}' is missing a target path.");
             }
 
-            var existing = RailPrefabResolver.ResolveScenePath(definition.TargetPath);
+            var existing = FusePrefabResolver.ResolveScenePath(definition.TargetPath);
             GameObject targetObject;
             var clonedFromSource = !string.IsNullOrWhiteSpace(definition.Source);
             if (clonedFromSource)
@@ -127,7 +127,7 @@ namespace RAIL.API
                 }
 
                 var parent = EnsureTargetParent(definition.TargetPath, out var targetName);
-                var source = RailPrefabResolver.Resolve(definition.Source);
+                var source = FusePrefabResolver.Resolve(definition.Source);
                 if (source == null)
                 {
                     throw new InvalidOperationException($"Scene clone '{id}' source '{definition.Source}' could not be resolved.");
@@ -156,7 +156,7 @@ namespace RAIL.API
                 }
             }
 
-            var marker = targetObject.GetComponent<RailSceneCloneMarker>() ?? targetObject.AddComponent<RailSceneCloneMarker>();
+            var marker = targetObject.GetComponent<FuseSceneCloneMarker>() ?? targetObject.AddComponent<FuseSceneCloneMarker>();
             marker.Id = id;
             marker.TargetPath = definition.TargetPath;
 
@@ -191,12 +191,12 @@ namespace RAIL.API
 
             if (clonedFromSource)
             {
-                RailPrefabSanitizer.SanitizeSceneClone(targetObject, id).Log($"RAIL scene clone '{id}'");
+                FusePrefabSanitizer.SanitizeSceneClone(targetObject, id).Log($"FUSE scene clone '{id}'");
             }
 
-            RailPrefabSanitizer.ValidateSceneClonePostBind(targetObject, id).Log($"RAIL scene clone '{id}' post-bind");
-            RailLog.Info($"RAIL scene clone '{id}' materialized at {targetObject.transform.position}; {DescribeRendererState(targetObject)}.");
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.SceneClone, id, definition);
+            FusePrefabSanitizer.ValidateSceneClonePostBind(targetObject, id).Log($"FUSE scene clone '{id}' post-bind");
+            FuseLog.Info($"FUSE scene clone '{id}' materialized at {targetObject.transform.position}; {DescribeRendererState(targetObject)}.");
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.SceneClone, id, definition);
             return targetObject;
         }
 
@@ -208,7 +208,7 @@ namespace RAIL.API
                 throw new InvalidOperationException($"Target path '{targetPath}' must include a root object and a child path.");
             }
 
-            var root = RailPrefabResolver.ResolveScenePath(segments[0]);
+            var root = FusePrefabResolver.ResolveScenePath(segments[0]);
             if (root == null)
             {
                 throw new InvalidOperationException($"Target root '{segments[0]}' for scene clone path '{targetPath}' was not found.");
@@ -329,7 +329,7 @@ namespace RAIL.API
 
             if (lodGroups.Length > 0)
             {
-                RailLog.Info($"RAIL scene clone '{id}' forced LOD0 on {lodGroups.Length} LOD group(s).");
+                FuseLog.Info($"FUSE scene clone '{id}' forced LOD0 on {lodGroups.Length} LOD group(s).");
             }
         }
 
@@ -399,7 +399,7 @@ namespace RAIL.API
             }
         }
 
-        private sealed class RailSceneCloneMarker : MonoBehaviour
+        private sealed class FuseSceneCloneMarker : MonoBehaviour
         {
             public string Id;
             public string TargetPath;

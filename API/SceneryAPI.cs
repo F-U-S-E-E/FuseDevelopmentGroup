@@ -3,19 +3,19 @@ using System.Collections.Generic;
 using System.Linq;
 using Helpers;
 using Model.Definition.Data;
-using RAIL.Cache;
-using RAIL.Data;
-using RAIL.Infrastructure;
+using FUSE.Cache;
+using FUSE.Data;
+using FUSE.Infrastructure;
 using Track;
 using UnityEngine;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class SceneryAPI
     {
         private static Transform _fallbackRoot;
 
-        public static SceneryAssetInstance AddScenery(string id, RailScenery definition)
+        public static SceneryAssetInstance AddScenery(string id, FuseScenery definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -31,8 +31,8 @@ namespace RAIL.API
             string assetIdentifier;
             if (!TryResolveAssetIdentifier(id, definition, out assetIdentifier))
             {
-                RailLog.Warning(
-                    $"RAIL skipped AddScenery '{id}' because no valid asset identifier could be resolved " +
+                FuseLog.Warning(
+                    $"FUSE skipped AddScenery '{id}' because no valid asset identifier could be resolved " +
                     $"(AssetIdentifier='{definition.AssetIdentifier ?? string.Empty}', Model='{definition.Model ?? string.Empty}').");
                 return null;
             }
@@ -45,12 +45,12 @@ namespace RAIL.API
             ApplyDefinition(scenery, definition, assetIdentifier);
 
             gameObject.SetActive(true);
-            RailSceneryRuntimeIndex.Instance.Set(id, scenery);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Scenery, id, definition);
+            FuseSceneryRuntimeIndex.Instance.Set(id, scenery);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Scenery, id, definition);
             return scenery;
         }
 
-        public static void UpdateScenery(string id, RailScenery definition)
+        public static void UpdateScenery(string id, FuseScenery definition)
         {
             var scenery = RequireScenery(id);
             if (definition == null)
@@ -61,8 +61,8 @@ namespace RAIL.API
             string assetIdentifier;
             if (!TryResolveAssetIdentifier(id, definition, out assetIdentifier))
             {
-                RailLog.Warning(
-                    $"RAIL skipped UpdateScenery '{id}' because no valid asset identifier could be resolved " +
+                FuseLog.Warning(
+                    $"FUSE skipped UpdateScenery '{id}' because no valid asset identifier could be resolved " +
                     $"(AssetIdentifier='{definition.AssetIdentifier ?? string.Empty}', Model='{definition.Model ?? string.Empty}'). " +
                     "Refusing to call SceneryAssetInstance.ReloadComponents with an unknown identifier.");
                 return;
@@ -75,8 +75,8 @@ namespace RAIL.API
                 scenery.ReloadComponents();
             }
 
-            RailSceneryRuntimeIndex.Instance.Set(id, scenery);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Scenery, id, definition);
+            FuseSceneryRuntimeIndex.Instance.Set(id, scenery);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Scenery, id, definition);
         }
 
         public static void RemoveScenery(string id)
@@ -92,22 +92,22 @@ namespace RAIL.API
             var root = FindRemovableSceneryObject(id);
             if (root == null)
             {
-                RailLog.Warning($"RAIL world removal skipped missing scenery '{id}'.");
+                FuseLog.Warning($"FUSE world removal skipped missing scenery '{id}'.");
                 return false;
             }
 
             var path = GetTransformPath(root.transform);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
-            RailSceneryRuntimeIndex.Instance.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Scenery, id);
-            RailLog.Info($"RAIL removed scenery '{id}' from '{path}'.");
+            FuseSceneryRuntimeIndex.Instance.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.Scenery, id);
+            FuseLog.Info($"FUSE removed scenery '{id}' from '{path}'.");
             return true;
         }
 
         public static SceneryAssetInstance GetScenery(string id)
         {
-            if (RailSceneryRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseSceneryRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (SceneryAssetInstance)cached;
             }
@@ -127,20 +127,20 @@ namespace RAIL.API
             return SceneryAssetManager.Shared?.GetSceneryDefinitionIdentifiers() ?? Enumerable.Empty<string>();
         }
 
-        public static RailScenery GetSceneryDefinition(string id)
+        public static FuseScenery GetSceneryDefinition(string id)
         {
             return GetDefinition(GetScenery(id));
         }
 
-        public static RailScenery GetDefinition(SceneryAssetInstance scenery)
+        public static FuseScenery GetDefinition(SceneryAssetInstance scenery)
         {
             if (scenery == null)
             {
                 return null;
             }
 
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Scenery, scenery.name, out RailScenery definition);
-            definition = definition ?? new RailScenery();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Scenery, scenery.name, out FuseScenery definition);
+            definition = definition ?? new FuseScenery();
             // scenery.identifier is the asset identifier, never the display name.
             definition.AssetIdentifier = scenery.identifier;
             if (string.IsNullOrWhiteSpace(definition.Model))
@@ -160,7 +160,7 @@ namespace RAIL.API
         /// Returns false if no identifier can be resolved against the active
         /// SceneryAssetManager registry; callers must skip rather than throw.
         /// </summary>
-        public static bool TryResolveAssetIdentifier(string sceneryId, RailScenery definition, out string assetIdentifier)
+        public static bool TryResolveAssetIdentifier(string sceneryId, FuseScenery definition, out string assetIdentifier)
         {
             assetIdentifier = null;
             if (definition == null)
@@ -214,7 +214,7 @@ namespace RAIL.API
             }
             catch (Exception ex)
             {
-                RailLog.Warning($"RAIL scenery asset direct lookup failed for '{candidate}': {ex.Message}");
+                FuseLog.Warning($"FUSE scenery asset direct lookup failed for '{candidate}': {ex.Message}");
             }
 
             IEnumerable<string> known;
@@ -224,7 +224,7 @@ namespace RAIL.API
             }
             catch (Exception ex)
             {
-                RailLog.Warning($"RAIL scenery asset registry enumeration failed while resolving '{candidate}': {ex.Message}");
+                FuseLog.Warning($"FUSE scenery asset registry enumeration failed while resolving '{candidate}': {ex.Message}");
                 return false;
             }
 
@@ -251,7 +251,7 @@ namespace RAIL.API
             return false;
         }
 
-        private static void ApplyDefinition(SceneryAssetInstance scenery, RailScenery definition, string assetIdentifier)
+        private static void ApplyDefinition(SceneryAssetInstance scenery, FuseScenery definition, string assetIdentifier)
         {
             // Only the validated asset identifier ever reaches scenery.identifier /
             // SceneryAssetManager.LoadScenery. Display names are kept on the definition.
@@ -272,7 +272,7 @@ namespace RAIL.API
             scenery.transform.localScale = definition.Scale == default ? Vector3.one : definition.Scale;
         }
 
-        private static bool TryResolveSpanAnchor(RailScenery definition, out Vector3 position, out Quaternion rotation)
+        private static bool TryResolveSpanAnchor(FuseScenery definition, out Vector3 position, out Quaternion rotation)
         {
             position = default;
             rotation = default;
@@ -294,14 +294,14 @@ namespace RAIL.API
                 var span = TrackAPI.GetSpan(spanId);
                 if (span == null)
                 {
-                    RailLog.Warning($"RAIL span-anchored scenery skipped missing span '{spanId}'.");
+                    FuseLog.Warning($"FUSE span-anchored scenery skipped missing span '{spanId}'.");
                     continue;
                 }
 
                 var spanPoints = span.GetPoints()?.ToArray();
                 if (spanPoints == null || spanPoints.Length == 0)
                 {
-                    RailLog.Warning($"RAIL span-anchored scenery skipped span '{spanId}' because it has no points.");
+                    FuseLog.Warning($"FUSE span-anchored scenery skipped span '{spanId}' because it has no points.");
                     continue;
                 }
 
@@ -388,7 +388,7 @@ namespace RAIL.API
                 return scenery.gameObject;
             }
 
-            return RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
+            return FusePrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
         }
 
         private static string GetTransformPath(Transform transform)
@@ -424,7 +424,7 @@ namespace RAIL.API
 
             if (_fallbackRoot == null)
             {
-                _fallbackRoot = new GameObject("RAIL Scenery").transform;
+                _fallbackRoot = new GameObject("FUSE Scenery").transform;
                 UnityEngine.Object.DontDestroyOnLoad(_fallbackRoot.gameObject);
             }
 

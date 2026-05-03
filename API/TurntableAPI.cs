@@ -3,14 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using KeyValue.Runtime;
-using RAIL.Cache;
-using RAIL.Data;
-using RAIL.Infrastructure;
+using FUSE.Cache;
+using FUSE.Data;
+using FUSE.Infrastructure;
 using RollingStock.Controls;
 using Track;
 using UnityEngine;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class TurntableAPI
     {
@@ -28,7 +28,7 @@ namespace RAIL.API
 
         public static Turntable GetTurntable(string id)
         {
-            if (RailTurntableRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseTurntableRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Turntable)cached;
             }
@@ -45,12 +45,12 @@ namespace RAIL.API
             return UnityEngine.Object.FindObjectsOfType<Turntable>();
         }
 
-        public static RailTurntable GetTurntableDefinition(string id)
+        public static FuseTurntable GetTurntableDefinition(string id)
         {
             return GetDefinition(GetTurntable(id));
         }
 
-        public static RailTurntable GetDefinition(Turntable turntable)
+        public static FuseTurntable GetDefinition(Turntable turntable)
         {
             if (turntable == null)
             {
@@ -58,8 +58,8 @@ namespace RAIL.API
             }
 
             var id = GetDefinitionTurntableId(turntable);
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Turntable, id, out RailTurntable definition);
-            definition = definition ?? new RailTurntable();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Turntable, id, out FuseTurntable definition);
+            definition = definition ?? new FuseTurntable();
             definition.Position = turntable.transform.localPosition;
             definition.Rotation = turntable.transform.localEulerAngles;
             definition.Radius = turntable.radius;
@@ -67,7 +67,7 @@ namespace RAIL.API
             return definition;
         }
 
-        public static Turntable AddTurntable(string id, RailTurntable definition)
+        public static Turntable AddTurntable(string id, FuseTurntable definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -94,7 +94,7 @@ namespace RAIL.API
             ClearBridgeGroup(turntable);
 
             List<TrackNode> pitNodes;
-            using (RailApiPersistence.SuppressRecording())
+            using (FuseApiPersistence.SuppressRecording())
             {
                 pitNodes = CreateOrUpdatePitNodes(turntable, definition);
                 CreateOrUpdateRoundhouseTracks(turntable, definition);
@@ -110,12 +110,12 @@ namespace RAIL.API
 
             root.SetActive(true);
             RefreshTurntableTemplateVisuals(root);
-            RailPrefabSanitizer.SanitizeTurntable(root, id, turntable).Log($"RAIL turntable '{id}'");
-            RailTurntableRuntimeIndex.Instance.Set(id, turntable);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Turntable, id, definition);
-            RailPrefabSanitizer.ValidateTurntablePostBind(root, id, turntable).Log($"RAIL turntable '{id}' post-bind");
-            RailNodeRuntimeIndex.Instance.Rebuild();
-            RailSegmentRuntimeIndex.Instance.Rebuild();
+            FusePrefabSanitizer.SanitizeTurntable(root, id, turntable).Log($"FUSE turntable '{id}'");
+            FuseTurntableRuntimeIndex.Instance.Set(id, turntable);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Turntable, id, definition);
+            FusePrefabSanitizer.ValidateTurntablePostBind(root, id, turntable).Log($"FUSE turntable '{id}' post-bind");
+            FuseNodeRuntimeIndex.Instance.Rebuild();
+            FuseSegmentRuntimeIndex.Instance.Rebuild();
             InvalidateTurntableControllerCache();
             if (!TrackAPI.IsBatching)
             {
@@ -125,7 +125,7 @@ namespace RAIL.API
             return turntable;
         }
 
-        public static void UpdateTurntable(string id, RailTurntable definition)
+        public static void UpdateTurntable(string id, FuseTurntable definition)
         {
             var turntable = RequireTurntable(id);
             if (definition == null)
@@ -146,7 +146,7 @@ namespace RAIL.API
             }
 
             List<TrackNode> pitNodes;
-            using (RailApiPersistence.SuppressRecording())
+            using (FuseApiPersistence.SuppressRecording())
             {
                 pitNodes = CreateOrUpdatePitNodes(turntable, definition);
                 CreateOrUpdateRoundhouseTracks(turntable, definition);
@@ -159,13 +159,13 @@ namespace RAIL.API
             turntable.UpdateSegmentIndex(false);
             ClearBridgeGroup(turntable);
             RefreshTurntableTemplateVisuals(turntable.gameObject);
-            RailPrefabSanitizer.SanitizeTurntable(turntable.gameObject, id, turntable).Log($"RAIL turntable '{id}'");
+            FusePrefabSanitizer.SanitizeTurntable(turntable.gameObject, id, turntable).Log($"FUSE turntable '{id}'");
 
-            RailTurntableRuntimeIndex.Instance.Set(id, turntable);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Turntable, id, definition);
-            RailPrefabSanitizer.ValidateTurntablePostBind(turntable.gameObject, id, turntable).Log($"RAIL turntable '{id}' post-bind");
-            RailNodeRuntimeIndex.Instance.Rebuild();
-            RailSegmentRuntimeIndex.Instance.Rebuild();
+            FuseTurntableRuntimeIndex.Instance.Set(id, turntable);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Turntable, id, definition);
+            FusePrefabSanitizer.ValidateTurntablePostBind(turntable.gameObject, id, turntable).Log($"FUSE turntable '{id}' post-bind");
+            FuseNodeRuntimeIndex.Instance.Rebuild();
+            FuseSegmentRuntimeIndex.Instance.Rebuild();
             InvalidateTurntableControllerCache();
             if (!TrackAPI.IsBatching)
             {
@@ -204,8 +204,8 @@ namespace RAIL.API
 
                 turntable.gameObject.SetActive(false);
                 UnityEngine.Object.Destroy(turntable.gameObject);
-                RailTurntableRuntimeIndex.Instance.Remove(id);
-                RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Turntable, id);
+                FuseTurntableRuntimeIndex.Instance.Remove(id);
+                FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.Turntable, id);
             }
             finally
             {
@@ -218,7 +218,7 @@ namespace RAIL.API
             return $"{turntableId}.pit.{index:D2}";
         }
 
-        private static List<TrackNode> CreateOrUpdatePitNodes(Turntable turntable, RailTurntable definition)
+        private static List<TrackNode> CreateOrUpdatePitNodes(Turntable turntable, FuseTurntable definition)
         {
             var nodes = new List<TrackNode>(turntable.subdivisions);
             var rootRotation = turntable.transform.localRotation;
@@ -254,7 +254,7 @@ namespace RAIL.API
             return nodes;
         }
 
-        private static void CreateOrUpdateRoundhouseTracks(Turntable turntable, RailTurntable definition)
+        private static void CreateOrUpdateRoundhouseTracks(Turntable turntable, FuseTurntable definition)
         {
             var roundhouse = definition.Roundhouse;
             if (roundhouse == null || roundhouse.Stalls <= 0)
@@ -327,7 +327,7 @@ namespace RAIL.API
                 existing.enabled = true;
                 existing.turntable = turntable;
                 existing.gameObject.SetActive(true);
-                RailLog.Info($"RAIL turntable '{turntable.id}' refreshed visual template at {existing.transform.position}; {DescribeRendererState(existing.gameObject)}.");
+                FuseLog.Info($"FUSE turntable '{turntable.id}' refreshed visual template at {existing.transform.position}; {DescribeRendererState(existing.gameObject)}.");
                 return;
             }
 
@@ -351,7 +351,7 @@ namespace RAIL.API
 
             ActivatePrimaryVisualRenderers(instance);
             instance.SetActive(true);
-            RailLog.Info($"RAIL turntable '{turntable.id}' cloned visual template '{template.name}' at {instance.transform.position}; {DescribeRendererState(instance)}.");
+            FuseLog.Info($"FUSE turntable '{turntable.id}' cloned visual template '{template.name}' at {instance.transform.position}; {DescribeRendererState(instance)}.");
         }
 
         private static void RefreshTurntableTemplateVisuals(GameObject root)
@@ -590,7 +590,7 @@ namespace RAIL.API
             }
         }
 
-        private static void ConfigureRoundhouse(GameObject root, RailTurntable definition)
+        private static void ConfigureRoundhouse(GameObject root, FuseTurntable definition)
         {
             var existing = root.transform.Find("Roundhouse");
             if (existing != null)
@@ -619,9 +619,9 @@ namespace RAIL.API
             global.globalObjectId = GetDefinitionTurntableId(root) + ".roundhouse";
 
             var angleStep = 360f / Mathf.Max(definition.Subdivisions, 1);
-            var startPrefab = RailPrefabResolver.Resolve(roundhouse.StartPrefab ?? "vanilla://roundhouseStart");
-            var endPrefab = RailPrefabResolver.Resolve(roundhouse.EndPrefab ?? "vanilla://roundhouseEnd");
-            var stallPrefab = RailPrefabResolver.Resolve(roundhouse.StallPrefab ?? "vanilla://roundhouseStall");
+            var startPrefab = FusePrefabResolver.Resolve(roundhouse.StartPrefab ?? "vanilla://roundhouseStart");
+            var endPrefab = FusePrefabResolver.Resolve(roundhouse.EndPrefab ?? "vanilla://roundhouseEnd");
+            var stallPrefab = FusePrefabResolver.Resolve(roundhouse.StallPrefab ?? "vanilla://roundhouseStall");
 
             if (roundhouse.Stalls < definition.Subdivisions)
             {
@@ -778,7 +778,7 @@ namespace RAIL.API
                 : definitionTurntableId + ".turntable";
         }
 
-        internal static string GetPitNodeId(string turntableId, int index, RailTurntable definition)
+        internal static string GetPitNodeId(string turntableId, int index, FuseTurntable definition)
         {
             var legacyIdentifier = definition?.LegacyIdentifier;
             if (!string.IsNullOrWhiteSpace(legacyIdentifier))
@@ -789,7 +789,7 @@ namespace RAIL.API
             return GetPitNodeId(turntableId, index);
         }
 
-        internal static string GetRoundhouseNodeId(string turntableId, int index, RailTurntable definition)
+        internal static string GetRoundhouseNodeId(string turntableId, int index, FuseTurntable definition)
         {
             var legacyIdentifier = definition?.LegacyIdentifier;
             if (!string.IsNullOrWhiteSpace(legacyIdentifier))
@@ -800,7 +800,7 @@ namespace RAIL.API
             return $"{turntableId}.roundhouse.node.{index:D2}";
         }
 
-        internal static string GetRoundhouseSegmentId(string turntableId, int index, RailTurntable definition)
+        internal static string GetRoundhouseSegmentId(string turntableId, int index, FuseTurntable definition)
         {
             var legacyIdentifier = definition?.LegacyIdentifier;
             if (!string.IsNullOrWhiteSpace(legacyIdentifier))

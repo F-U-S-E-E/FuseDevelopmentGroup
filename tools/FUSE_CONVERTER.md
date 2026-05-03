@@ -1,0 +1,134 @@
+# FUSE Converter
+
+Official drag-and-drop converter for legacy Railroader data mods.
+
+## Quick Use
+
+Drag any of these onto `ConvertToFUSE.cmd` at the repo root:
+
+- a legacy route / track mod folder
+- a legacy route / track mod `.zip`
+- a legacy horn / whistle / bell folder or `.zip`
+- a legacy asset-pack folder or `.zip`
+- a single legacy JSON data file
+
+`ConvertToFUSE.cmd` launches the official FUSE converter.
+
+The repository also includes the FUSE converter icon at:
+
+`tools/assets/fuse_converter.ico`
+
+## Building The EXE
+
+Run:
+
+```powershell
+.\BuildFUSEConverterExe.cmd -InstallPyInstaller
+```
+
+That builds:
+
+`dist/FUSE-Converter.exe`
+
+The generated exe uses the FUSE logo from `tools/assets/fuse_converter.ico`.
+If PyInstaller is already installed, you can omit `-InstallPyInstaller`.
+
+By default the converter writes to:
+
+`C:\Steam\steamapps\common\Railroader\Mods`
+
+If that folder does not exist, it writes to `converted` under the current working directory.
+
+## Command Line
+
+```powershell
+python tools\fuse_converter.py "C:\Path\To\LegacyMod" --out "C:\Steam\steamapps\common\Railroader\Mods" --clean
+```
+
+## Linux / Folder Batch Mode
+
+For Linux or anyone who wants to convert a whole folder at once:
+
+```bash
+python3 tools/fuse_converter.py --batch "/path/to/legacy-mod-folder"
+```
+
+That scans the immediate children of the folder and writes output to:
+
+`/path/to/legacy-mod-folder/FUSEConverted`
+
+You can also use the repo-root helper:
+
+```bash
+python3 FUSEConvertFolder.py "/path/to/legacy-mod-folder"
+```
+
+To build a single portable Python archive:
+
+```bash
+python3 tools/build_folder_converter_pyz.py
+```
+
+That creates:
+
+`dist/FUSEConvertFolder.pyz`
+
+Drop `FUSEConvertFolder.pyz` into a folder of legacy mods and run:
+
+```bash
+python3 FUSEConvertFolder.pyz
+```
+
+It converts every recognized child folder, zip, and data JSON into
+`FUSEConverted`.
+
+Useful options:
+
+| Option | Meaning |
+| --- | --- |
+| `--out <folder>` | Output root for generated `.FUSE` folders. |
+| `--clean` | Replace an existing generated `.FUSE` output folder under the output root. |
+| `--kind route` | Force route/track/data conversion. |
+| `--kind audio` | Force horn/whistle/bell conversion. |
+| `--kind asset` | Force asset-pack wrapper conversion. |
+| `--batch` | Convert every recognized child item in the input folder. |
+
+## Outputs
+
+Each converted package gets:
+
+- `Info.json`
+- one or more `*.fuse.json` files, or `audio.fuse.json`
+- copied audio files or asset pack folders when needed
+- `conversion-report.json`
+- `conversion-report.md`
+
+The report is the important bit. It records:
+
+- detected package type
+- generated files
+- object counts
+- warnings for unsupported or lossy legacy concepts
+- errors if conversion failed
+
+## Supported Inputs
+
+| Legacy input | Output |
+| --- | --- |
+| Track / route JSON folders | One FUSE data file per source JSON, preserving file-per-concern structure. |
+| Single route JSON file | One standalone FUSE package fragment. |
+| Horn / whistle / bell packs | FUSE audio package with copied audio files. |
+| Strange Customs asset packs | FUSE asset wrapper with `FuseAssetPacks` in `Info.json`. |
+| Zip files | Extracted to a temporary folder, detected, converted, then cleaned up. |
+
+## Known Lossy Areas
+
+The converter warns when it sees concepts that still need manual verification:
+
+- legacy formulaic `formula`
+- progression `interchangeTransfers`
+- unknown spline/object handlers
+- unknown industry component types
+- script binaries such as `.dll` / `.pdb`
+
+Warnings do not always mean the package is unusable. They mean the conversion needs a look before calling it verified.

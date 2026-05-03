@@ -45,7 +45,7 @@ function Resolve-AppalachianSourcePath {
     throw "Source mod folder not found for $FolderName. Checked: $PreferredPath"
 }
 
-$ValidRailIdPattern = '^[A-Za-z0-9][A-Za-z0-9._:-]*$'
+$ValidFuseIdPattern = '^[A-Za-z0-9][A-Za-z0-9._:-]*$'
 $JsonParser = New-Object System.Web.Script.Serialization.JavaScriptSerializer
 $JsonParser.MaxJsonLength = 67108864
 
@@ -173,7 +173,7 @@ function New-UsedIdSet {
     return New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
 }
 
-function Convert-ToRailId {
+function Convert-ToFuseId {
     param(
         [string]$Source,
         [string]$Prefix,
@@ -184,7 +184,7 @@ function Convert-ToRailId {
         $Source = 'item'
     }
 
-    if ($Source -match $ValidRailIdPattern) {
+    if ($Source -match $ValidFuseIdPattern) {
         $candidate = $Source
     }
     else {
@@ -321,7 +321,7 @@ function Convert-TrackLocation {
     return $converted
 }
 
-function New-EmptyRailDefinition {
+function New-EmptyFuseDefinition {
     param(
         [string]$Id,
         [string]$Name,
@@ -331,7 +331,7 @@ function New-EmptyRailDefinition {
     )
 
     return [ordered]@{
-        '$schema' = '.\schemas\rail-mod.schema.json'
+        '$schema' = '.\schemas\fuse-mod.schema.json'
         schemaVersion = '1.0'
         id = $Id
         name = $Name
@@ -441,10 +441,10 @@ foreach ($file in $graphFiles) {
     }
 }
 
-$railId = 'KingG.Appalachian-Railway.RAIL'
-$railName = 'Appalachian Railway (RAIL Translation)'
-$railDescription = 'Automated RAIL translation of KingG.Appalachian-Railway. Unsupported legacy constructs are preserved in extensions.'
-$rail = New-EmptyRailDefinition -Id $railId -Name $railName -Author 'KingG' -Version ([string]$railwayDefinition['version']) -Description $railDescription
+$railId = 'KingG.Appalachian-Railway.FUSE'
+$railName = 'Appalachian Railway (FUSE Translation)'
+$railDescription = 'Automated FUSE translation of KingG.Appalachian-Railway. Unsupported legacy constructs are preserved in extensions.'
+$rail = New-EmptyFuseDefinition -Id $railId -Name $railName -Author 'KingG' -Version ([string]$railwayDefinition['version']) -Description $railDescription
 
 $nodeIds = @{}
 $segmentIds = @{}
@@ -481,7 +481,7 @@ foreach ($rawId in ($merged['tracks']['nodes'].Keys | Sort-Object)) {
         continue
     }
 
-    $nodeIds[$rawId] = Convert-ToRailId -Source $rawId -Prefix 'kg.appalachian.track.node' -UsedIds $nodeUsed
+    $nodeIds[$rawId] = Convert-ToFuseId -Source $rawId -Prefix 'kg.appalachian.track.node' -UsedIds $nodeUsed
 }
 
 $nullSegmentCount = 0
@@ -498,7 +498,7 @@ foreach ($rawId in ($merged['tracks']['segments'].Keys | Sort-Object)) {
         $speedLimitZeroCount++
     }
 
-    $segmentIds[$rawId] = Convert-ToRailId -Source $rawId -Prefix 'kg.appalachian.track.segment' -UsedIds $segmentUsed
+    $segmentIds[$rawId] = Convert-ToFuseId -Source $rawId -Prefix 'kg.appalachian.track.segment' -UsedIds $segmentUsed
 }
 
 $nullSpanCount = 0
@@ -510,7 +510,7 @@ foreach ($rawId in ($merged['tracks']['spans'].Keys | Sort-Object)) {
         continue
     }
 
-    $spanIds[$rawId] = Convert-ToRailId -Source $rawId -Prefix 'kg.appalachian.track.span' -UsedIds $spanUsed
+    $spanIds[$rawId] = Convert-ToFuseId -Source $rawId -Prefix 'kg.appalachian.track.span' -UsedIds $spanUsed
 }
 
 foreach ($rawId in ($merged['loads'].Keys | Sort-Object)) {
@@ -519,7 +519,7 @@ foreach ($rawId in ($merged['loads'].Keys | Sort-Object)) {
         continue
     }
 
-    $loadIds[$rawId] = Convert-ToRailId -Source $rawId -Prefix 'kg.appalachian.load' -UsedIds $loadUsed
+    $loadIds[$rawId] = Convert-ToFuseId -Source $rawId -Prefix 'kg.appalachian.load' -UsedIds $loadUsed
 }
 
 foreach ($rawId in ($merged['areas'].Keys | Sort-Object)) {
@@ -530,7 +530,7 @@ foreach ($rawId in ($merged['areas'].Keys | Sort-Object)) {
 
     foreach ($industryRawId in ($area['industries'].Keys | Sort-Object)) {
         if (-not $industryIds.ContainsKey($industryRawId)) {
-            $industryIds[$industryRawId] = Convert-ToRailId -Source $industryRawId -Prefix 'kg.appalachian.industry' -UsedIds $industryUsed
+            $industryIds[$industryRawId] = Convert-ToFuseId -Source $industryRawId -Prefix 'kg.appalachian.industry' -UsedIds $industryUsed
         }
 
         $industry = $area['industries'][$industryRawId]
@@ -540,20 +540,20 @@ foreach ($rawId in ($merged['areas'].Keys | Sort-Object)) {
 
         $componentIds[$industryRawId] = @{}
         foreach ($componentRawId in ($industry['components'].Keys | Sort-Object)) {
-            $componentIds[$industryRawId][$componentRawId] = Convert-ToRailId -Source $componentRawId -Prefix ($industryIds[$industryRawId] + '.component') -UsedIds $componentUsed
+            $componentIds[$industryRawId][$componentRawId] = Convert-ToFuseId -Source $componentRawId -Prefix ($industryIds[$industryRawId] + '.component') -UsedIds $componentUsed
         }
     }
 }
 
 foreach ($rawId in ($merged['scenery'].Keys | Sort-Object)) {
     if ($null -ne $merged['scenery'][$rawId]) {
-        $sceneryIds[$rawId] = Convert-ToRailId -Source $rawId -Prefix 'kg.appalachian.scenery' -UsedIds $sceneryUsed
+        $sceneryIds[$rawId] = Convert-ToFuseId -Source $rawId -Prefix 'kg.appalachian.scenery' -UsedIds $sceneryUsed
     }
 }
 
 foreach ($rawId in ($merged['mandelas'].Keys | Sort-Object)) {
     if ($null -ne $merged['mandelas'][$rawId]) {
-        $sceneCloneIds[$rawId] = Convert-ToRailId -Source $rawId -Prefix 'kg.appalachian.sceneClone' -UsedIds $sceneCloneUsed
+        $sceneCloneIds[$rawId] = Convert-ToFuseId -Source $rawId -Prefix 'kg.appalachian.sceneClone' -UsedIds $sceneCloneUsed
     }
 }
 
@@ -566,13 +566,13 @@ foreach ($rawId in ($merged['splineys'].Keys | Sort-Object)) {
     $handler = [string]$item['handler']
     switch ($handler) {
         'AlinasMapMod.Loaders.LoaderBuilder' {
-            $loaderIds[$rawId] = Convert-ToRailId -Source $rawId -Prefix 'kg.appalachian.loader' -UsedIds $loaderUsed
+            $loaderIds[$rawId] = Convert-ToFuseId -Source $rawId -Prefix 'kg.appalachian.loader' -UsedIds $loaderUsed
         }
         'AlinasMapMod.MapLabelBuilder' {
-            $labelIds[$rawId] = Convert-ToRailId -Source $rawId -Prefix 'kg.appalachian.mapLabel' -UsedIds $labelUsed
+            $labelIds[$rawId] = Convert-ToFuseId -Source $rawId -Prefix 'kg.appalachian.mapLabel' -UsedIds $labelUsed
         }
         'AlinasMapMod.Stations.StationAgentBuilder' {
-            $stationIds[$rawId] = Convert-ToRailId -Source $rawId -Prefix 'kg.appalachian.station' -UsedIds $stationUsed
+            $stationIds[$rawId] = Convert-ToFuseId -Source $rawId -Prefix 'kg.appalachian.station' -UsedIds $stationUsed
         }
         'AlinasMapMod.Turntable.TurntableBuilder' {
             continue
@@ -584,7 +584,7 @@ foreach ($rawId in ($merged['splineys'].Keys | Sort-Object)) {
             continue
         }
         default {
-            $splineyIds[$rawId] = Convert-ToRailId -Source $rawId -Prefix 'kg.appalachian.spliney' -UsedIds $splineyUsed
+            $splineyIds[$rawId] = Convert-ToFuseId -Source $rawId -Prefix 'kg.appalachian.spliney' -UsedIds $splineyUsed
         }
     }
 }
@@ -1055,7 +1055,7 @@ $rail['extensions']['dev.hunterr.translation'] = [ordered]@{
     sourceTilesModId = [string]$tilesDefinition['id']
     generatedUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
     notes = @(
-        'Legacy passenger stop components were translated into native RAIL passengerStop components.',
+        'Legacy passenger stop components were translated into native FUSE passengerStop components.',
         'Legacy turntable builders were translated into operations.turntables with legacy track identifiers so generated roundhouse helpers still line up.',
         'Strange Customs mandelas were translated into world.sceneClones so their hierarchy-local transforms survive the migration.',
         'Legacy null track entries are preserved as tracks.removals so base-game nodes, segments, and spans can be deleted at load time.',
@@ -1088,7 +1088,7 @@ $rail['extensions']['dev.hunterr.translation'] = [ordered]@{
     unsupportedIndustryComponents = $unsupportedComponents
 }
 
-$tilesRail = New-EmptyRailDefinition -Id 'KingG.Appalachian.MapTiles.RAIL' -Name 'Appalachian Map Tiles (RAIL Translation)' -Author 'KingG' -Version ([string]$tilesDefinition['version']) -Description 'RAIL tile overlay package that points at the original KingG Appalachian map tile folder.'
+$tilesRail = New-EmptyFuseDefinition -Id 'KingG.Appalachian.MapTiles.FUSE' -Name 'Appalachian Map Tiles (FUSE Translation)' -Author 'KingG' -Version ([string]$tilesDefinition['version']) -Description 'FUSE tile overlay package that points at the original KingG Appalachian map tile folder.'
 $tilesRail['world']['mapTiles']['kingg.appalachian.tiles'] = [ordered]@{
     directory = 'BushnellWhittier'
     sourceFolder = 'Maps/BushnellWhittier'
@@ -1099,38 +1099,38 @@ $tilesRail['extensions']['dev.hunterr.translation'] = [ordered]@{
     generatedUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
     tileCount = (Get-ChildItem -LiteralPath (Join-Path $TilesModPath 'Maps\BushnellWhittier') -Filter '*.data' | Measure-Object).Count
     notes = @(
-        'This translation copies BushnellWhittier tile data into the RAIL package so the package is self-contained.',
+        'This translation copies BushnellWhittier tile data into the FUSE package so the package is self-contained.',
         'The sourceFolder is relative to the package root for direct in-game deployment.'
     )
 }
 
-$railPackageFolder = Join-Path $OutputRoot 'KingG.Appalachian-Railway.RAIL'
-$tilePackageFolder = Join-Path $OutputRoot 'KingG.Appalachian.MapTiles.RAIL'
-$railDataFile = 'KingG.Appalachian-Railway.rail.json'
-$tileDataFile = 'KingG.Appalachian.MapTiles.rail.json'
+$railPackageFolder = Join-Path $OutputRoot 'KingG.Appalachian-Railway.FUSE'
+$tilePackageFolder = Join-Path $OutputRoot 'KingG.Appalachian.MapTiles.FUSE'
+$railDataFile = 'KingG.Appalachian-Railway.fuse.json'
+$tileDataFile = 'KingG.Appalachian.MapTiles.fuse.json'
 
 $railInfo = [ordered]@{
     '$schema' = '.\schemas\umm-info.schema.json'
-    Id = 'KingG.Appalachian-Railway.RAIL'
-    DisplayName = 'Appalachian Railway (RAIL Translation)'
+    Id = 'KingG.Appalachian-Railway.FUSE'
+    DisplayName = 'Appalachian Railway (FUSE Translation)'
     Author = 'KingG'
     Version = [string]$railwayDefinition['version']
     ManagerVersion = '0.27.10'
-    Requirements = @('RAIL')
-    LoadAfter = @('RAIL')
-    RailDataFile = $railDataFile
+    Requirements = @('FUSE')
+    LoadAfter = @('FUSE')
+    FuseDataFile = $railDataFile
 }
 
 $tileInfo = [ordered]@{
     '$schema' = '.\schemas\umm-info.schema.json'
-    Id = 'KingG.Appalachian.MapTiles.RAIL'
-    DisplayName = 'Appalachian Map Tiles (RAIL Translation)'
+    Id = 'KingG.Appalachian.MapTiles.FUSE'
+    DisplayName = 'Appalachian Map Tiles (FUSE Translation)'
     Author = 'KingG'
     Version = [string]$tilesDefinition['version']
     ManagerVersion = '0.27.10'
-    Requirements = @('RAIL')
-    LoadAfter = @('RAIL')
-    RailDataFile = $tileDataFile
+    Requirements = @('FUSE')
+    LoadAfter = @('FUSE')
+    FuseDataFile = $tileDataFile
 }
 
 Write-JsonFile -Path (Join-Path $railPackageFolder 'Info.json') -Value $railInfo
