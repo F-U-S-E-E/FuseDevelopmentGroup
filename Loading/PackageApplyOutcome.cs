@@ -1,4 +1,4 @@
-namespace RAIL.Loading
+namespace FUSE.Loading
 {
     /// <summary>
     /// Per-package outcome of a single ApplyLoadedDefinitions pass. Captures the
@@ -39,7 +39,7 @@ namespace RAIL.Loading
             };
         }
 
-        public static PackageApplyOutcome FromReport(string packageId, RailApplyReport report, int applied, int skipped, int errored)
+        public static PackageApplyOutcome FromReport(string packageId, FuseApplyReport report, int applied, int skipped, int errored)
         {
             var outcome = new PackageApplyOutcome
             {

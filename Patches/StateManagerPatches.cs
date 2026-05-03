@@ -1,10 +1,10 @@
 using System;
 using Game.State;
 using HarmonyLib;
-using RAIL.Infrastructure;
-using RAIL.Lifecycle;
+using FUSE.Infrastructure;
+using FUSE.Lifecycle;
 
-namespace RAIL.Patches
+namespace FUSE.Patches
 {
     [HarmonyPatch(typeof(StateManager), "PopulateFromRemoteSnapshot")]
     internal static class StateManagerPatches
@@ -13,11 +13,11 @@ namespace RAIL.Patches
         {
             try
             {
-                RailRuntimeRebindService.RebindAfterSnapshot("before snapshot restore");
+                FuseRuntimeRebindService.RebindAfterSnapshot("before snapshot restore");
             }
             catch (Exception ex)
             {
-                RailLog.Exception("RAIL snapshot rebind (prefix) failed.", ex);
+                FuseLog.Exception("FUSE snapshot rebind (prefix) failed.", ex);
             }
         }
 
@@ -25,11 +25,11 @@ namespace RAIL.Patches
         {
             try
             {
-                RailRuntimeRebindService.RebindAfterSnapshot("after snapshot restore");
+                FuseRuntimeRebindService.RebindAfterSnapshot("after snapshot restore");
             }
             catch (Exception ex)
             {
-                RailLog.Exception("RAIL snapshot rebind (postfix) failed.", ex);
+                FuseLog.Exception("FUSE snapshot rebind (postfix) failed.", ex);
             }
         }
     }

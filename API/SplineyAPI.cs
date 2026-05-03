@@ -5,12 +5,12 @@ using System.Reflection;
 using AutoTrestle;
 using Helpers;
 using Map.Runtime.MaskComponents;
-using RAIL.Cache;
-using RAIL.Data;
-using RAIL.Infrastructure;
+using FUSE.Cache;
+using FUSE.Data;
+using FUSE.Infrastructure;
 using UnityEngine;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class SplineyAPI
     {
@@ -18,7 +18,7 @@ namespace RAIL.API
         private static Transform _fallbackRiverRoot;
         private static Transform _fallbackTrestleRoot;
 
-        public static GameObject AddSpliney(string id, RailSpliney definition)
+        public static GameObject AddSpliney(string id, FuseSpliney definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -33,12 +33,12 @@ namespace RAIL.API
 
             var root = new GameObject(id);
             ApplyDefinition(root, id, definition, false);
-            RailSplineyRuntimeIndex.Instance.Set(id, root);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Spliney, id, definition);
+            FuseSplineyRuntimeIndex.Instance.Set(id, root);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Spliney, id, definition);
             return root;
         }
 
-        public static void UpdateSpliney(string id, RailSpliney definition)
+        public static void UpdateSpliney(string id, FuseSpliney definition)
         {
             var root = RequireSpliney(id);
             if (definition == null)
@@ -47,8 +47,8 @@ namespace RAIL.API
             }
 
             ApplyDefinition(root, id, definition, true);
-            RailSplineyRuntimeIndex.Instance.Set(id, root);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Spliney, id, definition);
+            FuseSplineyRuntimeIndex.Instance.Set(id, root);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Spliney, id, definition);
         }
 
         public static void RemoveSpliney(string id)
@@ -64,28 +64,28 @@ namespace RAIL.API
             var root = FindRemovableSplineyObject(id);
             if (root == null)
             {
-                RailLog.Warning($"RAIL world removal skipped missing spliney '{id}'.");
+                FuseLog.Warning($"FUSE world removal skipped missing spliney '{id}'.");
                 return false;
             }
 
             var path = GetTransformPath(root.transform);
             root.SetActive(false);
             UnityEngine.Object.Destroy(root);
-            RailSplineyRuntimeIndex.Instance.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Spliney, id);
-            RailLog.Info($"RAIL removed spliney '{id}' from '{path}'.");
+            FuseSplineyRuntimeIndex.Instance.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.Spliney, id);
+            FuseLog.Info($"FUSE removed spliney '{id}' from '{path}'.");
             return true;
         }
 
         public static GameObject GetSpliney(string id)
         {
-            if (RailSplineyRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseSplineyRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (GameObject)cached;
             }
 
             return !string.IsNullOrWhiteSpace(id)
-                ? UnityEngine.Object.FindObjectsOfType<RailSplineyMarker>(true)
+                ? UnityEngine.Object.FindObjectsOfType<FuseSplineyMarker>(true)
                     .FirstOrDefault(marker => string.Equals(marker.Id, id, StringComparison.OrdinalIgnoreCase))
                     ?.gameObject
                 : null;
@@ -93,25 +93,25 @@ namespace RAIL.API
 
         public static IEnumerable<GameObject> GetAllSplineys()
         {
-            return UnityEngine.Object.FindObjectsOfType<RailSplineyMarker>(true).Select(marker => marker.gameObject);
+            return UnityEngine.Object.FindObjectsOfType<FuseSplineyMarker>(true).Select(marker => marker.gameObject);
         }
 
-        public static RailSpliney GetSplineyDefinition(string id)
+        public static FuseSpliney GetSplineyDefinition(string id)
         {
             return GetDefinition(GetSpliney(id));
         }
 
-        public static RailSpliney GetDefinition(GameObject root)
+        public static FuseSpliney GetDefinition(GameObject root)
         {
             if (root == null)
             {
                 return null;
             }
 
-            var marker = root.GetComponent<RailSplineyMarker>();
+            var marker = root.GetComponent<FuseSplineyMarker>();
             var id = marker != null ? marker.Id : root.name;
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Spliney, id, out RailSpliney definition);
-            definition = definition ?? new RailSpliney();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Spliney, id, out FuseSpliney definition);
+            definition = definition ?? new FuseSpliney();
 
             var riverPath = root.GetComponent<RiverPath>();
             if (riverPath != null)
@@ -125,7 +125,7 @@ namespace RAIL.API
                     definition.Profile = profile.name;
                 }
 
-                definition.Points = riverPath.TransformedPoints.Select(point => new RailSplineyPoint
+                definition.Points = riverPath.TransformedPoints.Select(point => new FuseSplineyPoint
                 {
                     Position = point.position,
                     Rotation = point.eulerAngles,
@@ -141,7 +141,7 @@ namespace RAIL.API
                 definition.Profile = trestle.profile != null ? trestle.profile.name : definition.Profile;
                 definition.HeadStyle = trestle.headStyle.ToString();
                 definition.TailStyle = trestle.tailStyle.ToString();
-                definition.Points = trestle.controlPoints.Select(point => new RailSplineyPoint
+                definition.Points = trestle.controlPoints.Select(point => new FuseSplineyPoint
                 {
                     Position = root.transform.TransformPoint(point.position),
                     Rotation = (root.transform.rotation * point.rotation).eulerAngles
@@ -151,9 +151,9 @@ namespace RAIL.API
             return definition;
         }
 
-        private static void ApplyDefinition(GameObject root, string id, RailSpliney definition, bool rebuildRuntime)
+        private static void ApplyDefinition(GameObject root, string id, FuseSpliney definition, bool rebuildRuntime)
         {
-            var points = definition.Points ?? Array.Empty<RailSplineyPoint>();
+            var points = definition.Points ?? Array.Empty<FuseSplineyPoint>();
             if (points.Length < 2)
             {
                 throw new InvalidOperationException($"Spliney '{id}' requires at least two points.");
@@ -176,7 +176,7 @@ namespace RAIL.API
             }
 
             root.name = id;
-            var marker = root.GetComponent<RailSplineyMarker>() ?? root.AddComponent<RailSplineyMarker>();
+            var marker = root.GetComponent<FuseSplineyMarker>() ?? root.AddComponent<FuseSplineyMarker>();
             marker.Id = id;
             marker.Kind = kind.ToString();
 
@@ -198,7 +198,7 @@ namespace RAIL.API
             builder?.BuildSpline();
         }
 
-        private static void ConfigureFlowy(GameObject root, RailSpliney definition, SplineyKind kind, IReadOnlyList<RailSplineyPoint> points)
+        private static void ConfigureFlowy(GameObject root, FuseSpliney definition, SplineyKind kind, IReadOnlyList<FuseSplineyPoint> points)
         {
             root.transform.SetParent(GetRiverRoot(), false);
             root.transform.localRotation = Quaternion.identity;
@@ -230,7 +230,7 @@ namespace RAIL.API
             RiverBuilderSplineProfileField.SetValue(builder, profile);
         }
 
-        private static void ConfigureTrestle(GameObject root, RailSpliney definition, IReadOnlyList<RailSplineyPoint> points)
+        private static void ConfigureTrestle(GameObject root, FuseSpliney definition, IReadOnlyList<FuseSplineyPoint> points)
         {
             root.transform.SetParent(GetTrestleRoot(), false);
             root.transform.localRotation = Quaternion.identity;
@@ -336,7 +336,7 @@ namespace RAIL.API
 
             if (_fallbackRiverRoot == null)
             {
-                _fallbackRiverRoot = new GameObject("RAIL Rivers").transform;
+                _fallbackRiverRoot = new GameObject("FUSE Rivers").transform;
                 UnityEngine.Object.DontDestroyOnLoad(_fallbackRiverRoot.gameObject);
             }
 
@@ -353,14 +353,14 @@ namespace RAIL.API
 
             if (_fallbackTrestleRoot == null)
             {
-                _fallbackTrestleRoot = new GameObject("RAIL Trestles").transform;
+                _fallbackTrestleRoot = new GameObject("FUSE Trestles").transform;
                 UnityEngine.Object.DontDestroyOnLoad(_fallbackTrestleRoot.gameObject);
             }
 
             return _fallbackTrestleRoot;
         }
 
-        private static Vector3 AveragePosition(IReadOnlyList<RailSplineyPoint> points)
+        private static Vector3 AveragePosition(IReadOnlyList<FuseSplineyPoint> points)
         {
             var center = Vector3.zero;
             for (var index = 0; index < points.Count; index++)
@@ -411,7 +411,7 @@ namespace RAIL.API
                 return null;
             }
 
-            return GetSpliney(id) ?? RailPrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
+            return GetSpliney(id) ?? FusePrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
         }
 
         private static string GetTransformPath(Transform transform)
@@ -448,7 +448,7 @@ namespace RAIL.API
         }
     }
 
-    public sealed class RailSplineyMarker : MonoBehaviour
+    public sealed class FuseSplineyMarker : MonoBehaviour
     {
         public string Id;
         public string Kind;

@@ -1,6 +1,6 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
-namespace RAIL.Validation
+namespace FUSE.Validation
 {
     public sealed class ValidationResult
     {

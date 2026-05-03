@@ -1,8 +1,8 @@
-﻿using System;
+using System;
 using Newtonsoft.Json;
 using UnityEngine;
 
-namespace RAIL.Serialization.Converters
+namespace FUSE.Serialization.Converters
 {
     public sealed class Vector3JsonConverter : JsonConverter
     {

@@ -2,22 +2,22 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Character;
-using RAIL.Data;
-using RAIL.Infrastructure;
+using FUSE.Data;
+using FUSE.Infrastructure;
 using UnityEngine;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class SpawnPointAPI
     {
-        private const string SpawnRootName = "RAIL Spawn Points";
+        private const string SpawnRootName = "FUSE Spawn Points";
 
         private static readonly Dictionary<string, SpawnPoint> SpawnPoints =
             new Dictionary<string, SpawnPoint>(StringComparer.OrdinalIgnoreCase);
 
         private static Transform _fallbackRoot;
 
-        public static SpawnPoint AddOrUpdateSpawnPoint(string packageId, RailSpawnPoint definition)
+        public static SpawnPoint AddOrUpdateSpawnPoint(string packageId, FuseSpawnPoint definition)
         {
             if (string.IsNullOrWhiteSpace(packageId))
             {
@@ -49,8 +49,8 @@ namespace RAIL.API
             spawnPoint.priority = definition.Priority.GetValueOrDefault();
             spawnPoint.radius = Mathf.Max(0.1f, definition.Radius.GetValueOrDefault(3f));
             SpawnPoints[key] = spawnPoint;
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.SpawnPoint, key, definition);
-            RailLog.Info($"RAIL registered spawn point package='{packageId}' name='{definition.Name}' position={definition.Position} radius={spawnPoint.radius} priority={spawnPoint.priority}.");
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.SpawnPoint, key, definition);
+            FuseLog.Info($"FUSE registered spawn point package='{packageId}' name='{definition.Name}' position={definition.Position} radius={spawnPoint.radius} priority={spawnPoint.priority}.");
             return spawnPoint;
         }
 
@@ -79,10 +79,10 @@ namespace RAIL.API
             return found;
         }
 
-        public static RailSpawnPoint GetSpawnPointDefinition(string packageId, string name)
+        public static FuseSpawnPoint GetSpawnPointDefinition(string packageId, string name)
         {
-            return RailRuntimeDefinitionCache.TryGet<RailSpawnPoint>(
-                RailDefinitionKind.SpawnPoint,
+            return FuseRuntimeDefinitionCache.TryGet<FuseSpawnPoint>(
+                FuseDefinitionKind.SpawnPoint,
                 GetSpawnPointKey(packageId, name),
                 out var definition)
                 ? definition
@@ -100,10 +100,10 @@ namespace RAIL.API
             }
 
             SpawnPoints.Remove(key);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.SpawnPoint, key);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.SpawnPoint, key);
             spawnPoint.gameObject.SetActive(false);
             UnityEngine.Object.Destroy(spawnPoint.gameObject);
-            RailLog.Info($"RAIL removed spawn point package='{packageId}' name='{name}'.");
+            FuseLog.Info($"FUSE removed spawn point package='{packageId}' name='{name}'.");
             return true;
         }
 

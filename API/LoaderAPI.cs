@@ -3,21 +3,21 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Model.Ops;
-using RAIL.Cache;
-using RAIL.Data;
+using FUSE.Cache;
+using FUSE.Data;
 using RollingStock;
 using RollingStock.Controls;
 using Track;
 using UnityEngine;
 
-namespace RAIL.API
+namespace FUSE.API
 {
     public static class LoaderAPI
     {
         private static readonly FieldInfo IndustryHoverableIndustryField = typeof(IndustryContentHoverable).GetField("industry", BindingFlags.Instance | BindingFlags.NonPublic);
         private static Transform _fallbackRoot;
 
-        public static GameObject AddLoader(string id, RailLoader definition)
+        public static GameObject AddLoader(string id, FuseLoader definition)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -33,12 +33,12 @@ namespace RAIL.API
             var gameObject = new GameObject(id);
             gameObject.transform.SetParent(GetLoaderRoot(), false);
             ApplyDefinition(gameObject, id, definition);
-            RailLoaderRuntimeIndex.Instance.Set(id, gameObject);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Loader, id, definition);
+            FuseLoaderRuntimeIndex.Instance.Set(id, gameObject);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Loader, id, definition);
             return gameObject;
         }
 
-        public static void UpdateLoader(string id, RailLoader definition)
+        public static void UpdateLoader(string id, FuseLoader definition)
         {
             var loader = RequireLoader(id);
             if (definition == null)
@@ -47,8 +47,8 @@ namespace RAIL.API
             }
 
             ApplyDefinition(loader, id, definition);
-            RailLoaderRuntimeIndex.Instance.Set(id, loader);
-            RailApiPersistence.RecordDefinition(RailDefinitionKind.Loader, id, definition);
+            FuseLoaderRuntimeIndex.Instance.Set(id, loader);
+            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Loader, id, definition);
         }
 
         public static void RemoveLoader(string id)
@@ -56,13 +56,13 @@ namespace RAIL.API
             var loader = RequireLoader(id);
             loader.SetActive(false);
             UnityEngine.Object.Destroy(loader);
-            RailLoaderRuntimeIndex.Instance.Remove(id);
-            RailRuntimeDefinitionCache.Remove(RailDefinitionKind.Loader, id);
+            FuseLoaderRuntimeIndex.Instance.Remove(id);
+            FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.Loader, id);
         }
 
         public static GameObject GetLoader(string id)
         {
-            if (RailLoaderRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseLoaderRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (GameObject)cached;
             }
@@ -72,15 +72,15 @@ namespace RAIL.API
 
         public static IEnumerable<GameObject> GetAllLoaders()
         {
-            return RailLoaderRuntimeIndex.Instance.Values.Cast<GameObject>();
+            return FuseLoaderRuntimeIndex.Instance.Values.Cast<GameObject>();
         }
 
-        public static RailLoader GetLoaderDefinition(string id)
+        public static FuseLoader GetLoaderDefinition(string id)
         {
             return GetDefinition(GetLoader(id));
         }
 
-        public static RailLoader GetDefinition(GameObject loader)
+        public static FuseLoader GetDefinition(GameObject loader)
         {
             if (loader == null)
             {
@@ -88,8 +88,8 @@ namespace RAIL.API
             }
 
             var id = loader.name;
-            RailRuntimeDefinitionCache.TryGet(RailDefinitionKind.Loader, id, out RailLoader definition);
-            definition = definition ?? new RailLoader();
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Loader, id, out FuseLoader definition);
+            definition = definition ?? new FuseLoader();
             definition.Position = loader.transform.localPosition;
             definition.Rotation = loader.transform.localEulerAngles;
 
@@ -102,7 +102,7 @@ namespace RAIL.API
             return definition;
         }
 
-        private static void ApplyDefinition(GameObject loader, string id, RailLoader definition)
+        private static void ApplyDefinition(GameObject loader, string id, FuseLoader definition)
         {
             loader.transform.localPosition = definition.Position;
             loader.transform.localRotation = Quaternion.Euler(definition.Rotation);
@@ -113,7 +113,7 @@ namespace RAIL.API
                 UnityEngine.Object.Destroy(oldPrefab.gameObject);
             }
 
-            var prefab = RailPrefabResolver.Resolve(definition.Prefab);
+            var prefab = FusePrefabResolver.Resolve(definition.Prefab);
             if (prefab == null)
             {
                 throw new InvalidOperationException($"Loader prefab '{definition.Prefab}' was not found.");
@@ -143,9 +143,9 @@ namespace RAIL.API
             }
 
             var industry = AttachIndustry(instance, definition.IndustryId);
-            RailPrefabSanitizer.SanitizeLoader(instance, id, industry).Log($"RAIL loader '{id}'");
+            FusePrefabSanitizer.SanitizeLoader(instance, id, industry).Log($"FUSE loader '{id}'");
             instance.SetActive(true);
-            RailPrefabSanitizer.ValidateLoaderPostBind(loader, id, industry).Log($"RAIL loader '{id}' post-bind");
+            FusePrefabSanitizer.ValidateLoaderPostBind(loader, id, industry).Log($"FUSE loader '{id}' post-bind");
         }
 
         private static Industry AttachIndustry(GameObject instance, string industryId)

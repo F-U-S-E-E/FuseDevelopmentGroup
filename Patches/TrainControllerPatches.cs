@@ -1,9 +1,9 @@
 using System;
 using HarmonyLib;
-using RAIL.Infrastructure;
-using RAIL.Lifecycle;
+using FUSE.Infrastructure;
+using FUSE.Lifecycle;
 
-namespace RAIL.Patches
+namespace FUSE.Patches
 {
     [HarmonyPatch(typeof(TrainController), "HandleSnapshotTurntables")]
     internal static class TrainControllerPatches
@@ -12,11 +12,11 @@ namespace RAIL.Patches
         {
             try
             {
-                RailRuntimeRebindService.RebindAfterSnapshot("before turntable restore");
+                FuseRuntimeRebindService.RebindAfterSnapshot("before turntable restore");
             }
             catch (Exception ex)
             {
-                RailLog.Exception("RAIL turntable rebind (prefix) failed.", ex);
+                FuseLog.Exception("FUSE turntable rebind (prefix) failed.", ex);
             }
         }
 
@@ -24,11 +24,11 @@ namespace RAIL.Patches
         {
             try
             {
-                RailRuntimeRebindService.RebindAfterSnapshot("after turntable restore");
+                FuseRuntimeRebindService.RebindAfterSnapshot("after turntable restore");
             }
             catch (Exception ex)
             {
-                RailLog.Exception("RAIL turntable rebind (postfix) failed.", ex);
+                FuseLog.Exception("FUSE turntable rebind (postfix) failed.", ex);
             }
         }
     }

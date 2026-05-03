@@ -3,11 +3,11 @@ using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using Model.Ops;
-using RAIL.API;
-using RAIL.Infrastructure;
+using FUSE.API;
+using FUSE.Infrastructure;
 using UI.CompanyWindow;
 
-namespace RAIL.Patches
+namespace FUSE.Patches
 {
     [HarmonyPatch]
     internal static class LocationsPanelBuilderPatches
@@ -22,7 +22,7 @@ namespace RAIL.Patches
                     candidate.GetParameters()[0].ParameterType == typeof(Industry));
             if (method == null)
             {
-                RailLog.Warning("RAIL could not find LocationsPanelBuilder industry sort selector; source order will not affect the company locations list.");
+                FuseLog.Warning("FUSE could not find LocationsPanelBuilder industry sort selector; source order will not affect the company locations list.");
             }
 
             return method;
@@ -36,7 +36,7 @@ namespace RAIL.Patches
             }
             catch (Exception ex)
             {
-                RailLog.Exception("RAIL failed to apply location panel sort key.", ex);
+                FuseLog.Exception("FUSE failed to apply location panel sort key.", ex);
             }
         }
     }

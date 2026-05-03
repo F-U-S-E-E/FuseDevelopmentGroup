@@ -1,0 +1,1006 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using FUSE.API;
+using FUSE.Data;
+using FUSE.Data.Common;
+using FUSE.Migrations;
+using UnityEngine;
+
+namespace FUSE.Validation
+{
+    public sealed class FuseDefinitionValidator : IValidator<FuseModDefinition>
+    {
+        public ValidationResult Validate(FuseModDefinition value)
+        {
+            var result = new ValidationResult();
+            if (value == null)
+            {
+                result.AddError("$", "Definition is required.", "fuse.definition.required");
+                return result;
+            }
+
+            FuseMigration.Normalize(value);
+            Required(result, "id", value.Id);
+            Required(result, "name", value.Name);
+
+            if (value.SchemaVersion != FuseMigration.CurrentVersion)
+            {
+                if (FuseMigration.IsFutureSchemaVersion(value.SchemaVersion))
+                {
+                    result.AddWarning(
+                        "schemaVersion",
+                        $"Schema version {value.SchemaVersion} is newer than this runtime supports ({FuseMigration.CurrentVersion}); FUSE will apply a best-effort load.",
+                        "fuse.schema.version.future",
+                        value.SchemaVersion);
+                }
+                else
+                {
+                    result.AddError("schemaVersion", $"Schema version must be {FuseMigration.CurrentVersion}.", "fuse.schema.version", value.SchemaVersion);
+                }
+            }
+
+            ValidateOperations(result, value.Operations);
+            ValidateTrack(result, value.Tracks, value.Operations);
+            ValidateWorld(result, value.World);
+            ValidateAudio(result, value.Audio);
+            ValidateProgression(result, value.Progression);
+            return result;
+        }
+
+        private static void ValidateTrack(ValidationResult result, FuseTrackDefinition tracks, FuseOperationsDefinition operations)
+        {
+            var generatedNodeIds = CollectGeneratedNodeIds(operations);
+            var generatedSegmentIds = CollectGeneratedSegmentIds(operations);
+
+            if (tracks.Removals != null)
+            {
+                ValidateTrackRemovalTargets(result, "tracks.removals.nodes", tracks.Removals.Nodes, tracks.Nodes.Keys);
+                ValidateTrackRemovalTargets(result, "tracks.removals.segments", tracks.Removals.Segments, tracks.Segments.Keys);
+                ValidateTrackRemovalTargets(result, "tracks.removals.spans", tracks.Removals.Spans, tracks.Spans.Keys);
+            }
+
+            foreach (var segment in tracks.Segments)
+            {
+                var path = $"tracks.segments.{segment.Key}";
+                Required(result, $"{path}.startNodeId", segment.Value.StartNodeId);
+                Required(result, $"{path}.endNodeId", segment.Value.EndNodeId);
+
+                if (!string.IsNullOrWhiteSpace(segment.Value.StartNodeId) &&
+                    !tracks.Nodes.ContainsKey(segment.Value.StartNodeId) &&
+                    !generatedNodeIds.Contains(segment.Value.StartNodeId))
+                {
+                    result.AddWarning($"{path}.startNodeId", "Start node is not defined in this FUSE document. It must exist in the base game graph at runtime.", "fuse.track.node.external", segment.Value.StartNodeId);
+                }
+
+                if (!string.IsNullOrWhiteSpace(segment.Value.EndNodeId) &&
+                    !tracks.Nodes.ContainsKey(segment.Value.EndNodeId) &&
+                    !generatedNodeIds.Contains(segment.Value.EndNodeId))
+                {
+                    result.AddWarning($"{path}.endNodeId", "End node is not defined in this FUSE document. It must exist in the base game graph at runtime.", "fuse.track.node.external", segment.Value.EndNodeId);
+                }
+
+                if (segment.Value.SpeedLimit < 0 || segment.Value.SpeedLimit > 80)
+                {
+                    result.AddError($"{path}.speedLimit", "Speed limit must be between 0 and 80.", "fuse.track.speedLimit", segment.Value.SpeedLimit);
+                }
+            }
+
+            foreach (var span in tracks.Spans)
+            {
+                var path = $"tracks.spans.{span.Key}";
+                if (span.Value == null)
+                {
+                    result.AddError(path, "Track span is required.", "fuse.track.span.required");
+                    continue;
+                }
+
+                ValidateTrackLocation(result, $"{path}.upper", span.Value.Upper, tracks.Segments, generatedSegmentIds);
+                ValidateTrackLocation(result, $"{path}.lower", span.Value.Lower, tracks.Segments, generatedSegmentIds);
+                ValidateSameSegmentSpan(result, path, span.Value, tracks.Segments, tracks.Nodes);
+            }
+
+            foreach (var area in tracks.Areas)
+            {
+                var path = $"tracks.areas.{area.Key}";
+                if (area.Value.Radius.HasValue && area.Value.Radius.Value < 0f)
+                {
+                    result.AddError($"{path}.radius", "Area radius must be greater than or equal to 0.", "fuse.track.area.radius", area.Value.Radius.Value);
+                }
+
+                if (area.Value.TagColor != null && area.Value.TagColor.Length != 3 && area.Value.TagColor.Length != 4)
+                {
+                    result.AddError($"{path}.tagColor", "Area tagColor must contain 3 or 4 values.", "fuse.track.area.tagColor", area.Value.TagColor.Length);
+                }
+
+                if (area.Value.Order.HasValue && area.Value.Order.Value < 0)
+                {
+                    result.AddError($"{path}.order", "Area order must be greater than or equal to 0.", "fuse.track.area.order", area.Value.Order.Value);
+                }
+            }
+        }
+
+        private static void ValidateTrackLocation(ValidationResult result, string path, FuseTrackLocation location, IDictionary<string, FuseSegment> segments, ISet<string> generatedSegmentIds)
+        {
+            if (location == null)
+            {
+                result.AddError(path, "Track location is required.", "fuse.track.location.required");
+                return;
+            }
+
+            Required(result, $"{path}.segmentId", location.SegmentId);
+            if (location.Normalized == null && location.Distance == null)
+            {
+                result.AddError(path, "Track location must set either normalized or distance.", "fuse.track.location.measure");
+            }
+            else if (location.Normalized != null && location.Distance != null)
+            {
+                result.AddError(path, "Track location must set normalized or distance, not both.", "fuse.track.location.measure.exclusive");
+            }
+
+            if (location.Normalized != null && (location.Normalized < 0f || location.Normalized > 1f))
+            {
+                result.AddError($"{path}.normalized", "Normalized location must be between 0 and 1.", "fuse.track.location.normalized", location.Normalized);
+            }
+
+            if (location.Distance != null && location.Distance.Value < 0f)
+            {
+                result.AddError($"{path}.distance", "Distance must be greater than or equal to 0.", "fuse.track.location.distance", location.Distance);
+            }
+
+            if (!string.IsNullOrWhiteSpace(location.End) &&
+                NormalizeLocationEnd(location.End) == null)
+            {
+                result.AddError($"{path}.end", "Track location end must be A/B or Start/End.", "fuse.track.location.end", location.End);
+            }
+
+            if (!string.IsNullOrWhiteSpace(location.SegmentId) &&
+                !segments.ContainsKey(location.SegmentId) &&
+                !generatedSegmentIds.Contains(location.SegmentId))
+            {
+                result.AddWarning($"{path}.segmentId", "Segment is not defined in this FUSE document. It must exist in the base game graph at runtime.", "fuse.track.segment.external", location.SegmentId);
+            }
+        }
+
+        private static void ValidateSameSegmentSpan(ValidationResult result, string path, FuseSpan span, IDictionary<string, FuseSegment> segments, IDictionary<string, FuseNode> nodes)
+        {
+            if (span?.Upper == null || span.Lower == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(span.Upper.SegmentId) ||
+                string.IsNullOrWhiteSpace(span.Lower.SegmentId) ||
+                !string.Equals(span.Upper.SegmentId, span.Lower.SegmentId, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var upperEnd = NormalizeLocationEnd(span.Upper.End) ?? "A";
+            var lowerEnd = NormalizeLocationEnd(span.Lower.End) ?? "A";
+            if (string.Equals(upperEnd, lowerEnd, StringComparison.OrdinalIgnoreCase))
+            {
+                result.AddError(path, "Same-segment span endpoints must face each other. Use Start/A for one endpoint and End/B for the other.", "fuse.track.span.sameSegment.sameDirection", span.Upper.SegmentId);
+                return;
+            }
+
+            FuseSegment segment;
+            if (!segments.TryGetValue(span.Upper.SegmentId, out segment) || segment == null)
+            {
+                return;
+            }
+
+            var length = EstimateSegmentLength(segment, nodes);
+            if (!length.HasValue || length.Value <= 0f)
+            {
+                return;
+            }
+
+            var upperDistance = GetLocationDistance(span.Upper, length.Value);
+            var lowerDistance = GetLocationDistance(span.Lower, length.Value);
+            if (!upperDistance.HasValue || !lowerDistance.HasValue)
+            {
+                return;
+            }
+
+            if (upperDistance.Value < 0f || upperDistance.Value > length.Value)
+            {
+                result.AddError($"{path}.upper.distance", "Upper track location is outside the estimated segment length.", "fuse.track.span.upper.distance", upperDistance.Value);
+            }
+
+            if (lowerDistance.Value < 0f || lowerDistance.Value > length.Value)
+            {
+                result.AddError($"{path}.lower.distance", "Lower track location is outside the estimated segment length.", "fuse.track.span.lower.distance", lowerDistance.Value);
+            }
+
+            var upperFromA = string.Equals(upperEnd, "A", StringComparison.OrdinalIgnoreCase)
+                ? upperDistance.Value
+                : length.Value - upperDistance.Value;
+            var lowerFromA = string.Equals(lowerEnd, "A", StringComparison.OrdinalIgnoreCase)
+                ? lowerDistance.Value
+                : length.Value - lowerDistance.Value;
+            var startSide = string.Equals(upperEnd, "A", StringComparison.OrdinalIgnoreCase) ? upperFromA : lowerFromA;
+            var endSide = string.Equals(upperEnd, "A", StringComparison.OrdinalIgnoreCase) ? lowerFromA : upperFromA;
+            if (startSide >= endSide)
+            {
+                result.AddError(path, "Same-segment span endpoints cross or produce a zero-length span. The Start/A endpoint must be before the End/B endpoint.", "fuse.track.span.sameSegment.crossed", span.Upper.SegmentId);
+            }
+        }
+
+        private static string NormalizeLocationEnd(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "A";
+            }
+
+            switch (value.Trim().ToUpperInvariant())
+            {
+                case "A":
+                case "START":
+                    return "A";
+                case "B":
+                case "END":
+                    return "B";
+                default:
+                    return null;
+            }
+        }
+
+        private static float? GetLocationDistance(FuseTrackLocation location, float segmentLength)
+        {
+            if (location == null)
+            {
+                return null;
+            }
+
+            var distance = location.Distance ?? ((location.Normalized ?? 0f) * segmentLength);
+            distance += location.Offset;
+            return distance;
+        }
+
+        private static float? EstimateSegmentLength(FuseSegment segment, IDictionary<string, FuseNode> nodes)
+        {
+            if (segment == null ||
+                nodes == null ||
+                string.IsNullOrWhiteSpace(segment.StartNodeId) ||
+                string.IsNullOrWhiteSpace(segment.EndNodeId))
+            {
+                return null;
+            }
+
+            FuseNode start;
+            FuseNode end;
+            if (!nodes.TryGetValue(segment.StartNodeId, out start) ||
+                !nodes.TryGetValue(segment.EndNodeId, out end) ||
+                start == null ||
+                end == null)
+            {
+                return null;
+            }
+
+            // Full graph curvature is only known at runtime. The straight-line
+            // estimate catches obviously crossed same-segment spans in authored
+            // JSON; TrackAPI performs the authoritative runtime check.
+            return Vector3.Distance(start.Position, end.Position);
+        }
+
+        private static void ValidateTrackRemovalTargets(ValidationResult result, string path, IEnumerable<string> removals, IEnumerable<string> definitions)
+        {
+            if (removals == null)
+            {
+                return;
+            }
+
+            var definedIds = new HashSet<string>(definitions ?? Enumerable.Empty<string>());
+            var seen = new HashSet<string>();
+            var index = 0;
+            foreach (var id in removals)
+            {
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    result.AddError($"{path}[{index}]", "Removal IDs must not be blank.", "fuse.track.removal.blank");
+                }
+                else if (!seen.Add(id))
+                {
+                    result.AddWarning($"{path}[{index}]", "Removal ID is listed more than once.", "fuse.track.removal.duplicate", id);
+                }
+                else if (definedIds.Contains(id))
+                {
+                    result.AddError($"{path}[{index}]", "A track object cannot be defined and removed in the same FUSE document.", "fuse.track.removal.conflict", id);
+                }
+
+                index++;
+            }
+        }
+
+        private static void ValidateOperations(ValidationResult result, FuseOperationsDefinition operations)
+        {
+            if (operations.Loads != null)
+            {
+                foreach (var load in operations.Loads)
+                {
+                    var path = $"operations.loads.{load.Key}";
+                    Required(result, $"{path}.name", load.Value.Name);
+
+                    if (!string.IsNullOrWhiteSpace(load.Value.Units))
+                    {
+                        var units = load.Value.Units.ToLowerInvariant();
+                        if (units != "pounds" && units != "gallons" && units != "quantity")
+                        {
+                            result.AddError($"{path}.units", "Load units must be Pounds, Gallons, or Quantity.", "fuse.operations.loads.units", load.Value.Units);
+                        }
+                    }
+
+                    if (load.Value.Density.HasValue && load.Value.Density.Value < 0f)
+                    {
+                        result.AddError($"{path}.density", "Load density must be greater than or equal to 0.", "fuse.operations.loads.density", load.Value.Density.Value);
+                    }
+
+                    if (load.Value.UnitWeightInPounds.HasValue && load.Value.UnitWeightInPounds.Value < 0f)
+                    {
+                        result.AddError($"{path}.unitWeightInPounds", "Load unitWeightInPounds must be greater than or equal to 0.", "fuse.operations.loads.unitWeightInPounds", load.Value.UnitWeightInPounds.Value);
+                    }
+
+                    if (load.Value.PayPerQuantity.HasValue && load.Value.PayPerQuantity.Value < 0f)
+                    {
+                        result.AddError($"{path}.payPerQuantity", "Load payPerQuantity must be greater than or equal to 0.", "fuse.operations.loads.payPerQuantity", load.Value.PayPerQuantity.Value);
+                    }
+
+                    if (load.Value.CostPerUnit.HasValue && load.Value.CostPerUnit.Value < 0f)
+                    {
+                        result.AddError($"{path}.costPerUnit", "Load costPerUnit must be greater than or equal to 0.", "fuse.operations.loads.costPerUnit", load.Value.CostPerUnit.Value);
+                    }
+                }
+            }
+
+            foreach (var industry in operations.Industries)
+            {
+                Required(result, $"operations.industries.{industry.Key}.name", industry.Value.Name);
+                if (industry.Value.Order.HasValue && industry.Value.Order.Value < 0)
+                {
+                    result.AddError($"operations.industries.{industry.Key}.order", "Industry order must be greater than or equal to 0.", "fuse.operations.industry.order", industry.Value.Order.Value);
+                }
+
+                foreach (var component in industry.Value.Components)
+                {
+                    var componentPath = $"operations.industries.{industry.Key}.components.{component.Key}";
+                    if (component.Value == null)
+                    {
+                        result.AddError(componentPath, "Industry component definition is required.", "fuse.operations.component.required");
+                        continue;
+                    }
+
+                    Required(result, $"{componentPath}.type", component.Value.Type);
+                    Required(result, $"{componentPath}.name", component.Value.Name);
+                    ValidateIndustryComponent(result, componentPath, component.Value);
+                }
+            }
+
+            foreach (var loader in operations.Loaders)
+            {
+                Required(result, $"operations.loaders.{loader.Key}.prefab", loader.Value.Prefab);
+            }
+
+            foreach (var station in operations.Stations)
+            {
+                Required(result, $"operations.stations.{station.Key}.prefab", station.Value.Prefab);
+                Required(result, $"operations.stations.{station.Key}.passengerStopId", station.Value.PassengerStopId);
+            }
+
+            foreach (var turntable in operations.Turntables)
+            {
+                if (turntable.Value.Radius <= 0f)
+                {
+                    result.AddError($"operations.turntables.{turntable.Key}.radius", "Turntable radius must be greater than 0.", "fuse.turntable.radius", turntable.Value.Radius);
+                }
+
+                if (turntable.Value.Subdivisions < 4 || turntable.Value.Subdivisions > 32)
+                {
+                    result.AddError($"operations.turntables.{turntable.Key}.subdivisions", "Turntable subdivisions must be between 4 and 32.", "fuse.turntable.subdivisions", turntable.Value.Subdivisions);
+                }
+
+                if (turntable.Value.Roundhouse != null &&
+                    turntable.Value.Roundhouse.Stalls > 0 &&
+                    turntable.Value.Roundhouse.TrackLength <= 0f)
+                {
+                    result.AddError($"operations.turntables.{turntable.Key}.roundhouse.trackLength", "Roundhouse track length must be greater than 0.", "fuse.turntable.roundhouse.trackLength", turntable.Value.Roundhouse.TrackLength);
+                }
+            }
+        }
+
+        private static void ValidateWorld(ValidationResult result, FuseWorldDefinition world)
+        {
+            if (world.Removals != null)
+            {
+                ValidateWorldRemovalTargets(result, "world.removals.scenery", world.Removals.Scenery, world.Scenery.Keys);
+                ValidateWorldRemovalTargets(result, "world.removals.splineys", world.Removals.Splineys, world.Splineys.Keys);
+                ValidateWorldRemovalTargets(result, "world.removals.telegraphPoles", world.Removals.TelegraphPoles, world.TelegraphPoles.Keys);
+                ValidateWorldRemovalTargets(result, "world.removals.mapLabels", world.Removals.MapLabels, world.MapLabels.Keys);
+                ValidateWorldRemovalTargets(result, "world.removals.mapMasks", world.Removals.MapMasks, world.MapMasks.Keys);
+                ValidateWorldRemovalTargets(result, "world.removals.sceneClones", world.Removals.SceneClones, world.SceneClones.Keys);
+            }
+
+            ValidateSuppressionIds(result, "world.suppressBaseScenePaths", world.SuppressBaseScenePaths, "Scene suppression path is empty.", "fuse.world.suppression.scenePath.empty");
+            ValidateSuppressionIds(result, "world.suppressBaseTrackGroups", world.SuppressBaseTrackGroups, "Track group suppression id is empty.", "fuse.world.suppression.trackGroup.empty");
+            ValidateSuppressionIds(result, "world.suppressBaseAreas", world.SuppressBaseAreas, "Area suppression id is empty.", "fuse.world.suppression.area.empty");
+
+            foreach (var scenery in world.Scenery)
+            {
+                if (string.IsNullOrWhiteSpace(scenery.Value?.AssetIdentifier) &&
+                    string.IsNullOrWhiteSpace(scenery.Value?.Model))
+                {
+                    result.AddError(
+                        $"world.scenery.{scenery.Key}.assetIdentifier",
+                        "Scenery requires an AssetIdentifier (or legacy Model) to resolve a PrefabStore asset.",
+                        "fuse.world.scenery.assetIdentifier.required");
+                }
+
+                ValidateNoBlank(result, $"world.scenery.{scenery.Key}.anchorSpanIds", scenery.Value?.AnchorSpanIds, "fuse.world.scenery.anchorSpan.empty");
+            }
+
+            var spawnPoints = world.SpawnPoints ?? Array.Empty<FuseSpawnPoint>();
+            var seenSpawnPoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (var spawnIndex = 0; spawnIndex < spawnPoints.Length; spawnIndex++)
+            {
+                var spawnPoint = spawnPoints[spawnIndex];
+                var path = $"world.spawnPoints[{spawnIndex}]";
+                if (spawnPoint == null)
+                {
+                    result.AddError(path, "Spawn point is required.", "fuse.world.spawnPoint.required");
+                    continue;
+                }
+
+                Required(result, $"{path}.name", spawnPoint.Name);
+                if (!string.IsNullOrWhiteSpace(spawnPoint.Name) && !seenSpawnPoints.Add(spawnPoint.Name.Trim()))
+                {
+                    result.AddError($"{path}.name", "Spawn point names must be unique within a package.", "fuse.world.spawnPoint.duplicate", spawnPoint.Name);
+                }
+
+                if (spawnPoint.Radius.HasValue && spawnPoint.Radius.Value <= 0f)
+                {
+                    result.AddError($"{path}.radius", "Spawn point radius must be greater than 0.", "fuse.world.spawnPoint.radius", spawnPoint.Radius);
+                }
+            }
+
+            foreach (var spliney in world.Splineys)
+            {
+                Required(result, $"world.splineys.{spliney.Key}.type", spliney.Value.Type);
+                if (spliney.Value.Points == null || spliney.Value.Points.Length < 2)
+                {
+                    result.AddError($"world.splineys.{spliney.Key}.points", "Spliney objects require at least two points.", "fuse.spliney.points");
+                }
+            }
+
+            foreach (var telegraph in world.TelegraphPoles)
+            {
+                if (telegraph.Value.Points == null || telegraph.Value.Points.Length < 2)
+                {
+                    result.AddError($"world.telegraphPoles.{telegraph.Key}.points", "Telegraph pole sets require at least two points.", "fuse.telegraph.points");
+                }
+            }
+
+            var telegraphMovements = world.TelegraphPoleMovements ?? Array.Empty<FuseTelegraphPoleMovement>();
+            for (var movementIndex = 0; movementIndex < telegraphMovements.Length; movementIndex++)
+            {
+                var movement = telegraphMovements[movementIndex];
+                var path = $"world.telegraphPoleMovements[{movementIndex}]";
+                if (movement == null)
+                {
+                    result.AddError(path, "Telegraph pole movement is required.", "fuse.telegraphPoleMovement.required");
+                    continue;
+                }
+
+                if (movement.PoleIndices == null || movement.PoleIndices.Length == 0)
+                {
+                    result.AddError($"{path}.poleIndices", "Telegraph pole movement requires at least one pole index.", "fuse.telegraphPoleMovement.poleIndices");
+                    continue;
+                }
+
+                var seenPoleIndices = new HashSet<int>();
+                for (var poleIndex = 0; poleIndex < movement.PoleIndices.Length; poleIndex++)
+                {
+                    var value = movement.PoleIndices[poleIndex];
+                    if (value < 0)
+                    {
+                        result.AddError($"{path}.poleIndices[{poleIndex}]", "Telegraph pole index must be greater than or equal to 0.", "fuse.telegraphPoleMovement.poleIndex", value);
+                    }
+                    else if (!seenPoleIndices.Add(value))
+                    {
+                        result.AddWarning($"{path}.poleIndices[{poleIndex}]", "Telegraph pole index is listed more than once in the same movement.", "fuse.telegraphPoleMovement.duplicatePoleIndex", value);
+                    }
+                }
+
+                if (movement.Offset == default(Vector3))
+                {
+                    result.AddWarning($"{path}.offset", "Telegraph pole movement offset is zero.", "fuse.telegraphPoleMovement.zeroOffset");
+                }
+            }
+
+            foreach (var mapMask in world.MapMasks)
+            {
+                var path = $"world.mapMasks.{mapMask.Key}";
+                var type = (mapMask.Value.Type ?? string.Empty).ToLowerInvariant();
+                switch (type)
+                {
+                    case "circle":
+                        if (!mapMask.Value.Radius.HasValue || mapMask.Value.Radius.Value <= 0f)
+                        {
+                            result.AddError($"{path}.radius", "Circle map masks require a positive radius.", "fuse.mapMask.circle.radius", mapMask.Value.Radius);
+                        }
+                        break;
+
+                    case "rectangle":
+                        if (!mapMask.Value.Size.HasValue || mapMask.Value.Size.Value.x <= 0f || mapMask.Value.Size.Value.z <= 0f)
+                        {
+                            result.AddError($"{path}.size", "Rectangle map masks require a positive size.", "fuse.mapMask.rectangle.size", mapMask.Value.Size);
+                        }
+                        break;
+
+                    case "curve":
+                        if (mapMask.Value.Points == null || mapMask.Value.Points.Length < 2)
+                        {
+                            result.AddError($"{path}.points", "Curve map masks require at least two points.", "fuse.mapMask.curve.points");
+                        }
+                        break;
+
+                    default:
+                        result.AddError($"{path}.type", "Map mask type must be circle, rectangle, or curve.", "fuse.mapMask.type", mapMask.Value.Type);
+                        break;
+                }
+            }
+
+            foreach (var mapTile in world.MapTiles)
+            {
+                if (mapTile.Value == null)
+                {
+                    result.AddError($"world.mapTiles.{mapTile.Key}", "Map tile source is required.", "fuse.mapTiles.required");
+                    continue;
+                }
+
+                Required(result, $"world.mapTiles.{mapTile.Key}.directory", mapTile.Value.Directory);
+                Required(result, $"world.mapTiles.{mapTile.Key}.sourceFolder", mapTile.Value.SourceFolder);
+            }
+
+            foreach (var sceneClone in world.SceneClones)
+            {
+                if (sceneClone.Value == null)
+                {
+                    result.AddError($"world.sceneClones.{sceneClone.Key}", "Scene clone definition is required.", "fuse.sceneClone.required");
+                    continue;
+                }
+
+                Required(result, $"world.sceneClones.{sceneClone.Key}.targetPath", sceneClone.Value.TargetPath);
+            }
+        }
+
+        private static void ValidateWorldRemovalTargets(ValidationResult result, string path, IEnumerable<string> removals, IEnumerable<string> definitions)
+        {
+            if (removals == null)
+            {
+                return;
+            }
+
+            var definedIds = new HashSet<string>(definitions ?? Enumerable.Empty<string>(), System.StringComparer.OrdinalIgnoreCase);
+            var seen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+            var index = 0;
+            foreach (var id in removals)
+            {
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    result.AddError($"{path}[{index}]", "Removal IDs must not be blank.", "fuse.world.removal.blank");
+                }
+                else if (!seen.Add(id))
+                {
+                    result.AddWarning($"{path}[{index}]", "Removal ID is listed more than once.", "fuse.world.removal.duplicate", id);
+                }
+                else if (definedIds.Contains(id))
+                {
+                    result.AddError($"{path}[{index}]", "A world object cannot be defined and removed in the same FUSE document.", "fuse.world.removal.conflict", id);
+                }
+
+                index++;
+            }
+        }
+
+        private static void ValidateSuppressionIds(ValidationResult result, string path, IEnumerable<string> values, string message, string code)
+        {
+            if (values == null)
+            {
+                return;
+            }
+
+            var index = 0;
+            foreach (var value in values)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    result.AddWarning($"{path}[{index}]", message, code);
+                }
+
+                index++;
+            }
+        }
+
+        private static void ValidateProgression(ValidationResult result, FuseProgressionRoot progression)
+        {
+            var rootSectionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var rootSections = progression.Sections ?? Array.Empty<FuseSection>();
+            for (var index = 0; index < rootSections.Length; index++)
+            {
+                var section = rootSections[index];
+                var path = $"progression.sections[{index}]";
+                if (section == null)
+                {
+                    result.AddError(path, "Progression section is required.", "fuse.progression.section.required");
+                    continue;
+                }
+
+                Required(result, $"{path}.id", section.Id);
+                if (!string.IsNullOrWhiteSpace(section.Id) && !rootSectionIds.Add(section.Id))
+                {
+                    result.AddError($"{path}.id", "Root progression section IDs must be unique within a package.", "fuse.progression.section.duplicate", section.Id);
+                }
+            }
+
+            foreach (var progressionEntry in progression.Progressions)
+            {
+                if (progressionEntry.Value == null)
+                {
+                    result.AddError($"progression.progressions.{progressionEntry.Key}", "Progression definition is required.", "fuse.progression.required");
+                    continue;
+                }
+
+                foreach (var section in progressionEntry.Value.Sections)
+                {
+                    ValidateProgressionSection(
+                        result,
+                        $"progression.progressions.{progressionEntry.Key}.sections.{section.Key}",
+                        section.Value,
+                        requireId: false);
+                }
+            }
+
+            foreach (var feature in progression.MapFeatures)
+            {
+                var path = $"progression.mapFeatures.{feature.Key}";
+                if (feature.Value == null)
+                {
+                    result.AddError(path, "Map feature definition is required.", "fuse.progression.mapFeature.required");
+                    continue;
+                }
+
+                Required(result, $"{path}.displayName", feature.Value.DisplayName);
+                ValidateNoBlank(result, $"{path}.trackGroupsEnableOnUnlock", feature.Value.TrackGroupsEnableOnUnlock, "fuse.progression.mapFeature.trackGroup.empty");
+                ValidateNoBlank(result, $"{path}.trackGroupsAvailableOnUnlock", feature.Value.TrackGroupsAvailableOnUnlock, "fuse.progression.mapFeature.trackGroup.empty");
+                ValidateNoBlank(result, $"{path}.areasEnableOnUnlock", feature.Value.AreasEnableOnUnlock, "fuse.progression.mapFeature.area.empty");
+                ValidateNoBlank(result, $"{path}.gameObjectsEnableOnUnlock", feature.Value.GameObjectsEnableOnUnlock, "fuse.progression.mapFeature.gameObject.empty");
+                ValidateNoBlank(result, $"{path}.unlockIncludeIndustries", feature.Value.UnlockIncludeIndustries, "fuse.progression.mapFeature.industry.empty");
+                ValidateNoBlank(result, $"{path}.unlockExcludeIndustries", feature.Value.UnlockExcludeIndustries, "fuse.progression.mapFeature.industry.empty");
+                ValidateNoBlank(result, $"{path}.unlockIncludeIndustryComponents", feature.Value.UnlockIncludeIndustryComponents, "fuse.progression.mapFeature.industryComponent.empty");
+            }
+        }
+
+        private static void ValidateAudio(ValidationResult result, FuseAudioRoot audio)
+        {
+            if (audio == null)
+            {
+                return;
+            }
+
+            foreach (var whistle in audio.Whistles ?? new Dictionary<string, FuseWhistleAudio>())
+            {
+                var path = $"audio.whistles.{whistle.Key}";
+                if (whistle.Value == null)
+                {
+                    result.AddError(path, "Whistle audio definition is required.", "fuse.audio.whistle.required");
+                    continue;
+                }
+
+                Required(result, $"{path}.name", whistle.Value.Name);
+                Required(result, $"{path}.clip", whistle.Value.Clip);
+            }
+
+            foreach (var horn in audio.Horns ?? new Dictionary<string, FuseHornAudio>())
+            {
+                var path = $"audio.horns.{horn.Key}";
+                if (horn.Value == null)
+                {
+                    result.AddError(path, "Horn audio definition is required.", "fuse.audio.horn.required");
+                    continue;
+                }
+
+                Required(result, $"{path}.name", horn.Value.Name);
+                if (horn.Value.Layers == null || horn.Value.Layers.Length == 0)
+                {
+                    result.AddError($"{path}.layers", "Horn audio requires at least one layer.", "fuse.audio.horn.layers");
+                    continue;
+                }
+
+                for (var layerIndex = 0; layerIndex < horn.Value.Layers.Length; layerIndex++)
+                {
+                    var layer = horn.Value.Layers[layerIndex];
+                    var layerPath = $"{path}.layers[{layerIndex}]";
+                    if (layer == null)
+                    {
+                        result.AddError(layerPath, "Horn audio layer is required.", "fuse.audio.horn.layer.required");
+                        continue;
+                    }
+
+                    Required(result, $"{layerPath}.file", layer.File);
+                    if (layer.Keyframes == null || layer.Keyframes.Length == 0)
+                    {
+                        result.AddWarning($"{layerPath}.keyframes", "Horn layer has no keyframes; FUSE will use a constant volume curve.", "fuse.audio.horn.keyframes.empty");
+                    }
+                }
+            }
+
+            foreach (var bell in audio.Bells ?? new Dictionary<string, FuseBellAudio>())
+            {
+                var path = $"audio.bells.{bell.Key}";
+                if (bell.Value == null)
+                {
+                    result.AddError(path, "Bell audio definition is required.", "fuse.audio.bell.required");
+                    continue;
+                }
+
+                Required(result, $"{path}.name", bell.Value.Name);
+                Required(result, $"{path}.file", bell.Value.File);
+            }
+        }
+
+        private static void ValidateProgressionSection(ValidationResult result, string path, FuseSection section, bool requireId)
+        {
+            if (section == null)
+            {
+                result.AddError(path, "Progression section is required.", "fuse.progression.section.required");
+                return;
+            }
+
+            if (requireId)
+            {
+                Required(result, $"{path}.id", section.Id);
+            }
+
+            Required(result, $"{path}.displayName", section.DisplayName);
+            ValidateNoBlank(result, $"{path}.trackGroupsEnableOnUnlock", section.TrackGroupsEnableOnUnlock, "fuse.progression.section.trackGroup.empty");
+            ValidateNoBlank(result, $"{path}.trackGroupsAvailableOnUnlock", section.TrackGroupsAvailableOnUnlock, "fuse.progression.section.trackGroup.empty");
+            ValidateNoBlank(result, $"{path}.areasEnableOnUnlock", section.AreasEnableOnUnlock, "fuse.progression.section.area.empty");
+            ValidateNoBlank(result, $"{path}.gameObjectsEnableOnUnlock", section.GameObjectsEnableOnUnlock, "fuse.progression.section.gameObject.empty");
+            ValidateNoBlank(result, $"{path}.unlockIncludeIndustries", section.UnlockIncludeIndustries, "fuse.progression.section.industry.empty");
+            ValidateNoBlank(result, $"{path}.unlockExcludeIndustries", section.UnlockExcludeIndustries, "fuse.progression.section.industry.empty");
+            ValidateNoBlank(result, $"{path}.unlockIncludeIndustryComponents", section.UnlockIncludeIndustryComponents, "fuse.progression.section.industryComponent.empty");
+
+            var phases = section.DeliveryPhases;
+            if (phases == null)
+            {
+                return;
+            }
+
+            for (var phaseIndex = 0; phaseIndex < phases.Length; phaseIndex++)
+            {
+                var phase = phases[phaseIndex];
+                var phasePath = $"{path}.deliveryPhases[{phaseIndex}]";
+                if (phase == null)
+                {
+                    result.AddError(phasePath, "Delivery phase is required.", "fuse.progression.deliveryPhase.required");
+                    continue;
+                }
+
+                if (phase.Cost < 0)
+                {
+                    result.AddError($"{phasePath}.cost", "Delivery phase cost must be greater than or equal to 0.", "fuse.progression.deliveryPhase.cost", phase.Cost);
+                }
+
+                var deliveries = phase.Deliveries;
+                if (deliveries != null && deliveries.Length > 0)
+                {
+                    var hasDestination = deliveries.Any(delivery => !string.IsNullOrWhiteSpace(delivery?.DestinationIndustryId));
+                    if (string.IsNullOrWhiteSpace(phase.IndustryComponentId) && !hasDestination)
+                    {
+                        result.AddError($"{phasePath}.industryComponentId", "Delivery phases with deliveries require industryComponentId, or delivery destinationIndustryId for runtime inference.", "fuse.progression.deliveryPhase.industryComponentId");
+                    }
+                }
+
+                if (deliveries == null)
+                {
+                    continue;
+                }
+
+                for (var deliveryIndex = 0; deliveryIndex < deliveries.Length; deliveryIndex++)
+                {
+                    var delivery = deliveries[deliveryIndex];
+                    var deliveryPath = $"{phasePath}.deliveries[{deliveryIndex}]";
+                    if (delivery == null)
+                    {
+                        result.AddError(deliveryPath, "Delivery is required.", "fuse.progression.delivery.required");
+                        continue;
+                    }
+
+                    if (delivery.Count < 1)
+                    {
+                        result.AddError($"{deliveryPath}.count", "Delivery count must be greater than 0.", "fuse.progression.delivery.count", delivery.Count);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(delivery.Direction))
+                    {
+                        var direction = delivery.Direction.Trim().ToLowerInvariant();
+                        if (direction != "loadtoindustry" &&
+                            direction != "toindustry" &&
+                            direction != "to" &&
+                            direction != "import" &&
+                            direction != "loadfromindustry" &&
+                            direction != "fromindustry" &&
+                            direction != "from" &&
+                            direction != "export")
+                        {
+                            result.AddError($"{deliveryPath}.direction", "Delivery direction must be loadToIndustry or loadFromIndustry.", "fuse.progression.delivery.direction", delivery.Direction);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void ValidateNoBlank(ValidationResult result, string path, IEnumerable<string> values, string code)
+        {
+            if (values == null)
+            {
+                return;
+            }
+
+            var index = 0;
+            foreach (var value in values)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    result.AddWarning($"{path}[{index}]", "Value should not be blank.", code);
+                }
+
+                index++;
+            }
+        }
+
+        private static void ValidateIndustryComponent(ValidationResult result, string path, FuseIndustryComponent component)
+        {
+            var type = FuseIndustryComponentTypes.Normalize(component.Type);
+            if (!string.IsNullOrWhiteSpace(type) && !FuseIndustryComponentTypes.IsKnown(type))
+            {
+                result.AddError(
+                    $"{path}.type",
+                    $"Industry component type must be one of: {FuseIndustryComponentTypes.KnownTypesForMessage()}.",
+                    "fuse.operations.component.type",
+                    component.Type);
+                return;
+            }
+
+            if (FuseIndustryComponentTypes.UsesTrackSpanIds(type) &&
+                (component.TrackSpanIds == null || component.TrackSpanIds.Length == 0))
+            {
+                result.AddError($"{path}.trackSpanIds", $"Industry component type '{type}' requires at least one track span.", "fuse.operations.component.trackSpanIds");
+            }
+
+            if (FuseIndustryComponentTypes.UsesLoadId(type))
+            {
+                if (string.IsNullOrWhiteSpace(component.LoadId))
+                {
+                    result.AddWarning($"{path}.loadId", $"Industry component type '{type}' usually needs a loadId to function.", "fuse.operations.component.loadId");
+                }
+            }
+
+            if (component.StorageChangeRate.HasValue && component.StorageChangeRate.Value < 0f)
+            {
+                result.AddError($"{path}.storageChangeRate", "Storage change rate must be greater than or equal to 0.", "fuse.operations.component.storageChangeRate", component.StorageChangeRate.Value);
+            }
+
+            if (component.MaxStorage.HasValue && component.MaxStorage.Value < 0f)
+            {
+                result.AddError($"{path}.maxStorage", "Max storage must be greater than or equal to 0.", "fuse.operations.component.maxStorage", component.MaxStorage.Value);
+            }
+
+            if (component.CarTransferRate.HasValue && component.CarTransferRate.Value < 0f)
+            {
+                result.AddError($"{path}.carTransferRate", "Car transfer rate must be greater than or equal to 0.", "fuse.operations.component.carTransferRate", component.CarTransferRate.Value);
+            }
+
+            if (string.Equals(type, FuseIndustryComponentTypes.Formulaic, StringComparison.OrdinalIgnoreCase) &&
+                (component.InputTermsPerDay == null || component.InputTermsPerDay.Count == 0) &&
+                (component.OutputTermsPerDay == null || component.OutputTermsPerDay.Count == 0))
+            {
+                result.AddError($"{path}.inputTermsPerDay", "Formulaic components require inputTermsPerDay and/or outputTermsPerDay.", "fuse.operations.formulaic.terms");
+            }
+
+            if (string.Equals(type, FuseIndustryComponentTypes.TeamTrack, StringComparison.OrdinalIgnoreCase) &&
+                (component.TeamProfiles == null || component.TeamProfiles.Count == 0))
+            {
+                result.AddError($"{path}.teamProfiles", "Team track components require at least one team profile entry.", "fuse.operations.teamTrack.profile");
+            }
+
+            if (string.Equals(type, FuseIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase))
+            {
+                Required(result, $"{path}.passengerStopId", component.PassengerStopId);
+                Required(result, $"{path}.timetableCode", component.TimetableCode);
+            }
+
+            if (string.Equals(type, FuseIndustryComponentTypes.TeleportLoading, StringComparison.OrdinalIgnoreCase))
+            {
+                if ((component.InputSpanIds == null || component.InputSpanIds.Length == 0) &&
+                    (component.OutputSpanIds == null || component.OutputSpanIds.Length == 0))
+                {
+                    result.AddError($"{path}.inputSpanIds", "Teleport loading components require inputSpanIds and/or outputSpanIds.", "fuse.operations.teleportLoading.spans");
+                }
+
+                if (component.CarLoadPeriod.HasValue && component.CarLoadPeriod.Value < 0f)
+                {
+                    result.AddError($"{path}.carLoadPeriod", "Car load period must be greater than or equal to 0.", "fuse.operations.teleportLoading.carLoadPeriod", component.CarLoadPeriod.Value);
+                }
+
+                if (component.CarLengthFeet.HasValue && component.CarLengthFeet.Value < 0f)
+                {
+                    result.AddError($"{path}.carLengthFeet", "Car length feet must be greater than or equal to 0.", "fuse.operations.teleportLoading.carLengthFeet", component.CarLengthFeet.Value);
+                }
+            }
+        }
+
+        private static void Required(ValidationResult result, string field, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                result.AddError(field, "Value is required.", "fuse.required");
+            }
+        }
+
+        private static HashSet<string> CollectGeneratedNodeIds(FuseOperationsDefinition operations)
+        {
+            var result = new HashSet<string>();
+            if (operations?.Turntables == null)
+            {
+                return result;
+            }
+
+            foreach (var turntable in operations.Turntables)
+            {
+                var definition = turntable.Value;
+                if (definition == null)
+                {
+                    continue;
+                }
+
+                for (var index = 0; index < definition.Subdivisions; index++)
+                {
+                    result.Add(TurntableAPI.GetPitNodeId(turntable.Key, index, definition));
+                }
+
+                if (definition.Roundhouse == null || definition.Roundhouse.Stalls <= 0)
+                {
+                    continue;
+                }
+
+                for (var index = 1; index <= definition.Roundhouse.Stalls; index++)
+                {
+                    result.Add(TurntableAPI.GetRoundhouseNodeId(turntable.Key, index, definition));
+                }
+            }
+
+            return result;
+        }
+
+        private static HashSet<string> CollectGeneratedSegmentIds(FuseOperationsDefinition operations)
+        {
+            var result = new HashSet<string>();
+            if (operations?.Turntables == null)
+            {
+                return result;
+            }
+
+            foreach (var turntable in operations.Turntables.Where(entry => entry.Value?.Roundhouse != null && entry.Value.Roundhouse.Stalls > 0))
+            {
+                for (var index = 1; index <= turntable.Value.Roundhouse.Stalls; index++)
+                {
+                    result.Add(TurntableAPI.GetRoundhouseSegmentId(turntable.Key, index, turntable.Value));
+                }
+            }
+
+            return result;
+        }
+    }
+}
