@@ -13,16 +13,16 @@ import shutil
 import sys
 from pathlib import Path
 
+import legacy_json
 
 FUSE_SCHEMA_VERSION = "1.0"
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".aiff", ".aif"}
 
 
 def read_json(path: Path, lenient: bool = False):
-    text = path.read_text(encoding="utf-8-sig")
     if lenient:
-        text = re.sub(r",\s*([}\]])", r"\1", text)
-    return json.loads(text)
+        return legacy_json.read_json(path)
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def write_json(path: Path, data):

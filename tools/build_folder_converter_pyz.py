@@ -19,7 +19,7 @@ def main() -> int:
     output = DIST / "FUSEConvertFolder.pyz"
     with tempfile.TemporaryDirectory(prefix="fuse-folder-pyz-") as temp:
         temp_root = Path(temp)
-        for name in ("fuse_converter.py", "fuse_convert.py", "convert_fuse_audio.py"):
+        for name in ("fuse_converter.py", "fuse_convert.py", "convert_fuse_audio.py", "legacy_json.py"):
             shutil.copy2(TOOLS / name, temp_root / name)
         shutil.copy2(TOOLS / "fuse_convert_folder.py", temp_root / "__main__.py")
         zipapp.create_archive(temp_root, target=output, interpreter="/usr/bin/env python3", compressed=True)

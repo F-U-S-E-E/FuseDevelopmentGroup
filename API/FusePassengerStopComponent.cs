@@ -127,8 +127,8 @@ namespace FUSE.API
             return PassengerStop.FindAll().Where(stop =>
                 stop != null &&
                 stop != this &&
-                !string.IsNullOrWhiteSpace(stop.timetableCode) &&
-                neighborCodes.Contains(stop.timetableCode));
+                ((!string.IsNullOrWhiteSpace(stop.identifier) && neighborCodes.Contains(stop.identifier)) ||
+                 (!string.IsNullOrWhiteSpace(stop.timetableCode) && neighborCodes.Contains(stop.timetableCode))));
         }
 
         private void ConfigureTimetable(PassengerStop passengerStop)

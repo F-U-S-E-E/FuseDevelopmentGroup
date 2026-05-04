@@ -8,6 +8,16 @@
   "railroaderVersion": "2025.1",
   "description": "Compact FUSE JSON example covering track, ops, world, progression, and editor data.",
   "coordinateSpace": "world",
+  "mixinto": {
+    "target": "game-graph",
+    "sourceFile": "murphy-optional-connection.json",
+    "requires": [
+      {
+        "id": "Example.DependencyMod",
+        "notBefore": "1.0"
+      }
+    ]
+  },
   "tracks": {
     "nodes": {
       "murphy:n:001": {
@@ -707,6 +717,9 @@
         "unlockIncludeIndustryComponents": [
           "murphy:ind:sawmill.progression"
         ],
+        "interchangeTransfers": {
+          "murphy:ind:old-interchange.t1": "murphy:ind:new-interchange.t1"
+        },
         "deliveryPhases": [
           {
             "cost": 25000,

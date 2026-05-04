@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using FUSE.Serialization;
+using Newtonsoft.Json;
 
 namespace FUSE.Data
 {
@@ -21,18 +23,31 @@ namespace FUSE.Data
         public string ProgressionId { get; set; }
         public string DisplayName { get; set; }
         public string Description { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] PrerequisiteSections { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] PrerequisiteSectionIds { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] EnableFeaturesOnUnlock { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] DisableFeaturesOnUnlock { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] EnableFeaturesOnAvailable { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] UnlockIncludeIndustries { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] UnlockExcludeIndustries { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] UnlockIncludeIndustryComponents { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] AreasEnableOnUnlock { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] GameObjectsEnableOnUnlock { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] TrackGroupsEnableOnUnlock { get; set; }
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] TrackGroupsAvailableOnUnlock { get; set; }
+        public Dictionary<string, string> InterchangeTransfers { get; set; }
         public FuseDeliveryPhase[] DeliveryPhases { get; set; }
     }
 
@@ -40,6 +55,8 @@ namespace FUSE.Data
     {
         public int Cost { get; set; }
         public string IndustryComponentId { get; set; }
+        [JsonProperty("industryComponent")]
+        public string IndustryComponent { get; set; }
         public FuseDelivery[] Deliveries { get; set; }
     }
 
@@ -47,6 +64,8 @@ namespace FUSE.Data
     {
         public string CarTypeFilter { get; set; }
         public string LoadId { get; set; }
+        [JsonProperty("load")]
+        public string Load { get; set; }
         public int Count { get; set; }
         public string Direction { get; set; }
         public string DestinationIndustryId { get; set; }
@@ -63,33 +82,42 @@ namespace FUSE.Data
         /// the only field for a long time; kept for back-compat. New code should
         /// prefer <see cref="TrackGroupsEnableOnUnlock"/> + <see cref="TrackGroupsAvailableOnUnlock"/>.
         /// </summary>
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] GroupIds { get; set; }
 
         /// <summary>Other map features that must already be unlocked before this one.</summary>
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] PrerequisiteFeatureIds { get; set; }
 
         /// <summary>Track groups to mark "enabled" (live track) on unlock.</summary>
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] TrackGroupsEnableOnUnlock { get; set; }
 
         /// <summary>Track groups to mark "available" (visible/buildable) on unlock.</summary>
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] TrackGroupsAvailableOnUnlock { get; set; }
 
         /// <summary>Areas to enable on unlock (resolved by Area.identifier).</summary>
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] AreasEnableOnUnlock { get; set; }
 
         /// <summary>
         /// GameObjects to enable on unlock. Each entry is a hierarchical scene
         /// path, e.g. "World/Foo/Bar". Resolved at apply time.
         /// </summary>
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] GameObjectsEnableOnUnlock { get; set; }
 
         /// <summary>Industry ids to include in this feature's unlock graph.</summary>
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] UnlockIncludeIndustries { get; set; }
 
         /// <summary>Industry ids explicitly excluded from this feature's unlock graph.</summary>
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] UnlockExcludeIndustries { get; set; }
 
         /// <summary>Industry component ids to include in this feature's unlock graph.</summary>
+        [JsonConverter(typeof(StringArrayOrBoolDictConverter))]
         public string[] UnlockIncludeIndustryComponents { get; set; }
     }
 }

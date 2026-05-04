@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
 using FUSE.Infrastructure;
 using FUSE.Serialization;
 
@@ -10,6 +10,22 @@ namespace FUSE.API
     {
         private static readonly Dictionary<string, object> Definitions =
             new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+        // Cache snapshots can include cycles (component references industry,
+        // industry references components, etc.). Use a clone-specific serializer
+        // that ignores reference loops instead of throwing — the snapshot is
+        // best-effort and a slightly truncated tree is far better than a noisy
+        // warning per cached object.
+        private static readonly JsonSerializerSettings CloneSettings = BuildCloneSettings();
+
+        private static JsonSerializerSettings BuildCloneSettings()
+        {
+            var settings = FuseSerializer.GetSettings();
+            settings.ReferenceLoopHandling = ReferenceLoopHandling.Ignore;
+            settings.PreserveReferencesHandling = PreserveReferencesHandling.None;
+            settings.Formatting = Formatting.None;
+            return settings;
+        }
 
         public static void Store<T>(string kind, string id, T definition)
             where T : class
@@ -70,8 +86,8 @@ namespace FUSE.API
 
             try
             {
-                var serializer = FuseSerializer.GetSerializer();
-                return JToken.FromObject(definition, serializer).ToObject<T>(serializer);
+                var json = JsonConvert.SerializeObject(definition, CloneSettings);
+                return JsonConvert.DeserializeObject<T>(json, CloneSettings);
             }
             catch (Exception ex)
             {

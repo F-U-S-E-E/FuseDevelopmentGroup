@@ -133,6 +133,8 @@ namespace FUSE.API
                 throw new ArgumentNullException(nameof(definition));
             }
 
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Turntable, id, out FuseTurntable previousDefinition);
+
             turntable.transform.localPosition = definition.Position;
             turntable.transform.localRotation = Quaternion.Euler(definition.Rotation);
             if (definition.Radius > 0f)
@@ -148,6 +150,7 @@ namespace FUSE.API
             List<TrackNode> pitNodes;
             using (FuseApiPersistence.SuppressRecording())
             {
+                RemoveStaleRoundhouseTracks(turntable, previousDefinition, definition);
                 pitNodes = CreateOrUpdatePitNodes(turntable, definition);
                 CreateOrUpdateRoundhouseTracks(turntable, definition);
             }
@@ -186,9 +189,11 @@ namespace FUSE.API
         public static void RemoveTurntable(string id)
         {
             var turntable = RequireTurntable(id);
+            FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Turntable, id, out FuseTurntable previousDefinition);
             TrackAPI.BeginBatch();
             try
             {
+                RemoveStaleRoundhouseTracks(turntable, previousDefinition, null);
                 foreach (var segment in TrackAPI.GetAllSegments().Where(segment => segment.turntable == turntable).ToArray())
                 {
                     TrackAPI.RemoveSegment(segment.id);
@@ -252,6 +257,164 @@ namespace FUSE.API
             }
 
             return nodes;
+        }
+
+        private static void RemoveStaleRoundhouseTracks(Turntable turntable, FuseTurntable previousDefinition, FuseTurntable nextDefinition)
+        {
+            if (turntable == null)
+            {
+                return;
+            }
+
+            var turntableId = GetDefinitionTurntableId(turntable);
+            var desiredSegments = GetDesiredRoundhouseSegmentIds(turntableId, nextDefinition);
+            var desiredNodes = GetDesiredRoundhouseNodeIds(turntableId, nextDefinition);
+
+            var generatedSegmentIds = TrackAPI.GetAllSegments()
+                .Where(segment => segment != null &&
+                                  !string.IsNullOrWhiteSpace(segment.id) &&
+                                  IsGeneratedRoundhouseSegmentId(segment.id, turntableId, previousDefinition, nextDefinition) &&
+                                  !desiredSegments.Contains(segment.id))
+                .Select(segment => segment.id)
+                .ToArray();
+
+            var generatedNodeIds = TrackAPI.GetAllNodes()
+                .Where(node => node != null &&
+                               !string.IsNullOrWhiteSpace(node.id) &&
+                               IsGeneratedRoundhouseNodeId(node.id, turntableId, previousDefinition, nextDefinition) &&
+                               !desiredNodes.Contains(node.id))
+                .Select(node => node.id)
+                .ToArray();
+
+            if (generatedSegmentIds.Length == 0 && generatedNodeIds.Length == 0)
+            {
+                return;
+            }
+
+            TrackAPI.BeginBatch();
+            try
+            {
+                foreach (var segmentId in generatedSegmentIds)
+                {
+                    if (TrackAPI.GetSegment(segmentId) != null)
+                    {
+                        TrackAPI.RemoveSegment(segmentId);
+                    }
+                }
+
+                foreach (var nodeId in generatedNodeIds)
+                {
+                    var node = TrackAPI.GetNode(nodeId);
+                    if (node == null)
+                    {
+                        continue;
+                    }
+
+                    var remainingConnections = Graph.Shared != null
+                        ? Graph.Shared.SegmentsConnectedTo(node)
+                            .Where(segment => segment != null &&
+                                              !IsGeneratedRoundhouseSegmentId(segment.id, turntableId, previousDefinition, nextDefinition))
+                            .ToArray()
+                        : Array.Empty<TrackSegment>();
+                    if (remainingConnections.Length > 0)
+                    {
+                        FuseLog.Warning(
+                            $"FUSE kept generated roundhouse node '{nodeId}' for turntable '{turntableId}' " +
+                            $"because {remainingConnections.Length} non-generated segment(s) still reference it.");
+                        continue;
+                    }
+
+                    TrackAPI.RemoveNode(nodeId);
+                }
+
+                FuseLog.Info(
+                    $"FUSE removed stale generated roundhouse graph for turntable '{turntableId}' " +
+                    $"segments={generatedSegmentIds.Length} nodes={generatedNodeIds.Length}.");
+            }
+            finally
+            {
+                TrackAPI.EndBatch();
+            }
+        }
+
+        private static HashSet<string> GetDesiredRoundhouseSegmentIds(string turntableId, FuseTurntable definition)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var stalls = definition?.Roundhouse?.Stalls ?? 0;
+            if (stalls <= 0)
+            {
+                return result;
+            }
+
+            for (var index = 1; index <= stalls; index++)
+            {
+                result.Add(GetRoundhouseSegmentId(turntableId, index, definition));
+            }
+
+            return result;
+        }
+
+        private static HashSet<string> GetDesiredRoundhouseNodeIds(string turntableId, FuseTurntable definition)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var stalls = definition?.Roundhouse?.Stalls ?? 0;
+            if (stalls <= 0)
+            {
+                return result;
+            }
+
+            for (var index = 1; index <= stalls; index++)
+            {
+                result.Add(GetRoundhouseNodeId(turntableId, index, definition));
+            }
+
+            return result;
+        }
+
+        private static bool IsGeneratedRoundhouseSegmentId(string id, string turntableId, params FuseTurntable[] definitions)
+        {
+            return RoundhouseSegmentPrefixes(turntableId, definitions)
+                .Any(prefix => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool IsGeneratedRoundhouseNodeId(string id, string turntableId, params FuseTurntable[] definitions)
+        {
+            return RoundhouseNodePrefixes(turntableId, definitions)
+                .Any(prefix => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static IEnumerable<string> RoundhouseSegmentPrefixes(string turntableId, params FuseTurntable[] definitions)
+        {
+            foreach (var legacyIdentifier in LegacyIdentifiers(definitions))
+            {
+                yield return $"S{legacyIdentifier}RoundhouseSegment";
+            }
+
+            if (!string.IsNullOrWhiteSpace(turntableId))
+            {
+                yield return $"{turntableId}.roundhouse.segment.";
+            }
+        }
+
+        private static IEnumerable<string> RoundhouseNodePrefixes(string turntableId, params FuseTurntable[] definitions)
+        {
+            foreach (var legacyIdentifier in LegacyIdentifiers(definitions))
+            {
+                yield return $"N{legacyIdentifier}RoundhouseNode";
+            }
+
+            if (!string.IsNullOrWhiteSpace(turntableId))
+            {
+                yield return $"{turntableId}.roundhouse.node.";
+            }
+        }
+
+        private static IEnumerable<string> LegacyIdentifiers(IEnumerable<FuseTurntable> definitions)
+        {
+            return (definitions ?? Enumerable.Empty<FuseTurntable>())
+                .Where(definition => definition != null && !string.IsNullOrWhiteSpace(definition.LegacyIdentifier))
+                .Select(definition => definition.LegacyIdentifier)
+                .Distinct(StringComparer.OrdinalIgnoreCase);
         }
 
         private static void CreateOrUpdateRoundhouseTracks(Turntable turntable, FuseTurntable definition)

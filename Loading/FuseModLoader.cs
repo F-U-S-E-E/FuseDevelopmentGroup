@@ -78,7 +78,30 @@ namespace FUSE.Loading
             FuseEvents.RaiseValidationCompleted(definition != null ? definition.Id : string.Empty, validation);
             if (!validation.IsValid)
             {
-                FusePackageFaultRegistry.RecordFault(definition?.Id ?? Path.GetFileName(folderPath ?? definitionPath ?? string.Empty), "validation", $"Definition failed validation with {validation.Errors.Count} error(s).");
+                var packageId = definition?.Id ?? Path.GetFileName(folderPath ?? definitionPath ?? string.Empty);
+
+                // Itemize every validation error before throwing. Without this,
+                // package authors see "Definition failed validation with N error(s)"
+                // and have no way to know which fields actually failed.
+                foreach (var error in validation.Errors)
+                {
+                    var code = string.IsNullOrWhiteSpace(error.Code) ? string.Empty : $" code='{error.Code}'";
+                    var value = error.Value == null ? string.Empty : $" value='{error.Value}'";
+                    FuseLog.Error(
+                        $"FUSE validation error package='{packageId}' operation='load definition' " +
+                        $"kind='{error.Field ?? string.Empty}' message='{error.Message ?? string.Empty}'{code}{value}.");
+                }
+
+                foreach (var warning in validation.Warnings)
+                {
+                    var code = string.IsNullOrWhiteSpace(warning.Code) ? string.Empty : $" code='{warning.Code}'";
+                    var value = warning.Value == null ? string.Empty : $" value='{warning.Value}'";
+                    FuseLog.Warning(
+                        $"FUSE validation warning package='{packageId}' operation='load definition' " +
+                        $"kind='{warning.Field ?? string.Empty}' message='{warning.Message ?? string.Empty}'{code}{value}.");
+                }
+
+                FusePackageFaultRegistry.RecordFault(packageId, "validation", $"Definition failed validation with {validation.Errors.Count} error(s).");
                 throw new InvalidOperationException($"FUSE definition '{definition?.Id ?? "<null>"}' failed validation with {validation.Errors.Count} error(s).");
             }
 
@@ -88,6 +111,7 @@ namespace FUSE.Loading
         public static int ApplyLoadedDefinitions(string reason)
         {
             var ids = GetLoadedDefinitionIdsInOrder();
+            PreEnableInitialTrackGroups(ids);
             var appliedCount = 0;
             var outcomes = new List<PackageApplyOutcome>();
             foreach (var id in ids)
@@ -102,6 +126,16 @@ namespace FUSE.Loading
                 var isReapply = AppliedDefinitionIds.Contains(id);
                 try
                 {
+                    if (!FuseModRequirementResolver.ShouldApply(loaded, out var requirementReason))
+                    {
+                        FusePackageFaultRegistry.MarkSkipped(id, requirementReason);
+                        outcomes.Add(PackageApplyOutcome.ForSkipped(id, requirementReason));
+                        FuseLog.Warning(
+                            $"FUSE skipped conditional mixinto package='{id}' operation='runtime apply' " +
+                            $"id='{id}' reason='{requirementReason}'.");
+                        continue;
+                    }
+
                     var report = ApplyDefinitionToRuntime(loaded, isReapply, reason);
                     if (report.IsFatal)
                     {
@@ -173,6 +207,141 @@ namespace FUSE.Loading
             if (firstLoad)
             {
                 FuseEvents.RaiseModLoaded(definition.Id);
+            }
+        }
+
+        // Walks every loaded definition's progression payload and pre-enables
+        // every track group whose owning section/feature is initially enabled
+        // (or carries no prerequisites and so unlocks at map load).
+        //
+        // Why this is needed: ApplyDefinitionToRuntime runs apply-segments and
+        // RebuildGraph BEFORE apply-progression, so any segment whose groupId
+        // points at a not-yet-enabled track group is filtered out by the graph
+        // rebuild and shows up as "missing after apply" - cascading into fatal
+        // preflight failures for downstream packages (e.g. legacy Asheville
+        // town-clyde / town-addie referencing segments in clyde_yard /
+        // addie-yard-N). Enabling the groups up-front lets the rebuild keep
+        // them, and the actual gating still works because progression apply
+        // later flips disabled-on-unlock features that should start disabled.
+        private static void PreEnableInitialTrackGroups(IReadOnlyList<string> orderedIds)
+        {
+            if (orderedIds == null || orderedIds.Count == 0)
+            {
+                return;
+            }
+
+            var groupsToEnable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var id in orderedIds)
+            {
+                if (!LoadedMods.TryGetValue(id, out var loaded))
+                {
+                    continue;
+                }
+                CollectInitialTrackGroups(loaded?.Definition?.Progression, groupsToEnable);
+            }
+
+            if (groupsToEnable.Count == 0)
+            {
+                return;
+            }
+
+            var enabledCount = 0;
+            foreach (var groupId in groupsToEnable)
+            {
+                try
+                {
+                    TrackAPI.SetGroupEnabled(groupId, true);
+                    enabledCount++;
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning(
+                        $"FUSE pre-enable track group failed groupId='{groupId}' " +
+                        $"message='{ex.Message}'.");
+                }
+            }
+
+            FuseLog.Info(
+                $"FUSE pre-enabled {enabledCount} initial track group(s) " +
+                "before apply-segments to prevent graph-rebuild culling.");
+        }
+
+        private static void CollectInitialTrackGroups(FuseProgressionRoot progression, HashSet<string> sink)
+        {
+            if (progression == null)
+            {
+                return;
+            }
+
+            if (progression.MapFeatures != null)
+            {
+                foreach (var feature in progression.MapFeatures.Values)
+                {
+                    if (feature == null || !feature.InitiallyEnabled)
+                    {
+                        continue;
+                    }
+                    AddNonEmpty(sink, feature.TrackGroupsEnableOnUnlock);
+                    AddNonEmpty(sink, feature.GroupIds);
+                }
+            }
+
+            if (progression.Sections != null)
+            {
+                foreach (var section in progression.Sections)
+                {
+                    if (section == null)
+                    {
+                        continue;
+                    }
+                    if (HasNoPrerequisites(section))
+                    {
+                        AddNonEmpty(sink, section.TrackGroupsEnableOnUnlock);
+                    }
+                }
+            }
+
+            if (progression.Progressions != null)
+            {
+                foreach (var sub in progression.Progressions.Values)
+                {
+                    if (sub?.Sections == null)
+                    {
+                        continue;
+                    }
+                    foreach (var section in sub.Sections.Values)
+                    {
+                        if (section == null)
+                        {
+                            continue;
+                        }
+                        if (HasNoPrerequisites(section))
+                        {
+                            AddNonEmpty(sink, section.TrackGroupsEnableOnUnlock);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static bool HasNoPrerequisites(FuseSection section)
+        {
+            return (section.PrerequisiteSections == null || section.PrerequisiteSections.Length == 0)
+                && (section.PrerequisiteSectionIds == null || section.PrerequisiteSectionIds.Length == 0);
+        }
+
+        private static void AddNonEmpty(HashSet<string> sink, string[] values)
+        {
+            if (values == null)
+            {
+                return;
+            }
+            foreach (var value in values)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    sink.Add(value);
+                }
             }
         }
 
@@ -977,8 +1146,43 @@ namespace FUSE.Loading
                 return true;
             }
 
+            if (CanReplaceSiblingClaim(owner, packageId))
+            {
+                var previousOwner = owner;
+                FuseRegistry.Release(kind, id, owner);
+                if (FuseRegistry.TryClaim(kind, id, packageId, out owner))
+                {
+                    FuseLog.Info(
+                        $"FUSE reassigned sibling claim package='{packageId}' operation='claim runtime object' " +
+                        $"kind='{transactionKind}' id='{id}' previousOwner='{previousOwner ?? string.Empty}'.");
+                    return true;
+                }
+            }
+
             transaction.Skipped(transactionKind, id, $"claimed-by:{owner ?? "unknown"}");
             return false;
+        }
+
+        private static bool CanReplaceSiblingClaim(string existingOwner, string newOwner)
+        {
+            if (string.IsNullOrWhiteSpace(existingOwner) ||
+                string.IsNullOrWhiteSpace(newOwner) ||
+                string.Equals(existingOwner, newOwner, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!LoadedMods.TryGetValue(existingOwner, out var existing) ||
+                !LoadedMods.TryGetValue(newOwner, out var replacement))
+            {
+                return false;
+            }
+
+            return !string.IsNullOrWhiteSpace(existing.FolderPath) &&
+                   string.Equals(
+                       Path.GetFullPath(existing.FolderPath),
+                       Path.GetFullPath(replacement.FolderPath),
+                       StringComparison.OrdinalIgnoreCase);
         }
 
         private static void ApplyTrackRemovals(FuseModDefinition definition, FuseApplyTransaction transaction)

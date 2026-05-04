@@ -18,6 +18,10 @@ namespace FUSE.API
         private static readonly FieldInfo ManagerFeaturesField = typeof(MapFeatureManager).GetField("_features", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ManagerProgressionsField = typeof(ProgressionManager).GetField("_progressions", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ProgressionSectionsField = typeof(Progression).GetField("<Sections>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo SectionInterchangeTransfersField = typeof(Section).GetField("<InterchangeTransfers>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo InterchangeTransferFromField = typeof(InterchangeTransfer).GetField("from", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo InterchangeTransferToField = typeof(InterchangeTransfer).GetField("to", BindingFlags.Instance | BindingFlags.NonPublic);
+        private const string FuseInterchangeTransferPrefix = "FUSE Interchange Transfer ";
 
         public static MapFeature AddMapFeature(string id, FuseMapFeature definition)
         {
@@ -231,6 +235,7 @@ namespace FUSE.API
                     GameObjectsEnableOnUnlock = existingSection?.GameObjectsEnableOnUnlock,
                     TrackGroupsEnableOnUnlock = existingSection?.TrackGroupsEnableOnUnlock,
                     TrackGroupsAvailableOnUnlock = existingSection?.TrackGroupsAvailableOnUnlock,
+                    InterchangeTransfers = ToInterchangeTransfers(section.InterchangeTransfers) ?? existingSection?.InterchangeTransfers,
                     DeliveryPhases = ToDeliveryPhases(section.deliveryPhases)
                 };
             }
@@ -262,6 +267,7 @@ namespace FUSE.API
             feature.unlockExcludeIndustries = ResolveIndustries(definition.UnlockExcludeIndustries);
             feature.unlockIncludeIndustries = ResolveIndustries(definition.UnlockIncludeIndustries);
             feature.unlockIncludeIndustryComponents = ResolveIndustryComponents(definition.UnlockIncludeIndustryComponents);
+            SanitizeMapFeature(feature);
         }
 
         private static void ApplyProgressionDefinition(Progression progression, FuseProgression definition)
@@ -319,6 +325,94 @@ namespace FUSE.API
             section.enableFeaturesOnAvailable = ResolveMapFeatures(definition.EnableFeaturesOnAvailable);
             section.disableFeaturesOnUnlock = ResolveMapFeatures(definition.DisableFeaturesOnUnlock);
             section.deliveryPhases = (definition.DeliveryPhases ?? Array.Empty<FuseDeliveryPhase>()).Select(CreateDeliveryPhase).ToArray();
+            ApplyInterchangeTransfers(section, definition.InterchangeTransfers);
+        }
+
+        private static void ApplyInterchangeTransfers(Section section, IDictionary<string, string> transfers)
+        {
+            var preserved = (section.GetComponentsInChildren<InterchangeTransfer>(true) ?? Array.Empty<InterchangeTransfer>())
+                .Where(transfer => transfer != null && !IsFuseInterchangeTransfer(transfer))
+                .ToList();
+
+            foreach (var transfer in section.GetComponentsInChildren<InterchangeTransfer>(true) ?? Array.Empty<InterchangeTransfer>())
+            {
+                if (transfer == null || !IsFuseInterchangeTransfer(transfer))
+                {
+                    continue;
+                }
+
+                UnityEngine.Object.Destroy(transfer.gameObject);
+            }
+
+            var created = new List<InterchangeTransfer>();
+            if (transfers != null && transfers.Count > 0)
+            {
+                foreach (var transfer in transfers)
+                {
+                    if (string.IsNullOrWhiteSpace(transfer.Key))
+                    {
+                        FuseLog.Warning($"FUSE progression section '{section.identifier}' skipped interchange transfer with blank source id.");
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(transfer.Value))
+                    {
+                        continue;
+                    }
+
+                    var from = ResolveInterchange(transfer.Key);
+                    var to = ResolveInterchange(transfer.Value);
+                    if (from == null || to == null)
+                    {
+                        FuseLog.Warning($"FUSE progression section '{section.identifier}' skipped interchange transfer '{transfer.Key}' -> '{transfer.Value}' because one or both interchange components were not found.");
+                        continue;
+                    }
+
+                    if (InterchangeTransferFromField == null || InterchangeTransferToField == null)
+                    {
+                        FuseLog.Warning($"FUSE progression section '{section.identifier}' could not bind interchange transfer '{transfer.Key}' -> '{transfer.Value}' because base game fields were not found.");
+                        continue;
+                    }
+
+                    var gameObject = new GameObject(FuseInterchangeTransferPrefix + SanitizeObjectName(transfer.Key));
+                    gameObject.transform.SetParent(section.transform, false);
+                    var component = gameObject.AddComponent<InterchangeTransfer>();
+                    InterchangeTransferFromField.SetValue(component, from);
+                    InterchangeTransferToField.SetValue(component, to);
+                    created.Add(component);
+                    FuseLog.Info($"FUSE progression section '{section.identifier}' added interchange transfer '{transfer.Key}' -> '{transfer.Value}'.");
+                }
+            }
+
+            RefreshSectionInterchangeTransfers(section, preserved.Concat(created).ToArray());
+        }
+
+        private static bool IsFuseInterchangeTransfer(InterchangeTransfer transfer)
+        {
+            return transfer != null &&
+                   transfer.gameObject != null &&
+                   transfer.gameObject.name.StartsWith(FuseInterchangeTransferPrefix, StringComparison.Ordinal);
+        }
+
+        private static void RefreshSectionInterchangeTransfers(Section section, InterchangeTransfer[] transfers)
+        {
+            if (section == null)
+            {
+                return;
+            }
+
+            SectionInterchangeTransfersField?.SetValue(section, transfers ?? Array.Empty<InterchangeTransfer>());
+        }
+
+        private static string SanitizeObjectName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "unnamed";
+            }
+
+            var chars = value.Trim().Select(ch => char.IsLetterOrDigit(ch) || ch == '.' || ch == '_' || ch == '-' ? ch : '_').ToArray();
+            return new string(chars);
         }
 
         private static MapFeature EnsureSectionUnlockFeature(Section section, FuseSection definition)
@@ -468,11 +562,18 @@ namespace FUSE.API
 
             switch (direction.Trim().ToLowerInvariant())
             {
+                case "1":
                 case "loadfromindustry":
                 case "fromindustry":
                 case "from":
                 case "export":
                     return Section.Delivery.Direction.LoadFromIndustry;
+                case "0":
+                case "loadtoindustry":
+                case "toindustry":
+                case "to":
+                case "import":
+                    return Section.Delivery.Direction.LoadToIndustry;
                 default:
                     return Section.Delivery.Direction.LoadToIndustry;
             }
@@ -567,6 +668,18 @@ namespace FUSE.API
                 .FirstOrDefault(component => ComponentMatchesId(component, id));
         }
 
+        private static Interchange ResolveInterchange(string id)
+        {
+            var cached = ResolveAnyIndustryComponent(id) as Interchange;
+            if (cached != null)
+            {
+                return cached;
+            }
+
+            return UnityEngine.Object.FindObjectsOfType<Interchange>(true)
+                .FirstOrDefault(component => ComponentMatchesId(component, id));
+        }
+
         private static GameObject ResolveGameObject(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
@@ -653,6 +766,35 @@ namespace FUSE.API
                 .Select(gameObject => GetScenePath(gameObject.transform))
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .ToArray();
+        }
+
+        private static Dictionary<string, string> ToInterchangeTransfers(IEnumerable<InterchangeTransfer> transfers)
+        {
+            if (transfers == null)
+            {
+                return null;
+            }
+
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var transfer in transfers.Where(transfer => transfer != null))
+            {
+                var from = InterchangeTransferFromField?.GetValue(transfer) as Interchange;
+                if (from == null)
+                {
+                    continue;
+                }
+
+                var fromId = SafeIndustryComponentId(from);
+                if (string.IsNullOrWhiteSpace(fromId))
+                {
+                    continue;
+                }
+
+                var to = InterchangeTransferToField?.GetValue(transfer) as Interchange;
+                result[fromId] = to != null ? SafeIndustryComponentId(to) : null;
+            }
+
+            return result.Count > 0 ? result : null;
         }
 
         private static FuseDeliveryPhase[] ToDeliveryPhases(IEnumerable<Section.DeliveryPhase> phases)
@@ -804,7 +946,30 @@ namespace FUSE.API
 
         private static void RefreshMapFeatureManager(MapFeatureManager manager)
         {
-            ManagerFeaturesField?.SetValue(manager, manager.GetComponentsInChildren<MapFeature>());
+            var features = manager.GetComponentsInChildren<MapFeature>();
+            foreach (var feature in features)
+            {
+                SanitizeMapFeature(feature);
+            }
+
+            ManagerFeaturesField?.SetValue(manager, features);
+        }
+
+        private static void SanitizeMapFeature(MapFeature feature)
+        {
+            if (feature == null)
+            {
+                return;
+            }
+
+            feature.prerequisites = feature.prerequisites ?? Array.Empty<MapFeature>();
+            feature.trackGroupsEnableOnUnlock = feature.trackGroupsEnableOnUnlock ?? Array.Empty<string>();
+            feature.trackGroupsAvailableOnUnlock = feature.trackGroupsAvailableOnUnlock ?? Array.Empty<string>();
+            feature.gameObjectsEnableOnUnlock = feature.gameObjectsEnableOnUnlock ?? Array.Empty<GameObject>();
+            feature.areasEnableOnUnlock = feature.areasEnableOnUnlock ?? Array.Empty<Area>();
+            feature.unlockExcludeIndustries = feature.unlockExcludeIndustries ?? Array.Empty<Industry>();
+            feature.unlockIncludeIndustries = feature.unlockIncludeIndustries ?? Array.Empty<Industry>();
+            feature.unlockIncludeIndustryComponents = feature.unlockIncludeIndustryComponents ?? Array.Empty<IndustryComponent>();
         }
 
         private static void RefreshProgressionManager()

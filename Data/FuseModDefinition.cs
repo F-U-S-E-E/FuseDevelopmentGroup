@@ -16,6 +16,7 @@ namespace FUSE.Data
         public string RailroaderVersion { get; set; }
         public string Description { get; set; }
         public string CoordinateSpace { get; set; } = "world";
+        public FuseMixintoDefinition Mixinto { get; set; }
         public FuseTrackDefinition Tracks { get; set; } = new FuseTrackDefinition();
         public FuseOperationsDefinition Operations { get; set; } = new FuseOperationsDefinition();
         public FuseWorldDefinition World { get; set; } = new FuseWorldDefinition();
@@ -23,5 +24,34 @@ namespace FUSE.Data
         public FuseProgressionRoot Progression { get; set; } = new FuseProgressionRoot();
         public FuseEditorState Editor { get; set; }
         public Dictionary<string, object> Extensions { get; set; } = new Dictionary<string, object>();
+    }
+
+    public sealed class FuseMixintoDefinition
+    {
+        /// <summary>
+        /// Legacy mixinto target name, such as game-graph or progressions.
+        /// FUSE keeps this as provenance; runtime behavior is driven by the
+        /// fragment's normal FUSE sections plus Requires.
+        /// </summary>
+        public string Target { get; set; }
+
+        /// <summary>
+        /// Legacy source file that produced this FUSE fragment.
+        /// </summary>
+        public string SourceFile { get; set; }
+
+        /// <summary>
+        /// Optional mod requirements copied from RailLoader/Strange Customs
+        /// conditional mixintos. If any requirement is not satisfied, FUSE
+        /// skips this fragment instead of treating it as a package fault.
+        /// </summary>
+        public FuseModRequirement[] Requires { get; set; }
+    }
+
+    public sealed class FuseModRequirement
+    {
+        public string Id { get; set; }
+        public string NotBefore { get; set; }
+        public string NotAfter { get; set; }
     }
 }
