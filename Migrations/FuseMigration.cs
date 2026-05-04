@@ -58,6 +58,7 @@ namespace FUSE.Migrations
             definition.Author = definition.Author ?? string.Empty;
             definition.CoordinateSpace = string.IsNullOrWhiteSpace(definition.CoordinateSpace) ? "world" : definition.CoordinateSpace;
             definition.ModVersion = string.IsNullOrWhiteSpace(definition.ModVersion) ? "1.0.0" : definition.ModVersion;
+            NormalizeMixinto(definition.Mixinto);
             definition.Tracks = definition.Tracks ?? new FuseTrackDefinition();
             definition.Operations = definition.Operations ?? new FuseOperationsDefinition();
             definition.World = definition.World ?? new FuseWorldDefinition();
@@ -275,6 +276,29 @@ namespace FUSE.Migrations
             }
         }
 
+        private static void NormalizeMixinto(FuseMixintoDefinition mixinto)
+        {
+            if (mixinto == null)
+            {
+                return;
+            }
+
+            mixinto.Target = string.IsNullOrWhiteSpace(mixinto.Target) ? null : mixinto.Target.Trim();
+            mixinto.SourceFile = string.IsNullOrWhiteSpace(mixinto.SourceFile) ? null : mixinto.SourceFile.Trim();
+            mixinto.Requires = mixinto.Requires ?? Array.Empty<FuseModRequirement>();
+            foreach (var requirement in mixinto.Requires)
+            {
+                if (requirement == null)
+                {
+                    continue;
+                }
+
+                requirement.Id = string.IsNullOrWhiteSpace(requirement.Id) ? null : requirement.Id.Trim();
+                requirement.NotBefore = string.IsNullOrWhiteSpace(requirement.NotBefore) ? null : requirement.NotBefore.Trim();
+                requirement.NotAfter = string.IsNullOrWhiteSpace(requirement.NotAfter) ? null : requirement.NotAfter.Trim();
+            }
+        }
+
         private static void NormalizeSection(FuseSection section)
         {
             if (section == null)
@@ -294,6 +318,7 @@ namespace FUSE.Migrations
             section.GameObjectsEnableOnUnlock = section.GameObjectsEnableOnUnlock ?? Array.Empty<string>();
             section.TrackGroupsEnableOnUnlock = section.TrackGroupsEnableOnUnlock ?? Array.Empty<string>();
             section.TrackGroupsAvailableOnUnlock = section.TrackGroupsAvailableOnUnlock ?? Array.Empty<string>();
+            section.InterchangeTransfers = NormalizeInterchangeTransfers(section.InterchangeTransfers);
             section.DeliveryPhases = section.DeliveryPhases ?? Array.Empty<FuseDeliveryPhase>();
 
             foreach (var phase in section.DeliveryPhases)
@@ -303,8 +328,77 @@ namespace FUSE.Migrations
                     continue;
                 }
 
+                if (string.IsNullOrWhiteSpace(phase.IndustryComponentId) &&
+                    !string.IsNullOrWhiteSpace(phase.IndustryComponent))
+                {
+                    phase.IndustryComponentId = phase.IndustryComponent.Trim();
+                }
+
                 phase.Deliveries = phase.Deliveries ?? Array.Empty<FuseDelivery>();
+                foreach (var delivery in phase.Deliveries)
+                {
+                    if (delivery == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(delivery.LoadId) &&
+                        !string.IsNullOrWhiteSpace(delivery.Load))
+                    {
+                        delivery.LoadId = delivery.Load.Trim();
+                    }
+
+                    delivery.Direction = NormalizeDeliveryDirection(delivery.Direction);
+                }
             }
+        }
+
+        private static string NormalizeDeliveryDirection(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            switch (value.Trim().ToLowerInvariant())
+            {
+                case "0":
+                case "loadtoindustry":
+                case "toindustry":
+                case "to":
+                case "import":
+                    return "loadToIndustry";
+                case "1":
+                case "loadfromindustry":
+                case "fromindustry":
+                case "from":
+                case "export":
+                    return "loadFromIndustry";
+                default:
+                    return value.Trim();
+            }
+        }
+
+        private static Dictionary<string, string> NormalizeInterchangeTransfers(Dictionary<string, string> transfers)
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (transfers == null)
+            {
+                return result;
+            }
+
+            foreach (var transfer in transfers)
+            {
+                var sourceId = string.IsNullOrWhiteSpace(transfer.Key) ? null : transfer.Key.Trim();
+                if (string.IsNullOrWhiteSpace(sourceId))
+                {
+                    continue;
+                }
+
+                result[sourceId] = string.IsNullOrWhiteSpace(transfer.Value) ? null : transfer.Value.Trim();
+            }
+
+            return result;
         }
 
         public static bool TryParseSchemaVersion(string value, out Version version)

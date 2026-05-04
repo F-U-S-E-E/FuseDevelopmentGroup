@@ -1,4 +1,4 @@
-﻿{
+{
   "$schema": "./umm-info.schema.json",
   "Id": "HunterR.MurphyBranch",
   "DisplayName": "Murphy Branch",
@@ -8,23 +8,23 @@
   "GameVersion": "2025.1",
   "Requirements": [
     {
-      "Id": "RAIL",
+      "Id": "FUSE",
       "NotBefore": "1.0.0"
     }
   ],
   "LoadAfter": [
-    "RAIL"
+    "FUSE"
   ],
-  "RailLoadPriority": 100,
-  "RailLoadAfter": [],
-  "RailLoadBefore": [],
-  "RailDataFiles": [
-    "track.rail.json",
-    "operations.rail.json",
-    "world.rail.json",
-    "progression.rail.json"
+  "FuseLoadPriority": 100,
+  "FuseLoadAfter": [],
+  "FuseLoadBefore": [],
+  "FuseDataFiles": [
+    "track.fuse.json",
+    "operations.fuse.json",
+    "world.fuse.json",
+    "progression.fuse.json"
   ],
-  "RailAssetPacks": [
+  "FuseAssetPacks": [
     "SCAssetPacks"
   ]
 }

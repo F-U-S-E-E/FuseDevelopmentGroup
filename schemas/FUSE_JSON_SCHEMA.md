@@ -20,6 +20,22 @@ Top-level object groups:
 - `editor`: optional editor-only state that FUSE can ignore at runtime.
 - `extensions`: optional namespaced third-party data.
 
+`mixinto` is optional metadata for converted RailLoader/Strange Customs conditional mixin files. The converted file remains a normal FUSE fragment, but FUSE checks `mixinto.requires[]` immediately before runtime apply. If any required mod is missing, older than `notBefore`, or newer than `notAfter`, that fragment is skipped without faulting the rest of the package.
+
+```json
+{
+  "mixinto": {
+    "target": "game-graph",
+    "sourceFile": "CNRI_FoxysLimestonePatch.json",
+    "requires": [
+      { "id": "CaptainFoxy.NantahalaLime", "notBefore": "1.1" }
+    ]
+  }
+}
+```
+
+A converted FUSE package id ending in `.FUSE` also satisfies the original legacy id, so `CaptainFoxy.NantahalaLime.FUSE` satisfies a requirement for `CaptainFoxy.NantahalaLime`.
+
 All editable game objects are stored in dictionaries keyed by object ID. The ID is not repeated inside the object body. This keeps editor updates simple: replacing `tracks.nodes["murphy:n:001"]` updates exactly one object without array searches or ID duplication.
 
 `schemaVersion` is the FUSE data format version and drives migrations. Use the string form, for example `"1.0"`. Integer `1` remains accepted by the runtime for v1.0 packages already in the wild. `modVersion` is the author's release version and should not be used for schema migration decisions.
@@ -115,6 +131,8 @@ The converter maps legacy `null` entries from `scenery`, `splineys`, `mandelas`,
 Progression can be authored either in the older keyed form under `progressions.<id>.sections` or in the flatter root `progression.sections[]` form. Root sections must set `id`; `progression.progressionId` selects the runtime `Progression.identifier`, and defaults to the package id when omitted. FUSE normalizes root sections into the existing Railroader progression system at load time.
 
 Section unlock payloads such as `areasEnableOnUnlock`, `gameObjectsEnableOnUnlock`, `unlockIncludeIndustries`, `unlockExcludeIndustries`, `unlockIncludeIndustryComponents`, `trackGroupsEnableOnUnlock`, and `trackGroupsAvailableOnUnlock` are materialized through a synthetic FUSE `MapFeature` that is enabled when the section unlocks. This keeps narrative packages on the base game's progression path instead of inventing a parallel unlock system.
+
+Section `interchangeTransfers` maps source interchange component ids to destination interchange component ids. FUSE materializes these as child `InterchangeTransfer` components on the runtime `Section`, matching the base game's section-completion waybill rewrite path. Null or blank destinations are kept as no-op legacy entries.
 
 Progression delivery phases that contain deliveries should set `industryComponentId` when the target progression industry component is known. If omitted, FUSE can infer it when every delivery in the phase points at the same `destinationIndustryId` and that industry has exactly one `ProgressionIndustryComponent`.
 
