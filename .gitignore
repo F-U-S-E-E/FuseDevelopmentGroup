@@ -1,0 +1,6 @@
+Local.Build.props
+/obj
+/.vs
+/obj
+obj/project.assets.json
+obj/project.nuget.cache

@@ -9,6 +9,7 @@ using FUSE.Lifecycle;
 using FUSE.Loading;
 using FUSE.Patches;
 using UnityModManagerNet;
+using FUSE.Editor;
 
 namespace FUSE
 {
@@ -55,6 +56,8 @@ namespace FUSE
                 // Console handler may not exist yet during early load; the lifecycle
                 // re-attempts registration on the first map load.
                 FuseConsoleRegistrar.TryRegisterAll();
+
+                FuseEditor.OnFuseLoad();
 
                 modEntry.OnUnload = OnUnload;
                 _isLoaded = true;
@@ -108,6 +111,7 @@ namespace FUSE
 
             if (_isLoaded)
             {
+                FuseEditor.OnFuseUnload();
                 FuseEvents.RaiseFuseUnloaded();
                 FuseLog.Info("FUSE unloaded.");
             }
