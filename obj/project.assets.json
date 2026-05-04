@@ -8,23 +8,23 @@
     ".NETFramework,Version=v4.8": []
   },
   "packageFolders": {
-    "C:\\Users\\legot\\.nuget\\packages\\": {},
+    "C:\\Users\\roger\\.nuget\\packages\\": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\legot\\OneDrive\\Documents\\RailroaderMods\\UMM Stuff\\FUSE\\FUSE\\FUSE.csproj",
+      "projectUniqueName": "C:\\Hrogers_Railroader_mods_Projects\\Rail\\FUSE.csproj",
       "projectName": "FUSE",
-      "projectPath": "C:\\Users\\legot\\OneDrive\\Documents\\RailroaderMods\\UMM Stuff\\FUSE\\FUSE\\FUSE.csproj",
-      "packagesPath": "C:\\Users\\legot\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\legot\\OneDrive\\Documents\\RailroaderMods\\UMM Stuff\\FUSE\\FUSE\\obj\\",
+      "projectPath": "C:\\Hrogers_Railroader_mods_Projects\\Rail\\FUSE.csproj",
+      "packagesPath": "C:\\Users\\roger\\.nuget\\packages\\",
+      "outputPath": "C:\\Hrogers_Railroader_mods_Projects\\Rail\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
       ],
       "configFilePaths": [
-        "C:\\Users\\legot\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\roger\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
@@ -51,12 +51,12 @@
         "auditLevel": "low",
         "auditMode": "direct"
       },
-      "SdkAnalysisLevel": "9.0.300"
+      "SdkAnalysisLevel": "10.0.200"
     },
     "frameworks": {
       "net48": {
         "targetAlias": "net48",
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306\\RuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.203\\RuntimeIdentifierGraph.json"
       }
     }
   }

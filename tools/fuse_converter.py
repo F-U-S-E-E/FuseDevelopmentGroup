@@ -248,18 +248,44 @@ def find_map_tile_sources(source: Path) -> list[Path]:
     if not source.is_dir():
         return []
 
-    maps_root = source / "Maps"
-    if not maps_root.is_dir():
-        return []
+    def contains_tiles(folder: Path) -> bool:
+        try:
+            return any(tile.is_file() and tile.suffix.lower() == ".data" for tile in folder.iterdir())
+        except OSError:
+            return False
 
     result: list[Path] = []
+    if contains_tiles(source):
+        result.append(source)
+
+    maps_root = source / "Maps"
+    if maps_root.is_dir():
+        if contains_tiles(maps_root):
+            result.append(maps_root)
+
+        try:
+            for child in sorted(maps_root.iterdir(), key=lambda item: item.name.lower()):
+                if child.is_dir() and contains_tiles(child):
+                    result.append(child)
+        except OSError:
+            pass
+
     try:
-        for child in sorted(maps_root.iterdir(), key=lambda item: item.name.lower()):
-            if child.is_dir() and any(tile.is_file() and tile.suffix.lower() == ".data" for tile in child.iterdir()):
+        for child in sorted(source.iterdir(), key=lambda item: item.name.lower()):
+            if child.is_dir() and child.name.lower() != "maps" and contains_tiles(child):
                 result.append(child)
     except OSError:
-        return []
-    return result
+        pass
+
+    seen = set()
+    unique: list[Path] = []
+    for item in result:
+        key = str(item.resolve()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
 
 
 def detect_audio_json(path: Path) -> str:
@@ -526,7 +552,7 @@ def record_runtime_id(
     report.add(
         "WARN",
         f"Duplicate legacy {runtime_kind} id '{object_id}' also appeared in '{first_file.name}'. "
-        "FUSE keeps one output file per source file; at runtime the later sibling definition updates/replaces the earlier object.",
+        "FUSE keeps one output file per source file; differing duplicates are renamed during conversion when safe.",
         file,
         f"duplicate-{runtime_kind}-id",
     )
@@ -680,12 +706,15 @@ def convert_map_tiles(source: Path, output: Path, clean_output: bool, report: Co
     mod_id, name, version, author = conversion_meta(source, slug(source.name))
     rail = fuse_convert.skeleton(mod_id, name, version, author, "mapTiles")
     for index, tile_folder in enumerate(tile_sources):
-        destination = output / "Maps" / tile_folder.name
+        folder_name = tile_folder.name
+        if tile_folder == source or (tile_folder.name.lower() == "maps" and tile_folder.parent == source):
+            folder_name = source.name
+        destination = output / "Maps" / folder_name
         shutil.copytree(tile_folder, destination, dirs_exist_ok=True)
-        key = f"{slug(mod_id)}.{slug(tile_folder.name)}"
+        key = f"{slug(mod_id)}.{slug(folder_name)}"
         rail["world"]["mapTiles"][key] = {
-            "directory": tile_folder.name,
-            "sourceFolder": f"Maps/{tile_folder.name}",
+            "directory": folder_name,
+            "sourceFolder": f"Maps/{folder_name}",
             "priority": 100 + index,
         }
         report.count("mapTileFiles", sum(1 for tile in tile_folder.iterdir() if tile.is_file() and tile.suffix.lower() == ".data"))

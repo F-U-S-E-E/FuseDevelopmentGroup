@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -399,6 +400,180 @@ def _validate_span_geometry(span_id, upper, lower):
         )
 
 
+def _vector_distance(a, b):
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return None
+    dx = float(a.get("x", 0)) - float(b.get("x", 0))
+    dy = float(a.get("y", 0)) - float(b.get("y", 0))
+    dz = float(a.get("z", 0)) - float(b.get("z", 0))
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+
+def _location_distance(location, segment_length):
+    if not isinstance(location, dict) or segment_length is None:
+        return None
+    if location.get("normalized") is not None:
+        distance = float(location.get("normalized") or 0) * float(segment_length)
+    else:
+        distance = float(location.get("distance") or 0)
+    distance += float(location.get("offset") or 0)
+    return distance
+
+
+def _set_location_distance(location, distance):
+    distance = max(0.0, float(distance))
+    location["distance"] = round(distance, 6)
+    location.pop("normalized", None)
+    location.pop("offset", None)
+
+
+def _distance_from_segment_a(location, segment_length):
+    distance = _location_distance(location, segment_length)
+    if distance is None:
+        return None
+    end = location.get("end")
+    if end == "A":
+        return distance
+    if end == "B":
+        return float(segment_length) - distance
+    return None
+
+
+def _same_segment_span_is_valid(upper, lower, segment_length):
+    if upper.get("end") == lower.get("end"):
+        return False
+    upper_from_a = _distance_from_segment_a(upper, segment_length)
+    lower_from_a = _distance_from_segment_a(lower, segment_length)
+    if upper_from_a is None or lower_from_a is None:
+        return True
+    if upper.get("end") == "A":
+        start_side = upper_from_a
+        end_side = lower_from_a
+    else:
+        start_side = lower_from_a
+        end_side = upper_from_a
+    return start_side < end_side
+
+
+def _estimate_segment_lengths(converted_fragments):
+    nodes = {}
+    segments = {}
+    for _source_name, _out_name, _source_index, rail in converted_fragments:
+        tracks = rail.get("tracks") or {}
+        for node_id, node in (tracks.get("nodes") or {}).items():
+            if isinstance(node, dict):
+                nodes[node_id] = node.get("position")
+        for segment_id, segment in (tracks.get("segments") or {}).items():
+            if isinstance(segment, dict):
+                segments[segment_id] = segment
+
+    lengths = {}
+    for segment_id, segment in segments.items():
+        start = nodes.get(segment.get("startNodeId"))
+        end = nodes.get(segment.get("endNodeId"))
+        length = _vector_distance(start, end)
+        if length is not None and length > 0:
+            lengths[segment_id] = length
+    return lengths
+
+
+def _clamp_span_endpoint(span_id, endpoint_name, location, segment_length, source_name):
+    distance = _location_distance(location, segment_length)
+    if distance is None:
+        return False
+    clamped = min(max(distance, 0.0), float(segment_length))
+    if abs(clamped - distance) <= 0.0001:
+        return False
+    _set_location_distance(location, clamped)
+    _warn(
+        f"Span '{span_id}' {endpoint_name} endpoint on segment '{location.get('segmentId')}' "
+        f"had distance {distance:.3f} outside estimated segment length {segment_length:.3f}; "
+        f"clamped to {clamped:.3f}.",
+        file=source_name,
+        concept="span-repaired",
+    )
+    return True
+
+
+def _repair_same_segment_span(span_id, span, segment_length, source_name):
+    if not isinstance(span, dict):
+        return False
+    upper = span.get("upper")
+    lower = span.get("lower")
+    if not isinstance(upper, dict) or not isinstance(lower, dict):
+        return False
+    if not upper.get("segmentId") or upper.get("segmentId") != lower.get("segmentId"):
+        return False
+    if upper.get("end") not in ("A", "B") or lower.get("end") not in ("A", "B"):
+        return False
+    if segment_length is None or segment_length <= 0:
+        return False
+
+    repaired = False
+    repaired |= _clamp_span_endpoint(span_id, "upper", upper, segment_length, source_name)
+    repaired |= _clamp_span_endpoint(span_id, "lower", lower, segment_length, source_name)
+
+    if _same_segment_span_is_valid(upper, lower, segment_length):
+        return repaired
+
+    if upper.get("end") == lower.get("end"):
+        _warn(
+            f"Span '{span_id}' on segment '{upper.get('segmentId')}' has both endpoints anchored to "
+            f"{upper.get('end')}; FUSE needs opposite-facing endpoints and cannot safely infer the other side.",
+            file=source_name,
+            concept="span-geometry-crossed",
+        )
+        return repaired
+
+    swapped_upper = dict(lower)
+    swapped_lower = dict(upper)
+    if _same_segment_span_is_valid(swapped_upper, swapped_lower, segment_length):
+        span["upper"] = swapped_upper
+        span["lower"] = swapped_lower
+        _warn(
+            f"Span '{span_id}' on segment '{upper.get('segmentId')}' had crossed endpoints; swapped upper/lower.",
+            file=source_name,
+            concept="span-repaired",
+        )
+        return True
+
+    gap = min(max(float(segment_length) * 0.001, 0.001), 0.1)
+    if upper.get("end") == "A" and lower.get("end") == "B":
+        upper_from_a = _distance_from_segment_a(upper, segment_length) or 0.0
+        upper_from_a = min(max(upper_from_a, 0.0), float(segment_length) - gap)
+        _set_location_distance(upper, upper_from_a)
+        _set_location_distance(lower, float(segment_length) - upper_from_a - gap)
+    elif upper.get("end") == "B" and lower.get("end") == "A":
+        lower_from_a = _distance_from_segment_a(lower, segment_length) or 0.0
+        lower_from_a = min(max(lower_from_a, 0.0), float(segment_length) - gap)
+        _set_location_distance(lower, lower_from_a)
+        _set_location_distance(upper, float(segment_length) - lower_from_a - gap)
+    else:
+        return repaired
+
+    _warn(
+        f"Span '{span_id}' on segment '{upper.get('segmentId')}' had crossed endpoints for estimated "
+        f"segment length {segment_length:.3f}; adjusted the end-anchored endpoint to leave a {gap:.3f}m gap.",
+        file=source_name,
+        concept="span-repaired",
+    )
+    return True
+
+
+def repair_package_spans(converted_fragments):
+    segment_lengths = _estimate_segment_lengths(converted_fragments)
+    if not segment_lengths:
+        return
+    for source_name, _out_name, _source_index, rail in converted_fragments:
+        for span_id, span in (rail.get("tracks", {}).get("spans") or {}).items():
+            upper = span.get("upper") if isinstance(span, dict) else None
+            lower = span.get("lower") if isinstance(span, dict) else None
+            segment_id = upper.get("segmentId") if isinstance(upper, dict) else None
+            if not segment_id or not isinstance(lower, dict) or segment_id != lower.get("segmentId"):
+                continue
+            _repair_same_segment_span(span_id, span, segment_lengths.get(segment_id), source_name)
+
+
 def convert_load(load_id, item):
     return {
         "name": item.get("name") or item.get("description") or load_id,
@@ -534,11 +709,34 @@ def normalize_component_type(component_type):
     return aliases.get(normalized, value)
 
 
+def _flag_spanless_passenger_stop(industry_id, component_id, converted):
+    # Spanless passenger stops were dropped by an earlier converter pass
+    # because FUSE's validator errored on them. The runtime now downgrades
+    # that check to a warning (matching legacy AlinasMapMod behavior), so
+    # the converter only annotates - the component flows through to FUSE
+    # and loads as a virtual stop with no physical platform.
+    if not isinstance(converted, dict):
+        return
+    if str(converted.get("type") or "").strip() != "passengerStop":
+        return
+    spans = converted.get("trackSpanIds")
+    if isinstance(spans, list) and len(spans) > 0:
+        return
+    _warn(
+        f"Industry '{industry_id}' component '{component_id}' is a passengerStop with no "
+        "trackSpans; emitting as a virtual stop. Add 'trackSpans' in the legacy source to "
+        "give it a physical platform.",
+        concept="passenger-stop-spanless",
+    )
+
+
 def convert_industry(industry_id, item, area_id=None, order=None):
     components = {}
     for component_id, component in (item.get("components") or {}).items():
         if isinstance(component, dict):
-            components[component_id] = convert_component(component_id, component)
+            converted = convert_component(component_id, component)
+            _flag_spanless_passenger_stop(industry_id, component_id, converted)
+            components[component_id] = converted
 
     return clean({
         "name": item.get("name") or industry_id,
@@ -885,6 +1083,26 @@ def next_industry_order(order_state, area_id, industry_id):
     return order
 
 
+def _record_runtime_duplicate(order_state, kind, object_id, source_name):
+    if order_state is None or not object_id:
+        return
+
+    registry = order_state.setdefault("runtime_ids", {})
+    key = (str(kind), str(object_id).lower())
+    if key not in registry:
+        registry[key] = {
+            "source": source_name or "",
+        }
+        return
+
+    _warn(
+        f"Duplicate legacy {kind} id '{object_id}' in '{source_name}' also appeared in "
+        f"'{registry[key].get('source')}'. Keeping the same FUSE id so the later mixinto updates/replaces the earlier runtime object.",
+        file=source_name or "",
+        concept=f"duplicate-{kind}-id",
+    )
+
+
 def convert_source(source, rail, source_name=None, order_state=None):
     order_state = order_state if order_state is not None else {}
 
@@ -943,13 +1161,21 @@ def convert_source(source, rail, source_name=None, order_state=None):
         elif isinstance(spliney, dict):
             handler = spliney.get("handler")
             if handler == TURNTABLE_HANDLER:
-                rail["operations"]["turntables"][spliney_id] = convert_turntable(spliney_id, spliney)
+                converted = convert_turntable(spliney_id, spliney)
+                _record_runtime_duplicate(order_state, "turntable", spliney_id, source_name)
+                rail["operations"]["turntables"][spliney_id] = converted
             elif handler in LOADER_HANDLERS:
-                rail["operations"]["loaders"][spliney_id] = convert_loader(spliney)
+                converted = convert_loader(spliney)
+                _record_runtime_duplicate(order_state, "loader", spliney_id, source_name)
+                rail["operations"]["loaders"][spliney_id] = converted
             elif handler in STATION_HANDLERS:
-                rail["operations"]["stations"][spliney_id] = convert_station(spliney)
+                converted = convert_station(spliney)
+                _record_runtime_duplicate(order_state, "station", spliney_id, source_name)
+                rail["operations"]["stations"][spliney_id] = converted
             elif handler == MAP_LABEL_HANDLER:
-                rail["world"]["mapLabels"][spliney_id] = convert_label(spliney_id, spliney)
+                converted = convert_label(spliney_id, spliney)
+                _record_runtime_duplicate(order_state, "map-label", spliney_id, source_name)
+                rail["world"]["mapLabels"][spliney_id] = converted
             elif handler in TELEGRAPH_POLE_MOVER_HANDLERS:
                 rail["world"]["telegraphPoleMovements"].extend(convert_telegraph_pole_movements(spliney))
             elif (handler or "").lower() in RR_CROSSING_HANDLERS:
@@ -1110,8 +1336,7 @@ def convert_mod(mod_folder, out_folder):
         raise SystemExit(f"No source JSON files found in {mod_folder}")
 
     out_folder.mkdir(parents=True, exist_ok=True)
-    written = []
-    written_order = {}
+    converted_fragments = []
     summaries = []
     used_names = set()
     order_state = {}
@@ -1139,14 +1364,33 @@ def convert_mod(mod_folder, out_folder):
         _collect_initially_enabled_groups(rail, declared_initial_groups)
 
         out_name = f"{fragment}.fuse.json"
+        converted_fragments.append((source_file.name, out_name, source_index, rail))
+
+    repair_package_spans(converted_fragments)
+
+    written = []
+    written_order = {}
+    written_counts = {}
+    for source_name, out_name, source_index, rail in converted_fragments:
         save_json(out_folder / out_name, rail)
         written.append(out_name)
         written_order[out_name] = source_index
-        summaries.append((source_file.name, out_name, count_content(rail)))
+        counts = count_content(rail)
+        written_counts[out_name] = counts
+        summaries.append((source_name, out_name, counts))
 
     _emit_track_group_coverage_warning(declared_initial_groups)
 
-    rail_data_files = sorted(written, key=lambda name: rail_data_file_order(name, written_order.get(name, 1000000)))
+    if mixinto_order:
+        rail_data_files = sorted(
+            written,
+            key=lambda name: (written_order.get(name, 1000000), name.lower()),
+        )
+    else:
+        rail_data_files = sorted(
+            written,
+            key=lambda name: rail_data_file_order(name, written_order.get(name, 1000000), written_counts.get(name)),
+        )
     info = {
         "$schema": ".\\schemas\\umm-info.schema.json",
         "Id": f"{mod_id}.FUSE",
@@ -1166,25 +1410,64 @@ def source_file_order(path, mixinto_order_index):
     lower = path.name.lower()
     if lower in mixinto_order_index:
         return 0, mixinto_order_index[lower], lower
-    phase, _source_order, weight, fallback = rail_data_file_order(path.name)
-    return 1, phase, weight, fallback
+    return 1, rail_data_file_weight(lower), lower
 
 
-def rail_data_file_order(name, source_order=1000000):
+def rail_data_file_order(name, source_order=1000000, counts=None):
     lower = name.lower()
-    phase = 0
+    weight = rail_data_file_weight(lower, counts)
+    return 0, weight, source_order, lower
 
-    if "loads" in lower:
-        weight = 0
-    elif "game-graph" in lower:
-        weight = 1
-    elif "turntable" in lower:
-        weight = 2
-    elif "industry" in lower:
-        weight = 2
-    else:
-        weight = 5
-    return phase, source_order, weight, lower
+
+def rail_data_file_weight(lower_name, counts=None):
+    counts = counts or {}
+    if counts:
+        has_track = any(counts.get(key, 0) for key in (
+            "tracks.nodes",
+            "tracks.segments",
+            "tracks.spans",
+            "tracks.removals.nodes",
+            "tracks.removals.segments",
+            "tracks.removals.spans",
+            "operations.turntables",
+        ))
+        has_loads = counts.get("operations.loads", 0) > 0
+        has_industries = counts.get("operations.industries", 0) > 0 or counts.get("tracks.areas", 0) > 0
+        has_loaders_or_stations = counts.get("operations.loaders", 0) > 0 or counts.get("operations.stations", 0) > 0
+        has_progression = counts.get("progression.sections", 0) > 0 or counts.get("progression.progressions", 0) > 0 or counts.get("progression.mapFeatures", 0) > 0
+        has_world = any(
+            count > 0
+            for key, count in counts.items()
+            if key.startswith("world.") and key != "world.mapTiles"
+        )
+        if has_loads and not (has_track or has_industries or has_loaders_or_stations or has_world or has_progression):
+            return 0
+        if has_track:
+            return 10
+        if counts.get("world.mapTiles", 0) > 0:
+            return 15
+        if has_industries:
+            return 20
+        if has_loaders_or_stations:
+            return 30
+        if has_progression:
+            return 40
+        if has_world:
+            return 50
+
+    if "loads" in lower_name:
+        return 0
+    if any(token in lower_name for token in ("game-graph", "gamegraph", "graph", "track", "yard", "branch", "cutoff", "turntable")):
+        return 10
+    if any(token in lower_name for token in ("industry", "industries", "area", "town")):
+        return 20
+    if any(token in lower_name for token in ("loader", "station", "pax", "passenger")):
+        return 30
+    if any(token in lower_name for token in ("progression", "feature", "unlock")):
+        return 40
+    if any(token in lower_name for token in ("scenery", "spline", "road", "river", "mandela", "text", "label")):
+        return 50
+    return 90
 
 
 def main():
