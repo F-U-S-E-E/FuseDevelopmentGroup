@@ -285,7 +285,7 @@ namespace FUSE.API
 
             var upperLocation = MakeLocation(graph, upper);
             var lowerLocation = MakeLocation(graph, lower);
-            ValidateSpanEndpointPair(id, upperLocation, lowerLocation);
+            ValidateSpanEndpointPair(id, ref upperLocation, ref lowerLocation);
 
             var span = CreateGraphChild<TrackSpan>(graph, "Span-" + id);
             try
@@ -331,7 +331,7 @@ namespace FUSE.API
             var graph = RequireGraph();
             var upperLocation = MakeLocation(graph, upper);
             var lowerLocation = MakeLocation(graph, lower);
-            ValidateSpanEndpointPair(id, upperLocation, lowerLocation);
+            ValidateSpanEndpointPair(id, ref upperLocation, ref lowerLocation);
 
             var originalUpper = span.upper;
             var originalLower = span.lower;
@@ -627,7 +627,7 @@ namespace FUSE.API
                 ParseLocationEnd(definition.End));
         }
 
-        private static void ValidateSpanEndpointPair(string spanId, Location upper, Location lower)
+        private static void ValidateSpanEndpointPair(string spanId, ref Location upper, ref Location lower)
         {
             if (upper.segment == null || lower.segment == null)
             {
@@ -639,26 +639,48 @@ namespace FUSE.API
                 return;
             }
 
-            if (upper.EndIsA == lower.EndIsA)
-            {
-                throw new InvalidOperationException(
-                    $"Track span '{spanId}' has same-segment endpoints that point the same direction on segment '{upper.segment.id}'. Use Start/A for one side and End/B for the other so the arrows face each other.");
-            }
-
+            // Resolve both endpoints to a common reference (distance-from-A on
+            // this segment) so we can detect and repair crossed/same-direction
+            // patterns in one place. Legacy AlinasMapMod tolerated both
+            // categories; FUSE used to throw, killing the whole apply phase.
+            var length = upper.segment.GetLength();
             var upperFromA = DistanceFromSegmentA(upper);
             var lowerFromA = DistanceFromSegmentA(lower);
-            var startSide = upper.EndIsA ? upperFromA : lowerFromA;
-            var endSide = upper.EndIsA ? lowerFromA : upperFromA;
-            if (startSide > endSide + SpanDistanceTolerance)
-            {
-                throw new InvalidOperationException(
-                    $"Track span '{spanId}' has crossed endpoints on segment '{upper.segment.id}'. Start/A side distance from A is {startSide:0.###}, End/B side distance from A is {endSide:0.###}.");
-            }
+            var minPos = Mathf.Min(upperFromA, lowerFromA);
+            var maxPos = Mathf.Max(upperFromA, lowerFromA);
+            var spanLength = maxPos - minPos;
 
-            if (Mathf.Abs(startSide - endSide) <= SpanDistanceTolerance)
+            if (spanLength <= SpanDistanceTolerance)
             {
                 throw new InvalidOperationException($"Track span '{spanId}' has zero length on segment '{upper.segment.id}'.");
             }
+
+            var sameDirection = upper.EndIsA == lower.EndIsA;
+            var startSide = upper.EndIsA ? upperFromA : lowerFromA;
+            var endSide = upper.EndIsA ? lowerFromA : upperFromA;
+            var crossed = !sameDirection && startSide > endSide + SpanDistanceTolerance;
+
+            if (!sameDirection && !crossed)
+            {
+                return;
+            }
+
+            // Re-anchor: A side takes the smaller physical position, B side
+            // takes the larger. Preserves both endpoints' physical positions
+            // exactly while making the validator's startSide<=endSide invariant
+            // hold by construction. Upper/lower roles are reassigned so the
+            // larger-position endpoint is "upper" (matches NormalizeUpperLower's
+            // expectation downstream).
+            var newUpper = new Location(upper.segment, length - maxPos, TrackSegment.End.B);
+            var newLower = new Location(upper.segment, minPos, TrackSegment.End.A);
+            upper = newUpper;
+            lower = newLower;
+
+            var reason = crossed ? "crossed endpoints" : "same-direction endpoints";
+            FuseLog.Warning(
+                $"FUSE auto-repaired track span '{spanId}' on segment '{upper.segment.id}': " +
+                $"normalized {reason} to A({minPos:0.###}) <-> B({(length - maxPos):0.###}). " +
+                "Legacy AlinasMapMod tolerated this pattern; FUSE re-anchored to keep the package loadable.");
         }
 
         private static float DistanceFromSegmentA(Location location)

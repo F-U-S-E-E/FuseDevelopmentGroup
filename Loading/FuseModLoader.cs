@@ -111,6 +111,7 @@ namespace FUSE.Loading
         public static int ApplyLoadedDefinitions(string reason)
         {
             var ids = GetLoadedDefinitionIdsInOrder();
+            ApplyGlobalLoadCatalog(ids, reason);
             PreEnableInitialTrackGroups(ids);
             var appliedCount = 0;
             var outcomes = new List<PackageApplyOutcome>();
@@ -166,6 +167,7 @@ namespace FUSE.Loading
                 }
             }
 
+            ApplyDeferredOperationBindings(ids, reason);
             LogAggregateApplySummary(reason, outcomes);
             FuseLog.Info($"FUSE applied {appliedCount} resident definition(s) to runtime for '{reason ?? "unspecified"}'.");
             return appliedCount;
@@ -231,6 +233,7 @@ namespace FUSE.Loading
             }
 
             var groupsToEnable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var groupsFromSegments = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var id in orderedIds)
             {
                 if (!LoadedMods.TryGetValue(id, out var loaded))
@@ -238,7 +241,18 @@ namespace FUSE.Loading
                     continue;
                 }
                 CollectInitialTrackGroups(loaded?.Definition?.Progression, groupsToEnable);
+                CollectSegmentGroupIds(loaded?.Definition?.Tracks, groupsFromSegments);
             }
+
+            // Match legacy AlinasMapMod behavior: every group that any segment
+            // belongs to gets enabled at content-load time so the spans can
+            // bind. Gameplay gating (delivery-phase progressions like GCR's
+            // gcr-m/gcr-t/tt or KingG's branch unlocks) is the base game's
+            // job - it can disable groups again after the player's save state
+            // loads. Without this, "spanless" segments get culled by the graph
+            // rebuild and downstream span/component apply throws "Track
+            // segment 'X' was not found" for every reference.
+            groupsToEnable.UnionWith(groupsFromSegments);
 
             if (groupsToEnable.Count == 0)
             {
@@ -262,8 +276,24 @@ namespace FUSE.Loading
             }
 
             FuseLog.Info(
-                $"FUSE pre-enabled {enabledCount} initial track group(s) " +
+                $"FUSE pre-enabled {enabledCount} track group(s) " +
+                $"({groupsFromSegments.Count} from segment groupIds) " +
                 "before apply-segments to prevent graph-rebuild culling.");
+        }
+
+        private static void CollectSegmentGroupIds(FuseTrackDefinition tracks, HashSet<string> sink)
+        {
+            if (tracks?.Segments == null)
+            {
+                return;
+            }
+            foreach (var segment in tracks.Segments.Values)
+            {
+                if (segment != null && !string.IsNullOrWhiteSpace(segment.GroupId))
+                {
+                    sink.Add(segment.GroupId);
+                }
+            }
         }
 
         private static void CollectInitialTrackGroups(FuseProgressionRoot progression, HashSet<string> sink)
@@ -343,6 +373,162 @@ namespace FUSE.Loading
                     sink.Add(value);
                 }
             }
+        }
+
+        private static void ApplyGlobalLoadCatalog(IReadOnlyList<string> orderedIds, string reason)
+        {
+            if (orderedIds == null || orderedIds.Count == 0)
+            {
+                return;
+            }
+
+            var transaction = new FuseApplyTransaction("__global-load-catalog__", reason ?? "unspecified", false);
+            var attempted = 0;
+            foreach (var id in orderedIds)
+            {
+                if (!LoadedMods.TryGetValue(id, out var loaded) || loaded?.Definition?.Operations?.Loads == null)
+                {
+                    continue;
+                }
+
+                if (!FuseModRequirementResolver.ShouldApply(loaded, out _))
+                {
+                    continue;
+                }
+
+                foreach (var load in loaded.Definition.Operations.Loads)
+                {
+                    if (string.IsNullOrWhiteSpace(load.Key) || load.Value == null)
+                    {
+                        transaction.Skipped("load", load.Key ?? string.Empty, "missing id or definition");
+                        continue;
+                    }
+
+                    attempted++;
+                    var exists = LoadAPI.GetLoad(load.Key) != null;
+                    transaction.TryApply("load", load.Key, exists, () =>
+                    {
+                        if (exists)
+                        {
+                            LoadAPI.UpdateLoad(load.Key, load.Value);
+                        }
+                        else
+                        {
+                            LoadAPI.AddLoad(load.Key, load.Value);
+                        }
+                    });
+                }
+            }
+
+            if (attempted > 0 || transaction.Report.Warnings.Count > 0 || transaction.Report.Errors.Count > 0)
+            {
+                FuseLog.Info(
+                    $"FUSE global load catalog operation='pre-apply loads' reason='{reason ?? "unspecified"}' " +
+                    $"attempted={attempted} errors={transaction.Report.Errors.Count} warnings={transaction.Report.Warnings.Count}.");
+                transaction.Report.LogSummary();
+            }
+        }
+
+        private static void ApplyDeferredOperationBindings(IReadOnlyList<string> orderedIds, string reason)
+        {
+            if (orderedIds == null || orderedIds.Count == 0)
+            {
+                return;
+            }
+
+            var transaction = new FuseApplyTransaction("__deferred-operation-bindings__", reason ?? "unspecified", false);
+            var attempted = 0;
+            foreach (var id in orderedIds)
+            {
+                if (!LoadedMods.TryGetValue(id, out var loaded) || loaded?.Definition?.Operations == null)
+                {
+                    continue;
+                }
+
+                if (!FuseModRequirementResolver.ShouldApply(loaded, out _))
+                {
+                    continue;
+                }
+
+                attempted += ApplyDeferredLoaders(loaded.Definition, transaction);
+                attempted += ApplyDeferredStations(loaded.Definition, transaction);
+            }
+
+            if (attempted > 0 || transaction.Report.SkippedObjects.Count > 0 || transaction.Report.Errors.Count > 0)
+            {
+                FuseLog.Info(
+                    $"FUSE deferred operation bindings operation='retry loaders/stations' reason='{reason ?? "unspecified"}' " +
+                    $"attempted={attempted} skipped={transaction.Report.SkippedObjects.Count} errors={transaction.Report.Errors.Count}.");
+                transaction.Report.LogSummary();
+            }
+        }
+
+        private static int ApplyDeferredLoaders(FuseModDefinition definition, FuseApplyTransaction transaction)
+        {
+            var count = 0;
+            foreach (var loader in definition.Operations?.Loaders ?? new Dictionary<string, FuseLoader>())
+            {
+                if (!LoaderDependenciesAvailable(loader.Value, out var reason))
+                {
+                    transaction.Skipped("loader", loader.Key, reason);
+                    continue;
+                }
+
+                if (!TryClaimOrSkip(FuseClaimKind.Loader, "loader", loader.Key, definition.Id, transaction))
+                {
+                    continue;
+                }
+
+                count++;
+                var exists = LoaderAPI.GetLoader(loader.Key) != null;
+                transaction.TryApply("loader", loader.Key, exists, () =>
+                {
+                    if (exists)
+                    {
+                        LoaderAPI.UpdateLoader(loader.Key, loader.Value);
+                    }
+                    else
+                    {
+                        LoaderAPI.AddLoader(loader.Key, loader.Value);
+                    }
+                });
+            }
+
+            return count;
+        }
+
+        private static int ApplyDeferredStations(FuseModDefinition definition, FuseApplyTransaction transaction)
+        {
+            var count = 0;
+            foreach (var station in definition.Operations?.Stations ?? new Dictionary<string, FuseStation>())
+            {
+                if (!StationDependenciesAvailable(station.Value, out var reason))
+                {
+                    transaction.Skipped("station", station.Key, reason);
+                    continue;
+                }
+
+                if (!TryClaimOrSkip(FuseClaimKind.Station, "station", station.Key, definition.Id, transaction))
+                {
+                    continue;
+                }
+
+                count++;
+                var exists = StationAPI.GetStationAgent(station.Key) != null;
+                transaction.TryApply("station", station.Key, exists, () =>
+                {
+                    if (exists)
+                    {
+                        StationAPI.UpdateStationAgent(station.Key, station.Value);
+                    }
+                    else
+                    {
+                        StationAPI.AddStationAgent(station.Key, station.Value);
+                    }
+                });
+            }
+
+            return count;
         }
 
         private static void LogAggregateApplySummary(string reason, IReadOnlyList<PackageApplyOutcome> outcomes)
@@ -1479,6 +1665,12 @@ namespace FUSE.Loading
             {
                 foreach (var loader in definition.Operations.Loaders)
                 {
+                    if (!LoaderDependenciesAvailable(loader.Value, out var dependencyReason))
+                    {
+                        transaction.Skipped("loader", loader.Key, dependencyReason + "; queued for deferred retry");
+                        continue;
+                    }
+
                     if (!TryClaimOrSkip(FuseClaimKind.Loader, "loader", loader.Key, definition.Id, transaction))
                     {
                         continue;
@@ -1503,6 +1695,12 @@ namespace FUSE.Loading
             {
                 foreach (var station in definition.Operations.Stations)
                 {
+                    if (!StationDependenciesAvailable(station.Value, out var dependencyReason))
+                    {
+                        transaction.Skipped("station", station.Key, dependencyReason + "; queued for deferred retry");
+                        continue;
+                    }
+
                     if (!TryClaimOrSkip(FuseClaimKind.Station, "station", station.Key, definition.Id, transaction))
                     {
                         continue;
@@ -1522,6 +1720,53 @@ namespace FUSE.Loading
                     });
                 }
             }
+        }
+
+        private static bool LoaderDependenciesAvailable(FuseLoader loader, out string reason)
+        {
+            reason = string.Empty;
+            if (loader == null)
+            {
+                reason = "loader definition is null";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(loader.IndustryId))
+            {
+                return true;
+            }
+
+            if (IndustryAPI.GetIndustry(loader.IndustryId) != null)
+            {
+                return true;
+            }
+
+            reason = $"industryId '{loader.IndustryId}' is not available yet";
+            return false;
+        }
+
+        private static bool StationDependenciesAvailable(FuseStation station, out string reason)
+        {
+            reason = string.Empty;
+            if (station == null)
+            {
+                reason = "station definition is null";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(station.PassengerStopId))
+            {
+                reason = "passengerStopId is empty";
+                return false;
+            }
+
+            if (StationAPI.GetPassengerStop(station.PassengerStopId) != null)
+            {
+                return true;
+            }
+
+            reason = $"passengerStopId '{station.PassengerStopId}' is not available yet";
+            return false;
         }
 
         private static void ApplyWorldDefinition(FuseModDefinition definition, string folderPath, string definitionPath, FuseApplyTransaction transaction)

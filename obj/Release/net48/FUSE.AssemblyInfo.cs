@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("FUSE")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+9295f8cd3a8b9b851fc573499c4afa58fc4273bb")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b66a99c37d2283fa875552afcab394cfd36390e2")]
 [assembly: System.Reflection.AssemblyProductAttribute("FUSE")]
 [assembly: System.Reflection.AssemblyTitleAttribute("FUSE")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

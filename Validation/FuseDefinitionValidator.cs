@@ -941,7 +941,19 @@ namespace FUSE.Validation
             if (FuseIndustryComponentTypes.UsesTrackSpanIds(type) &&
                 (component.TrackSpanIds == null || component.TrackSpanIds.Length == 0))
             {
-                result.AddError($"{path}.trackSpanIds", $"Industry component type '{type}' requires at least one track span.", "fuse.operations.component.trackSpanIds");
+                // Legacy AlinasMapMod accepted spanless passengerStop components
+                // ("virtual" stops with no physical platform - GCR's Topton is one
+                // example, declaring only neighborIds + branches). Demote to a
+                // warning so the package still loads; loader/unloader/teamTrack
+                // etc. genuinely need spans and stay errors.
+                if (string.Equals(type, FuseIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase))
+                {
+                    result.AddWarning($"{path}.trackSpanIds", $"PassengerStop component '{path}' has no track spans; treating as a virtual stop with no physical platform. Add 'trackSpans' in the legacy source if you want a real platform.", "fuse.operations.component.trackSpanIds");
+                }
+                else
+                {
+                    result.AddError($"{path}.trackSpanIds", $"Industry component type '{type}' requires at least one track span.", "fuse.operations.component.trackSpanIds");
+                }
             }
 
             if (FuseIndustryComponentTypes.UsesLoadId(type))
