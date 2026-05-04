@@ -12,6 +12,41 @@ namespace FUSE.Loading
     {
         private const string FuseAssetPacksProperty = "FuseAssetPacks";
 
+        private static readonly HashSet<string> SupportedDefinitionComponentKinds =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "AggregateLoadModel",
+                "Bell",
+                "PrefabControl",
+                "FireboxEffect",
+                "Chuff",
+                "ClassLight",
+                "Colorizer",
+                "Compressor",
+                "CylinderCock",
+                "Decal",
+                "DetailModel",
+                "DieselExhaust",
+                "Dynamo",
+                "Gauge",
+                "Headlight",
+                "Horn",
+                "Ladder",
+                "LightFixture",
+                "LoadAnimation",
+                "LoadModel",
+                "LoadTarget",
+                "MapMask",
+                "RectangleMapMask",
+                "CircleMapMask",
+                "MarkerLight",
+                "RadialControl",
+                "Seat",
+                "ToggleAnimation",
+                "ToggleControl",
+                "Whistle"
+            };
+
         private static bool _mountComplete;
 
         public static int MountAllAvailableAssetPacks()
@@ -226,17 +261,118 @@ namespace FUSE.Loading
                     Directory.CreateDirectory(destinationDirectory);
                 }
 
+                copiedCount += CopyAssetPackFileIfChanged(sourcePath, sourceFile, destinationFile);
+            }
+
+            return copiedCount;
+        }
+
+        private static int CopyAssetPackFileIfChanged(string assetPackRoot, string sourceFile, string destinationFile)
+        {
+            if (string.Equals(Path.GetFileName(sourceFile), "Definitions.json", StringComparison.OrdinalIgnoreCase))
+            {
+                return CopySanitizedDefinitionsFile(assetPackRoot, sourceFile, destinationFile);
+            }
+
+            if (!NeedsCopy(sourceFile, destinationFile))
+            {
+                return 0;
+            }
+
+            File.Copy(sourceFile, destinationFile, true);
+            File.SetLastWriteTimeUtc(destinationFile, File.GetLastWriteTimeUtc(sourceFile));
+            return 1;
+        }
+
+        private static int CopySanitizedDefinitionsFile(string assetPackRoot, string sourceFile, string destinationFile)
+        {
+            string outputText;
+            var removedByKind = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                outputText = SanitizeDefinitionsJson(File.ReadAllText(sourceFile), removedByKind);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE could not sanitize asset pack Definitions.json '{sourceFile}'; copying original file: {ex.Message}");
                 if (!NeedsCopy(sourceFile, destinationFile))
                 {
-                    continue;
+                    return 0;
                 }
 
                 File.Copy(sourceFile, destinationFile, true);
                 File.SetLastWriteTimeUtc(destinationFile, File.GetLastWriteTimeUtc(sourceFile));
-                copiedCount++;
+                return 1;
             }
 
-            return copiedCount;
+            if (removedByKind.Count > 0)
+            {
+                var packId = Path.GetFileName(assetPackRoot);
+                var summary = string.Join(", ", removedByKind.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(item => $"{item.Key}={item.Value}"));
+                FuseLog.Warning(
+                    $"FUSE sanitized asset pack '{packId}' Definitions.json by removing unsupported component kind(s): {summary}. " +
+                    "The source mod files were not modified.");
+            }
+
+            if (File.Exists(destinationFile) && string.Equals(File.ReadAllText(destinationFile), outputText, StringComparison.Ordinal))
+            {
+                return 0;
+            }
+
+            File.WriteAllText(destinationFile, outputText);
+            File.SetLastWriteTimeUtc(destinationFile, File.GetLastWriteTimeUtc(sourceFile));
+            return 1;
+        }
+
+        private static string SanitizeDefinitionsJson(string sourceText, IDictionary<string, int> removedByKind)
+        {
+            var root = JObject.Parse(sourceText);
+            var objects = root["objects"] as JArray;
+            if (objects == null)
+            {
+                return sourceText;
+            }
+
+            foreach (var objectToken in objects.OfType<JObject>())
+            {
+                var components = objectToken["definition"]?["components"] as JArray;
+                if (components == null)
+                {
+                    continue;
+                }
+
+                for (var index = components.Count - 1; index >= 0; index--)
+                {
+                    var component = components[index] as JObject;
+                    var kind = GetStringProperty(component, "kind");
+                    if (!string.IsNullOrWhiteSpace(kind) && SupportedDefinitionComponentKinds.Contains(kind))
+                    {
+                        continue;
+                    }
+
+                    components.RemoveAt(index);
+                    var key = string.IsNullOrWhiteSpace(kind) ? "<missing>" : kind;
+                    removedByKind[key] = removedByKind.TryGetValue(key, out var count) ? count + 1 : 1;
+                }
+            }
+
+            return removedByKind.Count == 0
+                ? sourceText
+                : root.ToString(Newtonsoft.Json.Formatting.Indented);
+        }
+
+        private static string GetStringProperty(JObject obj, string propertyName)
+        {
+            if (obj == null)
+            {
+                return null;
+            }
+
+            return obj.TryGetValue(propertyName, StringComparison.OrdinalIgnoreCase, out var token)
+                ? (string)token
+                : null;
         }
 
         private static bool NeedsCopy(string sourceFile, string destinationFile)

@@ -5,7 +5,40 @@ import re
 import sys
 from pathlib import Path
 
+import legacy_json
+
 FUSE_SCHEMA_VERSION = "1.0"
+
+# Conversion-time validation messages collected per-run.
+# fuse_converter.py drains these between conversions and folds them into the
+# ConversionReport. Strictly additive - readers/writers must never assume
+# legacy data is well-formed; we only annotate, never block.
+_PENDING_WARNINGS: list[dict] = []
+_GROUP_IDS_REFERENCED: set[str] = set()
+
+
+def reset_validation_state() -> None:
+    _PENDING_WARNINGS.clear()
+    _GROUP_IDS_REFERENCED.clear()
+
+
+def drain_validation_warnings() -> list[dict]:
+    drained = list(_PENDING_WARNINGS)
+    _PENDING_WARNINGS.clear()
+    return drained
+
+
+def referenced_group_ids() -> set[str]:
+    return set(_GROUP_IDS_REFERENCED)
+
+
+def _warn(message: str, *, file: str = "", concept: str = "") -> None:
+    _PENDING_WARNINGS.append({
+        "level": "WARN",
+        "message": message,
+        "file": file,
+        "concept": concept,
+    })
 
 HANDLER_MAP = {
     "StrangeCustoms.FlowyThingBuilder": "road",
@@ -16,7 +49,15 @@ HANDLER_MAP = {
 }
 
 TURNTABLE_HANDLER = "AlinasMapMod.Turntable.TurntableBuilder"
+LOADER_HANDLERS = {
+    "AlinasMapMod.Loaders.LoaderBuilder",
+    "AlinasMapMod.LoaderBuilder",
+}
 LOADER_HANDLER = "AlinasMapMod.Loaders.LoaderBuilder"
+STATION_HANDLERS = {
+    "AlinasMapMod.Stations.StationAgentBuilder",
+    "AlinasMapMod.StationAgentBuilder",
+}
 STATION_HANDLER = "AlinasMapMod.Stations.StationAgentBuilder"
 MAP_LABEL_HANDLER = "AlinasMapMod.MapLabelBuilder"
 TELEGRAPH_POLE_MOVER_HANDLERS = {
@@ -31,7 +72,7 @@ RR_CROSSING_HANDLERS = {
 
 def load_json(path):
     try:
-        return json.loads(path.read_text(encoding="utf-8-sig"))
+        return legacy_json.read_json(path)
     except Exception as exc:
         print(f"[WARN] Could not parse {path}: {exc}", file=sys.stderr)
         return {}
@@ -48,6 +89,13 @@ def slug(value):
 
 
 def vector(value, default_scale=False):
+    if isinstance(value, (list, tuple)):
+        return {
+            "x": round(float(value[0] if len(value) > 0 else (1 if default_scale else 0)), 6),
+            "y": round(float(value[1] if len(value) > 1 else (1 if default_scale else 0)), 6),
+            "z": round(float(value[2] if len(value) > 2 else (1 if default_scale else 0)), 6),
+        }
+
     if not isinstance(value, dict):
         return {"x": 1, "y": 1, "z": 1} if default_scale else {"x": 0, "y": 0, "z": 0}
 
@@ -59,7 +107,7 @@ def vector(value, default_scale=False):
 
 
 def optional_vector(value):
-    return vector(value) if isinstance(value, dict) else None
+    return vector(value) if isinstance(value, (dict, list, tuple)) else None
 
 
 def string_ids(value):
@@ -141,6 +189,106 @@ def meta(mod_folder):
     return mod_folder.name, mod_folder.name, "1.0.0", ""
 
 
+CORE_LEGACY_REQUIREMENTS = {
+    "railroader",
+    "railloader",
+    "zamu.strangecustoms",
+    "fuse",
+}
+
+
+def extract_file_reference(value):
+    if not isinstance(value, str):
+        return ""
+    match = re.match(r"^\s*file\((.+)\)\s*$", value, re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group(1).strip().strip("\"'")
+
+
+def convert_requirement(item):
+    if isinstance(item, str):
+        requirement_id = item.strip()
+        if not requirement_id or requirement_id.lower() in CORE_LEGACY_REQUIREMENTS:
+            return None
+        return {"id": requirement_id}
+
+    if not isinstance(item, dict):
+        return None
+
+    requirement_id = str(item.get("id") or item.get("Id") or "").strip()
+    if not requirement_id or requirement_id.lower() in CORE_LEGACY_REQUIREMENTS:
+        return None
+
+    result = {
+        "id": requirement_id,
+        "notBefore": item.get("notBefore") or item.get("NotBefore"),
+        "notAfter": item.get("notAfter") or item.get("NotAfter"),
+    }
+    return clean(result)
+
+
+def convert_requirements(value):
+    if not isinstance(value, list):
+        return []
+
+    result = []
+    for item in value:
+        converted = convert_requirement(item)
+        if converted:
+            result.append(converted)
+    return result
+
+
+def mixinto_metadata(mod_folder):
+    definition_path = mod_folder / "Definition.json"
+    if not definition_path.exists():
+        return {}, []
+
+    definition = load_json(definition_path)
+    metadata = {}
+    ordered_files = []
+
+    def record(target, reference, requirements):
+        referenced_file = extract_file_reference(reference)
+        if not referenced_file:
+            return
+
+        source_file = Path(referenced_file).name
+        key = source_file.lower()
+        if key not in metadata:
+            ordered_files.append(key)
+        metadata[key] = clean({
+            "target": str(target or "").strip(),
+            "sourceFile": source_file,
+            "requires": requirements or [],
+        })
+
+    def visit_target(target, value):
+        if isinstance(value, str):
+            record(target, value, [])
+            return
+
+        if isinstance(value, list):
+            for item in value:
+                visit_target(target, item)
+            return
+
+        if not isinstance(value, dict):
+            return
+
+        requirements = convert_requirements(value.get("requires") or value.get("Requires"))
+        reference = value.get("mixinto") or value.get("Mixinto")
+        record(target, reference, requirements)
+
+    mixintos = definition.get("mixintos") or definition.get("Mixintos") or {}
+    if isinstance(mixintos, dict):
+        for target, value in mixintos.items():
+            visit_target(target, value)
+
+    return metadata, ordered_files
+
+
 def convert_node(item):
     return {
         "position": vector(item.get("position") or item.get("localPosition")),
@@ -149,7 +297,10 @@ def convert_node(item):
     }
 
 
-def convert_segment(item):
+def convert_segment(item, segment_id=None):
+    group_id = item.get("groupId") or item.get("GroupId") or None
+    if group_id:
+        _GROUP_IDS_REFERENCED.add(str(group_id))
     return {
         "startNodeId": item.get("startId") or item.get("startNodeId") or item.get("nodeA") or item.get("a") or "",
         "endNodeId": item.get("endId") or item.get("endNodeId") or item.get("nodeB") or item.get("b") or "",
@@ -157,7 +308,7 @@ def convert_segment(item):
         "trackClass": item.get("trackClass") or item.get("TrackClass") or "main",
         "speedLimit": int(item.get("speedLimit", item.get("SpeedLimit", 45))),
         "priority": int(item.get("priority", 0)),
-        "groupId": item.get("groupId") or item.get("GroupId") or None,
+        "groupId": group_id,
     }
 
 
@@ -197,11 +348,55 @@ def convert_location(item):
     return result
 
 
-def convert_span(item):
+def convert_span(item, span_id=None):
+    upper = convert_location(item.get("upper"))
+    lower = convert_location(item.get("lower"))
+    _validate_span_geometry(span_id, upper, lower)
     return {
-        "upper": convert_location(item.get("upper")),
-        "lower": convert_location(item.get("lower")),
+        "upper": upper,
+        "lower": lower,
     }
+
+
+def _validate_span_geometry(span_id, upper, lower):
+    # Detect spans with crossed endpoints when both endpoints are on the same
+    # segment AND share the same anchor end ("A" or "B"). The general case
+    # (different ends) needs the segment's physical length, which the
+    # converter doesn't have at this point - the FUSE runtime catches those
+    # at preflight. This warning catches the easy half: legacy modders who
+    # accidentally swapped distances within one anchor side.
+    if not span_id or not isinstance(upper, dict) or not isinstance(lower, dict):
+        return
+    if upper.get("segmentId") != lower.get("segmentId"):
+        return
+    if not upper.get("segmentId"):
+        return
+    if upper.get("end") != lower.get("end"):
+        return
+
+    upper_d = upper.get("distance")
+    lower_d = lower.get("distance")
+    if upper_d is None or lower_d is None:
+        return
+
+    # Both endpoints anchored to the same end. "Upper" should be farther
+    # from anchor A and closer to anchor B; for end="A" that means
+    # upper_d > lower_d, for end="B" the reverse.
+    end = upper.get("end")
+    if end == "A" and upper_d < lower_d:
+        _warn(
+            f"Span '{span_id}' on segment '{upper.get('segmentId')}': both endpoints "
+            f"anchored to A but upper.distance ({upper_d}) < lower.distance ({lower_d}). "
+            "FUSE will reject as crossed; check legacy 'Start'/'End' mapping.",
+            concept="span-geometry-crossed",
+        )
+    elif end == "B" and upper_d > lower_d:
+        _warn(
+            f"Span '{span_id}' on segment '{upper.get('segmentId')}': both endpoints "
+            f"anchored to B but upper.distance ({upper_d}) > lower.distance ({lower_d}). "
+            "FUSE will reject as crossed; check legacy 'Start'/'End' mapping.",
+            concept="span-geometry-crossed",
+        )
 
 
 def convert_load(load_id, item):
@@ -219,15 +414,44 @@ def convert_load(load_id, item):
 
 def convert_area(area_id, item, order=None):
     radius = item.get("radius")
+    tag_color = _normalize_tag_color(area_id, item.get("tagColor"))
     return clean({
         "name": item.get("name") or area_id,
         "position": optional_vector(item.get("position") or item.get("localPosition")),
         "radius": float(radius) if radius is not None else None,
-        "tagColor": item.get("tagColor"),
+        "tagColor": tag_color,
         "order": order,
         "spanIds": item.get("spanIds") or item.get("spans"),
         "groupId": item.get("groupId") or item.get("GroupId"),
     })
+
+
+def _normalize_tag_color(area_id, value):
+    # FUSE schema requires 3 (RGB) or 4 (RGBA) numbers in [0,1]. A small
+    # number of legacy mods (e.g. Graham County) shipped 6-element tagColor
+    # arrays - the modder concatenated two RGB triples. Truncate to the
+    # first 3 and warn so the package can still load instead of failing
+    # the whole sub-package at deserialization.
+    if not isinstance(value, list):
+        return value
+    if 3 <= len(value) <= 4:
+        return value
+    if len(value) > 4:
+        _warn(
+            f"Area '{area_id}' tagColor has {len(value)} values; FUSE accepts 3 or 4. "
+            "Truncated to the first 3 values to keep the package loadable.",
+            concept="area-tagColor-overflow",
+        )
+        return value[:3]
+    if len(value) > 0:
+        _warn(
+            f"Area '{area_id}' tagColor has only {len(value)} value(s); FUSE requires 3 or 4. "
+            "Padded with zeros to length 3 to keep the package loadable.",
+            concept="area-tagColor-underflow",
+        )
+        padded = list(value) + [0.0] * (3 - len(value))
+        return padded[:3]
+    return value
 
 
 def convert_component(component_id, item):
@@ -516,6 +740,19 @@ def convert_telegraph_pole_movements(item):
     return list(grouped.values())
 
 
+def convert_legacy_start(source):
+    spawn = source.get("spawnPoint")
+    if not isinstance(spawn, dict):
+        return None
+
+    return clean({
+        "name": source.get("name") or source.get("identifier") or "Legacy Start",
+        "position": vector(spawn.get("position") or spawn.get("location")),
+        "rotation": vector(spawn.get("rotation")),
+        "radius": spawn.get("range") or spawn.get("radius"),
+    })
+
+
 def clean(value):
     if isinstance(value, dict):
         return {
@@ -528,7 +765,129 @@ def clean(value):
     return value
 
 
-def convert_source(source, rail, late_rail=None):
+def normalize_delivery_direction(value):
+    if value is None:
+        return value
+    text = str(value).strip().lower()
+    if text in ("0", "loadtoindustry", "toindustry", "to", "import"):
+        return "loadToIndustry"
+    if text in ("1", "loadfromindustry", "fromindustry", "from", "export"):
+        return "loadFromIndustry"
+    return value
+
+
+BOOL_DICTIONARY_ARRAY_FIELDS = {
+    "prerequisiteFeatureIds",
+    "prerequisiteSections",
+    "prerequisiteSectionIds",
+    "enableFeaturesOnUnlock",
+    "disableFeaturesOnUnlock",
+    "enableFeaturesOnAvailable",
+    "unlockIncludeIndustries",
+    "unlockExcludeIndustries",
+    "unlockIncludeIndustryComponents",
+    "areasEnableOnUnlock",
+    "gameObjectsEnableOnUnlock",
+    "trackGroupsEnableOnUnlock",
+    "trackGroupsAvailableOnUnlock",
+}
+
+
+def bool_dictionary_to_array(value):
+    if not isinstance(value, dict):
+        return None
+
+    result = []
+    for key, item in value.items():
+        if item is False or item is None:
+            continue
+        text = str(key).strip()
+        if text:
+            result.append(text)
+    return result
+
+
+def normalize_progression_value(value):
+    if isinstance(value, list):
+        return [normalize_progression_value(item) for item in value if item is not None]
+    if not isinstance(value, dict):
+        return value
+
+    result = {}
+    for key, item in value.items():
+        target_key = key
+        lower_key = str(key).lower()
+        if lower_key == "displayname":
+            target_key = "displayName"
+        elif lower_key == "name":
+            target_key = "displayName"
+        elif lower_key == "defaultenableinsandbox":
+            target_key = "initiallyEnabled"
+        elif lower_key == "prerequisites":
+            target_key = "prerequisiteFeatureIds"
+        elif lower_key == "industrycomponent":
+            target_key = "industryComponentId"
+        elif lower_key == "load":
+            target_key = "loadId"
+
+        if lower_key == "direction":
+            result[target_key] = normalize_delivery_direction(item)
+            continue
+
+        if target_key == "industryComponentId" and not str(item or "").strip():
+            result[target_key] = None
+            continue
+
+        if target_key in BOOL_DICTIONARY_ARRAY_FIELDS:
+            normalized_array = bool_dictionary_to_array(item)
+            if normalized_array is not None:
+                result[target_key] = normalized_array
+                continue
+
+        if target_key in result and key != target_key:
+            continue
+
+        result[target_key] = normalize_progression_value(item)
+
+    return clean(result)
+
+
+def next_area_order(order_state, area_id):
+    if order_state is None:
+        return None
+
+    area_orders = order_state.setdefault("area_orders", {})
+    key = str(area_id or "").lower()
+    if key in area_orders:
+        return area_orders[key]
+
+    order = order_state.get("next_area_order", 0)
+    order_state["next_area_order"] = order + 1
+    area_orders[key] = order
+    return order
+
+
+def next_industry_order(order_state, area_id, industry_id):
+    if order_state is None:
+        return None
+
+    area_key = str(area_id or "__unassigned__").lower()
+    industry_orders_by_area = order_state.setdefault("industry_orders_by_area", {})
+    next_by_area = order_state.setdefault("next_industry_order_by_area", {})
+    industry_orders = industry_orders_by_area.setdefault(area_key, {})
+    industry_key = str(industry_id or "").lower()
+    if industry_key in industry_orders:
+        return industry_orders[industry_key]
+
+    order = next_by_area.get(area_key, 0)
+    next_by_area[area_key] = order + 1
+    industry_orders[industry_key] = order
+    return order
+
+
+def convert_source(source, rail, source_name=None, order_state=None):
+    order_state = order_state if order_state is not None else {}
+
     tracks = source.get("tracks") or {}
     for node_id, node in (tracks.get("nodes") or {}).items():
         if node is None:
@@ -546,22 +905,26 @@ def convert_source(source, rail, late_rail=None):
         if span is None:
             rail["tracks"]["removals"]["spans"].append(span_id)
         elif isinstance(span, dict):
-            rail["tracks"]["spans"][span_id] = convert_span(span)
+            rail["tracks"]["spans"][span_id] = convert_span(span, span_id)
 
     for load_id, load in (source.get("loads") or {}).items():
         if isinstance(load, dict):
             rail["operations"]["loads"][load_id] = clean(convert_load(load_id, load))
 
-    for area_order, (area_id, area) in enumerate((source.get("areas") or {}).items()):
+    for area_id, area in (source.get("areas") or {}).items():
         if not isinstance(area, dict):
             continue
+        area_order = next_area_order(order_state, area_id)
         rail["tracks"]["areas"][area_id] = convert_area(area_id, area, area_order)
-        for industry_order, (industry_id, industry) in enumerate((area.get("industries") or {}).items()):
+        for industry_id, industry in (area.get("industries") or {}).items():
             if isinstance(industry, dict):
+                industry_order = next_industry_order(order_state, area_id, industry_id)
                 rail["operations"]["industries"][industry_id] = convert_industry(industry_id, industry, area_id, industry_order)
 
-    for industry_order, (industry_id, industry) in enumerate((source.get("industries") or {}).items()):
+    for industry_id, industry in (source.get("industries") or {}).items():
         if isinstance(industry, dict):
+            area_id = industry.get("areaId") or industry.get("area")
+            industry_order = next_industry_order(order_state, area_id, industry_id)
             rail["operations"]["industries"][industry_id] = convert_industry(industry_id, industry, order=industry_order)
 
     for table_id, table in (source.get("turntables") or {}).items():
@@ -581,12 +944,10 @@ def convert_source(source, rail, late_rail=None):
             handler = spliney.get("handler")
             if handler == TURNTABLE_HANDLER:
                 rail["operations"]["turntables"][spliney_id] = convert_turntable(spliney_id, spliney)
-            elif handler == LOADER_HANDLER:
-                target = late_rail if late_rail is not None else rail
-                target["operations"]["loaders"][spliney_id] = convert_loader(spliney)
-            elif handler == STATION_HANDLER:
-                target = late_rail if late_rail is not None else rail
-                target["operations"]["stations"][spliney_id] = convert_station(spliney)
+            elif handler in LOADER_HANDLERS:
+                rail["operations"]["loaders"][spliney_id] = convert_loader(spliney)
+            elif handler in STATION_HANDLERS:
+                rail["operations"]["stations"][spliney_id] = convert_station(spliney)
             elif handler == MAP_LABEL_HANDLER:
                 rail["world"]["mapLabels"][spliney_id] = convert_label(spliney_id, spliney)
             elif handler in TELEGRAPH_POLE_MOVER_HANDLERS:
@@ -614,6 +975,19 @@ def convert_source(source, rail, late_rail=None):
     if simple_graphs:
         rail["extensions"]["simpleGraphs"] = simple_graphs
 
+    legacy_start = convert_legacy_start(source)
+    if legacy_start:
+        rail["world"]["spawnPoints"].append(legacy_start)
+        rail["extensions"]["legacyStartOption"] = clean({
+            "identifier": source.get("identifier"),
+            "name": source.get("name"),
+            "progressionId": source.get("progressionId"),
+            "showTutorial": source.get("showTutorial"),
+            "initialMoney": source.get("initialMoney"),
+            "enabledFeatures": source.get("enabledFeatures"),
+            "carPlacements": source.get("carPlacements"),
+        })
+
     convert_progression(source, rail)
 
 
@@ -623,17 +997,17 @@ def convert_progression(source, rail):
         if progression.get("progressionId"):
             rail["progression"]["progressionId"] = progression.get("progressionId")
         if isinstance(progression.get("sections"), list):
-            rail["progression"]["sections"].extend(clean(progression.get("sections")))
+            rail["progression"]["sections"].extend(normalize_progression_value(progression.get("sections")))
         if isinstance(progression.get("progressions"), dict):
-            rail["progression"]["progressions"].update(clean(progression.get("progressions")))
+            rail["progression"]["progressions"].update(normalize_progression_value(progression.get("progressions")))
         if isinstance(progression.get("mapFeatures"), dict):
-            rail["progression"]["mapFeatures"].update(clean(progression.get("mapFeatures")))
+            rail["progression"]["mapFeatures"].update(normalize_progression_value(progression.get("mapFeatures")))
 
     if isinstance(source.get("progressions"), dict):
-        rail["progression"]["progressions"].update(clean(source.get("progressions")))
+        rail["progression"]["progressions"].update(normalize_progression_value(source.get("progressions")))
 
     if isinstance(source.get("mapFeatures"), dict):
-        rail["progression"]["mapFeatures"].update(clean(source.get("mapFeatures")))
+        rail["progression"]["mapFeatures"].update(normalize_progression_value(source.get("mapFeatures")))
 
 
 def count_content(rail):
@@ -662,13 +1036,74 @@ def has_content(rail):
     return any(counts.values())
 
 
+def _collect_initially_enabled_groups(rail, sink: set[str]) -> None:
+    # Walk this fragment's progression payload looking for sections /
+    # mapFeatures that are marked initiallyEnabled (or the legacy
+    # defaultEnableInSandbox=true synonym) and harvest their
+    # trackGroupsEnableOnUnlock entries. Used at end-of-mod to flag
+    # segment groupIds that no progression auto-enables.
+    progression = rail.get("progression") or {}
+    for container_key in ("sections", "mapFeatures", "progressions"):
+        container = progression.get(container_key) or {}
+        if isinstance(container, dict):
+            for value in container.values():
+                _harvest_enable_groups(value, sink)
+        elif isinstance(container, list):
+            for value in container:
+                _harvest_enable_groups(value, sink)
+
+
+def _harvest_enable_groups(node, sink: set[str]) -> None:
+    if not isinstance(node, dict):
+        return
+    if node.get("initiallyEnabled") or node.get("defaultEnableInSandbox"):
+        for group_id in node.get("trackGroupsEnableOnUnlock") or []:
+            if group_id:
+                sink.add(str(group_id))
+    for value in node.values():
+        if isinstance(value, dict):
+            _harvest_enable_groups(value, sink)
+        elif isinstance(value, list):
+            for item in value:
+                _harvest_enable_groups(item, sink)
+
+
+def _emit_track_group_coverage_warning(declared_initial_groups: set[str]) -> None:
+    referenced = referenced_group_ids()
+    if not referenced:
+        return
+    uncovered = sorted(referenced - declared_initial_groups)
+    if not uncovered:
+        return
+
+    sample = ", ".join(uncovered[:8])
+    suffix = ", ..." if len(uncovered) > 8 else ""
+    _warn(
+        f"{len(uncovered)} track group(s) referenced by segments are not auto-enabled by any "
+        f"progression with initiallyEnabled=true (e.g. {sample}{suffix}). FUSE rebuilds the "
+        "graph after apply-segments, before apply-progression - any segment whose group has "
+        "not been enabled by then is culled and shows up as 'missing after apply'. Either add "
+        "an initiallyEnabled progression with these in trackGroupsEnableOnUnlock, or rely on "
+        "the runtime pre-pass that enables groups before the first segment apply.",
+        concept="track-group-not-auto-enabled",
+    )
+
+
 def convert_mod(mod_folder, out_folder):
     mod_id, mod_name, version, author = meta(mod_folder)
+    mixinto_sources, mixinto_order = mixinto_metadata(mod_folder)
+    mixinto_order_index = {name: index for index, name in enumerate(mixinto_order)}
+    referenced_source_files = set(mixinto_order_index)
     source_files = sorted(
-        path for path in mod_folder.iterdir()
-        if path.suffix.lower() == ".json"
-        and path.name not in ("Definition.json", "Info.json")
-        and not path.name.lower().endswith(".bak")
+        (
+            path for path in mod_folder.iterdir()
+            if path.suffix.lower() == ".json"
+            and path.name not in ("Definition.json", "Info.json")
+            and not path.name.lower().endswith(".bak")
+            and "signal" not in path.name.lower()
+            and (not referenced_source_files or path.name.lower() in referenced_source_files)
+        ),
+        key=lambda path: source_file_order(path, mixinto_order_index),
     )
 
     if not source_files:
@@ -676,9 +1111,12 @@ def convert_mod(mod_folder, out_folder):
 
     out_folder.mkdir(parents=True, exist_ok=True)
     written = []
+    written_order = {}
     summaries = []
     used_names = set()
-    for source_file in source_files:
+    order_state = {}
+    declared_initial_groups: set[str] = set()
+    for source_index, source_file in enumerate(source_files):
         fragment = slug(source_file.stem)
         base_fragment = fragment
         index = 2
@@ -688,21 +1126,27 @@ def convert_mod(mod_folder, out_folder):
         used_names.add(fragment)
 
         rail = skeleton(mod_id, mod_name, version, author, fragment)
-        late_fragment = f"{fragment}-late"
-        late_rail = skeleton(mod_id, mod_name, version, author, late_fragment)
-        convert_source(load_json(source_file), rail, late_rail)
+        mixinto = mixinto_sources.get(source_file.name.lower())
+        if mixinto:
+            rail["mixinto"] = mixinto
+        convert_source(
+            load_json(source_file),
+            rail,
+            source_name=source_file.name,
+            order_state=order_state,
+        )
+
+        _collect_initially_enabled_groups(rail, declared_initial_groups)
 
         out_name = f"{fragment}.fuse.json"
         save_json(out_folder / out_name, rail)
         written.append(out_name)
+        written_order[out_name] = source_index
         summaries.append((source_file.name, out_name, count_content(rail)))
-        if has_content(late_rail):
-            late_out_name = f"{late_fragment}.fuse.json"
-            save_json(out_folder / late_out_name, late_rail)
-            written.append(late_out_name)
-            summaries.append((source_file.name, late_out_name, count_content(late_rail)))
 
-    rail_data_files = sorted(written, key=rail_data_file_order)
+    _emit_track_group_coverage_warning(declared_initial_groups)
+
+    rail_data_files = sorted(written, key=lambda name: rail_data_file_order(name, written_order.get(name, 1000000)))
     info = {
         "$schema": ".\\schemas\\umm-info.schema.json",
         "Id": f"{mod_id}.FUSE",
@@ -718,12 +1162,20 @@ def convert_mod(mod_folder, out_folder):
     return summaries
 
 
-def rail_data_file_order(name):
+def source_file_order(path, mixinto_order_index):
+    lower = path.name.lower()
+    if lower in mixinto_order_index:
+        return 0, mixinto_order_index[lower], lower
+    phase, _source_order, weight, fallback = rail_data_file_order(path.name)
+    return 1, phase, weight, fallback
+
+
+def rail_data_file_order(name, source_order=1000000):
     lower = name.lower()
+    phase = 0
+
     if "loads" in lower:
         weight = 0
-    elif "late" in lower:
-        weight = 3
     elif "game-graph" in lower:
         weight = 1
     elif "turntable" in lower:
@@ -732,7 +1184,7 @@ def rail_data_file_order(name):
         weight = 2
     else:
         weight = 5
-    return weight, lower
+    return phase, source_order, weight, lower
 
 
 def main():

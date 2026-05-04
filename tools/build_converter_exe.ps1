@@ -66,6 +66,19 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 New-Item -ItemType Directory -Force -Path $SpecDir | Out-Null
 
+# PyInstaller's static analysis sees the `import fuse_convert` line in
+# fuse_converter.py but the module lives in the same folder and is only on
+# sys.path because of a runtime sys.path.insert call - that mutation happens
+# after analysis, so the bundle would miss the dependency without explicit
+# --hidden-import hints. Same goes for the two sibling helper modules and
+# the convert_fuse_audio submodules they pull in transitively.
+$HiddenImports = @(
+    'fuse_convert',
+    'fuse_converter',
+    'convert_fuse_audio',
+    'legacy_json'
+)
+
 $args = @(
     '-m', 'PyInstaller',
     '--clean',
@@ -76,10 +89,21 @@ $args = @(
     '--distpath', $OutputDir,
     '--workpath', $WorkDir,
     '--specpath', $SpecDir,
-    $EntryScript
+    '--paths', $ToolsRoot
 )
 
+foreach ($mod in $HiddenImports) {
+    $args += '--hidden-import'
+    $args += $mod
+}
+
+$args += $EntryScript
+
 Write-Host "Building FUSE-Converter.exe..."
+Write-Host "  entry:   $EntryScript"
+Write-Host "  out:     $OutputDir"
+Write-Host "  hidden:  $($HiddenImports -join ', ')"
+
 $buildExit = Invoke-ConverterPython @args
 if ($buildExit -ne 0) {
     throw "PyInstaller build failed."
@@ -88,6 +112,17 @@ if ($buildExit -ne 0) {
 $exePath = Join-Path $OutputDir 'FUSE-Converter.exe'
 if (-not (Test-Path -LiteralPath $exePath)) {
     throw "Build completed but exe was not found: $exePath"
+}
+
+# Quick smoke check that the bundle actually loaded our patched modules.
+# Running --help short-circuits before any conversion work, so it's a cheap
+# way to catch a missing-import regression before the user does.
+Write-Host "Smoke check: running '$exePath --help'..."
+$smokeOutput = & $exePath --help 2>&1
+$smokeExit = $LASTEXITCODE
+if ($smokeExit -ne 0) {
+    Write-Host $smokeOutput
+    throw "Smoke check failed (exit=$smokeExit)."
 }
 
 Write-Host "Built: $exePath"

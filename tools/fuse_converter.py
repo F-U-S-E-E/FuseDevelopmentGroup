@@ -31,9 +31,10 @@ if str(SCRIPT_DIR) not in sys.path:
 
 import fuse_convert  # noqa: E402
 import convert_fuse_audio  # noqa: E402
+import legacy_json  # noqa: E402
 
 
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.2.0"
 DEFAULT_STEAM_MODS = Path(r"C:\Steam\steamapps\common\Railroader\Mods")
 DEFAULT_MANAGER_VERSION = "0.27.10"
 JSON_MANIFEST_NAMES = {"definition.json", "info.json"}
@@ -54,8 +55,8 @@ LEGACY_DATA_KEYS = {
 }
 SPECIAL_SPLINE_HANDLERS = {
     fuse_convert.TURNTABLE_HANDLER,
-    fuse_convert.LOADER_HANDLER,
-    fuse_convert.STATION_HANDLER,
+    *fuse_convert.LOADER_HANDLERS,
+    *fuse_convert.STATION_HANDLERS,
     fuse_convert.MAP_LABEL_HANDLER,
     *fuse_convert.TELEGRAPH_POLE_MOVER_HANDLERS,
 }
@@ -124,10 +125,9 @@ class ConversionReport:
 
 
 def read_json(path: Path, lenient: bool = True) -> Any:
-    text = path.read_text(encoding="utf-8-sig")
     if lenient:
-        text = re.sub(r",\s*([}\]])", r"\1", text)
-    return json.loads(text)
+        return legacy_json.read_json(path)
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def write_json(path: Path, data: Any) -> None:
@@ -450,6 +450,7 @@ def write_reports(report: ConversionReport) -> None:
 
 
 def scan_legacy_warnings(source: Path, report: ConversionReport) -> None:
+    seen_runtime_ids: dict[tuple[str, str], Path] = {}
     for path in iter_json_files(source):
         if path.name.lower() in JSON_MANIFEST_NAMES:
             continue
@@ -458,6 +459,7 @@ def scan_legacy_warnings(source: Path, report: ConversionReport) -> None:
         except Exception as exc:
             report.add("WARN", f"Could not inspect JSON for warnings: {exc}", path)
             continue
+        scan_value_for_duplicate_runtime_ids(data, report, path, seen_runtime_ids)
         scan_value_for_warnings(data, report, path)
 
     if source.is_dir():
@@ -466,12 +468,76 @@ def scan_legacy_warnings(source: Path, report: ConversionReport) -> None:
                 report.add("WARN", "Script/debug binary copied or ignored as data only; FUSE does not convert executable plugin behavior.", path, "script-binary")
 
 
+def scan_value_for_duplicate_runtime_ids(
+    value: Any,
+    report: ConversionReport,
+    file: Path,
+    seen_runtime_ids: dict[tuple[str, str], Path],
+    path: str = "",
+) -> None:
+    if isinstance(value, dict):
+        if path.endswith("splineys"):
+            for object_id, item in value.items():
+                if not isinstance(item, dict):
+                    continue
+
+                runtime_kind = runtime_kind_for_spliney_handler(item.get("handler"))
+                if runtime_kind:
+                    record_runtime_id(runtime_kind, object_id, report, file, seen_runtime_ids)
+
+        for key, item in value.items():
+            scan_value_for_duplicate_runtime_ids(item, report, file, seen_runtime_ids, f"{path}.{key}" if path else str(key))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            scan_value_for_duplicate_runtime_ids(item, report, file, seen_runtime_ids, f"{path}[{index}]")
+
+
+def runtime_kind_for_spliney_handler(handler: Any) -> str | None:
+    if handler == fuse_convert.TURNTABLE_HANDLER:
+        return "turntable"
+    if handler in fuse_convert.LOADER_HANDLERS:
+        return "loader"
+    if handler in fuse_convert.STATION_HANDLERS:
+        return "station"
+    if handler == fuse_convert.MAP_LABEL_HANDLER:
+        return "map label"
+    return None
+
+
+def record_runtime_id(
+    runtime_kind: str,
+    object_id: Any,
+    report: ConversionReport,
+    file: Path,
+    seen_runtime_ids: dict[tuple[str, str], Path],
+) -> None:
+    if not object_id:
+        return
+
+    key = (runtime_kind, str(object_id).lower())
+    first_file = seen_runtime_ids.get(key)
+    if first_file is None:
+        seen_runtime_ids[key] = file
+        return
+
+    if first_file == file:
+        return
+
+    report.add(
+        "WARN",
+        f"Duplicate legacy {runtime_kind} id '{object_id}' also appeared in '{first_file.name}'. "
+        "FUSE keeps one output file per source file; at runtime the later sibling definition updates/replaces the earlier object.",
+        file,
+        f"duplicate-{runtime_kind}-id",
+    )
+
+
 def scan_value_for_warnings(value: Any, report: ConversionReport, file: Path, path: str = "") -> None:
     if isinstance(value, dict):
-        if "formula" in value:
-            report.add("WARN", "Legacy formula field is not first-class in current FUSE schema; verify formulaic industry behavior.", file, "formula")
-        if "interchangeTransfers" in value:
-            report.add("WARN", "Legacy interchangeTransfers is not modeled in current FUSE progression schema.", file, "interchangeTransfers")
+        if "formula" in value and not is_supported_formula(value.get("formula")):
+            report.add("WARN", "Legacy formula field could not be recognized as a FUSE formulaic industry component.", file, "formula")
+        if "interchangeTransfers" in value and not isinstance(value.get("interchangeTransfers"), dict):
+            report.add("WARN", "Legacy interchangeTransfers must be an object mapping source interchange id to destination interchange id.", file, "interchangeTransfers")
         handler = value.get("handler")
         if isinstance(handler, str):
             known_handler = handler in fuse_convert.HANDLER_MAP or handler in SPECIAL_SPLINE_HANDLERS or handler.lower() in fuse_convert.RR_CROSSING_HANDLERS
@@ -487,6 +553,15 @@ def scan_value_for_warnings(value: Any, report: ConversionReport, file: Path, pa
     elif isinstance(value, list):
         for index, item in enumerate(value):
             scan_value_for_warnings(item, report, file, f"{path}[{index}]")
+
+
+def is_supported_formula(value: Any) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, dict):
+        return False
+    component_type = fuse_convert.normalize_component_type(value.get("type") or "formula")
+    return component_type == "formulaic"
 
 
 def conversion_meta(source: Path, fallback_id: str) -> tuple[str, str, str, str]:
@@ -506,9 +581,7 @@ def convert_single_json(source: Path, output: Path, clean_output: bool, report: 
     mod_id, name, version, author = conversion_meta(source, slug(source.stem))
     fragment = slug(source.stem, "fragment")
     rail = fuse_convert.skeleton(mod_id, name, version, author, fragment)
-    late_fragment = f"{fragment}-late"
-    late_rail = fuse_convert.skeleton(mod_id, name, version, author, late_fragment)
-    fuse_convert.convert_source(read_json(source), rail, late_rail)
+    fuse_convert.convert_source(read_json(source), rail, source_name=source.name)
 
     written = []
     data_name = f"{fragment}.fuse.json"
@@ -516,13 +589,6 @@ def convert_single_json(source: Path, output: Path, clean_output: bool, report: 
     written.append(data_name)
     for key, count in fuse_convert.count_content(rail).items():
         report.count(key, count)
-
-    if fuse_convert.has_content(late_rail):
-        late_name = f"{late_fragment}.fuse.json"
-        fuse_convert.save_json(output / late_name, late_rail)
-        written.append(late_name)
-        for key, count in fuse_convert.count_content(late_rail).items():
-            report.count(key, count)
 
     info = fuse_info(mod_id, f"{name} (FUSE)", author, version)
     info["FuseDataFiles"] = sorted(written, key=fuse_convert.rail_data_file_order)
@@ -570,10 +636,19 @@ def convert_route(source: Path, output: Path, clean_output: bool, report: Conver
     if clean_output:
         ensure_safe_delete(output, output.parent)
 
+    fuse_convert.reset_validation_state()
     try:
         summaries = fuse_convert.convert_mod(route_source.resolve(), output.resolve())
     except SystemExit as exc:
         raise RuntimeError(str(exc)) from exc
+    finally:
+        for entry in fuse_convert.drain_validation_warnings():
+            report.add(
+                entry.get("level", "WARN"),
+                entry.get("message", ""),
+                entry.get("file", ""),
+                entry.get("concept", ""),
+            )
 
     info, _ = read_manifest(output)
     report.package_id = str(info.get("Id") or f"{source.name}.FUSE")
@@ -738,7 +813,15 @@ def choose_zip_root(extract_root: Path) -> Path:
     root_has_manifest = any(file.name.lower() in JSON_MANIFEST_NAMES for file in files)
     root_has_json = any(file.suffix.lower() == ".json" for file in files)
     if len(dirs) == 1 and not root_has_manifest and not root_has_json:
-        return dirs[0]
+        child = dirs[0]
+        if child.name.lower() == "mods":
+            mod_children = [item for item in child.iterdir() if item.is_dir()]
+            mod_files = [item for item in child.iterdir() if item.is_file()]
+            mods_has_manifest = any(file.name.lower() in JSON_MANIFEST_NAMES for file in mod_files)
+            mods_has_json = any(file.suffix.lower() == ".json" for file in mod_files)
+            if len(mod_children) == 1 and not mods_has_manifest and not mods_has_json:
+                return mod_children[0]
+        return child
     return extract_root
 
 
@@ -761,7 +844,7 @@ def convert_input(input_path: Path, out_root: Path, kind: str, clean_output: boo
             with zipfile.ZipFile(original, "r") as archive:
                 archive.extractall(extract_root)
             working_source = choose_zip_root(extract_root)
-            explicit_output_name = original.stem
+            explicit_output_name = working_source.name if working_source != extract_root else original.stem
 
         output = out_root / output_name_for(original, explicit_output_name)
         detected = detect_kind(working_source, kind)

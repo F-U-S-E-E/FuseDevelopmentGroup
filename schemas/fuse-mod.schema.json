@@ -39,7 +39,8 @@
     },
     "author": {
       "type": "string",
-      "minLength": 1
+      "default": "",
+      "description": "Optional author string. Converted legacy packages may leave this blank when the source manifest did not name an author."
     },
     "modVersion": {
       "type": "string",
@@ -58,6 +59,10 @@
         "world"
       ],
       "default": "world"
+    },
+    "mixinto": {
+      "$ref": "#/$defs/mixinto",
+      "description": "Optional legacy conditional mixinto metadata. FUSE applies this fragment only when its requirements are satisfied, matching RailLoader/Strange Customs conditional mixins."
     },
     "tracks": {
       "$ref": "#/$defs/tracks"
@@ -122,6 +127,49 @@
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/id"
+      }
+    },
+    "mixinto": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "Legacy mixinto target name such as game-graph, progressions, scenery, splineys, horns, whistles, or bells."
+        },
+        "sourceFile": {
+          "type": "string",
+          "description": "Legacy source file that produced this FUSE fragment."
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/modRequirement"
+          },
+          "default": []
+        }
+      }
+    },
+    "modRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Legacy or FUSE package id that must be installed. A converted package id ending in .FUSE also satisfies the original legacy id."
+        },
+        "notBefore": {
+          "type": "string",
+          "description": "Minimum compatible version, inclusive."
+        },
+        "notAfter": {
+          "type": "string",
+          "description": "Maximum compatible version, inclusive."
+        }
       }
     },
     "tracks": {
@@ -1761,6 +1809,17 @@
         "trackGroupsAvailableOnUnlock": {
           "$ref": "#/$defs/idArray",
           "description": "Track groups to mark available when this section unlocks."
+        },
+        "interchangeTransfers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": "Maps a source Interchange industry component id to a destination Interchange component id. Null or blank targets are preserved as no-op legacy entries.",
+          "default": {}
         },
         "deliveryPhases": {
           "type": "array",

@@ -23,6 +23,7 @@ namespace FUSE.Validation
             FuseMigration.Normalize(value);
             Required(result, "id", value.Id);
             Required(result, "name", value.Name);
+            ValidateMixinto(result, value.Mixinto);
 
             if (value.SchemaVersion != FuseMigration.CurrentVersion)
             {
@@ -46,6 +47,41 @@ namespace FUSE.Validation
             ValidateAudio(result, value.Audio);
             ValidateProgression(result, value.Progression);
             return result;
+        }
+
+        private static void ValidateMixinto(ValidationResult result, FuseMixintoDefinition mixinto)
+        {
+            if (mixinto == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(mixinto.Target))
+            {
+                result.AddWarning("mixinto.target", "Mixinto target is blank; FUSE will still treat this fragment as a normal conditional data file.", "fuse.mixinto.target.blank");
+            }
+
+            if (string.IsNullOrWhiteSpace(mixinto.SourceFile))
+            {
+                result.AddWarning("mixinto.sourceFile", "Mixinto sourceFile is blank; conversion provenance will be less clear.", "fuse.mixinto.sourceFile.blank");
+            }
+
+            var requirements = mixinto.Requires ?? Array.Empty<FuseModRequirement>();
+            for (var index = 0; index < requirements.Length; index++)
+            {
+                var requirement = requirements[index];
+                var path = $"mixinto.requires[{index}]";
+                if (requirement == null)
+                {
+                    result.AddWarning(path, "Null mixinto requirement will be ignored.", "fuse.mixinto.requirement.null");
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(requirement.Id))
+                {
+                    result.AddWarning($"{path}.id", "Mixinto requirement id is blank and will be ignored.", "fuse.mixinto.requirement.id.blank");
+                }
+            }
         }
 
         private static void ValidateTrack(ValidationResult result, FuseTrackDefinition tracks, FuseOperationsDefinition operations)
@@ -205,12 +241,12 @@ namespace FUSE.Validation
 
             if (upperDistance.Value < 0f || upperDistance.Value > length.Value)
             {
-                result.AddError($"{path}.upper.distance", "Upper track location is outside the estimated segment length.", "fuse.track.span.upper.distance", upperDistance.Value);
+                result.AddWarning($"{path}.upper.distance", "Upper track location is outside the estimated straight-line segment length. Runtime graph validation will use the actual curved segment length.", "fuse.track.span.upper.distance", upperDistance.Value);
             }
 
             if (lowerDistance.Value < 0f || lowerDistance.Value > length.Value)
             {
-                result.AddError($"{path}.lower.distance", "Lower track location is outside the estimated segment length.", "fuse.track.span.lower.distance", lowerDistance.Value);
+                result.AddWarning($"{path}.lower.distance", "Lower track location is outside the estimated straight-line segment length. Runtime graph validation will use the actual curved segment length.", "fuse.track.span.lower.distance", lowerDistance.Value);
             }
 
             var upperFromA = string.Equals(upperEnd, "A", StringComparison.OrdinalIgnoreCase)
@@ -223,7 +259,7 @@ namespace FUSE.Validation
             var endSide = string.Equals(upperEnd, "A", StringComparison.OrdinalIgnoreCase) ? lowerFromA : upperFromA;
             if (startSide >= endSide)
             {
-                result.AddError(path, "Same-segment span endpoints cross or produce a zero-length span. The Start/A endpoint must be before the End/B endpoint.", "fuse.track.span.sameSegment.crossed", span.Upper.SegmentId);
+                result.AddWarning(path, "Same-segment span endpoints appear crossed against the estimated straight-line segment length. Runtime graph validation will use the actual curved segment length.", "fuse.track.span.sameSegment.crossed", span.Upper.SegmentId);
             }
         }
 
@@ -770,6 +806,7 @@ namespace FUSE.Validation
             ValidateNoBlank(result, $"{path}.unlockIncludeIndustries", section.UnlockIncludeIndustries, "fuse.progression.section.industry.empty");
             ValidateNoBlank(result, $"{path}.unlockExcludeIndustries", section.UnlockExcludeIndustries, "fuse.progression.section.industry.empty");
             ValidateNoBlank(result, $"{path}.unlockIncludeIndustryComponents", section.UnlockIncludeIndustryComponents, "fuse.progression.section.industryComponent.empty");
+            ValidateInterchangeTransfers(result, $"{path}.interchangeTransfers", section.InterchangeTransfers);
 
             var phases = section.DeliveryPhases;
             if (phases == null)
@@ -857,6 +894,34 @@ namespace FUSE.Validation
                 }
 
                 index++;
+            }
+        }
+
+        private static void ValidateInterchangeTransfers(ValidationResult result, string path, IDictionary<string, string> transfers)
+        {
+            if (transfers == null)
+            {
+                return;
+            }
+
+            foreach (var transfer in transfers)
+            {
+                var sourcePath = $"{path}.{transfer.Key}";
+                if (string.IsNullOrWhiteSpace(transfer.Key))
+                {
+                    result.AddError(path, "Interchange transfer source id must not be blank.", "fuse.progression.interchangeTransfer.source.empty");
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(transfer.Value))
+                {
+                    continue;
+                }
+
+                if (string.Equals(transfer.Key.Trim(), transfer.Value.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    result.AddWarning(sourcePath, "Interchange transfer source and target are the same; FUSE will create it, but it has no practical effect.", "fuse.progression.interchangeTransfer.sameTarget", transfer.Key);
+                }
             }
         }
 
