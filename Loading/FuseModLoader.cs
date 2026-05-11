@@ -2143,18 +2143,10 @@ namespace FUSE.Loading
                 }
             }
 
-            var bsonFiles = Directory.GetFiles(modFolder, "*.bson", SearchOption.TopDirectoryOnly);
-            if (bsonFiles.Length > 0)
+            var fallbackPaths = FuseDefinitionFileDiscovery.ResolveFallbackDefinitionPaths(modFolder);
+            if (fallbackPaths.Length > 0)
             {
-                return new[] { bsonFiles[0] };
-            }
-
-            var jsonFiles = Directory.GetFiles(modFolder, "*.json", SearchOption.TopDirectoryOnly)
-                .Where(IsFallbackDefinitionJsonFile)
-                .ToArray();
-            if (jsonFiles.Length > 0)
-            {
-                return new[] { jsonFiles[0] };
+                return fallbackPaths;
             }
 
             throw new FileNotFoundException($"No FUSE .bson or .json definition was found in '{modFolder}'.");
@@ -2163,26 +2155,6 @@ namespace FUSE.Loading
         private static bool HasFuseAssetPacks(JObject info)
         {
             return info != null && info["FuseAssetPacks"] != null;
-        }
-
-        private static bool IsFallbackDefinitionJsonFile(string path)
-        {
-            var fileName = Path.GetFileName(path);
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                return false;
-            }
-
-            if (string.Equals(fileName, "Info.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "conversion-report.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "Catalog.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "Definitions.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "Definition.json", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            return fileName.EndsWith(".fuse.json", StringComparison.OrdinalIgnoreCase);
         }
 
         private static IEnumerable<string> ResolveExplicitDefinitionPaths(string modFolder, JObject info)
