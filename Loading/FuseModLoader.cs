@@ -399,11 +399,23 @@ namespace FUSE.Loading
                     {
                         FusePackageFaultRegistry.RecordFault(definition.Id, "runtime apply", transaction.Report.FatalReason);
                         FusePackageFaultRegistry.MarkSkipped(definition.Id, transaction.Report.FatalReason);
+                        if (HasRuntimeMutations(transaction.Report))
+                        {
+                            candidate.RegistryTransaction?.Commit();
+                            FuseLog.Warning($"FUSE runtime apply for resident definition '{definition.Id}' failed after mutating runtime state; retained registry claims for created={transaction.Report.CreatedObjects.Count} updated={transaction.Report.UpdatedObjects.Count} removed={transaction.Report.RemovedObjects.Count} object(s).");
+                        }
+
                         outcomes.Add(PackageApplyOutcome.FromReport(definition.Id, transaction.Report, 0, 1, 1));
                     }
                     else if (transaction.Report.HasErrors)
                     {
                         FusePackageFaultRegistry.RecordFault(definition.Id, "runtime apply", $"Runtime apply completed with {transaction.Report.Errors.Count} error(s).");
+                        if (HasRuntimeMutations(transaction.Report))
+                        {
+                            candidate.RegistryTransaction?.Commit();
+                            FuseLog.Warning($"FUSE runtime apply for resident definition '{definition.Id}' completed with nonfatal errors after mutating runtime state; retained registry claims for created={transaction.Report.CreatedObjects.Count} updated={transaction.Report.UpdatedObjects.Count} removed={transaction.Report.RemovedObjects.Count} object(s).");
+                        }
+
                         outcomes.Add(PackageApplyOutcome.FromReport(definition.Id, transaction.Report, 0, 0, 1));
                     }
                     else
@@ -438,6 +450,13 @@ namespace FUSE.Loading
                 $"definitions={prepared.Count} applied={appliedCount} " +
                 "mode='package-grouped mixinto order, final-state deletes, single graph commit'.");
             return appliedCount;
+        }
+
+        private static bool HasRuntimeMutations(FuseApplyReport report)
+        {
+            return (report?.CreatedObjects?.Count ?? 0) > 0 ||
+                   (report?.UpdatedObjects?.Count ?? 0) > 0 ||
+                   (report?.RemovedObjects?.Count ?? 0) > 0;
         }
 
         private static FuseMergedTrackPlan BuildMergedTrackPlan(IReadOnlyList<FuseStagedApplyCandidate> active)
