@@ -45,6 +45,7 @@ namespace FUSE.API
             ApplyDefinition(scenery, definition, assetIdentifier);
 
             gameObject.SetActive(true);
+            MapAPI.RefreshAttachedMapMasks(gameObject, $"scenery '{id}' add");
             FuseSceneryRuntimeIndex.Instance.Set(id, scenery);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Scenery, id, definition);
             return scenery;
@@ -75,6 +76,8 @@ namespace FUSE.API
                 scenery.ReloadComponents();
             }
 
+            MapAPI.RefreshAttachedMapMasks(scenery.gameObject, $"scenery '{id}' update");
+
             FuseSceneryRuntimeIndex.Instance.Set(id, scenery);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Scenery, id, definition);
         }
@@ -92,7 +95,7 @@ namespace FUSE.API
             var root = FindRemovableSceneryObject(id);
             if (root == null)
             {
-                FuseLog.Warning($"FUSE world removal skipped missing scenery '{id}'.");
+                FuseLog.Info($"FUSE world removal skipped missing scenery '{id}'.");
                 return false;
             }
 

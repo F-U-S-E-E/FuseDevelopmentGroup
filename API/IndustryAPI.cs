@@ -11,6 +11,7 @@ using FUSE.Cache;
 using FUSE.Data;
 using FUSE.Events;
 using FUSE.Infrastructure;
+using Newtonsoft.Json.Linq;
 using Track;
 using UnityEngine;
 
@@ -24,6 +25,8 @@ namespace FUSE.API
         private static readonly FieldInfo RepairPartsLoadField = typeof(RepairTrack).GetField("repairPartsLoad", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly Dictionary<string, int> IndustryOrders = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> FuseCreatedIndustryIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static int _industryApplyBatchDepth;
+        private static bool _industryRefreshPending;
         private static Transform _fallbackRoot;
 
         public static Industry AddIndustry(string id, FuseIndustry definition)
@@ -126,9 +129,20 @@ namespace FUSE.API
 
         public static Industry GetIndustry(string id)
         {
-            if (FuseIndustryRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (FuseIndustryRuntimeIndex.Instance.TryGetValue(id, out var cached) && cached != null)
             {
                 return (Industry)cached;
+            }
+
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                var sceneMatch = UnityEngine.Object.FindObjectsOfType<Industry>(true)
+                    .FirstOrDefault(industry => industry != null && string.Equals(industry.identifier, id, StringComparison.OrdinalIgnoreCase));
+                if (sceneMatch != null)
+                {
+                    FuseIndustryRuntimeIndex.Instance.Set(sceneMatch.identifier, sceneMatch);
+                    return sceneMatch;
+                }
             }
 
             var controller = OpsController.Shared;
@@ -362,6 +376,7 @@ namespace FUSE.API
 
         private static IndustryComponent AddComponent(Industry industry, string subId, FuseIndustryComponent definition, bool notify)
         {
+            subId = NormalizeComponentSubId(industry, subId, definition, null);
             RequireId(subId, nameof(subId));
             if (definition == null)
             {
@@ -374,7 +389,7 @@ namespace FUSE.API
             }
 
             var componentType = ResolveComponentType(definition.Type);
-            var attachToIndustryObject = componentType == typeof(FormulaicIndustryComponent);
+            var attachToIndustryObject = typeof(FormulaicIndustryComponent).IsAssignableFrom(componentType);
             var gameObject = attachToIndustryObject
                 ? industry.gameObject
                 : new GameObject(string.IsNullOrWhiteSpace(definition.Name) ? "Component" : definition.Name);
@@ -406,8 +421,130 @@ namespace FUSE.API
             return component;
         }
 
+        private static IDictionary<string, FuseIndustryComponent> NormalizeComponentDefinitions(Industry industry, IDictionary<string, FuseIndustryComponent> components)
+        {
+            if (components == null)
+            {
+                return null;
+            }
+
+            var normalized = new Dictionary<string, FuseIndustryComponent>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in components)
+            {
+                var subId = NormalizeComponentSubId(industry, pair.Key, pair.Value, normalized);
+                normalized[subId] = pair.Value;
+            }
+
+            return normalized;
+        }
+
+        private static string NormalizeComponentSubId(Industry industry, string requestedSubId, FuseIndustryComponent definition, IDictionary<string, FuseIndustryComponent> existing)
+        {
+            var subId = (requestedSubId ?? string.Empty).Trim();
+            if (subId.Length > 0)
+            {
+                return MakeUniqueExplicitComponentSubId(subId, existing);
+            }
+
+            var normalizedType = FuseIndustryComponentTypes.Normalize(definition?.Type);
+            if (string.Equals(normalizedType, FuseIndustryComponentTypes.Formulaic, StringComparison.OrdinalIgnoreCase))
+            {
+                subId = "formula";
+            }
+            else if (string.Equals(normalizedType, FuseIndustryComponentTypes.RepairTrack, StringComparison.OrdinalIgnoreCase))
+            {
+                subId = "repair";
+            }
+            else if (string.Equals(normalizedType, FuseIndustryComponentTypes.TeamTrack, StringComparison.OrdinalIgnoreCase))
+            {
+                subId = "teamtrack";
+            }
+            else if (!string.IsNullOrWhiteSpace(definition?.LoadId))
+            {
+                subId = SanitizeComponentSubId(definition.LoadId);
+            }
+            else if (!string.IsNullOrWhiteSpace(definition?.Name))
+            {
+                subId = SanitizeComponentSubId(definition.Name);
+            }
+            else
+            {
+                subId = "component";
+            }
+
+            subId = MakeUniqueComponentSubId(subId, existing);
+            FuseLog.Warning(
+                $"FUSE normalized empty legacy industry component id for industry '{industry?.identifier ?? "<unknown>"}' " +
+                $"type='{definition?.Type ?? string.Empty}' name='{definition?.Name ?? string.Empty}' to subId='{subId}'.");
+            return subId;
+        }
+
+        private static string MakeUniqueComponentSubId(string preferred, IDictionary<string, FuseIndustryComponent> existing)
+        {
+            var baseId = SanitizeComponentSubId(preferred);
+            if (string.IsNullOrWhiteSpace(baseId))
+            {
+                baseId = "component";
+            }
+
+            if (existing == null || !existing.ContainsKey(baseId))
+            {
+                return baseId;
+            }
+
+            var index = 2;
+            while (existing.ContainsKey(baseId + "-" + index))
+            {
+                index++;
+            }
+
+            return baseId + "-" + index;
+        }
+
+        private static string MakeUniqueExplicitComponentSubId(string preferred, IDictionary<string, FuseIndustryComponent> existing)
+        {
+            var baseId = (preferred ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(baseId))
+            {
+                return MakeUniqueComponentSubId("component", existing);
+            }
+
+            if (existing == null || !existing.ContainsKey(baseId))
+            {
+                return baseId;
+            }
+
+            var index = 2;
+            while (existing.ContainsKey(baseId + "-" + index))
+            {
+                index++;
+            }
+
+            return baseId + "-" + index;
+        }
+
+        private static string SanitizeComponentSubId(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var chars = value.Trim()
+                .Select(ch => char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : '-')
+                .ToArray();
+            var collapsed = new string(chars);
+            while (collapsed.Contains("--"))
+            {
+                collapsed = collapsed.Replace("--", "-");
+            }
+
+            return collapsed.Trim('-');
+        }
+
         private static void AddOrUpdateComponents(Industry industry, IDictionary<string, FuseIndustryComponent> components)
         {
+            components = NormalizeComponentDefinitions(industry, components);
             var wasActive = industry.gameObject.activeSelf;
             industry.gameObject.SetActive(false);
             try
@@ -463,12 +600,19 @@ namespace FUSE.API
                 throw new ArgumentNullException(nameof(definition));
             }
 
+            var isPassengerStop = component is FusePassengerStopComponent;
             component.name = string.IsNullOrWhiteSpace(definition.Name) ? component.subIdentifier : definition.Name;
             component.trackSpans = ResolveSpans(definition.TrackSpanIds);
-            component.carTypeFilter = new CarTypeFilter(definition.CarTypeFilter ?? string.Empty);
+            component.carTypeFilter = new CarTypeFilter(
+                isPassengerStop && string.IsNullOrWhiteSpace(definition.CarTypeFilter)
+                    ? "*"
+                    : definition.CarTypeFilter ?? string.Empty);
             component.sharedStorage = definition.SharedStorage;
 
-            var load = ResolveLoad(definition.LoadId);
+            var effectiveLoadId = isPassengerStop && string.IsNullOrWhiteSpace(definition.LoadId)
+                ? "passengers"
+                : definition.LoadId;
+            var load = ResolveLoad(effectiveLoadId);
             var loader = component as IndustryLoader;
             if (loader != null)
             {
@@ -579,6 +723,8 @@ namespace FUSE.API
                 passengerStop.BranchDefinitions = definition.BranchDefinitions ?? Array.Empty<FusePassengerBranch>();
             }
 
+            ApplyCustomIndustryComponentFields(component, definition, load);
+
             var appliedComponent = component as IFuseAppliedComponent;
             if (appliedComponent != null)
             {
@@ -601,7 +747,7 @@ namespace FUSE.API
 
             if (string.Equals(normalized, FuseIndustryComponentTypes.Formulaic, StringComparison.OrdinalIgnoreCase))
             {
-                return typeof(FormulaicIndustryComponent);
+                return typeof(FuseFormulaicIndustryComponent);
             }
 
             if (string.Equals(normalized, FuseIndustryComponentTypes.RepairTrack, StringComparison.OrdinalIgnoreCase))
@@ -660,7 +806,12 @@ namespace FUSE.API
                 return typeof(FusePassengerStopComponent);
             }
 
-            var reflected = TryResolveIndustryComponentType(type);
+            var reflected = TryResolveIndustryComponentType(normalized);
+            if (reflected == null && !string.Equals(normalized, type, StringComparison.OrdinalIgnoreCase))
+            {
+                reflected = TryResolveIndustryComponentType(type);
+            }
+
             if (reflected != null)
             {
                 return reflected;
@@ -677,9 +828,30 @@ namespace FUSE.API
             }
 
             var direct = Type.GetType(type + ", Assembly-CSharp", false, true);
-            return direct != null && typeof(IndustryComponent).IsAssignableFrom(direct)
-                ? direct
-                : null;
+            if (direct != null && typeof(IndustryComponent).IsAssignableFrom(direct))
+            {
+                return direct;
+            }
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type candidate = null;
+                try
+                {
+                    candidate = assembly.GetType(type, false, true);
+                }
+                catch
+                {
+                    // Some plugin assemblies can throw while resolving metadata.
+                }
+
+                if (candidate != null && typeof(IndustryComponent).IsAssignableFrom(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
         }
 
         private static string GetComponentTypeAlias(IndustryComponent component)
@@ -834,8 +1006,220 @@ namespace FUSE.API
                 return null;
             }
 
-            var field = instance.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            var field = FindInstanceField(instance.GetType(), fieldName);
             return field != null ? field.GetValue(instance) : null;
+        }
+
+        private static void ApplyCustomIndustryComponentFields(IndustryComponent component, FuseIndustryComponent definition, Load load)
+        {
+            if (component == null || definition == null)
+            {
+                return;
+            }
+
+            var typeName = component.GetType().FullName;
+            if (FuseIndustryComponentTypes.IsKnown(definition.Type))
+            {
+                return;
+            }
+
+            SetLoadField(component, "load", load);
+            SetLoadField(component, "convertedLoad", ResolveLoad(definition.ConvertedLoadId));
+            SetFloatField(component, "carLoadRate", definition.CarTransferRate);
+            SetFloatField(component, "carUnloadRate", definition.CarTransferRate);
+            SetFloatField(component, "loadRate", definition.CarTransferRate);
+            SetFloatField(component, "maxStorage", definition.MaxStorage);
+            SetFloatField(component, "costPerUnit", definition.CostPerUnit);
+            SetFloatField(component, "notBefore", definition.NotBeforeHour);
+            SetFloatField(component, "notAfter", definition.NotAfterHour);
+            SetFloatField(component, "fillPercentage", definition.FillPercentage);
+            SetStringField(component, "title", definition.Title ?? definition.Name);
+            SetStringArrayField(component, "bookReasons", definition.BookReasons);
+            ApplyCustomFieldBag(component, definition.Fields);
+
+            FuseLog.Info(
+                $"FUSE applied reflective custom industry component fields type='{typeName}' " +
+                $"id='{DescribeComponent(component)}' loadId='{definition.LoadId ?? string.Empty}' " +
+                $"convertedLoadId='{definition.ConvertedLoadId ?? string.Empty}'.");
+        }
+
+        private static void SetLoadField(object instance, string fieldName, Load load)
+        {
+            if (load != null)
+            {
+                SetFieldValue(instance, fieldName, load);
+            }
+        }
+
+        private static void SetFloatField(object instance, string fieldName, float? value)
+        {
+            if (value != null)
+            {
+                SetFieldValue(instance, fieldName, value.Value);
+            }
+        }
+
+        private static void SetStringField(object instance, string fieldName, string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                SetFieldValue(instance, fieldName, value);
+            }
+        }
+
+        private static void SetStringArrayField(object instance, string fieldName, string[] value)
+        {
+            if (value != null)
+            {
+                SetFieldValue(instance, fieldName, value);
+            }
+        }
+
+        private static void ApplyCustomFieldBag(object instance, IDictionary<string, object> fields)
+        {
+            if (instance == null || fields == null || fields.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var pair in fields)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key))
+                {
+                    continue;
+                }
+
+                SetFieldValue(instance, pair.Key, pair.Value);
+            }
+        }
+
+        private static void SetFieldValue(object instance, string fieldName, object value)
+        {
+            if (instance == null || string.IsNullOrWhiteSpace(fieldName) || value == null)
+            {
+                return;
+            }
+
+            var field = FindInstanceField(instance.GetType(), fieldName);
+            if (field != null)
+            {
+                TrySetMemberValue(instance, field.Name, field.FieldType, converted => field.SetValue(instance, converted), value);
+                return;
+            }
+
+            var property = FindInstanceProperty(instance.GetType(), fieldName);
+            if (property != null && property.CanWrite)
+            {
+                TrySetMemberValue(instance, property.Name, property.PropertyType, converted => property.SetValue(instance, converted, null), value);
+            }
+        }
+
+        private static void TrySetMemberValue(object instance, string memberName, Type memberType, Action<object> setter, object value)
+        {
+            try
+            {
+                var converted = ConvertCustomFieldValue(memberType, value);
+                if (converted != null || !memberType.IsValueType || Nullable.GetUnderlyingType(memberType) != null)
+                {
+                    setter(converted);
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE could not set custom industry component field '{memberName}' " +
+                    $"type='{instance.GetType().FullName}' error='{ex.Message}'.");
+            }
+        }
+
+        private static object ConvertCustomFieldValue(Type targetType, object value)
+        {
+            if (targetType == null || value == null)
+            {
+                return null;
+            }
+
+            var nullableType = Nullable.GetUnderlyingType(targetType);
+            if (nullableType != null)
+            {
+                targetType = nullableType;
+            }
+
+            if (value is JValue jValue)
+            {
+                value = jValue.Value;
+            }
+
+            if (value is JToken token)
+            {
+                if (typeof(Load).IsAssignableFrom(targetType) && token.Type == JTokenType.String)
+                {
+                    return ResolveLoad(token.ToString());
+                }
+
+                if (typeof(TrackSpan[]).IsAssignableFrom(targetType) && token is JArray spanArray)
+                {
+                    return ResolveSpans(spanArray.Values<string>().ToArray());
+                }
+
+                return token.ToObject(targetType);
+            }
+
+            if (typeof(Load).IsAssignableFrom(targetType) && value is string loadId)
+            {
+                return ResolveLoad(loadId);
+            }
+
+            if (typeof(TrackSpan[]).IsAssignableFrom(targetType) && value is IEnumerable<string> spanIds)
+            {
+                return ResolveSpans(spanIds.ToArray());
+            }
+
+            if (targetType.IsInstanceOfType(value))
+            {
+                return value;
+            }
+
+            if (targetType.IsEnum)
+            {
+                return value is string text
+                    ? Enum.Parse(targetType, text, true)
+                    : Enum.ToObject(targetType, value);
+            }
+
+            return Convert.ChangeType(value, targetType);
+        }
+
+        private static FieldInfo FindInstanceField(Type type, string fieldName)
+        {
+            while (type != null && !string.IsNullOrWhiteSpace(fieldName))
+            {
+                var field = type.GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (field != null)
+                {
+                    return field;
+                }
+
+                type = type.BaseType;
+            }
+
+            return null;
+        }
+
+        private static PropertyInfo FindInstanceProperty(Type type, string propertyName)
+        {
+            while (type != null && !string.IsNullOrWhiteSpace(propertyName))
+            {
+                var property = type.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (property != null)
+                {
+                    return property;
+                }
+
+                type = type.BaseType;
+            }
+
+            return null;
         }
 
         private static Dictionary<string, float> ToFormulaTerms(IEnumerable<FormulaicIndustryComponent.Term> terms)
@@ -925,7 +1309,8 @@ namespace FUSE.API
             var spans = new List<TrackSpan>();
             foreach (var id in spanIds)
             {
-                var span = TrackAPI.GetSpan(id);
+                var span = TrackAPI.GetSpan(id) ??
+                           TrackAPI.TryEnsureBaseGraphSpan(id, "industry component span binding");
                 if (span == null)
                 {
                     FuseLog.Warning($"FUSE track span '{id}' was not found while resolving industry component spans; continuing without it.");
@@ -1005,7 +1390,7 @@ namespace FUSE.API
 
         private static IndustryComponent GetComponent(Industry industry, string subId)
         {
-            return industry.GetComponentsInChildren<IndustryComponent>(true).FirstOrDefault(component => component.subIdentifier == subId);
+            return industry.GetComponentsInChildren<IndustryComponent>(true).FirstOrDefault(component => component != null && string.Equals(component.subIdentifier, subId, StringComparison.OrdinalIgnoreCase));
         }
 
         private static Transform GetIndustryRoot(FuseIndustry definition)
@@ -1109,8 +1494,33 @@ namespace FUSE.API
             ComponentIdentifierField?.SetValue(component, industry.identifier + "." + component.subIdentifier);
         }
 
+        internal static void BeginIndustryApplyBatch()
+        {
+            _industryApplyBatchDepth++;
+        }
+
+        internal static void EndIndustryApplyBatch(string source)
+        {
+            if (_industryApplyBatchDepth > 0)
+            {
+                _industryApplyBatchDepth--;
+            }
+
+            if (_industryApplyBatchDepth == 0 && _industryRefreshPending)
+            {
+                _industryRefreshPending = false;
+                RefreshIndustriesAfterBatch(source ?? "industry apply batch");
+            }
+        }
+
         internal static void RefreshIndustriesAfterBatch(string source)
         {
+            if (_industryApplyBatchDepth > 0)
+            {
+                _industryRefreshPending = true;
+                return;
+            }
+
             ApplyIndustryOrdering();
             Messenger.Default.Send(default(IndustriesDidChange));
             FuseIndustryRuntimeIndex.Instance.Rebuild();
@@ -1129,7 +1539,15 @@ namespace FUSE.API
 
                 var railComponentCount = industry.GetComponentsInChildren<IndustryComponent>(true)
                     .Count(component => component != null && !string.IsNullOrWhiteSpace(component.subIdentifier));
-                FuseLog.Info($"FUSE-created industry '{industryId}' name='{industry.name}' componentCount={railComponentCount}.");
+                FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Industry, industryId, out FuseIndustry sourceDefinition);
+                var sourceComponentCount = sourceDefinition?.Components?.Count ?? 0;
+                if (railComponentCount == 0 && sourceComponentCount == 0)
+                {
+                    FuseLog.Info($"FUSE-created source-empty industry shell '{industryId}' name='{industry.name}' runtimeComponents=0 sourceComponents=0.");
+                    continue;
+                }
+
+                FuseLog.Info($"FUSE-created industry '{industryId}' name='{industry.name}' runtimeComponents={railComponentCount} sourceComponents={sourceComponentCount}.");
             }
         }
 
@@ -1139,7 +1557,8 @@ namespace FUSE.API
                 !string.IsNullOrWhiteSpace(industry.identifier) &&
                 IndustryOrders.TryGetValue(industry.identifier, out var order))
             {
-                return order.ToString("D8") + "|" + (fallback ?? string.Empty);
+                var signedSortKey = (long)order - int.MinValue;
+                return signedSortKey.ToString("D10") + "|" + (fallback ?? string.Empty);
             }
 
             return "Z|" + (fallback ?? string.Empty);

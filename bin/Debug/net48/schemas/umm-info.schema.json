@@ -1,8 +1,8 @@
-﻿{
+{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hunterr.dev/rail/schemas/umm-info.schema.json",
-  "title": "RAIL Unity Mod Manager Info.json",
-  "description": "UMM manifest shape for the RAIL API mod and RAIL data packages.",
+  "$id": "https://hunterr.dev/fuse/schemas/umm-info.schema.json",
+  "title": "FUSE Unity Mod Manager Info.json",
+  "description": "UMM manifest shape for the FUSE API mod and FUSE data packages.",
   "type": "object",
   "additionalProperties": true,
   "required": [
@@ -40,7 +40,7 @@
     },
     "AssemblyName": {
       "type": "string",
-      "description": "Required for code mods like RAIL. Omit for RAIL data-only packages if UMM accepts the folder."
+      "description": "Required for code mods like FUSE. Omit for FUSE data-only packages if UMM accepts the folder."
     },
     "EntryMethod": {
       "type": "string",
@@ -66,42 +66,42 @@
       },
       "default": []
     },
-    "RailLoadPriority": {
+    "FuseLoadPriority": {
       "type": "integer",
       "default": 0,
-      "description": "RAIL-specific package ordering priority. Lower values load earlier; ties fall back to dependency order, then package id."
+      "description": "FUSE-specific package ordering priority. Lower values load earlier; ties fall back to dependency order, then package id."
     },
-    "RailLoadAfter": {
+    "FuseLoadAfter": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/dependency"
       },
       "default": [],
-      "description": "RAIL-specific data package ids that must load before this package."
+      "description": "FUSE-specific data package ids that must load before this package."
     },
-    "RailLoadBefore": {
+    "FuseLoadBefore": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/dependency"
       },
       "default": [],
-      "description": "RAIL-specific data package ids that must load after this package."
+      "description": "FUSE-specific data package ids that must load after this package."
     },
-    "RailDataFile": {
+    "FuseDataFile": {
       "type": "string",
       "pattern": "^.+\\.(bson|json)$",
-      "description": "RAIL-specific pointer to one mod definition file in this UMM folder."
+      "description": "FUSE-specific pointer to one mod definition file in this UMM folder."
     },
-    "RailDataFiles": {
+    "FuseDataFiles": {
       "type": "array",
       "items": {
         "type": "string",
         "pattern": "^.+\\.(bson|json)$"
       },
       "default": [],
-      "description": "RAIL-specific ordered list of definition fragments to load from this UMM folder."
+      "description": "FUSE-specific ordered list of definition fragments to load from this UMM folder."
     },
-    "RailAssetPacks": {
+    "FuseAssetPacks": {
       "oneOf": [
         {
           "type": "string",
@@ -116,7 +116,18 @@
           "default": []
         }
       ],
-      "description": "RAIL-specific relative folder or folders containing Railroader AssetPack Runtime stores, for example SCAssetPacks."
+      "description": "FUSE-specific relative folder or folders containing Railroader AssetPack Runtime stores, for example SCAssetPacks."
+    },
+    "Settings": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "EnableExperimentalEarlyScenePathSuppression": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental. Gates Unity async scene activation so world.suppressBaseScenePaths can be applied as early as Unity exposes scene objects. Disabled by default because a failed gate can wedge scene loading."
+        }
+      }
     }
   },
   "dependentRequired": {

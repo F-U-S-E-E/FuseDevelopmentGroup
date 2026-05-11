@@ -14,6 +14,8 @@ namespace FUSE.Loading
         private static readonly Dictionary<string, UnknownSceneryAsset> UnknownSceneryAssets =
             new Dictionary<string, UnknownSceneryAsset>(StringComparer.OrdinalIgnoreCase);
         private static readonly List<string> Notices = new List<string>();
+        private static readonly List<string> GraphPostBindIssues = new List<string>();
+        private static readonly List<string> ProgressionTransferSkips = new List<string>();
 
         private static string _lastSummary = "FUSE load report has not been generated yet.";
         private static string _lastDetails = "FUSE load report has not been generated yet.";
@@ -35,6 +37,8 @@ namespace FUSE.Loading
             {
                 UnknownSceneryAssets.Clear();
                 Notices.Clear();
+                GraphPostBindIssues.Clear();
+                ProgressionTransferSkips.Clear();
                 _lastSummary = "FUSE load report is pending.";
                 _lastDetails = "FUSE load report is pending.";
             }
@@ -77,6 +81,35 @@ namespace FUSE.Loading
             }
         }
 
+        public static void RecordGraphPostBindIssue(string packageId, string kind, string objectId, string message)
+        {
+            var line =
+                $"package='{Normalize(packageId, "<unknown>")}' kind='{Normalize(kind, "<unknown>")}' " +
+                $"id='{Normalize(objectId, "<unknown>")}' reason='{Normalize(message, "post-bind validation failed")}'";
+            lock (Sync)
+            {
+                if (!GraphPostBindIssues.Contains(line))
+                {
+                    GraphPostBindIssues.Add(line);
+                }
+            }
+        }
+
+        public static void RecordProgressionTransferSkip(string packageId, string sectionId, string sourceId, string targetId, string reason)
+        {
+            var line =
+                $"package='{Normalize(packageId, "<unknown>")}' section='{Normalize(sectionId, "<unknown>")}' " +
+                $"source='{Normalize(sourceId, "<blank>")}' target='{Normalize(targetId, "<blank>")}' " +
+                $"reason='{Normalize(reason, "interchange transfer skipped")}'";
+            lock (Sync)
+            {
+                if (!ProgressionTransferSkips.Contains(line))
+                {
+                    ProgressionTransferSkips.Add(line);
+                }
+            }
+        }
+
         public static string GetLastDetailReport()
         {
             lock (Sync)
@@ -114,6 +147,8 @@ namespace FUSE.Loading
         {
             UnknownSceneryAsset[] unknownScenery;
             string[] notices;
+            string[] graphPostBindIssues;
+            string[] progressionTransferSkips;
             lock (Sync)
             {
                 unknownScenery = UnknownSceneryAssets.Values
@@ -121,6 +156,8 @@ namespace FUSE.Loading
                     .ThenBy(item => item.SceneryId, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
                 notices = Notices.ToArray();
+                graphPostBindIssues = GraphPostBindIssues.ToArray();
+                progressionTransferSkips = ProgressionTransferSkips.ToArray();
             }
 
             var sceneSuppressions = FuseWorldSuppressor.GetActiveScenePathSuppressions().ToArray();
@@ -150,6 +187,8 @@ namespace FUSE.Loading
                 TrackGroupSuppressions = trackGroupSuppressions,
                 AreaSuppressions = areaSuppressions,
                 UnknownSceneryAssets = unknownScenery,
+                GraphPostBindIssues = graphPostBindIssues,
+                ProgressionTransferSkips = progressionTransferSkips,
                 Notices = notices
             };
         }
@@ -165,7 +204,9 @@ namespace FUSE.Loading
             return
                 $"FUSE: {loadedCount} loaded, {snapshot.FaultedPackageCount} faulted, " +
                 $"{snapshot.Conflicts.Length} conflicts, {suppressionCount} suppressions, " +
-                $"{snapshot.UnknownSceneryAssets.Length} unknown scenery assets. " +
+                $"{snapshot.UnknownSceneryAssets.Length} unknown scenery assets, " +
+                $"{snapshot.GraphPostBindIssues.Length} graph issues, " +
+                $"{snapshot.ProgressionTransferSkips.Length} transfer skips. " +
                 "Details: /fuse.report /fuse.loaded /fuse.conflicts";
         }
 
@@ -180,6 +221,9 @@ namespace FUSE.Loading
                 $"Packages: loaded={snapshot.LoadedPackageIds.Length}; applied={snapshot.AppliedPackageIds.Length}; " +
                 $"skipped={snapshot.SkippedPackages.Count}; disabled={snapshot.DisabledPackages.Count}; " +
                 $"faulted={snapshot.FaultedPackageCount}.");
+            sb.AppendLine(
+                $"Post-bind: graphIssues={snapshot.GraphPostBindIssues.Length}; " +
+                $"progressionTransferSkips={snapshot.ProgressionTransferSkips.Length}.");
 
             AppendList(sb, "Loaded packages", snapshot.LoadedPackageIds);
             AppendList(sb, "Applied packages", snapshot.AppliedPackageIds);
@@ -215,6 +259,8 @@ namespace FUSE.Loading
                 }
             }
 
+            AppendList(sb, "Graph post-bind issues", snapshot.GraphPostBindIssues);
+            AppendList(sb, "Progression transfer skips", snapshot.ProgressionTransferSkips);
             AppendList(sb, "Notices", snapshot.Notices);
             return sb.ToString();
         }
@@ -300,6 +346,8 @@ namespace FUSE.Loading
             public string[] TrackGroupSuppressions { get; set; }
             public string[] AreaSuppressions { get; set; }
             public UnknownSceneryAsset[] UnknownSceneryAssets { get; set; }
+            public string[] GraphPostBindIssues { get; set; }
+            public string[] ProgressionTransferSkips { get; set; }
             public string[] Notices { get; set; }
 
             public int FaultedPackageCount =>
@@ -311,7 +359,9 @@ namespace FUSE.Loading
                 FaultedPackageCount > 0 ||
                 (Conflicts != null && Conflicts.Length > 0) ||
                 (UnknownSceneryAssets != null && UnknownSceneryAssets.Length > 0) ||
-                (SkippedPackages != null && SkippedPackages.Count > 0) ||
+                (GraphPostBindIssues != null && GraphPostBindIssues.Length > 0) ||
+                (ProgressionTransferSkips != null && ProgressionTransferSkips.Length > 0) ||
+                (SkippedPackages != null && SkippedPackages.Any(item => !FusePackageFaultRegistry.IsOptionalSkipReason(item.Value))) ||
                 (Notices != null && Notices.Length > 0);
         }
     }

@@ -52,11 +52,34 @@ namespace FUSE.Loading
 
             LogBucket("warning", Warnings, FuseLog.Warning);
             LogBucket("error", Errors, FuseLog.Error);
-            LogBucket("created", CreatedObjects, FuseLog.Info);
-            LogBucket("updated", UpdatedObjects, FuseLog.Info);
-            LogBucket("removed", RemovedObjects, FuseLog.Info);
-            LogBucket("skipped", SkippedObjects, FuseLog.Info);
-            LogBucket("post-bind", PostBindValidationResults, FuseLog.Info);
+            if (FuseSettings.VerboseApplyReportDetails || IsFatal || HasErrors)
+            {
+                LogBucket("created", CreatedObjects, FuseLog.Info);
+                LogBucket("updated", UpdatedObjects, FuseLog.Info);
+                LogBucket("removed", RemovedObjects, FuseLog.Info);
+                LogBucket("skipped", SkippedObjects, FuseLog.Info);
+                LogBucket("post-bind", PostBindValidationResults, FuseLog.Info);
+            }
+            else
+            {
+                LogQuietBucketSummary("created", CreatedObjects);
+                LogQuietBucketSummary("updated", UpdatedObjects);
+                LogQuietBucketSummary("removed", RemovedObjects);
+                LogQuietBucketSummary("skipped", SkippedObjects);
+                LogQuietBucketSummary("post-bind", PostBindValidationResults);
+            }
+        }
+
+        private void LogQuietBucketSummary(string label, IList<string> items)
+        {
+            if (items == null || items.Count == 0)
+            {
+                return;
+            }
+
+            FuseLog.Info(
+                $"FUSE apply report {label}: package='{DefinitionId}' operation='apply' " +
+                $"count={items.Count} details='suppressed; set Settings.VerboseApplyReportDetails=true for per-object entries'.");
         }
 
         private void LogBucket(string label, IList<string> items, Action<string> logger)

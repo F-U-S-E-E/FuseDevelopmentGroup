@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Model.Ops;
 using FUSE.Cache;
 using FUSE.Data;
@@ -20,6 +21,15 @@ namespace FUSE.API
         private static bool _rebuildRequested;
         private static Transform _fallbackAreaRoot;
         private static readonly Dictionary<string, int> AreaOrders = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, FuseNode> BaseNodeDefinitions = new Dictionary<string, FuseNode>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, FuseSegment> BaseSegmentDefinitions = new Dictionary<string, FuseSegment>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, FuseSpan> BaseSpanDefinitions = new Dictionary<string, FuseSpan>(StringComparer.OrdinalIgnoreCase);
+        private static readonly MethodInfo GraphAddSpanMethod =
+            typeof(Graph).GetMethod("AddSpan", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo GraphSpansField =
+            typeof(Graph).GetField("spans", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static bool _warnedMissingGraphAddSpan;
+        private static bool _baseGraphSnapshotCaptured;
 
         public static bool IsBatching => _batchDepth > 0;
 
@@ -307,6 +317,7 @@ namespace FUSE.API
             }
 
             FuseSpanRuntimeIndex.Instance.Set(id, span);
+            RegisterSpanWithGraph(graph, span);
             FuseEvents.RaiseSpanAdded(span);
             RequestRebuild();
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSpan, id, GetDefinition(span));
@@ -329,6 +340,7 @@ namespace FUSE.API
         {
             var span = RequireSpan(id);
             var graph = RequireGraph();
+            EnsureTrackSpanGraphChild(graph, span);
             var upperLocation = MakeLocation(graph, upper);
             var lowerLocation = MakeLocation(graph, lower);
             ValidateSpanEndpointPair(id, ref upperLocation, ref lowerLocation);
@@ -354,6 +366,7 @@ namespace FUSE.API
             }
 
             FuseSpanRuntimeIndex.Instance.Set(id, span);
+            RegisterSpanWithGraph(graph, span);
             FuseEvents.RaiseSpanUpdated(span);
             RequestRebuild();
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSpan, id, GetDefinition(span));
@@ -384,17 +397,195 @@ namespace FUSE.API
         {
             if (FuseSpanRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
-                return (TrackSpan)cached;
+                var cachedSpan = (TrackSpan)cached;
+                if (cachedSpan != null)
+                {
+                    return cachedSpan;
+                }
+
+                FuseSpanRuntimeIndex.Instance.Remove(id);
             }
 
             var graph = Graph.Shared;
-            return graph != null && !string.IsNullOrWhiteSpace(id) ? graph.SpanForId(id) : null;
+            if (graph != null && !string.IsNullOrWhiteSpace(id))
+            {
+                var graphSpan = graph.SpanForId(id);
+                if (graphSpan != null)
+                {
+                    FuseSpanRuntimeIndex.Instance.Set(id, graphSpan);
+                    return graphSpan;
+                }
+            }
+
+            var sceneSpan = FindSpanInScene(id);
+            if (sceneSpan != null)
+            {
+                FuseSpanRuntimeIndex.Instance.Set(id, sceneSpan);
+                if (graph != null)
+                {
+                    RegisterSpanWithGraph(graph, sceneSpan);
+                }
+            }
+
+            return sceneSpan;
         }
 
         public static IEnumerable<TrackSpan> GetAllSpans()
         {
             return UnityEngine.Object.FindObjectsOfType<TrackSpan>(true)
                 .Where(span => span != null && !string.IsNullOrWhiteSpace(span.id));
+        }
+
+        public static void CaptureBaseGraphSnapshot(string reason)
+        {
+            if (_baseGraphSnapshotCaptured)
+            {
+                return;
+            }
+
+            var graph = Graph.Shared;
+            if (graph == null)
+            {
+                FuseLog.Warning($"FUSE base graph snapshot skipped operation='capture' reason='{reason ?? string.Empty}' detail='Graph.Shared is null'.");
+                return;
+            }
+
+            try
+            {
+                BaseNodeDefinitions.Clear();
+                BaseSegmentDefinitions.Clear();
+                BaseSpanDefinitions.Clear();
+
+                foreach (var node in GetAllNodes())
+                {
+                    if (node == null || string.IsNullOrWhiteSpace(node.id))
+                    {
+                        continue;
+                    }
+
+                    BaseNodeDefinitions[node.id] = GetDefinition(node);
+                }
+
+                foreach (var segment in GetAllSegments())
+                {
+                    if (segment == null || string.IsNullOrWhiteSpace(segment.id))
+                    {
+                        continue;
+                    }
+
+                    BaseSegmentDefinitions[segment.id] = GetDefinition(segment);
+                }
+
+                foreach (var span in GetAllSpans())
+                {
+                    if (span == null || string.IsNullOrWhiteSpace(span.id))
+                    {
+                        continue;
+                    }
+
+                    var definition = GetDefinition(span);
+                    if (definition?.Upper?.SegmentId == null || definition.Lower?.SegmentId == null)
+                    {
+                        continue;
+                    }
+
+                    BaseSpanDefinitions[span.id] = CloneSpanDefinition(definition);
+                }
+
+                _baseGraphSnapshotCaptured = true;
+                FuseLog.Info(
+                    $"FUSE captured base graph snapshot reason='{reason ?? string.Empty}' " +
+                    $"nodes={BaseNodeDefinitions.Count} segments={BaseSegmentDefinitions.Count} spans={BaseSpanDefinitions.Count}.");
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE base graph snapshot failed operation='capture' reason='{reason ?? string.Empty}' error='{ex.Message}'.");
+            }
+        }
+
+        public static void ClearBaseGraphSnapshot()
+        {
+            BaseNodeDefinitions.Clear();
+            BaseSegmentDefinitions.Clear();
+            BaseSpanDefinitions.Clear();
+            _baseGraphSnapshotCaptured = false;
+        }
+
+        public static bool HasBaseGraphSnapshot => _baseGraphSnapshotCaptured;
+
+        public static FuseTrackDefinition GetBaseGraphSnapshotDefinition()
+        {
+            if (!_baseGraphSnapshotCaptured)
+            {
+                return null;
+            }
+
+            return new FuseTrackDefinition
+            {
+                Nodes = BaseNodeDefinitions.ToDictionary(
+                    item => item.Key,
+                    item => CloneNodeDefinition(item.Value),
+                    StringComparer.OrdinalIgnoreCase),
+                Segments = BaseSegmentDefinitions.ToDictionary(
+                    item => item.Key,
+                    item => CloneSegmentDefinition(item.Value),
+                    StringComparer.OrdinalIgnoreCase),
+                Spans = BaseSpanDefinitions.ToDictionary(
+                    item => item.Key,
+                    item => CloneSpanDefinition(item.Value),
+                    StringComparer.OrdinalIgnoreCase),
+                Areas = new Dictionary<string, FuseArea>(StringComparer.OrdinalIgnoreCase),
+                Removals = new FuseTrackRemovals()
+            };
+        }
+
+        public static TrackSpan TryEnsureBaseGraphSpan(string id, string reason)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            var existing = GetSpan(id);
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            if (!_baseGraphSnapshotCaptured || !BaseSpanDefinitions.TryGetValue(id, out var definition))
+            {
+                return null;
+            }
+
+            try
+            {
+                var upperSegmentId = definition.Upper?.SegmentId;
+                var lowerSegmentId = definition.Lower?.SegmentId;
+                if (GetSegment(upperSegmentId) == null || GetSegment(lowerSegmentId) == null)
+                {
+                    FuseLog.Warning(
+                        $"FUSE base graph span restore skipped operation='resolve-base-span' id='{id}' reason='{reason ?? string.Empty}' " +
+                        $"upperSegment='{upperSegmentId ?? string.Empty}' lowerSegment='{lowerSegmentId ?? string.Empty}' detail='endpoint segment missing at runtime'.");
+                    return null;
+                }
+
+                BeginBatch();
+                try
+                {
+                    var span = AddSpan(id, CloneSpanDefinition(definition));
+                    FuseLog.Info($"FUSE restored base graph span id='{id}' reason='{reason ?? string.Empty}' from captured Railroader graph snapshot.");
+                    return span;
+                }
+                finally
+                {
+                    EndBatch(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE base graph span restore failed operation='resolve-base-span' id='{id}' reason='{reason ?? string.Empty}' error='{ex.Message}'.");
+                return null;
+            }
         }
 
         public static FuseSpan GetSpanDefinition(string id)
@@ -582,6 +773,49 @@ namespace FUSE.API
             FuseEvents.RaiseGraphRebuilt();
         }
 
+        public static int DisableInvalidTrackMarkers(string reason)
+        {
+            var disabled = 0;
+            var markers = UnityEngine.Object.FindObjectsOfType<TrackMarker>(true);
+            for (var index = 0; index < markers.Length; index++)
+            {
+                var marker = markers[index];
+                if (marker == null || !marker.enabled)
+                {
+                    continue;
+                }
+
+                Location? location;
+                try
+                {
+                    location = marker.Location;
+                }
+                catch
+                {
+                    location = null;
+                }
+
+                if (location != null && location.Value.IsValid)
+                {
+                    continue;
+                }
+
+                marker.enabled = false;
+                disabled++;
+                FuseLog.Info(
+                    $"FUSE disabled invalid TrackMarker operation='track marker cleanup' " +
+                    $"id='{marker.id ?? string.Empty}' name='{marker.name ?? string.Empty}' " +
+                    $"reason='{reason ?? "unspecified"}'.");
+            }
+
+            if (disabled > 0)
+            {
+                FuseLog.Info($"FUSE disabled {disabled} invalid TrackMarker component(s) reason='{reason ?? "unspecified"}'.");
+            }
+
+            return disabled;
+        }
+
         private static void RequestRebuild()
         {
             _rebuildRequested = true;
@@ -652,7 +886,9 @@ namespace FUSE.API
 
             if (spanLength <= SpanDistanceTolerance)
             {
-                throw new InvalidOperationException($"Track span '{spanId}' has zero length on segment '{upper.segment.id}'.");
+                throw new InvalidOperationException(
+                    $"Track span '{spanId}' has zero length on segment '{upper.segment.id}'. " +
+                    $"upper=({DescribeLocation(upper)}) lower=({DescribeLocation(lower)}).");
             }
 
             var sameDirection = upper.EndIsA == lower.EndIsA;
@@ -677,7 +913,7 @@ namespace FUSE.API
             lower = newLower;
 
             var reason = crossed ? "crossed endpoints" : "same-direction endpoints";
-            FuseLog.Warning(
+            FuseLog.Info(
                 $"FUSE auto-repaired track span '{spanId}' on segment '{upper.segment.id}': " +
                 $"normalized {reason} to A({minPos:0.###}) <-> B({(length - maxPos):0.###}). " +
                 "Legacy AlinasMapMod tolerated this pattern; FUSE re-anchored to keep the package loadable.");
@@ -699,8 +935,173 @@ namespace FUSE.API
             var points = span.GetPoints();
             if (points == null || points.Count < 2 || span.Length <= SpanDistanceTolerance)
             {
-                throw new InvalidOperationException($"Track span '{spanId}' did not resolve to a valid route. Check that the endpoint arrows face each other and the segments are connected.");
+                var upper = span.upper.HasValue ? DescribeLocation(span.upper.Value) : "missing";
+                var lower = span.lower.HasValue ? DescribeLocation(span.lower.Value) : "missing";
+                throw new InvalidOperationException(
+                    $"Track span '{spanId}' did not resolve to a valid route. " +
+                    $"upper=({upper}) lower=({lower}). Check that upper/lower arrows face each other, " +
+                    "distances are inside segment length, and endpoint segments are connected.");
             }
+        }
+
+        private static string DescribeLocation(Location location)
+        {
+            var segment = location.segment;
+            if (segment == null)
+            {
+                return "segment='<null>'";
+            }
+
+            var end = location.EndIsA ? "A/Start" : "B/End";
+            return $"segment='{segment.id}' end='{end}' distance={location.distance:0.###} segmentLength={segment.GetLength():0.###}";
+        }
+
+        private static void RegisterSpanWithGraph(Graph graph, TrackSpan span)
+        {
+            if (graph == null || span == null || string.IsNullOrWhiteSpace(span.id))
+            {
+                return;
+            }
+
+            try
+            {
+                var registered = graph.SpanForId(span.id);
+                if (registered == span)
+                {
+                    return;
+                }
+
+                var spans = GraphSpansField?.GetValue(graph) as Dictionary<string, TrackSpan>;
+                if (spans != null)
+                {
+                    spans[span.id] = span;
+                    return;
+                }
+
+                if (GraphAddSpanMethod == null)
+                {
+                    if (!_warnedMissingGraphAddSpan)
+                    {
+                        _warnedMissingGraphAddSpan = true;
+                        FuseLog.Warning(
+                            "FUSE could not register newly applied track spans with the Railroader graph cache: " +
+                            "private Graph.AddSpan method was not found. Spans remain in FUSE runtime index until the next graph rebuild.");
+                    }
+
+                    return;
+                }
+
+                GraphAddSpanMethod.Invoke(graph, new object[] { span });
+            }
+            catch (TargetInvocationException ex)
+            {
+                FuseLog.Warning($"FUSE could not register track span '{span.id}' with Graph cache: {ex.InnerException?.Message ?? ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not register track span '{span.id}' with Graph cache: {ex.Message}");
+            }
+        }
+
+        private static TrackSpan FindSpanInScene(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            return UnityEngine.Object.FindObjectsOfType<TrackSpan>(true)
+                .FirstOrDefault(span => span != null && string.Equals(span.id, id, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static void EnsureTrackSpanGraphChild(Graph graph, TrackSpan span)
+        {
+            if (graph == null || span == null || span.transform == null || graph.transform == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (span.transform.parent != graph.transform)
+                {
+                    span.transform.SetParent(graph.transform, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not move track span '{span.id}' under Graph root: {ex.Message}");
+            }
+        }
+
+        private static FuseSpan CloneSpanDefinition(FuseSpan definition)
+        {
+            if (definition == null)
+            {
+                return null;
+            }
+
+            return new FuseSpan
+            {
+                Upper = CloneTrackLocation(definition.Upper),
+                Lower = CloneTrackLocation(definition.Lower),
+                Normalize = definition.Normalize,
+                GroupId = definition.GroupId
+            };
+        }
+
+        private static FuseNode CloneNodeDefinition(FuseNode definition)
+        {
+            if (definition == null)
+            {
+                return null;
+            }
+
+            return new FuseNode
+            {
+                Position = definition.Position,
+                Rotation = definition.Rotation,
+                FlipSwitchStand = definition.FlipSwitchStand,
+                GroupId = definition.GroupId,
+                Tags = definition.Tags?.ToArray()
+            };
+        }
+
+        private static FuseSegment CloneSegmentDefinition(FuseSegment definition)
+        {
+            if (definition == null)
+            {
+                return null;
+            }
+
+            return new FuseSegment
+            {
+                StartNodeId = definition.StartNodeId,
+                EndNodeId = definition.EndNodeId,
+                Style = definition.Style,
+                TrackClass = definition.TrackClass,
+                SpeedLimit = definition.SpeedLimit,
+                Priority = definition.Priority,
+                GroupId = definition.GroupId,
+                Tags = definition.Tags?.ToArray()
+            };
+        }
+
+        private static FuseTrackLocation CloneTrackLocation(FuseTrackLocation location)
+        {
+            if (location == null)
+            {
+                return null;
+            }
+
+            return new FuseTrackLocation
+            {
+                SegmentId = location.SegmentId,
+                Normalized = location.Normalized,
+                Distance = location.Distance,
+                End = location.End,
+                Offset = location.Offset
+            };
         }
 
         private static FuseTrackLocation ToDefinition(Location location)
@@ -877,8 +1278,61 @@ namespace FUSE.API
             }
 
             var gameObject = component.gameObject;
+            PreserveChildTrackSpansBeforeDestroy(component, gameObject);
             gameObject.SetActive(false);
             UnityEngine.Object.Destroy(gameObject);
+        }
+
+        private static void PreserveChildTrackSpansBeforeDestroy(Component component, GameObject gameObject)
+        {
+            if (component is TrackSpan || gameObject == null)
+            {
+                return;
+            }
+
+            var graph = Graph.Shared;
+            if (graph == null)
+            {
+                return;
+            }
+
+            foreach (var span in gameObject.GetComponentsInChildren<TrackSpan>(true))
+            {
+                if (span == null || string.IsNullOrWhiteSpace(span.id))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (span.gameObject == gameObject)
+                    {
+                        var upper = span.upper;
+                        var lower = span.lower;
+                        if (!upper.HasValue || !lower.HasValue)
+                        {
+                            continue;
+                        }
+
+                        var clone = CreateGraphChild<TrackSpan>(graph, "Span-" + span.id);
+                        clone.id = span.id;
+                        clone.upper = upper;
+                        clone.lower = lower;
+                        FuseSpanRuntimeIndex.Instance.Set(clone.id, clone);
+                        RegisterSpanWithGraph(graph, clone);
+                    }
+                    else
+                    {
+                        span.transform.SetParent(graph.transform, true);
+                        FuseSpanRuntimeIndex.Instance.Set(span.id, span);
+                        RegisterSpanWithGraph(graph, span);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning($"FUSE could not preserve child track span '{span.id}' before destroying '{gameObject.name}': {ex.Message}");
+                }
+            }
         }
 
         private static TrackSegment.Style ParseSegmentStyle(string value)

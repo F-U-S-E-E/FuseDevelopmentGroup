@@ -22,9 +22,12 @@ namespace FUSE.Infrastructure
         {
             var creator = UnityEngine.Object.FindObjectOfType<ProgrammaticWindowCreator>(true);
             if (creator == null)
-                throw new NullReferenceException();
+                return null;
 
             var window = creator.windowPrefab;
+            if (window == null)
+                return null;
+
             var instance = UnityEngine.Object.Instantiate(window, creator.transform, false);
             instance.SetInitialPositionSize(identifier, new Vector2(width, height), position, Window.Sizing.Fixed(new Vector2Int(width, height)));
             instance.name = identifier;
@@ -35,8 +38,8 @@ namespace FUSE.Infrastructure
         private static UIPanel PopulateWindowInternal(Window window, Action<UIPanelBuilder> closure)
         {
             var creator = UnityEngine.Object.FindObjectOfType<ProgrammaticWindowCreator>(true);
-            if (creator == null)
-                throw new NullReferenceException();
+            if (creator == null || window == null || window.gameObject == null || window.contentRectTransform == null)
+                return null;
 
             return UIPanel.Create(window.contentRectTransform, creator.builderAssets, closure);
         }

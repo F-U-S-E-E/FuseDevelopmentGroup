@@ -135,7 +135,7 @@ namespace FUSE.API
 
             if (wrapper == null)
             {
-                FuseLog.Warning($"FUSE world removal skipped missing map label '{id}'.");
+                FuseLog.Info($"FUSE world removal skipped missing map label '{id}'.");
                 return false;
             }
 
@@ -243,7 +243,7 @@ namespace FUSE.API
             var root = GetMapMask(id) ?? FusePrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
             if (root == null)
             {
-                FuseLog.Warning($"FUSE world removal skipped missing map mask '{id}'.");
+                FuseLog.Info($"FUSE world removal skipped missing map mask '{id}'.");
                 return false;
             }
 
@@ -322,6 +322,42 @@ namespace FUSE.API
             return definition;
         }
 
+        public static void RefreshAttachedMapMasks(GameObject root, string reason = null)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var refreshed = 0;
+            foreach (var component in root.GetComponentsInChildren<MaskComponentBase>(true))
+            {
+                if (component == null || !component.isActiveAndEnabled)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    component.Rebuild();
+                    refreshed++;
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning(
+                        $"FUSE map mask refresh failed root='{root.name}' operation='{reason ?? "unspecified"}' " +
+                        $"component='{component.GetType().Name}': {ex.Message}");
+                }
+            }
+
+            if (refreshed > 0)
+            {
+                FuseLog.Info(
+                    $"FUSE refreshed {refreshed} attached map mask component(s) on '{root.name}' " +
+                    $"after '{reason ?? "unspecified"}'.");
+            }
+        }
+
         public static GameObject AddTelegraphPoles(string id, FuseTelegraphPoles definition)
         {
             RequireId(id, nameof(id));
@@ -372,7 +408,7 @@ namespace FUSE.API
             var root = GetTelegraphPoles(id) ?? FusePrefabResolver.ResolveScenePath(id) ?? GameObject.Find(id);
             if (root == null)
             {
-                FuseLog.Warning($"FUSE world removal skipped missing telegraph pole set '{id}'.");
+                FuseLog.Info($"FUSE world removal skipped missing telegraph pole set '{id}'.");
                 return false;
             }
 
@@ -830,6 +866,12 @@ namespace FUSE.API
 
         private static void ApplyMapMaskDefinition(GameObject root, FuseMapMask definition)
         {
+            var wasActive = root.activeSelf;
+            if (wasActive)
+            {
+                root.SetActive(false);
+            }
+
             ClearComponents<MapMaskBase>(root);
             DestroyChildren(root.transform);
 
@@ -847,8 +889,9 @@ namespace FUSE.API
                     }
 
                     root.transform.position = definition.Center;
-                    ConfigureDefaultMapMask(root.AddComponent<CircleMapMask>());
-                    root.GetComponent<CircleMapMask>().radius = definition.Radius.Value;
+                    var circle = root.AddComponent<CircleMapMask>();
+                    ConfigureDefaultMapMask(circle, definition);
+                    circle.radius = definition.Radius.Value;
                     break;
 
                 case "rectangle":
@@ -860,9 +903,9 @@ namespace FUSE.API
                     root.transform.position = definition.Center;
                     root.transform.rotation = Quaternion.Euler(definition.Rotation);
                     var rectangle = root.AddComponent<RectangleMapMask>();
-                    ConfigureDefaultMapMask(rectangle);
+                    ConfigureDefaultMapMask(rectangle, definition);
                     rectangle.radius = 0f;
-                    rectangle.falloff = 0f;
+                    rectangle.falloff = definition.Falloff ?? 10f;
                     rectangle.sizeX = definition.Size.Value.x;
                     rectangle.sizeZ = definition.Size.Value.z;
                     rectangle.degrees = 0f;
@@ -890,9 +933,9 @@ namespace FUSE.API
                         segment.transform.rotation = Quaternion.identity;
 
                         var curve = segment.AddComponent<CurveMapMask>();
-                        ConfigureDefaultMapMask(curve);
+                        ConfigureDefaultMapMask(curve, definition);
                         curve.radius = width;
-                        curve.falloff = 0f;
+                        curve.falloff = definition.Falloff ?? 10f;
                         curve.positionA = pointA;
                         curve.positionB = pointB;
                         curve.rotationA = Quaternion.LookRotation((pointB - pointA).normalized, Vector3.up).eulerAngles;
@@ -908,7 +951,11 @@ namespace FUSE.API
                     throw new InvalidOperationException($"Unknown map mask type '{definition.Type}'.");
             }
 
-            root.SetActive(true);
+            root.SetActive(wasActive);
+            if (wasActive)
+            {
+                RefreshAttachedMapMasks(root, $"map mask definition '{root.name}'");
+            }
         }
 
         private static void ApplyTelegraphPolesDefinition(GameObject root, FuseTelegraphPoles definition)
@@ -962,13 +1009,33 @@ namespace FUSE.API
             root.SetActive(true);
         }
 
-        private static void ConfigureDefaultMapMask(MapMaskBase mask)
+        private static void ConfigureDefaultMapMask(MapMaskBase mask, FuseMapMask definition = null)
         {
-            mask.enableCutTrees = true;
-            mask.enableMaskModifier = true;
-            mask.enableSetHeight = false;
-            mask.maskName = MaskName.Object;
-            mask.order = 0;
+            mask.enableCutTrees = definition?.EnableCutTrees ?? false;
+            mask.enableMaskModifier = definition?.EnableMaskModifier ?? false;
+            mask.enableSetHeight = definition?.EnableSetHeight ?? false;
+
+            // Convert from the FuseMapMask MaskName (from FUSE.Data) into the Map runtime MaskName
+            if (definition?.MaskName.HasValue == true)
+            {
+                var sourceName = definition.MaskName.Value.ToString();
+                if (Enum.TryParse<Map.Runtime.MapModifiers.MaskName>(sourceName, true, out var mapped))
+                {
+                    mask.maskName = mapped;
+                }
+                else
+                {
+                    // Fallback if names don't match
+                    mask.maskName = Map.Runtime.MapModifiers.MaskName.Object;
+                }
+            }
+            else
+            {
+                mask.maskName = Map.Runtime.MapModifiers.MaskName.Object;
+            }
+
+            mask.order = definition?.Order ?? 0;
+            mask.falloff = definition?.Falloff ?? 10f;
         }
 
         private static int CreateWiresBetween(Transform parent, TelegraphPole a, TelegraphPole b, TelegraphWire wireTemplate, int wireIndex)

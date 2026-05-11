@@ -142,10 +142,13 @@ namespace FUSE.API
                 renderer.enabled = true;
             }
 
+            var requiresIndustry = !string.IsNullOrWhiteSpace(definition.IndustryId);
             var industry = AttachIndustry(instance, definition.IndustryId);
-            FusePrefabSanitizer.SanitizeLoader(instance, id, industry).Log($"FUSE loader '{id}'");
+            FusePrefabSanitizer.SanitizeLoader(instance, id, industry, requiresIndustry).Log($"FUSE loader '{id}'");
             instance.SetActive(true);
-            FusePrefabSanitizer.ValidateLoaderPostBind(loader, id, industry).Log($"FUSE loader '{id}' post-bind");
+            FuseLoaderRuntimeIndex.Instance.Set(id, loader);
+            MapAPI.RefreshAttachedMapMasks(loader, $"loader '{id}' apply");
+            FusePrefabSanitizer.ValidateLoaderPostBind(loader, id, industry, requiresIndustry).Log($"FUSE loader '{id}' post-bind");
         }
 
         private static Industry AttachIndustry(GameObject instance, string industryId)

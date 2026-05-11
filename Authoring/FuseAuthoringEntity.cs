@@ -318,7 +318,10 @@ namespace FUSE.Authoring
 
         protected virtual void OnRuntimeBound()
         {
-            FuseLog.Info($"FUSE authoring entity '{Id}' bound runtime object='{_runtimeGameObject?.name ?? string.Empty}' component='{_runtimeComponent?.GetType().Name ?? string.Empty}'.");
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                FuseLog.Info($"FUSE authoring entity '{Id}' bound runtime object='{_runtimeGameObject?.name ?? string.Empty}' component='{_runtimeComponent?.GetType().Name ?? string.Empty}'.");
+            }
         }
     }
 }

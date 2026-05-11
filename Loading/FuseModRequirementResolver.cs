@@ -102,6 +102,7 @@ namespace FUSE.Loading
                 return;
             }
 
+            AddInstalled(result, Path.GetFileName(folder), string.Empty, "mod folder");
             TryReadManifest(Path.Combine(folder, "Info.json"), "Id", "Version", "Info.json", result);
             TryReadManifest(Path.Combine(folder, "Definition.json"), "id", "version", "Definition.json", result);
         }

@@ -71,6 +71,13 @@ class ReportEntry:
 
 
 @dataclass
+class FileSummary:
+    source_file: str
+    output_file: str
+    counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
 class ConversionReport:
     source: Path
     output: Path
@@ -80,6 +87,7 @@ class ConversionReport:
     display_name: str = ""
     generated_files: list[str] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
+    file_summaries: list[FileSummary] = field(default_factory=list)
     entries: list[ReportEntry] = field(default_factory=list)
 
     def add(self, level: str, message: str, file: Path | str = "", concept: str = "") -> None:
@@ -88,6 +96,12 @@ class ConversionReport:
     def count(self, key: str, amount: int) -> None:
         if amount:
             self.counts[key] = self.counts.get(key, 0) + int(amount)
+
+    def add_file_summary(self, source_file: str | Path, output_file: str | Path, counts: dict[str, int] | None = None) -> None:
+        clean_counts = {key: int(value) for key, value in (counts or {}).items() if value}
+        self.file_summaries.append(
+            FileSummary(source_file=str(source_file), output_file=str(output_file), counts=clean_counts)
+        )
 
     @property
     def warnings(self) -> int:
@@ -105,6 +119,47 @@ class ConversionReport:
         else:
             self.status = "converted"
 
+    def outcome_buckets(self) -> dict[str, int]:
+        infrastructure_counts = {"assetPackSources", "assetPacks", "mapTileFiles"}
+        converted_entries = sum(
+            int(value) for key, value in self.counts.items() if key not in infrastructure_counts
+        )
+        buckets = {
+            "convertedEntries": converted_entries,
+            "generatedFiles": len(self.generated_files),
+            "sourceFileSummaries": len(self.file_summaries),
+            "repairedEntries": 0,
+            "preservedEntries": 0,
+            "unresolvedEntries": 0,
+            "unsupportedEntries": 0,
+            "dependencyRequiredEntries": 0,
+            "warningEntries": self.warnings,
+            "errorEntries": self.errors,
+        }
+
+        for entry in self.entries:
+            concept = (entry.concept or "").lower()
+            message = (entry.message or "").lower()
+
+            if "script-binary" in concept or "unsupported" in concept:
+                buckets["unsupportedEntries"] += 1
+            elif (
+                "external" in concept
+                or "dependency" in concept
+                or "optional" in concept
+                or "track-group-not-auto-enabled" in concept
+                or "missing mixinto" in message
+            ):
+                buckets["dependencyRequiredEntries"] += 1
+            elif any(token in concept for token in ("repaired", "alias", "overflow", "underflow", "empty-id")):
+                buckets["repairedEntries"] += 1
+            elif "unresolved" in concept or "unknown" in concept or "crossed" in concept:
+                buckets["unresolvedEntries"] += 1
+            elif "preserv" in concept or "preserv" in message or "spanless" in concept:
+                buckets["preservedEntries"] += 1
+
+        return buckets
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "tool": "FUSE Official Converter",
@@ -118,6 +173,15 @@ class ConversionReport:
             "displayName": self.display_name,
             "generatedFiles": self.generated_files,
             "counts": dict(sorted(self.counts.items())),
+            "outcomeBuckets": self.outcome_buckets(),
+            "fileSummaries": [
+                {
+                    "sourceFile": summary.source_file,
+                    "outputFile": summary.output_file,
+                    "counts": dict(sorted(summary.counts.items())),
+                }
+                for summary in self.file_summaries
+            ],
             "warnings": self.warnings,
             "errors": self.errors,
             "entries": [entry.__dict__ for entry in self.entries],
@@ -138,6 +202,11 @@ def write_json(path: Path, data: Any) -> None:
 def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def markdown_cell(value: Any) -> str:
+    text = str(value)
+    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\r", " ").replace("\n", " ")
 
 
 def slug(value: str, fallback: str = "fuse-package") -> str:
@@ -202,11 +271,37 @@ def is_asset_pack_folder(folder: Path) -> bool:
     )
 
 
-def has_asset_pack_children(folder: Path) -> bool:
+def has_direct_asset_pack_children(folder: Path) -> bool:
     try:
         return any(is_asset_pack_folder(child) for child in folder.iterdir() if child.is_dir())
     except OSError:
         return False
+
+
+def iter_asset_pack_folders(folder: Path) -> Iterable[Path]:
+    if not folder.is_dir():
+        return
+
+    if is_asset_pack_folder(folder):
+        yield folder
+        return
+
+    try:
+        children = sorted(folder.rglob("*"), key=lambda item: str(item).lower())
+    except OSError:
+        return
+
+    for child in children:
+        if child.is_dir() and is_asset_pack_folder(child):
+            yield child
+
+
+def has_asset_packs_recursive(folder: Path) -> bool:
+    return any(True for _ in iter_asset_pack_folders(folder))
+
+
+def count_asset_packs(folder: Path) -> int:
+    return sum(1 for _ in iter_asset_pack_folders(folder))
 
 
 def find_asset_pack_sources(source: Path) -> list[str]:
@@ -218,17 +313,17 @@ def find_asset_pack_sources(source: Path) -> list[str]:
         return ["."]
 
     sc_asset_packs = source / "SCAssetPacks"
-    if has_asset_pack_children(sc_asset_packs):
+    if has_asset_packs_recursive(sc_asset_packs):
         sources.append("SCAssetPacks")
 
-    if has_asset_pack_children(source):
+    if has_direct_asset_pack_children(source):
         sources.append(".")
 
     try:
         for child in sorted(source.iterdir(), key=lambda item: item.name.lower()):
             if not child.is_dir() or child.name.lower() == "scassetpacks":
                 continue
-            if has_asset_pack_children(child):
+            if has_asset_packs_recursive(child):
                 sources.append(child.name)
     except OSError:
         pass
@@ -461,6 +556,19 @@ def write_reports(report: ConversionReport) -> None:
     if not report.counts:
         lines.append("| _(none)_ | 0 |")
 
+    lines.extend(["", "## Outcome Buckets", "", "| Bucket | Count |", "| --- | ---: |"])
+    for key, value in sorted(report.outcome_buckets().items()):
+        lines.append(f"| `{key}` | {value} |")
+
+    lines.extend(["", "## File Summaries", "", "| Source File | Output File | Counts |", "| --- | --- | --- |"])
+    for summary in report.file_summaries:
+        counts = ", ".join(f"{key}={value}" for key, value in sorted(summary.counts.items())) or "0"
+        lines.append(
+            f"| `{markdown_cell(summary.source_file)}` | `{markdown_cell(summary.output_file)}` | {markdown_cell(counts)} |"
+        )
+    if not report.file_summaries:
+        lines.append("| _(none)_ | _(none)_ | 0 |")
+
     lines.extend(["", "## Generated Files", "", "| File |", "| --- |"])
     for file in report.generated_files:
         lines.append(f"| `{file}` |")
@@ -469,10 +577,111 @@ def write_reports(report: ConversionReport) -> None:
 
     lines.extend(["", "## Messages", "", "| Level | Concept | File | Message |", "| --- | --- | --- | --- |"])
     for entry in report.entries:
-        lines.append(f"| {entry.level} | `{entry.concept}` | `{entry.file}` | {entry.message} |")
+        lines.append(
+            f"| {entry.level} | `{markdown_cell(entry.concept)}` | `{markdown_cell(entry.file)}` | {markdown_cell(entry.message)} |"
+        )
     if not report.entries:
         lines.append("| OK |  |  | No warnings or errors. |")
     write_text(report.output / "conversion-report.md", "\n".join(lines) + "\n")
+
+
+def write_batch_reports(source_root: Path, out_root: Path, reports: list[ConversionReport]) -> None:
+    out_root.mkdir(parents=True, exist_ok=True)
+    audit_dir = out_root / "conversion-reports"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+
+    package_rows = []
+    aggregate_counts: dict[str, int] = {}
+    aggregate_buckets: dict[str, int] = {}
+    copied_reports = []
+
+    for index, report in enumerate(reports, start=1):
+        for key, value in report.counts.items():
+            aggregate_counts[key] = aggregate_counts.get(key, 0) + int(value)
+        for key, value in report.outcome_buckets().items():
+            aggregate_buckets[key] = aggregate_buckets.get(key, 0) + int(value)
+
+        report_name = slug(report.package_id or report.output.name or f"report-{index}", f"report-{index}")
+        report_stem = f"{index:03d}-{report_name}"
+        json_source = report.output / "conversion-report.json"
+        md_source = report.output / "conversion-report.md"
+        json_dest = audit_dir / f"{report_stem}.json"
+        md_dest = audit_dir / f"{report_stem}.md"
+        if json_source.exists():
+            shutil.copy2(json_source, json_dest)
+            copied_reports.append(str(json_dest.relative_to(out_root)).replace("\\", "/"))
+        if md_source.exists():
+            shutil.copy2(md_source, md_dest)
+            copied_reports.append(str(md_dest.relative_to(out_root)).replace("\\", "/"))
+
+        package_rows.append({
+            "source": str(report.source),
+            "output": str(report.output),
+            "packageId": report.package_id,
+            "displayName": report.display_name,
+            "detectedKind": report.detected_kind,
+            "status": report.status,
+            "warnings": report.warnings,
+            "errors": report.errors,
+            "generatedFiles": len(report.generated_files),
+            "sourceFileSummaries": len(report.file_summaries),
+        })
+
+    failed = sum(1 for report in reports if report.status == "failed")
+    batch_data = {
+        "tool": "FUSE Official Converter",
+        "toolVersion": TOOL_VERSION,
+        "createdUtc": datetime.now(timezone.utc).isoformat(),
+        "sourceRoot": str(source_root),
+        "outputRoot": str(out_root),
+        "converted": len(reports) - failed,
+        "failed": failed,
+        "warnings": sum(report.warnings for report in reports),
+        "errors": sum(report.errors for report in reports),
+        "counts": dict(sorted(aggregate_counts.items())),
+        "outcomeBuckets": dict(sorted(aggregate_buckets.items())),
+        "copiedReports": copied_reports,
+        "packages": package_rows,
+    }
+    write_json(out_root / "conversion-batch-report.json", batch_data)
+
+    lines = [
+        "# FUSE Batch Conversion Report",
+        "",
+        f"- Source root: `{source_root}`",
+        f"- Output root: `{out_root}`",
+        f"- Converted: {batch_data['converted']}/{len(reports)}",
+        f"- Warnings: {batch_data['warnings']}",
+        f"- Errors: {batch_data['errors']}",
+        "",
+        "## Packages",
+        "",
+        "| Status | Kind | Package | Source | Files | Warnings | Errors |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: |",
+    ]
+    for row in package_rows:
+        lines.append(
+            "| "
+            f"{markdown_cell(row['status'])} | "
+            f"{markdown_cell(row['detectedKind'])} | "
+            f"`{markdown_cell(row['packageId'] or row['displayName'] or row['output'])}` | "
+            f"`{markdown_cell(row['source'])}` | "
+            f"{row['sourceFileSummaries']} | "
+            f"{row['warnings']} | "
+            f"{row['errors']} |"
+        )
+
+    lines.extend(["", "## Outcome Buckets", "", "| Bucket | Count |", "| --- | ---: |"])
+    for key, value in sorted(aggregate_buckets.items()):
+        lines.append(f"| `{key}` | {value} |")
+
+    lines.extend(["", "## Copied Reports", "", "| File |", "| --- |"])
+    for path in copied_reports:
+        lines.append(f"| `{markdown_cell(path)}` |")
+    if not copied_reports:
+        lines.append("| _(none)_ |")
+
+    write_text(out_root / "conversion-batch-report.md", "\n".join(lines) + "\n")
 
 
 def scan_legacy_warnings(source: Path, report: ConversionReport) -> None:
@@ -552,7 +761,7 @@ def record_runtime_id(
     report.add(
         "WARN",
         f"Duplicate legacy {runtime_kind} id '{object_id}' also appeared in '{first_file.name}'. "
-        "FUSE keeps one output file per source file; differing duplicates are renamed during conversion when safe.",
+        "FUSE keeps one output file per source file and preserves the same runtime id so later mixinto files update/replace the earlier object.",
         file,
         f"duplicate-{runtime_kind}-id",
     )
@@ -572,7 +781,7 @@ def scan_value_for_warnings(value: Any, report: ConversionReport, file: Path, pa
         component_type = value.get("type")
         if isinstance(component_type, str) and "." in component_type:
             normalized = fuse_convert.normalize_component_type(component_type)
-            if normalized == component_type:
+            if normalized == component_type and not fuse_convert.is_supported_custom_component_type(normalized):
                 report.add("WARN", f"Unknown industry component type may need manual schema support: {component_type}", file, "component-type")
         for key, item in value.items():
             scan_value_for_warnings(item, report, file, f"{path}.{key}" if path else str(key))
@@ -613,8 +822,10 @@ def convert_single_json(source: Path, output: Path, clean_output: bool, report: 
     data_name = f"{fragment}.fuse.json"
     fuse_convert.save_json(output / data_name, rail)
     written.append(data_name)
-    for key, count in fuse_convert.count_content(rail).items():
+    counts = fuse_convert.count_content(rail)
+    for key, count in counts.items():
         report.count(key, count)
+    report.add_file_summary(source.name, data_name, counts)
 
     info = fuse_info(mod_id, f"{name} (FUSE)", author, version)
     info["FuseDataFiles"] = sorted(written, key=fuse_convert.rail_data_file_order)
@@ -681,10 +892,11 @@ def convert_route(source: Path, output: Path, clean_output: bool, report: Conver
     report.display_name = str(info.get("DisplayName") or output.name)
     report.generated_files.extend(["Info.json"])
 
-    for _source_name, output_name, counts in summaries:
+    for source_name, output_name, counts in summaries:
         report.generated_files.append(output_name)
         for key, count in counts.items():
             report.count(key, count)
+        report.add_file_summary(source_name, output_name, counts)
 
     asset_roots = find_asset_pack_sources(route_source) or find_asset_pack_sources(source)
     if asset_roots:
@@ -717,7 +929,9 @@ def convert_map_tiles(source: Path, output: Path, clean_output: bool, report: Co
             "sourceFolder": f"Maps/{folder_name}",
             "priority": 100 + index,
         }
-        report.count("mapTileFiles", sum(1 for tile in tile_folder.iterdir() if tile.is_file() and tile.suffix.lower() == ".data"))
+        tile_count = sum(1 for tile in tile_folder.iterdir() if tile.is_file() and tile.suffix.lower() == ".data")
+        report.count("mapTileFiles", tile_count)
+        report.add_file_summary(tile_folder, f"Maps/{folder_name}", {"mapTileFiles": tile_count})
 
     data_name = "mapTiles.fuse.json"
     write_json(output / data_name, rail)
@@ -762,10 +976,9 @@ def convert_asset(source: Path, output: Path, clean_output: bool, report: Conver
     for root in asset_roots:
         root_path = output if root == "." else output / root
         if root_path.exists():
-            if is_asset_pack_folder(root_path):
-                report.count("assetPacks", 1)
-            else:
-                report.count("assetPacks", sum(1 for child in root_path.iterdir() if child.is_dir() and is_asset_pack_folder(child)))
+            asset_pack_count = count_asset_packs(root_path)
+            report.count("assetPacks", asset_pack_count)
+            report.add_file_summary(source / root if root != "." else source, root, {"assetPacks": asset_pack_count})
 
 
 def convert_audio(source: Path, output: Path, clean_output: bool, report: ConversionReport) -> None:
@@ -831,8 +1044,12 @@ def convert_audio(source: Path, output: Path, clean_output: bool, report: Conver
     report.package_id = info["Id"]
     report.display_name = info["DisplayName"]
     report.generated_files.extend(["Info.json", "audio.fuse.json"])
+    audio_counts = {}
     for bucket in ("whistles", "horns", "bells"):
-        report.count(f"audio.{bucket}", len(rail["audio"][bucket]))
+        count = len(rail["audio"][bucket])
+        report.count(f"audio.{bucket}", count)
+        audio_counts[f"audio.{bucket}"] = count
+    report.add_file_summary(source, "audio.fuse.json", audio_counts)
 
 
 def choose_zip_root(extract_root: Path) -> Path:
@@ -933,8 +1150,12 @@ def convert_batch_folder(folder: Path, out_root: Path, kind: str, clean_output: 
         return [report]
 
     out_root.mkdir(parents=True, exist_ok=True)
+    resolved_out_root = out_root.resolve()
     reports: list[ConversionReport] = []
     for candidate in iter_batch_candidates(folder, kind):
+        resolved_candidate = candidate.resolve()
+        if resolved_candidate == resolved_out_root or resolved_out_root in resolved_candidate.parents:
+            continue
         reports.append(convert_input(candidate, out_root, kind, clean_output))
     return reports
 
@@ -974,6 +1195,7 @@ def main() -> int:
                 empty_report.add("WARN", "No convertible child folders, zip files, or JSON files were found.", folder, "batch")
                 write_reports(empty_report)
                 batch_reports = [empty_report]
+            write_batch_reports(folder, out_root, batch_reports)
             reports.extend(batch_reports)
     else:
         out_root = Path(args.out).resolve() if args.out else default_output_root().resolve()

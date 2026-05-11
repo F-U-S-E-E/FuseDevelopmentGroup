@@ -5,6 +5,7 @@ using FUSE.Migrations;
 using FUSE.Serialization.Converters;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Bson;
+using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 
 namespace FUSE.Serialization
@@ -47,6 +48,7 @@ namespace FUSE.Serialization
 
         public static FuseModDefinition FromJson(string json)
         {
+            ValidateNoDuplicateProperties(json);
             var definition = JsonConvert.DeserializeObject<FuseModDefinition>(json, GetSettings());
             return FuseMigration.Migrate(definition);
         }
@@ -90,6 +92,17 @@ namespace FUSE.Serialization
         public static JsonSerializer GetSerializer()
         {
             return JsonSerializer.Create(GetSettings());
+        }
+
+        private static void ValidateNoDuplicateProperties(string json)
+        {
+            using (var reader = new JsonTextReader(new StringReader(json ?? string.Empty)))
+            {
+                JObject.Load(reader, new JsonLoadSettings
+                {
+                    DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error
+                });
+            }
         }
 
         private static FuseModDefinition PrepareForWrite(FuseModDefinition definition)

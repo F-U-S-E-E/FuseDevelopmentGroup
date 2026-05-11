@@ -7,6 +7,7 @@ using Model.Ops;
 using Model.Ops.Definition;
 using Model.Ops.Timetable;
 using FUSE.Data;
+using FUSE.Infrastructure;
 using Track;
 using UnityEngine;
 
@@ -15,6 +16,8 @@ namespace FUSE.API
     public sealed class FusePassengerStopComponent : IndustryComponent, IFuseAppliedComponent
     {
         private static readonly FieldInfo AllPassengerStopsField = typeof(PassengerStop).GetField("_allPassengerStops", BindingFlags.Static | BindingFlags.NonPublic);
+        private static readonly FieldInfo PassengerStopSpansField = typeof(PassengerStop).GetField("_spans", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo PassengerStopMarkersField = typeof(PassengerStop).GetField("_markers", BindingFlags.Instance | BindingFlags.NonPublic);
 
         public string PassengerStopId { get; set; }
         public string TimetableCode { get; set; }
@@ -26,19 +29,28 @@ namespace FUSE.API
 
         public override bool IsVisible => false;
 
+        protected override void ValidateIndustryComponent()
+        {
+            // Passenger stops are a FUSE-owned virtual IndustryComponent used
+            // to materialize Railroader PassengerStop objects. Legacy station
+            // files may intentionally omit freight car filters or platform
+            // spans, so the base IndustryComponent validation would emit
+            // misleading errors for valid virtual stops.
+        }
+
         private void OnEnable()
         {
             if (PassengerLoad != null && !string.IsNullOrWhiteSpace(GetStopIdentifier()))
             {
-                RefreshPassengerStop();
+                TryRefreshPassengerStop("OnEnable");
             }
         }
 
         public void OnFuseDefinitionApplied()
         {
-            if (isActiveAndEnabled)
+            if (PassengerLoad != null && !string.IsNullOrWhiteSpace(GetStopIdentifier()))
             {
-                RefreshPassengerStop();
+                TryRefreshPassengerStop("OnFuseDefinitionApplied");
             }
         }
 
@@ -48,6 +60,21 @@ namespace FUSE.API
 
         public override void OrderCars(IIndustryContext ctx)
         {
+        }
+
+        private void TryRefreshPassengerStop(string source)
+        {
+            try
+            {
+                RefreshPassengerStop();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE passenger stop refresh failed source='{source ?? string.Empty}' " +
+                    $"id='{GetStopIdentifier() ?? string.Empty}' component='{Identifier ?? string.Empty}' " +
+                    $"message='{ex.Message}'.");
+            }
         }
 
         private void RefreshPassengerStop()
@@ -75,45 +102,76 @@ namespace FUSE.API
             passengerStop.timetableCode = string.IsNullOrWhiteSpace(TimetableCode) ? stopIdentifier : TimetableCode;
             passengerStop.ProgressionDisabled = ProgressionDisabled;
 
+            var boundSpans = ResolveBoundSpans().ToArray();
             stopObject.name = string.IsNullOrWhiteSpace(name) ? stopIdentifier : name;
-            RebuildSpanChildren(passengerStop.transform);
             passengerStop.neighbors = ResolveNeighbors().ToArray();
             ConfigureTimetable(passengerStop);
 
             stopObject.SetActive(true);
+            PassengerStopSpansField?.SetValue(passengerStop, boundSpans);
+            PassengerStopMarkersField?.SetValue(passengerStop, RebuildPassengerStopMarkers(passengerStop.transform, boundSpans));
             RefreshPassengerStopCache();
+            FuseLog.Info(
+                $"FUSE passenger stop refreshed id='{stopIdentifier}' " +
+                $"component='{Identifier}' spanCount={boundSpans.Length} " +
+                $"loadId='{PassengerLoad.id ?? string.Empty}'.");
         }
 
-        private void RebuildSpanChildren(Transform stopTransform)
+        private IEnumerable<TrackSpan> ResolveBoundSpans()
+        {
+            return TrackSpans
+                .Where(span => span != null)
+                .Where(span =>
+                {
+                    var lower = span.lower;
+                    var upper = span.upper;
+                    return lower != null && lower.Value.segment != null &&
+                           upper != null && upper.Value.segment != null;
+                });
+        }
+
+        private HashSet<TrackMarker> RebuildPassengerStopMarkers(Transform stopTransform, IEnumerable<TrackSpan> boundSpans)
         {
             for (var index = stopTransform.childCount - 1; index >= 0; index--)
             {
-                UnityEngine.Object.Destroy(stopTransform.GetChild(index).gameObject);
+                var child = stopTransform.GetChild(index);
+                foreach (var marker in child.GetComponentsInChildren<TrackMarker>(true))
+                {
+                    if (marker != null)
+                    {
+                        marker.enabled = false;
+                    }
+                }
+
+                child.gameObject.SetActive(false);
+                UnityEngine.Object.Destroy(child.gameObject);
             }
 
-            var stopIdentifier = GetStopIdentifier();
-            var spanIndex = 0;
-            foreach (var sourceSpan in TrackSpans.Where(span => span != null))
+            var markers = new HashSet<TrackMarker>();
+            var graph = Graph.Shared;
+            if (graph == null)
             {
-                var child = new GameObject("TrackSpan." + spanIndex.ToString("D2"));
-                child.transform.SetParent(stopTransform, false);
-                child.SetActive(false);
-
-                var clonedSpan = child.AddComponent<TrackSpan>();
-                clonedSpan.id = BuildClonedSpanId(stopIdentifier, sourceSpan, spanIndex);
-                clonedSpan.upper = sourceSpan.upper;
-                clonedSpan.lower = sourceSpan.lower;
-                child.SetActive(true);
-                spanIndex++;
+                return markers;
             }
-        }
 
-        private static string BuildClonedSpanId(string stopIdentifier, TrackSpan sourceSpan, int spanIndex)
-        {
-            var sourceId = sourceSpan != null && !string.IsNullOrWhiteSpace(sourceSpan.id)
-                ? sourceSpan.id
-                : "span." + spanIndex.ToString("D2");
-            return string.Concat("passenger-stop.", stopIdentifier, ".span.", spanIndex.ToString("D2"), ".", sourceId);
+            foreach (var sourceSpan in boundSpans ?? Enumerable.Empty<TrackSpan>())
+            {
+                if (sourceSpan == null || sourceSpan.lower == null || sourceSpan.upper == null)
+                {
+                    continue;
+                }
+
+                var child = new GameObject("PassengerStopMarker");
+                child.SetActive(false);
+                child.transform.SetParent(stopTransform, false);
+                var marker = child.AddComponent<TrackMarker>();
+                marker.type = TrackMarkerType.PassengerStop;
+                marker.Location = graph.Lerp(sourceSpan.lower.Value, sourceSpan.upper.Value, 0.5f);
+                child.SetActive(true);
+                markers.Add(marker);
+            }
+
+            return markers;
         }
 
         private IEnumerable<PassengerStop> ResolveNeighbors()

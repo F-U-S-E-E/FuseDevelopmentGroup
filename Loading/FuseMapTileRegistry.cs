@@ -6,7 +6,6 @@ using System.Reflection;
 using Map.Runtime;
 using FUSE.Data;
 using FUSE.Infrastructure;
-using FUSE.Serialization;
 using UnityEngine;
 
 namespace FUSE.Loading
@@ -21,53 +20,30 @@ namespace FUSE.Loading
         private static readonly Dictionary<Vector2Int, string> ActiveTilePaths = new Dictionary<Vector2Int, string>();
 
         private static string _activeDirectoryName = string.Empty;
-
-        internal static void RefreshFromAvailablePackages()
-        {
-            lock (Sync)
-            {
-                Sources.Clear();
-                ActiveTilePaths.Clear();
-                _activeDirectoryName = string.Empty;
-
-                var modsRoot = FuseDataPackageDiscovery.GetModsRoot();
-                if (string.IsNullOrWhiteSpace(modsRoot) || !Directory.Exists(modsRoot))
-                {
-                    return;
-                }
-
-                foreach (var packagePath in FuseDataPackageDiscovery.DiscoverPackagesOnce())
-                {
-                    try
-                    {
-                        var definitionPath = FuseModLoader.ResolveDefinitionPath(packagePath);
-                        var definition = FuseSerializer.Load(definitionPath);
-                        RegisterTileSourcesUnsafe(definition?.Id ?? Path.GetFileName(packagePath), packagePath, definition?.World);
-                    }
-                    catch (Exception ex)
-                    {
-                        FuseLog.Exception($"Failed to inspect map tile definitions in '{packagePath}'", ex);
-                    }
-                }
-            }
-        }
+        private static int _sourceVersion;
+        private static int _mountedSourceVersion = -1;
 
         internal static void RegisterTileSources(string modId, string modFolder, FuseWorldDefinition world)
         {
             lock (Sync)
             {
-                RemoveTileSourcesUnsafe(modId);
-                RegisterTileSourcesUnsafe(modId, modFolder, world);
+                var removed = RemoveTileSourcesUnsafe(modId);
+                var added = RegisterTileSourcesUnsafe(modId, modFolder, world);
+                if (removed > 0 || added > 0)
+                {
+                    _sourceVersion++;
+                }
             }
-
-            MountForActiveMapIfLoaded();
         }
 
         internal static void UnregisterTileSources(string modId)
         {
             lock (Sync)
             {
-                RemoveTileSourcesUnsafe(modId);
+                if (RemoveTileSourcesUnsafe(modId) > 0)
+                {
+                    _sourceVersion++;
+                }
             }
         }
 
@@ -128,6 +104,7 @@ namespace FUSE.Loading
                     }
                 }
 
+                _mountedSourceVersion = _sourceVersion;
                 return mountedCount;
             }
         }
@@ -146,6 +123,7 @@ namespace FUSE.Loading
             {
                 ActiveTilePaths.Clear();
                 _activeDirectoryName = string.Empty;
+                _mountedSourceVersion = -1;
             }
         }
 
@@ -156,45 +134,62 @@ namespace FUSE.Loading
                 Sources.Clear();
                 ActiveTilePaths.Clear();
                 _activeDirectoryName = string.Empty;
+                _sourceVersion++;
+                _mountedSourceVersion = -1;
             }
         }
 
-        private static void MountForActiveMapIfLoaded()
+        internal static int MountForActiveMapIfLoaded(string reason)
         {
             var mapManager = MapManager.Instance;
             if (mapManager == null)
             {
-                return;
+                return 0;
             }
 
             var store = StoreField?.GetValue(mapManager) as MapStore;
             if (store == null)
             {
-                return;
+                return 0;
             }
 
             var directoryName = mapManager.directoryName;
+            lock (Sync)
+            {
+                if (_mountedSourceVersion == _sourceVersion &&
+                    string.Equals(_activeDirectoryName, NormalizeDirectoryName(directoryName), StringComparison.OrdinalIgnoreCase))
+                {
+                    return 0;
+                }
+            }
+
             try
             {
                 var mountedCount = MountIntoStore(store, directoryName);
                 if (mountedCount > 0)
                 {
-                    FuseLog.Info($"Mounted {mountedCount} FUSE map tile(s) for '{directoryName}'.");
+                    FuseLog.Info(
+                        $"Mounted {mountedCount} FUSE map tile(s) for '{directoryName}' " +
+                        $"reason='{reason ?? "unspecified"}'.");
                 }
+
+                return mountedCount;
             }
             catch (Exception ex)
             {
                 FuseLog.Exception("FUSE failed to mount map tiles for the active map.", ex);
+                return 0;
             }
         }
 
-        private static void RegisterTileSourcesUnsafe(string modId, string modFolder, FuseWorldDefinition world)
+        private static int RegisterTileSourcesUnsafe(string modId, string modFolder, FuseWorldDefinition world)
         {
             if (world?.MapTiles == null || world.MapTiles.Count == 0)
             {
-                return;
+                return 0;
             }
 
+            var added = 0;
             foreach (var tileSource in world.MapTiles)
             {
                 if (tileSource.Value == null)
@@ -228,14 +223,17 @@ namespace FUSE.Loading
                     ResolvedFolder = resolvedFolder,
                     Priority = tileSource.Value.Priority
                 };
+                added++;
             }
+
+            return added;
         }
 
-        private static void RemoveTileSourcesUnsafe(string modId)
+        private static int RemoveTileSourcesUnsafe(string modId)
         {
             if (string.IsNullOrWhiteSpace(modId))
             {
-                return;
+                return 0;
             }
 
             var keys = Sources.Keys
@@ -246,6 +244,8 @@ namespace FUSE.Loading
             {
                 Sources.Remove(keys[index]);
             }
+
+            return keys.Length;
         }
 
         private static string ResolveSourceFolder(string modFolder, string sourceFolder)

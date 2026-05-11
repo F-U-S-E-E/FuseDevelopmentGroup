@@ -66,6 +66,11 @@ namespace FUSE.Registry
 
         public static bool TryClaim(FuseClaimKind kind, string id, string packageId, out string existingOwner)
         {
+            return TryClaim(kind, id, packageId, false, out existingOwner);
+        }
+
+        public static bool TryClaim(FuseClaimKind kind, string id, string packageId, bool suppressConflictRecord, out string existingOwner)
+        {
             existingOwner = null;
             if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(packageId))
             {
@@ -95,7 +100,11 @@ namespace FUSE.Registry
                     }
 
                     existingOwner = owner;
-                    RecordConflictLocked(kind, id, owner, packageId);
+                    if (!suppressConflictRecord)
+                    {
+                        RecordConflictLocked(kind, id, owner, packageId);
+                    }
+
                     return false;
                 }
 
@@ -292,9 +301,11 @@ namespace FUSE.Registry
             ConflictHistory.Add(new FuseRegistryConflict
             {
                 Kind = kind,
+                Target = kind.ToString(),
                 Id = id,
                 OwnerPackageId = owner,
                 AttemptedPackageId = attempted,
+                Resolution = "claim skipped; existing owner retained",
                 AtUtc = DateTime.UtcNow
             });
 
@@ -304,8 +315,9 @@ namespace FUSE.Registry
             }
 
             FuseLog.Warning(
-                $"FUSE registry conflict: package '{attempted}' attempted to claim {kind} '{id}' " +
-                $"already owned by '{owner}'.");
+                $"FUSE registry conflict package='{attempted}' operation='claim runtime object' " +
+                $"target='{kind}' kind='{kind}' id='{id}' owner='{owner}' " +
+                "resolution='claim skipped; existing owner retained'.");
         }
 
         private static string MakeKey(FuseClaimKind kind, string id)

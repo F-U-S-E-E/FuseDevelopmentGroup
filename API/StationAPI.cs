@@ -194,17 +194,226 @@ namespace FUSE.API
                 }
             }
 
-            foreach (var renderer in instance.GetComponentsInChildren<Renderer>(true))
-            {
-                renderer.enabled = true;
-            }
-
             root.SetActive(true);
             instance.SetActive(true);
+            ApplyStationRendererState(instance, id, definition.Prefab);
             ConfigureMapIcons(instance, stop, root.transform, id, definition.Prefab);
-            FusePrefabSanitizer.SanitizeStation(instance, id, stationAgent, area, stop).Log($"FUSE station '{id}'");
+            FuseStationRuntimeIndex.Instance.Set(id, stationAgent);
+            MapAPI.RefreshAttachedMapMasks(root, $"station '{id}' apply");
+            FusePrefabSanitizer.SanitizeStation(root, id, stationAgent, area, stop).Log($"FUSE station '{id}'");
             FusePrefabSanitizer.ValidateStationPostBind(root, id, stationAgent, area, stop).Log($"FUSE station '{id}' post-bind");
             return stationAgent;
+        }
+
+        private static void ApplyStationRendererState(GameObject instance, string id, string prefab)
+        {
+            if (instance == null)
+            {
+                return;
+            }
+
+            var lodControlledRenderers = new HashSet<Renderer>();
+            var lod0Renderers = new HashSet<Renderer>();
+            var lodGroups = instance.GetComponentsInChildren<LODGroup>(true);
+            for (var groupIndex = 0; groupIndex < lodGroups.Length; groupIndex++)
+            {
+                var lodGroup = lodGroups[groupIndex];
+                if (lodGroup == null)
+                {
+                    continue;
+                }
+
+                lodGroup.enabled = true;
+                lodGroup.ForceLOD(0);
+
+                var lods = lodGroup.GetLODs();
+                for (var lodIndex = 0; lodIndex < lods.Length; lodIndex++)
+                {
+                    var renderers = lods[lodIndex].renderers;
+                    for (var rendererIndex = 0; rendererIndex < renderers.Length; rendererIndex++)
+                    {
+                        var renderer = renderers[rendererIndex];
+                        if (renderer == null)
+                        {
+                            continue;
+                        }
+
+                        lodControlledRenderers.Add(renderer);
+                        if (lodIndex == 0)
+                        {
+                            lod0Renderers.Add(renderer);
+                        }
+                    }
+                }
+            }
+
+            var enabledCount = 0;
+            var suppressedProxyCount = 0;
+            var hiddenLodCount = 0;
+            foreach (var renderer in instance.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                if (lodControlledRenderers.Contains(renderer))
+                {
+                    var keepVisible = lod0Renderers.Contains(renderer);
+                    renderer.enabled = keepVisible;
+                    renderer.forceRenderingOff = !keepVisible;
+                    if (!keepVisible)
+                    {
+                        hiddenLodCount++;
+                    }
+
+                    continue;
+                }
+
+                // Some vanilla station clones include disabled proxy/collider shells that
+                // render as plain boxes if we wake every renderer. Enable real station
+                // renderers, but keep those helper shells dark.
+                if (ShouldSuppressStationProxyRenderer(instance.transform, renderer, out var reason))
+                {
+                    renderer.enabled = false;
+                    renderer.forceRenderingOff = true;
+                    suppressedProxyCount++;
+                    FuseLog.Info($"FUSE station '{id}' suppressed renderer '{GetRelativePath(instance.transform, renderer.transform)}' from prefab '{prefab}' reason='{reason}'.");
+                }
+                else
+                {
+                    renderer.enabled = true;
+                    renderer.forceRenderingOff = false;
+                    enabledCount++;
+                }
+            }
+
+            for (var groupIndex = 0; groupIndex < lodGroups.Length; groupIndex++)
+            {
+                var lodGroup = lodGroups[groupIndex];
+                if (lodGroup == null)
+                {
+                    continue;
+                }
+
+                lodGroup.enabled = true;
+                lodGroup.ForceLOD(0);
+                lodGroup.RecalculateBounds();
+            }
+
+            if (lodGroups.Length > 0 || suppressedProxyCount > 0 || hiddenLodCount > 0)
+            {
+                FuseLog.Info(
+                    $"FUSE station '{id}' prefab '{prefab}' renderer state applied: " +
+                    $"lodGroups={lodGroups.Length}, lod0={lod0Renderers.Count}, hiddenLodRenderers={hiddenLodCount}, " +
+                    $"enabledRenderers={enabledCount}, suppressedProxyRenderers={suppressedProxyCount}.");
+            }
+        }
+
+        private static bool ShouldSuppressStationProxyRenderer(Transform root, Renderer renderer, out string reason)
+        {
+            reason = string.Empty;
+            if (renderer == null)
+            {
+                return false;
+            }
+
+            var path = GetRelativePath(root, renderer.transform);
+            if (ContainsAny(path, "collider", "collision", "proxy", "physics", "navmesh", "occlusion", "bounds"))
+            {
+                reason = "helper-name";
+                return true;
+            }
+
+            if (ContainsAny(path, "lod1", "lod2", "lod3", "lod_1", "lod_2", "lod_3", "lod 1", "lod 2", "lod 3"))
+            {
+                reason = "non-lod0-name";
+                return true;
+            }
+
+            var hasTexture = false;
+            var materialNames = string.Empty;
+            var materials = renderer.sharedMaterials;
+            if (materials != null)
+            {
+                for (var index = 0; index < materials.Length; index++)
+                {
+                    var material = materials[index];
+                    if (material == null)
+                    {
+                        continue;
+                    }
+
+                    materialNames += material.name + " ";
+                    if (material.mainTexture != null)
+                    {
+                        hasTexture = true;
+                    }
+                }
+            }
+
+            if (ContainsAny(materialNames, "collider", "collision", "proxy", "occlusion", "bounds"))
+            {
+                reason = "helper-material";
+                return true;
+            }
+
+            var localCenter = root != null ? root.InverseTransformPoint(renderer.bounds.center) : renderer.bounds.center;
+            var size = renderer.bounds.size;
+            var largeUntypedShell =
+                !hasTexture &&
+                Mathf.Abs(localCenter.y) > 1f &&
+                size.x > 8f &&
+                size.y > 2f &&
+                size.z > 8f;
+            if (largeUntypedShell)
+            {
+                reason = $"large-untextured-shell center={localCenter} size={size}";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool ContainsAny(string value, params string[] needles)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return false;
+            }
+
+            for (var index = 0; index < needles.Length; index++)
+            {
+                if (value.IndexOf(needles[index], StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string GetRelativePath(Transform root, Transform current)
+        {
+            if (current == null)
+            {
+                return string.Empty;
+            }
+
+            var names = new Stack<string>();
+            var cursor = current;
+            while (cursor != null)
+            {
+                names.Push(cursor.name);
+                if (cursor == root)
+                {
+                    break;
+                }
+
+                cursor = cursor.parent;
+            }
+
+            return string.Join("/", names.ToArray());
         }
 
         private static void ConfigureMapIcons(GameObject instance, PassengerStop passengerStop, Transform stationRoot, string id, string prefab)
