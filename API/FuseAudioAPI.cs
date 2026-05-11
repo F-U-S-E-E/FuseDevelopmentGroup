@@ -577,12 +577,9 @@ namespace FUSE.API
             }
 
             text = text.Trim().Trim('"', '\'');
-            if (Path.IsPathRooted(text))
-            {
-                return Path.GetFullPath(text);
-            }
-
-            return Path.GetFullPath(Path.Combine(packageFolder ?? string.Empty, text));
+            return FusePathSafety.TryResolvePackageRelativePath(packageFolder, text, out var resolved)
+                ? resolved
+                : string.Empty;
         }
 
         private static string NormalizeId(string id, string fallback)

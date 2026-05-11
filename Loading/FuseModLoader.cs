@@ -2238,7 +2238,11 @@ namespace FUSE.Loading
 
         private static string ResolveExistingDefinitionPath(string modFolder, string railDataFile)
         {
-            var explicitPath = Path.Combine(modFolder, railDataFile);
+            if (!FusePathSafety.TryResolvePackageRelativePath(modFolder, railDataFile, out var explicitPath))
+            {
+                throw new FileNotFoundException($"FUSE data file '{railDataFile}' is outside package root '{modFolder}'.");
+            }
+
             if (!File.Exists(explicitPath))
             {
                 throw new FileNotFoundException($"FUSE data file '{railDataFile}' was not found in '{modFolder}'.", explicitPath);

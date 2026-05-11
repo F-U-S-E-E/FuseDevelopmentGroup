@@ -265,9 +265,7 @@ namespace FUSE.Loading
                 return string.Empty;
             }
 
-            var packageRoot = Path.GetFullPath(modFolder);
-            var resolved = Path.GetFullPath(Path.Combine(packageRoot, sourceFolder));
-            return resolved.StartsWith(packageRoot, StringComparison.OrdinalIgnoreCase)
+            return FusePathSafety.TryResolvePackageRelativePath(modFolder, sourceFolder, out var resolved)
                 ? resolved
                 : string.Empty;
         }

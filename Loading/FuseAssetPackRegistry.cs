@@ -258,9 +258,7 @@ namespace FUSE.Loading
                 return 0;
             }
 
-            var packageRoot = Path.GetFullPath(packagePath);
-            var sourcePath = Path.GetFullPath(Path.Combine(packageRoot, relativeSource));
-            if (!sourcePath.StartsWith(packageRoot, StringComparison.OrdinalIgnoreCase))
+            if (!FusePathSafety.TryResolvePackageRelativePath(packagePath, relativeSource, out var sourcePath))
             {
                 FuseLog.Warning($"FUSE ignored asset pack source outside package root: '{relativeSource}'.");
                 return 0;
@@ -457,9 +455,7 @@ namespace FUSE.Loading
                 yield break;
             }
 
-            var packageRoot = Path.GetFullPath(packagePath);
-            var sourcePath = Path.GetFullPath(Path.Combine(packageRoot, relativeSource));
-            if (!sourcePath.StartsWith(packageRoot, StringComparison.OrdinalIgnoreCase) ||
+            if (!FusePathSafety.TryResolvePackageRelativePath(packagePath, relativeSource, out var sourcePath) ||
                 !Directory.Exists(sourcePath))
             {
                 yield break;
