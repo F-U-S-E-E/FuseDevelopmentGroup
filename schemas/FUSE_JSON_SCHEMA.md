@@ -341,7 +341,7 @@ MurphyBranch/
 
 FUSE-specific package ordering uses `FuseLoadPriority`, `FuseLoadAfter`, and `FuseLoadBefore`. Lower priority values load earlier; packages with the same priority fall back to dependency order and then package id. Dependency cycles are reported in the log and the involved packages fall back to priority/name order.
 
-If explicit data-file entries are missing, FUSE falls back to the first `.bson` file in the package root, then the first `.json` file other than `Info.json`.
+If explicit data-file entries are missing, FUSE falls back to the first `.bson` file in the package root, then an eligible root `.json` definition file. Files named `Info.json`, `Definition.json`, `Catalog.json`, `Definitions.json`, and `conversion-report.json` are ignored; `.fuse.json` files are preferred before other eligible `.json` files.
 
 Asset-pack-only packages can expose existing Railroader `AssetPack` runtime stores with `FuseAssetPacks`. FUSE registers these folders as direct prefab stores from the mod directory by default; the old LocalLow mirror path is an opt-in compatibility fallback, not the normal load path:
 

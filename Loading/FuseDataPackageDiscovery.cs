@@ -618,39 +618,13 @@ namespace FUSE.Loading
         {
             try
             {
-                if (Directory.GetFiles(folderPath, "*.bson", SearchOption.TopDirectoryOnly).Length > 0)
-                {
-                    return true;
-                }
-
-                return Directory.GetFiles(folderPath, "*.json", SearchOption.TopDirectoryOnly)
-                    .Any(IsFallbackDefinitionJsonFile);
+                return FuseDefinitionFileDiscovery.HasFallbackDefinitionFile(folderPath);
             }
             catch (Exception ex)
             {
                 FuseLog.Warning($"FUSE could not inspect package root definition files in '{folderPath}': {ex.Message}");
                 return false;
             }
-        }
-
-        private static bool IsFallbackDefinitionJsonFile(string path)
-        {
-            var fileName = Path.GetFileName(path);
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                return false;
-            }
-
-            if (string.Equals(fileName, "Info.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "conversion-report.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "Catalog.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "Definitions.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "Definition.json", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            return fileName.EndsWith(".fuse.json", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool ContainsFuseReference(JToken token)
