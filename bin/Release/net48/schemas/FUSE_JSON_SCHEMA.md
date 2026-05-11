@@ -46,6 +46,17 @@ FUSE migrations run version by version on load. Unknown future schema versions a
 
 When a field is renamed, FUSE keeps the old field readable for one minor version, logs one deprecation warning per package when it migrates that field, and removes the old field in the following minor version. For example, scenery asset keys were renamed from `model` to `assetIdentifier`; v1.0 packages with only `model` still load, and FUSE fills `assetIdentifier` in memory.
 
+## Naming And Legacy Aliases
+
+The public mod/API name is `FUSE`. New packages should use `.FUSE` folder/package suffixes, `FuseDataFile`/`FuseDataFiles` in `Info.json`, and `.fuse.json` data files.
+
+Compatibility aliases are intentional and narrow:
+
+- A dependency or mixinto requirement ending in `.RAIL` can satisfy the same package without that old suffix. This is only to keep already-converted packages from faulting during the rename window.
+- The literal asset-pack id `rail` can still appear inside Railroader `AssetReference` values. That string is Railroader's built-in asset-pack identifier, not the old RAIL mod name.
+
+Do not author new public docs or examples with `RAIL` as the mod name.
+
 Areas are defined under `tracks.areas` and can be used to group industries in the company window. `order` is a signed sort key that controls the display order of areas and industries; lower values appear earlier. Legacy conversions preserve source order values, including negative values, when the source file provides them:
 
 ```json

@@ -21,10 +21,14 @@ Important note: the 2026-05-10 LocalLow `FUSE.log` is now the authoritative runt
   - Fresh 2026-05-09 runtime verified after dump-command build: `73 loaded, 0 faulted, 0 conflicts, 0 suppressions, 0 unknown scenery assets`.
   - Fresh 2026-05-10 runtime verified after report/log cleanup: `73 loaded, 0 faulted, 0 conflicts, 0 suppressions, 0 unknown scenery assets, 0 graph issues, 0 transfer skips`.
 - [x] No graph post-bind missing nodes, segments, or spans after all converted route mods load. Runtime verified 2026-05-07: `missing after apply = 0`.
+  - Fresh runtime verified 2026-05-10 after hidden progression-group validation fix: final report shows `0 graph issues`, and no `missing after apply` warnings were present.
 - [x] No package faults from missing loads when required asset/load packs are installed. Runtime verified 2026-05-07: Copper progression packages stayed loadable with placeholder fallback warnings for `mining-explosives` and `machine-parts`; converter still needs to emit real load definitions when available.
   - Code/converter pass 2026-05-08: converter now emits known compatibility load definitions for `mining-explosives` and `machine-parts`; reconverted Copper Nantahala packages. Needs fresh runtime verification that placeholder warnings are gone.
   - Fresh 2026-05-09 runtime verified: no `placeholder load`, `mining-explosives`, or `machine-parts` warnings in `FUSE.log` or `Player.log`.
 - [x] Converter can process every legacy route mod in `C:\Railroader mods\Installed\Map` without dropping files or inventing unexpected late files. Scratch verified 2026-05-08: batch converted 13/13 current inputs with 0 errors; generated reports for Asheville, Copper set, GCR, Griz, KingG, and Kirkland. No `*Late*.json` output files were produced.
+  - Scratch verified again 2026-05-11 after the area-order conversion fix: batch converted 12/12 current inputs with 0 errors into `_work\full-corpus-conversion-20260511`; no artificial late files were produced.
+  - Scratch verified again 2026-05-11 after downgrading runtime-handled hidden track-group notes: batch converted 12/12 current inputs with 0 errors into `_work\full-corpus-conversion-20260511-info-groups`; warnings dropped from 26 to 20 and Copper route packages are now clean conversions.
+  - Scratch verified again 2026-05-11 after classifying successful converter repairs as info instead of warnings: batch converted 12/12 current inputs with 0 errors into `_work\full-corpus-conversion-20260511-clean-reporting`; warnings dropped to 4, all tied to unresolved/source-authored issues instead of repaired content.
 - [x] Converter emits one useful report per conversion: repaired, preserved, unresolved, unsupported, and dependency-required entries. Code complete 2026-05-08; `conversion-report.json` and `conversion-report.md` now include outcome buckets and per-source-file summaries. Scratch verified with `CoppersPaperboardRemover` and Asheville.
 - [x] Converted mods preserve legacy file concerns: one source JSON becomes one FUSE JSON unless the source is metadata-only. Scratch verified 2026-05-08: corpus reports include one file summary per converted source concern, and output filenames follow the source JSON stems instead of artificial concern buckets.
 - [ ] FUSE load time is benchmarked against RailLoader and is within the same range or faster for equivalent installed content.
@@ -38,6 +42,7 @@ Important note: the 2026-05-10 LocalLow `FUSE.log` is now the authoritative runt
   - Code/build pass 2026-05-09: source-authored empty industry shells now log as `source-empty industry shell` with `runtimeComponents=0 sourceComponents=0`, instead of looking like failed component binding. Release DLL deployed to `C:\Steam\steamapps\common\Railroader\Mods\FUSE\FUSE.dll`; needs fresh runtime log verification.
   - Runtime verified 2026-05-10: `FUSE.log` map load completed with `loadedPackages=15 appliedPackages=62 skippedPackages=11 faultedPackages=0 warnings=0 errors=0`; unknown scenery assets remain `0`, and source-empty industries are classified without stack traces. Remaining stack traces in `Player.log` are from external `LegosLibraryOfStuff`/Enviro calls, not FUSE.
   - Code/build pass 2026-05-10: authoring entity runtime-bind spam is now verbose-only, keeping normal FUSE logs focused on package/apply/report events.
+  - Code/build pass 2026-05-11: audio unload cleanup now logs `release audio definitions` only when a package actually owned horn/whistle/bell entries, reducing no-op unload noise in `FUSE.log`.
 - [x] FUSE-specific logging is available in `FUSE.log` beside `Player.log`.
 - [ ] Public schema examples cover every supported legacy concept except signals.
 
@@ -55,6 +60,7 @@ Important note: the 2026-05-10 LocalLow `FUSE.log` is now the authoritative runt
   - Verified 2026-05-08: `Editor\MainEditorWindow.cs` and `Infrastructure\WindowCreatorHelper.cs` do not reference, destroy, or null the base-game company window. They only manage FUSE's own editor window instance/panel references.
   - Code pass 2026-05-08: passenger stop child `TrackSpan` helpers now keep blank graph ids to stop duplicate graph-span warnings, and virtual passenger stops suppress base `IndustryComponent` validation that does not apply to FUSE passenger-stop shims. Needs fresh Player.log verification.
   - Runtime verified 2026-05-08: replaced passenger-stop child `TrackSpan` helpers with direct `TrackMarker` creation plus private `PassengerStop._spans` binding, so passenger stops keep their runtime markers/company-window spans without adding fake spans to the global graph.
+  - Code/build pass 2026-05-11: company-window reopen failure was traced to base-game `IndustryTrackDisplayableExtensions.ShortName` crashing on legacy-style component names such as `Cherokee` under `Cherokee Depot`; FUSE now patches that helper to return a safe display name instead of leaving the window half-built. Needs fresh runtime verification.
 - [x] P1: Clean converter/runtime turntable handling so physical turntables and progression industries named "turntable" are never confused. Code complete 2026-05-07; duplicate physical turntable ids now apply as final-state overrides during staged graph apply. Needs Kirkland runtime verification.
 - [x] P1: Finish spliney parity: dirt roads, asphalt roads, rivers, trestles, terrain roads, waterfalls.
   - Code/build complete 2026-05-10: runtime now accepts the full schema spliney type set (`road`, `river`, `terrainRoad`, `trestle`) instead of silently collapsing terrain roads/waterfalls to normal roads. Converter preserves Strange Customs `FlowyThingBuilder` river/road style/profile and emits the legacy `offsetY: -0.1` default when source data omits it. Release DLL deployed; converter `.pyz` and `.exe` rebuilt.
@@ -82,6 +88,8 @@ Important note: the 2026-05-10 LocalLow `FUSE.log` is now the authoritative runt
   - Log audit 2026-05-10: FUSE disk work is already small (latest disk load 309 ms); the bottleneck is runtime apply (~18.6 s). RailLoader logs from 2026-05-06 show plugin definition/mod loading in roughly 170 ms and Strange Customs graph patching roughly 2.7-2.9 s after scene load begins, but the installed content sets are not perfectly equivalent.
   - Code pass 2026-05-10: staged operations now defer `TrackAPI.ApplyAreaOrdering()` and run it once after the industry batch instead of once per data fragment. Needs fresh timing log to measure impact.
   - Code/build pass 2026-05-10: per-entity authoring bind info logs are now gated behind `Settings.VerboseApplyReportDetails`; normal map loads should no longer write hundreds of scenery bind lines to `FUSE.log`. Needs fresh timing/log-size comparison.
+  - Timing audit 2026-05-11: latest available run spent most runtime-apply time in `apply-world-objects` (9,067 ms total), then `apply-operations` (2,557 ms), and the single graph rebuild (1,730 ms). Top world rows were KingG scenery (2,474 ms), Griz game-graph world objects (2,377 ms), Asheville game-graph world objects (839 ms), and GCR track world objects (759 ms).
+  - Code/build pass 2026-05-11: scenery and spliney existence checks now trust the rebuilt FUSE runtime indexes during package apply instead of falling back to repeated full-scene `FindObjectsOfType` scans for every new object. Spline/trestle profile discovery is cached per map session. Release DLL deployed; needs fresh timing log to measure improvement.
 
 - [x] P1: Explain quiet gaps in FUSE load.
   - Evidence: old FUSE log had a multi-second gap between load catalog completion and staged apply start.
@@ -150,12 +158,16 @@ Important note: the 2026-05-10 LocalLow `FUSE.log` is now the authoritative runt
 
 - [x] P1: Preserve source ordering for areas, industries, stations, sections, and progression data. Code complete for file-level order; object-level order still needs route verification.
   - Converter/schema pass 2026-05-10: legacy explicit `order` values are now preserved instead of re-ranked by encounter order, and FUSE area/industry `order` is now treated as a signed sort key so Asheville's negative route-order values load instead of being rejected.
+  - Converter pass 2026-05-11: stopped inventing global area `order` values for legacy files that do not provide one. Reconverted Asheville, KingG, GCR, Griz Oconoluftee, and Copper route packages; KingG/Copper now omit fake `0..N` area orders while Asheville/GCR keep real source orders.
 
 - [x] P2: Add a drag/drop Windows executable and a cross-platform Python folder converter that share the same core conversion engine. Rebuilt 2026-05-08 after converter blank-component-id fixes.
   - Rebuilt again 2026-05-08 after known compatibility load generation and progression section-feature alias conversion.
   - Rebuilt again 2026-05-08 after structured conversion report support; `dist\FUSEConvertFolder.pyz` and `dist\FUSE-Converter.exe` smoke check passed.
   - Rebuilt again 2026-05-08 after lenient JSON repair fix; `dist\FUSEConvertFolder.pyz` and `dist\FUSE-Converter.exe` smoke check passed.
   - Rebuilt again 2026-05-08 after batch output-folder skip fix; `dist\FUSEConvertFolder.pyz` and `dist\FUSE-Converter.exe` smoke check passed.
+  - Rebuilt again 2026-05-11 after area-order conversion fix; `dist\FUSEConvertFolder.pyz` and `dist\FUSE-Converter.exe` smoke check passed.
+  - Rebuilt again 2026-05-11 after hidden track-group converter note cleanup; `dist\FUSEConvertFolder.pyz` and `dist\FUSE-Converter.exe` smoke check passed.
+  - Rebuilt again 2026-05-11 after successful-repair reporting cleanup; `dist\FUSEConvertFolder.pyz` and `dist\FUSE-Converter.exe` smoke check passed.
 
 ## Track Graph, Segments, And Spans
 
@@ -189,6 +201,7 @@ Important note: the 2026-05-10 LocalLow `FUSE.log` is now the authoritative runt
 - [x] P0: Segment groups must not be enabled permanently just to survive graph rebuild.
   - Fix: transient pre-enable now avoids repeated graph rebuilds, then `ProgressionAPI.RefreshRuntimeStateAfterApply` re-runs base-game progression/map-feature state so locked groups and objects are disabled again before post-bind validation. Runtime verification still needed on Asheville/GCR/Kirkland progression saves.
   - Fresh runtime 2026-05-10 exposed an expected side effect of that fix: post-bind validation counted hidden locked segments as `335 graph issues` because `Graph.GetSegment` omits disabled groups. Code/build pass 2026-05-10 now treats segments/spans hidden by disabled progression groups as intentional post-bind state instead of graph failures. Release DLL deployed; needs fresh runtime verification.
+  - Fresh runtime verified 2026-05-10: final report returned to `0 graph issues` while `forcedFeatureState=True` ran during progression refresh.
 
 - [x] P1: Add graph validation that explains route direction errors using start/end, A/B, upper/lower, and distance.
   - Code/build complete 2026-05-10: failed runtime span route validation now reports `upper`/`lower` segment id, A/B Start/End anchor, distance, and segment length. Release DLL deployed to `C:\Steam\steamapps\common\Railroader\Mods\FUSE\FUSE.dll`.
@@ -322,9 +335,16 @@ Important note: the 2026-05-10 LocalLow `FUSE.log` is now the authoritative runt
   - Runtime verified 2026-05-10: passenger stops across Asheville, KingG, and GCR refresh with `loadId='passengers'` and expected span counts; the only `spanCount=0` case is GCR `topton`, which the converter report identifies as source-authored spanless legacy data and emits as a virtual stop.
 
 - [ ] P0: Passenger stops must appear in the Locations window when legacy did.
+  - Code/build pass 2026-05-11: generic invalid `TrackMarker` cleanup now preserves FUSE-owned passenger-stop marker helpers instead of disabling them for intentionally blank graph ids. This removes `PassengerStopMarker` cleanup noise and keeps generated `PassengerStop._markers` usable. Needs fresh runtime verification.
+  - Code/build pass 2026-05-11: patched base-game `IndustryTrackDisplayableExtensions.ShortName` so short legacy component names such as `Cherokee` under `Cherokee Depot` cannot throw `ArgumentOutOfRangeException` and leave the Company window half-built. Needs fresh runtime verification that the Company window opens, closes, and reopens.
 
 - [ ] P0: Area sorting must match legacy/source order, not alphabetical fallback.
   - Code/converter pass 2026-05-10: runtime area ordering path was already applying; converter was reversing Asheville by inventing positive order values. Installed `asheville_extension.FUSE` has been reconverted with source orders preserved (`asheville=-2000`, `beta=-100`, etc.). Needs fresh visual verification in the Locations window.
+  - Code/build pass 2026-05-11: AMM parity check showed passenger/location ordering depends on `Area.transform.GetSiblingIndex()`, because the base game walks `OpsController.Shared.Areas` from the scene hierarchy. FUSE now applies source area order to `Area` sibling indexes after runtime apply and keeps the `ListController.SetData` sort patch as a UI fallback. Release DLL deployed; needs fresh visual verification for Asheville first and Ela not falling to the Thornton end of the base list.
+  - Code/build pass 2026-05-11: legacy area IDs now alias to an existing same-name base/FUSE area instead of creating duplicate sections. Known case: KingG `APPA-Ela` now binds to the existing `ela` Area, keeping Appalachian Engine Service and Ela Station in the same logical town. Release DLL deployed; needs fresh visual verification.
+  - Code/build pass 2026-05-11: area order/alias runtime metadata is now cleared on unload so one map/save cannot leak location ordering into the next map session.
+  - Code/build pass 2026-05-11: fixed the Locations-list comparator so unordered/base areas no longer interleave ahead of explicit FUSE areas with order `1+`; source-ordered areas now sort as one ordered block, then unordered/base areas retain their own relative order. Release DLL deployed; needs fresh visual verification.
+  - Code/build/data pass 2026-05-11: corrected the comparator again to place explicit source orders in the same order space as existing base-game area sibling indexes (`siblingIndex * 100`) instead of moving every ordered mod area ahead of all unordered areas. Installed route packages were reconverted/replaced with the no-fake-area-order converter output. Release DLL deployed; needs fresh visual verification.
 
 - [ ] P0: Industry/station order inside each area must preserve source `order` or legacy transform order.
   - Code/converter pass 2026-05-10: explicit legacy industry `order` now wins over generated fallback order. Areas without explicit order still use source encounter order.
@@ -427,6 +447,7 @@ Important note: the 2026-05-10 LocalLow `FUSE.log` is now the authoritative runt
 - [ ] P1: Schema examples need refresh after FUSE rename and recent features.
 
 - [ ] P1: Old `RAIL` names should be migrated or aliased intentionally; public docs should say `FUSE`.
+  - Code/docs pass 2026-05-11: loader local variables now use `fuseDataFile` names, and schema docs now document the remaining intentional aliases: `.RAIL` suffix compatibility for dependency/mixinto resolution, and Railroader's built-in asset-pack id string `rail`. Public docs should continue using FUSE names only.
 
 - [ ] P1: Schema docs need examples for:
   - route mod
@@ -540,12 +561,15 @@ Important note: the 2026-05-10 LocalLow `FUSE.log` is now the authoritative runt
 - [x] FUSE report shows zero faults.
 - [x] FUSE report shows zero conflicts. Runtime verified 2026-05-07.
 - [x] FUSE report shows zero unknown scenery assets.
-- [ ] Graph post-bind report is clean.
+- [x] Graph post-bind report is clean.
   - Runtime verified 2026-05-07: no missing-after-apply warnings.
   - Fresh runtime 2026-05-10 regressed to `335 graph issues`, all from segments in disabled progression groups (`gcr-t`, `CNRS_Tracks`, `CNRI_Track1`, `CNRI_Track2`, `CNRI_Track3`, `CNI_IR_Tracks`).
   - Code/build pass 2026-05-10: post-bind validation now skips segments/spans whose own or endpoint segment groups are intentionally disabled by current progression/map-feature state. Needs fresh runtime verification that final report returns to `0 graph issues`.
+  - Runtime verified 2026-05-10: final report shows `0 graph issues`, `0 transfer skips`, `warnings=0`, and `errors=0`.
 - [ ] Locations window order matches legacy/source order.
   - Pending fresh route verification after 2026-05-10 converter/schema fix for signed source order values and reconverted Asheville package.
+  - Code/build pass 2026-05-11: restored AMM-style area sibling ordering so explicit negative area orders can move ahead of unordered/base areas in the company Locations list, with UI-level sorting still present as a fallback. Release DLL deployed; needs fresh game run to verify Asheville appears first, Ela placement is correct, and the Company window still reopens cleanly.
+  - Code/build/data pass 2026-05-11: converter now preserves only real legacy area orders, runtime compares those orders against base sibling order, and installed route packages were refreshed. Needs fresh game run to verify the full flow from Asheville through Andrews.
 - [ ] Progression-gated objects are hidden until unlocked.
   - Pending fresh route verification after the 2026-05-10 forced map-feature-state refresh build.
 - [ ] Roads, rivers, trestles, map masks, mandelas, turntables, stations, industries, loaders, interchanges, audio, and map tiles visually/functionally match legacy behavior.

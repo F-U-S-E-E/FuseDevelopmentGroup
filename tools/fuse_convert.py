@@ -41,6 +41,15 @@ def _warn(message: str, *, file: str = "", concept: str = "") -> None:
         "concept": concept,
     })
 
+
+def _info(message: str, *, file: str = "", concept: str = "") -> None:
+    _PENDING_WARNINGS.append({
+        "level": "INFO",
+        "message": message,
+        "file": file,
+        "concept": concept,
+    })
+
 HANDLER_MAP = {
     "StrangeCustoms.FlowyThingBuilder": "road",
     "StrangeCustoms.AutoTrestleBuilder": "trestle",
@@ -605,7 +614,7 @@ def _clamp_span_endpoint(span_id, endpoint_name, location, segment_length, sourc
     if abs(clamped - distance) <= 0.0001:
         return False
     _set_location_distance(location, clamped)
-    _warn(
+    _info(
         f"Span '{span_id}' {endpoint_name} endpoint on segment '{location.get('segmentId')}' "
         f"had distance {distance:.3f} outside estimated segment length {segment_length:.3f}; "
         f"clamped to {clamped:.3f}.",
@@ -650,7 +659,7 @@ def _repair_same_segment_span(span_id, span, segment_length, source_name):
     if _same_segment_span_is_valid(swapped_upper, swapped_lower, segment_length):
         span["upper"] = swapped_upper
         span["lower"] = swapped_lower
-        _warn(
+        _info(
             f"Span '{span_id}' on segment '{upper.get('segmentId')}' had crossed endpoints; swapped upper/lower.",
             file=source_name,
             concept="span-repaired",
@@ -793,7 +802,7 @@ def _repair_multi_segment_span(span_id, span, graph, source_name):
     repaired |= _flip_location_end_preserving_position(upper, desired_upper_end, upper_length)
 
     if repaired:
-        _warn(
+        _info(
             f"Span '{span_id}' endpoint anchors were aligned to converted segment topology "
             f"path='{ ' -> '.join(path) }' lowerEnd {old_lower}->{lower.get('end')} "
             f"upperEnd {old_upper}->{upper.get('end')}.",
@@ -923,7 +932,7 @@ def _normalize_tag_color(area_id, value):
     if 3 <= len(value) <= 4:
         return value
     if len(value) > 4:
-        _warn(
+        _info(
             f"Area '{area_id}' tagColor has {len(value)} values; FUSE accepts 3 or 4. "
             "Truncated to the first 3 values to keep the package loadable.",
             concept="area-tagColor-overflow",
@@ -1130,7 +1139,7 @@ def _make_component_sub_id(industry_id, component_id, converted, existing):
         sub_id = f"{base}-{index}"
         index += 1
 
-    _warn(
+    _info(
         f"Industry '{industry_id}' had a legacy component with a blank id; generated component id '{sub_id}'.",
         concept="industry-component-empty-id",
     )
@@ -1556,7 +1565,7 @@ def reconcile_progression_section_feature_aliases(rail):
         })
         for section in sections:
             _append_unique_id(section, "enableFeaturesOnUnlock", feature_id)
-        _warn(
+        _info(
             f"Progression map feature reference '{feature_id}' points to a section id; emitted a FUSE map-feature alias and enabled it when that section unlocks.",
             concept="progression-section-feature-alias",
         )
@@ -1594,10 +1603,12 @@ def next_area_order(order_state, area_id, item=None):
     if key in area_orders:
         return area_orders[key]
 
-    order = order_state.get("next_area_order", 0)
-    order_state["next_area_order"] = order + 1
-    area_orders[key] = order
-    return order
+    # Area order is a global route/location order in game, not just a local
+    # source-file encounter order. Generating 0, 1, 2... for every converted
+    # mod made unrelated route packages all fight for the top of the Company
+    # Locations list. If legacy did not provide an explicit area order, leave
+    # it unset and let the runtime preserve normal scene/source creation order.
+    return None
 
 
 def next_industry_order(order_state, area_id, industry_id, item=None):
@@ -1635,7 +1646,7 @@ def _record_runtime_duplicate(order_state, kind, object_id, source_name):
         }
         return
 
-    _warn(
+    _info(
         f"Duplicate legacy {kind} id '{object_id}' in '{source_name}' also appeared in "
         f"'{registry[key].get('source')}'. Keeping the same FUSE id so the later mixinto updates/replaces the earlier runtime object.",
         file=source_name or "",
@@ -1847,13 +1858,11 @@ def _emit_track_group_coverage_warning(declared_initial_groups: set[str]) -> Non
 
     sample = ", ".join(uncovered[:8])
     suffix = ", ..." if len(uncovered) > 8 else ""
-    _warn(
+    _info(
         f"{len(uncovered)} track group(s) referenced by segments are not auto-enabled by any "
-        f"progression with initiallyEnabled=true (e.g. {sample}{suffix}). FUSE rebuilds the "
-        "graph after apply-segments, before apply-progression - any segment whose group has "
-        "not been enabled by then is culled and shows up as 'missing after apply'. Either add "
-        "an initiallyEnabled progression with these in trackGroupsEnableOnUnlock, or rely on "
-        "the runtime pre-pass that enables groups before the first segment apply.",
+        f"progression with initiallyEnabled=true (e.g. {sample}{suffix}). FUSE will transiently "
+        "enable those groups during staged graph apply, then restore progression/map-feature "
+        "state after apply-progression.",
         concept="track-group-not-auto-enabled",
     )
 
