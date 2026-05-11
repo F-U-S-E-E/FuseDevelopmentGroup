@@ -147,6 +147,21 @@ namespace FUSE.Data
         public Vector3? Size { get; set; }
         public float? Width { get; set; }
         public Vector3[] Points { get; set; }
+
+        // Restored from AlinasMapMod — these were configurable in the old API
+        // but were dropped and hardcoded in the initial FUSE implementation.
+        /// <summary>How far the mask edge blends into surrounding terrain. Defaults to 0 if not set.</summary>
+        public float? Falloff { get; set; }
+        /// <summary>Whether the mask flattens terrain to a fixed height. Defaults to false if not set.</summary>
+        public bool? EnableSetHeight { get; set; }
+        /// <summary>Whether the mask clears trees. Defaults to true if not set.</summary>
+        public bool? EnableCutTrees { get; set; }
+        /// <summary>Whether the mask modifier is active. Defaults to true if not set.</summary>
+        public bool? EnableMaskModifier { get; set; }
+        /// <summary>Which named mask layer this belongs to. Defaults to MaskName.Object if not set.</summary>
+        public MaskName? MaskName { get; set; }
+        /// <summary>Evaluation order among masks. Defaults to 0 if not set.</summary>
+        public int? Order { get; set; }
     }
 
     public sealed class FuseMapTileSource
@@ -164,5 +179,17 @@ namespace FUSE.Data
         public Vector3? LocalPosition { get; set; }
         public Vector3? LocalRotation { get; set; }
         public Vector3? LocalScale { get; set; }
+    }
+
+    /// <summary>
+    /// Named mask layers used by FuseMapMask.MaskName.
+    /// Add or adjust members to match the rest of your codebase if other names are required.
+    /// </summary>
+    public enum MaskName
+    {
+        Object,
+        Terrain,
+        Road,
+        // Add other named layers here as needed
     }
 }

@@ -51,7 +51,9 @@ namespace FUSE.Loading
             }
 
             package.Spans[spanId] = snapshot;
-            FuseLog.Info($"FUSE captured removable base-game span snapshot package='{packageId}' span='{spanId}'.");
+            FuseLog.Info(
+                $"FUSE captured removable base-game track snapshot package='{packageId}' operation='capture-track-removal-snapshot' " +
+                $"kind='track span' id='{spanId}'.");
         }
 
         public static void CaptureSegmentBeforeRemoval(string packageId, string segmentId, FuseApplyTransaction transaction)
@@ -87,7 +89,9 @@ namespace FUSE.Loading
             }
 
             package.Segments[segmentId] = snapshot;
-            FuseLog.Info($"FUSE captured removable base-game segment snapshot package='{packageId}' segment='{segmentId}'.");
+            FuseLog.Info(
+                $"FUSE captured removable base-game track snapshot package='{packageId}' operation='capture-track-removal-snapshot' " +
+                $"kind='track segment' id='{segmentId}'.");
         }
 
         public static void CaptureNodeBeforeRemoval(string packageId, string nodeId, FuseApplyTransaction transaction)
@@ -117,7 +121,9 @@ namespace FUSE.Loading
             }
 
             package.Nodes[nodeId] = SnapshotNode(node);
-            FuseLog.Info($"FUSE captured removable base-game node snapshot package='{packageId}' node='{nodeId}'.");
+            FuseLog.Info(
+                $"FUSE captured removable base-game track snapshot package='{packageId}' operation='capture-track-removal-snapshot' " +
+                $"kind='track node' id='{nodeId}'.");
         }
 
         public static void RestorePackage(string packageId)
@@ -129,14 +135,17 @@ namespace FUSE.Loading
 
             if (Graph.Shared == null)
             {
-                FuseLog.Warning($"FUSE cannot restore removed track snapshots for package '{packageId}' because Graph.Shared is not available.");
+                FuseLog.Warning(
+                    $"FUSE track restore skipped package='{packageId}' operation='restore-track-removal-snapshot' " +
+                    "phase='restore' kind='track snapshots' id='<package>' reason='Graph.Shared is null'.");
                 SnapshotsByPackage.Remove(packageId);
                 return;
             }
 
             FuseLog.Warning(
-                $"FUSE restoring removed base-game track snapshots for package '{packageId}' " +
-                $"nodes={package.Nodes.Count} segments={package.Segments.Count} spans={package.Spans.Count}; {LossyTrackRestoreWarning}");
+                $"FUSE restoring removed base-game track snapshots package='{packageId}' operation='restore-track-removal-snapshot' " +
+                $"phase='restore' kind='track snapshots' id='<package>' nodes={package.Nodes.Count} " +
+                $"segments={package.Segments.Count} spans={package.Spans.Count} warning='{LossyTrackRestoreWarning}'");
 
             var restoredNodes = 0;
             var restoredSegments = 0;
@@ -163,7 +172,17 @@ namespace FUSE.Loading
                         restoredSegments++;
                     }
                 }
+            }
+            finally
+            {
+                TrackAPI.EndBatch(false);
+            }
 
+            TryRebuildGraphAfterRestore(packageId, "nodes and segments");
+
+            TrackAPI.BeginBatch();
+            try
+            {
                 foreach (var snapshot in package.Spans.Values)
                 {
                     if (TryRestoreSpan(snapshot, skipped))
@@ -177,39 +196,51 @@ namespace FUSE.Loading
                 TrackAPI.EndBatch(false);
             }
 
+            TryRebuildGraphAfterRestore(packageId, "spans");
+
+            foreach (var item in skipped.Take(40))
+            {
+                FuseLog.Warning($"FUSE track restore skipped package='{packageId}' operation='restore-track-removal-snapshot' {item}");
+            }
+
+            if (skipped.Count > 40)
+            {
+                FuseLog.Warning(
+                    $"FUSE track restore skipped package='{packageId}' operation='restore-track-removal-snapshot' " +
+                    $"phase='restore' kind='track snapshots' id='<package>' reason='{skipped.Count - 40} more item(s) omitted'.");
+            }
+
+            FuseLog.Info(
+                $"FUSE restored removed track snapshots package='{packageId}' operation='restore-track-removal-snapshot' " +
+                $"phase='restore' kind='track snapshots' id='<package>' nodes={restoredNodes}/{package.Nodes.Count} " +
+                $"segments={restoredSegments}/{package.Segments.Count} spans={restoredSpans}/{package.Spans.Count} skipped={skipped.Count}.");
+
+            SnapshotsByPackage.Remove(packageId);
+        }
+
+        private static void TryRebuildGraphAfterRestore(string packageId, string phase)
+        {
             try
             {
                 TrackAPI.RebuildGraph();
             }
             catch (Exception ex)
             {
-                FuseLog.Exception($"FUSE graph rebuild failed after restoring removed track for package '{packageId}'", ex);
+                FuseLog.Exception(
+                    $"FUSE graph rebuild failed package='{packageId}' operation='restore-track-removal-snapshot' " +
+                    $"phase='{phase ?? string.Empty}' kind='graph' id='<graph>'",
+                    ex);
             }
-
-            foreach (var item in skipped.Take(40))
-            {
-                FuseLog.Warning($"FUSE track restore skipped package='{packageId}' {item}");
-            }
-
-            if (skipped.Count > 40)
-            {
-                FuseLog.Warning($"FUSE track restore skipped package='{packageId}' ... {skipped.Count - 40} more item(s) omitted.");
-            }
-
-            FuseLog.Info(
-                $"FUSE restored removed track snapshots for package '{packageId}' " +
-                $"nodes={restoredNodes}/{package.Nodes.Count} segments={restoredSegments}/{package.Segments.Count} " +
-                $"spans={restoredSpans}/{package.Spans.Count} skipped={skipped.Count}.");
-
-            SnapshotsByPackage.Remove(packageId);
         }
 
-        public static void ClearPackage(string packageId)
+        public static bool ClearPackage(string packageId)
         {
-            if (!string.IsNullOrWhiteSpace(packageId))
+            if (string.IsNullOrWhiteSpace(packageId))
             {
-                SnapshotsByPackage.Remove(packageId);
+                return false;
             }
+
+            return SnapshotsByPackage.Remove(packageId);
         }
 
         public static void ClearAll()
@@ -246,13 +277,13 @@ namespace FUSE.Loading
 
         private static void CaptureSpansTouchingSegment(string packageId, string segmentId, FuseApplyTransaction transaction)
         {
-            foreach (var span in FindSpansReferencingSegment(segmentId))
+            foreach (var span in FindSpansReferencingSegment(segmentId, packageId))
             {
                 CaptureSpanBeforeRemoval(packageId, span.id, transaction);
             }
         }
 
-        private static IEnumerable<TrackSpan> FindSpansReferencingSegment(string segmentId)
+        private static IEnumerable<TrackSpan> FindSpansReferencingSegment(string segmentId, string packageId)
         {
             if (string.IsNullOrWhiteSpace(segmentId))
             {
@@ -277,7 +308,9 @@ namespace FUSE.Loading
                 }
                 catch (Exception ex)
                 {
-                    FuseLog.Warning($"FUSE could not inspect span '{span.id}' while snapshotting segment '{segmentId}': {ex.Message}");
+                    FuseLog.Warning(
+                        $"FUSE could not inspect span package='{packageId ?? "<unknown>"}' operation='capture-track-removal-snapshot' " +
+                        $"phase='snapshot' kind='track span' id='{span.id}' segment='{segmentId}' reason='{ex.Message}'.");
                 }
             }
 
@@ -576,31 +609,23 @@ namespace FUSE.Loading
                 try
                 {
                     TrackAPI.RemoveSegment(segment.id);
-                    FuseLog.Warning($"FUSE dropped invalid runtime segment '{segment.id}' before restoring removed base-game track for package '{packageId}'.");
+                    FuseLog.Warning(
+                        $"FUSE dropped invalid runtime segment package='{packageId}' operation='restore-track-removal-snapshot' " +
+                        $"phase='pre-restore-cleanup' kind='track segment' id='{segment.id}' reason='missing endpoint'.");
                 }
                 catch (Exception ex)
                 {
-                    FuseLog.Warning($"FUSE could not drop invalid runtime segment '{segment.id}' before track restore: {ex.Message}");
+                    FuseLog.Warning(
+                        $"FUSE could not drop invalid runtime segment package='{packageId}' operation='restore-track-removal-snapshot' " +
+                        $"phase='pre-restore-cleanup' kind='track segment' id='{segment.id}' reason='{ex.Message}'.");
                 }
             }
 
-            foreach (var span in TrackAPI.GetAllSpans().Where(IsInvalidSpan).ToArray())
-            {
-                if (span == null || string.IsNullOrWhiteSpace(span.id))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    TrackAPI.RemoveSpan(span.id);
-                    FuseLog.Warning($"FUSE dropped invalid runtime span '{span.id}' before restoring removed base-game track for package '{packageId}'.");
-                }
-                catch (Exception ex)
-                {
-                    FuseLog.Warning($"FUSE could not drop invalid runtime span '{span.id}' before track restore: {ex.Message}");
-                }
-            }
+            // Do NOT prune spans here. During reload/restore, spans can appear invalid simply
+            // because their referenced segment is temporarily absent while graph edits are being
+            // composed. Dropping them here destroys station/industry/passenger spans that become
+            // valid again after the final graph rebuild. Span validation belongs after the staged
+            // graph commit, not inside snapshot restore.
         }
 
         private static bool IsInvalidSpan(TrackSpan span)
@@ -621,7 +646,9 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE treating span '{span.id}' as invalid before track restore because its locations could not be read: {ex.Message}");
+                FuseLog.Warning(
+                    $"FUSE treating span as invalid package='<unknown>' operation='restore-track-removal-snapshot' " +
+                    $"phase='pre-restore-cleanup' kind='track span' id='{span.id}' reason='{ex.Message}'.");
                 return true;
             }
         }
@@ -656,7 +683,11 @@ namespace FUSE.Loading
                 transaction.Warning(kind, id, message);
             }
 
-            FuseLog.Warning($"FUSE {kind} '{id ?? string.Empty}': {message ?? string.Empty}");
+            var packageId = transaction?.Report?.DefinitionId ?? "<unknown>";
+            var phase = transaction?.CurrentPhase ?? "snapshot";
+            FuseLog.Warning(
+                $"FUSE track snapshot warning package='{packageId}' operation='track-removal-snapshot' " +
+                $"phase='{phase}' kind='{kind ?? string.Empty}' id='{id ?? string.Empty}' reason='{message ?? string.Empty}'.");
         }
 
         private sealed class PackageTrackSnapshots

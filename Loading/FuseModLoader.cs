@@ -12,6 +12,7 @@ using FUSE.Registry;
 using FUSE.Serialization;
 using FUSE.Validation;
 using Newtonsoft.Json.Linq;
+using Map.Runtime;
 using Track;
 
 namespace FUSE.Loading
@@ -113,7 +114,8 @@ namespace FUSE.Loading
             var ids = GetLoadedDefinitionIdsInOrder();
             ApplyGlobalLoadCatalog(ids, reason);
             PreEnableInitialTrackGroups(ids);
-            var appliedCount = 0;
+
+            var candidates = new List<FuseStagedApplyCandidate>();
             var outcomes = new List<PackageApplyOutcome>();
             foreach (var id in ids)
             {
@@ -124,53 +126,717 @@ namespace FUSE.Loading
                     continue;
                 }
 
-                var isReapply = AppliedDefinitionIds.Contains(id);
                 try
                 {
                     if (!FuseModRequirementResolver.ShouldApply(loaded, out var requirementReason))
                     {
                         FusePackageFaultRegistry.MarkSkipped(id, requirementReason);
                         outcomes.Add(PackageApplyOutcome.ForSkipped(id, requirementReason));
-                        FuseLog.Warning(
+                        FuseLog.Info(
                             $"FUSE skipped conditional mixinto package='{id}' operation='runtime apply' " +
                             $"id='{id}' reason='{requirementReason}'.");
                         continue;
                     }
 
-                    var report = ApplyDefinitionToRuntime(loaded, isReapply, reason);
-                    if (report.IsFatal)
-                    {
-                        FusePackageFaultRegistry.RecordFault(id, "runtime apply", report.FatalReason);
-                        FusePackageFaultRegistry.MarkSkipped(id, report.FatalReason);
-                        outcomes.Add(PackageApplyOutcome.FromReport(id, report, 0, 1, 1));
-                        continue;
-                    }
-
-                    if (report.HasErrors)
-                    {
-                        FusePackageFaultRegistry.RecordFault(id, "runtime apply", $"Runtime apply completed with {report.Errors.Count} error(s).");
-                        outcomes.Add(PackageApplyOutcome.FromReport(id, report, 0, 0, 1));
-                        continue;
-                    }
-
-                    AppliedDefinitionIds.Add(id);
-                    FusePackageFaultRegistry.MarkAppliedToRuntime(id);
-                    appliedCount++;
-                    outcomes.Add(PackageApplyOutcome.FromReport(id, report, 1, 0, 0));
+                    candidates.Add(new FuseStagedApplyCandidate(loaded, AppliedDefinitionIds.Contains(id)));
                 }
                 catch (Exception ex)
                 {
                     FusePackageFaultRegistry.RecordFault(id, "runtime apply", ex.Message, ex);
                     FusePackageFaultRegistry.MarkSkipped(id, "runtime apply exception");
                     outcomes.Add(PackageApplyOutcome.ForErrored(id, ex.Message));
-                    FuseLog.Exception($"Failed to apply loaded FUSE definition '{id}' to runtime for '{reason ?? "unspecified"}'", ex);
+                    FuseLog.Exception($"Failed to prepare loaded FUSE definition '{id}' for runtime apply '{reason ?? "unspecified"}'", ex);
                 }
             }
 
-            ApplyDeferredOperationBindings(ids, reason);
+            var appliedCount = ApplyDefinitionsToRuntimeStaged(candidates, reason, outcomes);
             LogAggregateApplySummary(reason, outcomes);
             FuseLog.Info($"FUSE applied {appliedCount} resident definition(s) to runtime for '{reason ?? "unspecified"}'.");
             return appliedCount;
+        }
+
+        private sealed class FuseStagedApplyCandidate
+        {
+            public FuseStagedApplyCandidate(FuseLoadedMod loaded, bool isReapply)
+            {
+                Loaded = loaded;
+                IsReapply = isReapply;
+            }
+
+            public FuseLoadedMod Loaded { get; }
+            public bool IsReapply { get; }
+            public FuseApplyTransaction Transaction { get; set; }
+            public FuseRegistryTransaction RegistryTransaction { get; set; }
+            public bool Prepared { get; set; }
+        }
+
+        private sealed class FuseMergedTrackEntry<T>
+        {
+            public FuseMergedTrackEntry(string id, T value, FuseStagedApplyCandidate owner, int sequence)
+            {
+                Id = id;
+                Value = value;
+                Owner = owner;
+                Sequence = sequence;
+            }
+
+            public string Id { get; }
+            public T Value { get; }
+            public FuseStagedApplyCandidate Owner { get; }
+            public int Sequence { get; }
+        }
+
+        private sealed class FuseMergedTrackRemoval
+        {
+            public FuseMergedTrackRemoval(string id, FuseStagedApplyCandidate owner, int sequence)
+            {
+                Id = id;
+                Owner = owner;
+                Sequence = sequence;
+            }
+
+            public string Id { get; }
+            public FuseStagedApplyCandidate Owner { get; }
+            public int Sequence { get; }
+        }
+
+        private sealed class FuseMergedTrackPlan
+        {
+            public readonly Dictionary<string, FuseMergedTrackEntry<FuseNode>> Nodes = new Dictionary<string, FuseMergedTrackEntry<FuseNode>>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackEntry<FuseSegment>> Segments = new Dictionary<string, FuseMergedTrackEntry<FuseSegment>>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackEntry<FuseSpan>> Spans = new Dictionary<string, FuseMergedTrackEntry<FuseSpan>>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackEntry<FuseTurntable>> Turntables = new Dictionary<string, FuseMergedTrackEntry<FuseTurntable>>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackRemoval> RemovedNodes = new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackRemoval> RemovedSegments = new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackRemoval> RemovedSpans = new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
+            public readonly List<FuseStagedApplyCandidate> OrderedCandidates = new List<FuseStagedApplyCandidate>();
+
+            public bool HasStructuralChanges =>
+                Nodes.Count > 0 || Segments.Count > 0 || Turntables.Count > 0 || RemovedNodes.Count > 0 || RemovedSegments.Count > 0 || RemovedSpans.Count > 0;
+
+            public bool HasSpanChanges => Spans.Count > 0 || RemovedSpans.Count > 0;
+
+            public bool ShouldValidateNode(string packageId, string id) =>
+                ShouldValidate(packageId, id, Nodes, RemovedNodes);
+
+            public bool ShouldValidateSegment(string packageId, string id) =>
+                ShouldValidate(packageId, id, Segments, RemovedSegments);
+
+            public bool ShouldValidateSpan(string packageId, string id) =>
+                ShouldValidate(packageId, id, Spans, RemovedSpans);
+
+            public bool TryGetSegmentDefinition(string id, out FuseSegment definition)
+            {
+                definition = null;
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    return false;
+                }
+
+                if (Segments.TryGetValue(id, out var entry))
+                {
+                    definition = entry.Value;
+                    return definition != null;
+                }
+
+                return false;
+            }
+
+            private static bool ShouldValidate<T>(
+                string packageId,
+                string id,
+                Dictionary<string, FuseMergedTrackEntry<T>> finalDefinitions,
+                Dictionary<string, FuseMergedTrackRemoval> finalRemovals)
+            {
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    return false;
+                }
+
+                if (finalRemovals.ContainsKey(id))
+                {
+                    return false;
+                }
+
+                return !finalDefinitions.TryGetValue(id, out var finalEntry) ||
+                       string.Equals(finalEntry.Owner?.Loaded?.Definition?.Id, packageId, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        private sealed class FusePreflightReferenceContext
+        {
+            public readonly HashSet<string> NodeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public readonly HashSet<string> SegmentIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public readonly HashSet<string> SpanIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public readonly HashSet<string> LoadIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public readonly HashSet<string> IndustryIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            public readonly HashSet<string> PassengerStopIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static int ApplyDefinitionsToRuntimeStaged(
+            IReadOnlyList<FuseStagedApplyCandidate> candidates,
+            string reason,
+            IList<PackageApplyOutcome> outcomes)
+        {
+            if (candidates == null || candidates.Count == 0)
+            {
+                return 0;
+            }
+
+            var appliedCount = 0;
+            var prepared = new List<FuseStagedApplyCandidate>();
+            var referenceContext = BuildPreflightReferenceContext(
+                candidates.Select(candidate => candidate.Loaded?.Definition));
+            try
+            {
+                foreach (var candidate in candidates)
+                {
+                    var definition = candidate.Loaded?.Definition;
+                    if (definition == null || string.IsNullOrWhiteSpace(definition.Id))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        candidate.Transaction = new FuseApplyTransaction(definition.Id, reason, candidate.IsReapply);
+                        candidate.RegistryTransaction = FuseRegistry.BeginReapplyTransaction(definition.Id);
+                        candidate.Transaction.RunPhase("preflight-validation", () => RunPreflightValidation(definition, candidate.Transaction, referenceContext));
+                        candidate.Prepared = true;
+                        prepared.Add(candidate);
+                    }
+                    catch (Exception ex)
+                    {
+                        FusePackageFaultRegistry.RecordFault(definition.Id, "runtime apply", ex.Message, ex);
+                        FusePackageFaultRegistry.MarkSkipped(definition.Id, "runtime apply exception");
+                        outcomes.Add(PackageApplyOutcome.ForErrored(definition.Id, ex.Message));
+                        FuseLog.Exception($"Failed to prepare FUSE definition '{definition.Id}' for staged runtime apply", ex);
+                    }
+                }
+
+                var active = prepared
+                    .Where(item => item.Transaction != null && !item.Transaction.Report.IsFatal)
+                    .ToArray();
+
+                if (active.Length > 0)
+                {
+                    var mergedTrackPlan = BuildMergedTrackPlan(active);
+
+                    // Non-track removals are still per-definition operations, but graph
+                    // removals are now resolved as final-state deletes in the merged plan.
+                    foreach (var candidate in active)
+                    {
+                        var definition = candidate.Loaded.Definition;
+                        var transaction = candidate.Transaction;
+                        transaction.RunPhase("staged-apply-world-removals", () => ApplyWorldRemovals(definition, transaction));
+                    }
+
+                    ApplyMergedTrackGraph(mergedTrackPlan, reason);
+
+                    foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
+                    {
+                        var definition = candidate.Loaded.Definition;
+                        var loaded = candidate.Loaded;
+                        var transaction = candidate.Transaction;
+                        transaction.RunPhase("apply-audio", () => ApplyAudioDefinition(definition, loaded.FolderPath, transaction));
+                        transaction.RunPhase("apply-world-objects", () => ApplyWorldDefinition(definition, loaded.FolderPath, loaded.DefinitionPath, transaction));
+                    }
+
+                    FuseMapTileRegistry.MountForActiveMapIfLoaded("staged world apply");
+
+                    IndustryAPI.BeginIndustryApplyBatch();
+                    try
+                    {
+                        foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
+                        {
+                            var definition = candidate.Loaded.Definition;
+                            var transaction = candidate.Transaction;
+                            transaction.RunPhase("apply-operations", () =>
+                            {
+                                ApplyTrackAreas(definition, transaction, false);
+                                ApplyOperationsDefinition(definition, transaction);
+                            });
+                        }
+                    }
+                    finally
+                    {
+                        IndustryAPI.EndIndustryApplyBatch("staged ApplyOperationsDefinition");
+                    }
+                    TrackAPI.ApplyAreaOrdering();
+
+                    ApplyDeferredOperationBindings(
+                        active.Select(item => item.Loaded?.Definition?.Id).Where(id => !string.IsNullOrWhiteSpace(id)).ToArray(),
+                        reason);
+
+                    foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
+                    {
+                        var definition = candidate.Loaded.Definition;
+                        var transaction = candidate.Transaction;
+                        transaction.RunPhase("apply-progression", () => ApplyProgressionDefinition(definition, transaction));
+                        transaction.RunPhase("apply-world-suppressions", () => FuseWorldSuppressor.ApplyDefinition(definition, transaction));
+                    }
+
+                    ProgressionAPI.RefreshRuntimeStateAfterApply("staged ApplyProgressionDefinition");
+
+                    foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
+                    {
+                        var definition = candidate.Loaded.Definition;
+                        var transaction = candidate.Transaction;
+                        transaction.RunPhase("post-bind-validation", () => ValidatePostBind(definition, transaction, mergedTrackPlan));
+                    }
+                }
+
+                foreach (var candidate in prepared)
+                {
+                    var definition = candidate.Loaded.Definition;
+                    var transaction = candidate.Transaction;
+                    if (transaction == null)
+                    {
+                        continue;
+                    }
+
+                    if (transaction.Report.IsFatal)
+                    {
+                        FusePackageFaultRegistry.RecordFault(definition.Id, "runtime apply", transaction.Report.FatalReason);
+                        FusePackageFaultRegistry.MarkSkipped(definition.Id, transaction.Report.FatalReason);
+                        outcomes.Add(PackageApplyOutcome.FromReport(definition.Id, transaction.Report, 0, 1, 1));
+                    }
+                    else if (transaction.Report.HasErrors)
+                    {
+                        FusePackageFaultRegistry.RecordFault(definition.Id, "runtime apply", $"Runtime apply completed with {transaction.Report.Errors.Count} error(s).");
+                        outcomes.Add(PackageApplyOutcome.FromReport(definition.Id, transaction.Report, 0, 0, 1));
+                    }
+                    else
+                    {
+                        candidate.RegistryTransaction?.Commit();
+                        AppliedDefinitionIds.Add(definition.Id);
+                        FusePackageFaultRegistry.MarkAppliedToRuntime(definition.Id);
+                        appliedCount++;
+                        outcomes.Add(PackageApplyOutcome.FromReport(definition.Id, transaction.Report, 1, 0, 0));
+                    }
+
+                    transaction.Report.LogSummary();
+                    if (!transaction.Report.IsFatal && !transaction.Report.HasErrors)
+                    {
+                        FuseLog.Info(candidate.IsReapply
+                            ? $"FUSE reapplied resident definition '{definition.Id}' to runtime for '{reason ?? "unspecified"}' ({definition.Operations?.Turntables?.Count ?? 0} turntable(s), {definition.World?.SceneClones?.Count ?? 0} scene clone(s))."
+                            : $"FUSE applied resident definition '{definition.Id}' to runtime for '{reason ?? "unspecified"}' ({definition.Operations?.Turntables?.Count ?? 0} turntable(s), {definition.World?.SceneClones?.Count ?? 0} scene clone(s)).");
+                    }
+                }
+            }
+            finally
+            {
+                foreach (var candidate in prepared)
+                {
+                    candidate.RegistryTransaction?.Dispose();
+                    candidate.RegistryTransaction = null;
+                }
+            }
+
+            FuseLog.Info(
+                $"FUSE Strange-Customs-style staged graph resolver completed reason='{reason ?? "unspecified"}' " +
+                $"definitions={prepared.Count} applied={appliedCount} " +
+                "mode='package-grouped mixinto order, final-state deletes, single graph commit'.");
+            return appliedCount;
+        }
+
+        private static FuseMergedTrackPlan BuildMergedTrackPlan(IReadOnlyList<FuseStagedApplyCandidate> active)
+        {
+            var plan = new FuseMergedTrackPlan();
+            if (active == null || active.Count == 0)
+            {
+                return plan;
+            }
+
+            // Strange Customs effectively respected the mod/package as the unit,
+            // then respected Definition.json mixinto order inside that package.
+            // FUSE already loads explicit FuseDataFiles in declared order, so the
+            // safest compatibility behavior is: first package-folder encounter
+            // order, then file encounter order within the folder. No schema-level
+            // priority knob is required.
+            var ordered = active
+                .Select((candidate, index) => new { candidate, index, folder = NormalizePackageFolder(candidate.Loaded?.FolderPath) })
+                .GroupBy(item => item.folder, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(group => group.Min(item => item.index))
+                .SelectMany(group => group.OrderBy(item => item.index))
+                .ToArray();
+
+            var sequence = 0;
+            foreach (var item in ordered)
+            {
+                var candidate = item.candidate;
+                var definition = candidate.Loaded?.Definition;
+                if (definition == null)
+                {
+                    continue;
+                }
+
+                plan.OrderedCandidates.Add(candidate);
+                MergeFinalDefinitions(plan.Turntables, definition.Operations?.Turntables, candidate, ref sequence);
+
+                var tracks = definition.Tracks;
+                if (tracks == null)
+                {
+                    continue;
+                }
+
+                MergeFinalDeletes(plan.RemovedSpans, plan.Spans, tracks.Removals?.Spans, candidate, ref sequence);
+                MergeFinalDeletes(plan.RemovedSegments, plan.Segments, tracks.Removals?.Segments, candidate, ref sequence);
+                MergeFinalDeletes(plan.RemovedNodes, plan.Nodes, tracks.Removals?.Nodes, candidate, ref sequence);
+
+                MergeFinalDefinitions(plan.Nodes, plan.RemovedNodes, tracks.Nodes, candidate, ref sequence);
+                MergeFinalDefinitions(plan.Segments, plan.RemovedSegments, tracks.Segments, candidate, ref sequence);
+                MergeFinalDefinitions(plan.Spans, plan.RemovedSpans, tracks.Spans, candidate, ref sequence);
+            }
+
+            FuseLog.Info(
+                $"FUSE merged graph plan operation='build staged graph state' " +
+                $"packages={ordered.Select(item => item.folder).Distinct(StringComparer.OrdinalIgnoreCase).Count()} " +
+                $"definitions={ordered.Length} nodes={plan.Nodes.Count} segments={plan.Segments.Count} spans={plan.Spans.Count} turntables={plan.Turntables.Count} " +
+                $"removedNodes={plan.RemovedNodes.Count} removedSegments={plan.RemovedSegments.Count} removedSpans={plan.RemovedSpans.Count}.");
+            return plan;
+        }
+
+        private static string NormalizePackageFolder(string folderPath)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return Path.GetFullPath(folderPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch
+            {
+                return folderPath;
+            }
+        }
+
+        private static void MergeFinalDeletes<T>(
+            Dictionary<string, FuseMergedTrackRemoval> removals,
+            Dictionary<string, FuseMergedTrackEntry<T>> definitions,
+            IEnumerable<string> ids,
+            FuseStagedApplyCandidate owner,
+            ref int sequence)
+        {
+            if (ids == null)
+            {
+                return;
+            }
+
+            foreach (var rawId in ids)
+            {
+                if (string.IsNullOrWhiteSpace(rawId))
+                {
+                    continue;
+                }
+
+                var id = rawId.Trim();
+                sequence++;
+                definitions.Remove(id);
+                removals[id] = new FuseMergedTrackRemoval(id, owner, sequence);
+            }
+        }
+
+        private static void MergeFinalDefinitions<T>(
+            Dictionary<string, FuseMergedTrackEntry<T>> definitions,
+            IDictionary<string, T> values,
+            FuseStagedApplyCandidate owner,
+            ref int sequence)
+            where T : class
+        {
+            if (values == null)
+            {
+                return;
+            }
+
+            foreach (var pair in values)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value == null)
+                {
+                    continue;
+                }
+
+                var id = pair.Key.Trim();
+                sequence++;
+                definitions[id] = new FuseMergedTrackEntry<T>(id, pair.Value, owner, sequence);
+            }
+        }
+
+        private static void MergeFinalDefinitions<T>(
+            Dictionary<string, FuseMergedTrackEntry<T>> definitions,
+            Dictionary<string, FuseMergedTrackRemoval> removals,
+            IDictionary<string, T> values,
+            FuseStagedApplyCandidate owner,
+            ref int sequence)
+            where T : class
+        {
+            if (values == null)
+            {
+                return;
+            }
+
+            foreach (var pair in values)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value == null)
+                {
+                    continue;
+                }
+
+                var id = pair.Key.Trim();
+                sequence++;
+                removals.Remove(id);
+                definitions[id] = new FuseMergedTrackEntry<T>(id, pair.Value, owner, sequence);
+            }
+        }
+
+        private static void ApplyMergedTrackGraph(FuseMergedTrackPlan plan, string reason)
+        {
+            if (plan == null)
+            {
+                return;
+            }
+
+            TrackAPI.BeginBatch();
+            try
+            {
+                foreach (var removal in plan.RemovedSpans.Values.OrderBy(item => item.Sequence))
+                {
+                    ApplyMergedSpanRemoval(removal);
+                }
+
+                foreach (var removal in plan.RemovedSegments.Values.OrderBy(item => item.Sequence))
+                {
+                    ApplyMergedSegmentRemoval(removal);
+                }
+
+                foreach (var removal in plan.RemovedNodes.Values.OrderBy(item => item.Sequence))
+                {
+                    ApplyMergedNodeRemoval(removal);
+                }
+
+                foreach (var entry in plan.Turntables.Values.OrderBy(item => item.Sequence))
+                {
+                    entry.Owner.Transaction.RunPhase("staged-apply-turntables", () => ApplyMergedTurntable(entry));
+                }
+
+                foreach (var entry in plan.Nodes.Values.OrderBy(item => item.Sequence))
+                {
+                    ApplyMergedNode(entry);
+                }
+
+                foreach (var entry in plan.Segments.Values.OrderBy(item => item.Sequence))
+                {
+                    ApplyMergedSegment(entry);
+                }
+            }
+            finally
+            {
+                TrackAPI.EndBatch(false);
+            }
+
+            if (plan.HasStructuralChanges)
+            {
+                var graphTransaction = new FuseApplyTransaction("__merged-graph-rebuild__", reason, false);
+                graphTransaction.RunPhase("merged-single-graph-rebuild", () => TrackAPI.RebuildGraph());
+                foreach (var candidate in plan.OrderedCandidates.Where(item => !item.Transaction.Report.IsFatal))
+                {
+                    candidate.Transaction.PostBind("graph", candidate.Loaded.Definition.Id, "merged-rebuilt-before-final-spans");
+                }
+            }
+            else
+            {
+                FuseLog.Info(
+                    "FUSE merged graph apply operation='merged-single-graph-rebuild' skipped: " +
+                    "no final structural track mutations in active definitions.");
+            }
+
+            TrackAPI.BeginBatch();
+            try
+            {
+                foreach (var entry in plan.Spans.Values.OrderBy(item => item.Sequence))
+                {
+                    ApplyMergedSpan(entry);
+                }
+            }
+            finally
+            {
+                TrackAPI.EndBatch(false);
+            }
+        }
+
+        private static void ApplyMergedSpanRemoval(FuseMergedTrackRemoval removal)
+        {
+            var transaction = removal.Owner.Transaction;
+            var definition = removal.Owner.Loaded.Definition;
+            if (TrackAPI.GetSpan(removal.Id) != null)
+            {
+                transaction.TryRemove("track span", removal.Id, () =>
+                {
+                    FuseTrackRemovalSnapshotStore.CaptureSpanBeforeRemoval(definition.Id, removal.Id, transaction);
+                    TrackAPI.RemoveSpan(removal.Id);
+                });
+            }
+            else
+            {
+                transaction.Skipped("track span removal", removal.Id, "missing");
+            }
+        }
+
+        private static void ApplyMergedSegmentRemoval(FuseMergedTrackRemoval removal)
+        {
+            var transaction = removal.Owner.Transaction;
+            var definition = removal.Owner.Loaded.Definition;
+            if (TrackAPI.GetSegment(removal.Id) != null)
+            {
+                transaction.TryRemove("track segment", removal.Id, () =>
+                {
+                    FuseTrackRemovalSnapshotStore.CaptureSegmentBeforeRemoval(definition.Id, removal.Id, transaction);
+                    TrackAPI.RemoveSegment(removal.Id);
+                });
+            }
+            else
+            {
+                transaction.Skipped("track segment removal", removal.Id, "missing");
+            }
+        }
+
+        private static void ApplyMergedNodeRemoval(FuseMergedTrackRemoval removal)
+        {
+            var transaction = removal.Owner.Transaction;
+            var definition = removal.Owner.Loaded.Definition;
+            if (TrackAPI.GetNode(removal.Id) != null)
+            {
+                transaction.TryRemove("track node", removal.Id, () =>
+                {
+                    FuseTrackRemovalSnapshotStore.CaptureNodeBeforeRemoval(definition.Id, removal.Id, transaction);
+                    TrackAPI.RemoveNode(removal.Id);
+                });
+            }
+            else
+            {
+                transaction.Skipped("track node removal", removal.Id, "missing");
+            }
+        }
+
+        private static void ApplyMergedNode(FuseMergedTrackEntry<FuseNode> entry)
+        {
+            var transaction = entry.Owner.Transaction;
+            var definition = entry.Owner.Loaded.Definition;
+            if (!TryClaimOrSkip(FuseClaimKind.Node, "track node", entry.Id, definition.Id, transaction))
+            {
+                return;
+            }
+
+            var exists = TrackAPI.GetNode(entry.Id) != null;
+            transaction.TryApply("track node", entry.Id, exists, () =>
+            {
+                if (exists)
+                {
+                    TrackAPI.UpdateNode(entry.Id, entry.Value);
+                }
+                else
+                {
+                    TrackAPI.AddNode(entry.Id, entry.Value);
+                }
+            });
+        }
+
+        private static void ApplyMergedSegment(FuseMergedTrackEntry<FuseSegment> entry)
+        {
+            var transaction = entry.Owner.Transaction;
+            var definition = entry.Owner.Loaded.Definition;
+            if (!TryClaimOrSkip(FuseClaimKind.Segment, "track segment", entry.Id, definition.Id, transaction))
+            {
+                return;
+            }
+
+            var runtimeSegment = TrackAPI.GetSegment(entry.Id);
+            var exists = runtimeSegment != null;
+            var startNode = TrackAPI.GetNode(entry.Value.StartNodeId);
+            var endNode = TrackAPI.GetNode(entry.Value.EndNodeId);
+            if (startNode == null || endNode == null)
+            {
+                FuseLog.Warning(
+                    $"FUSE apply pre-check package='{definition.Id}' operation='apply-merged-segments' " +
+                    $"kind='track segment' id='{entry.Id}' " +
+                    $"start='{entry.Value.StartNodeId ?? string.Empty}' startExists={startNode != null} " +
+                    $"end='{entry.Value.EndNodeId ?? string.Empty}' endExists={endNode != null} " +
+                    "message='node reference not bound in merged final graph; AddSegment may fail per-segment'.");
+            }
+
+            transaction.TryApply("track segment", entry.Id, exists, () =>
+            {
+                if (runtimeSegment == null)
+                {
+                    TrackAPI.AddSegment(entry.Id, entry.Value);
+                }
+                else if (runtimeSegment.a.id != entry.Value.StartNodeId || runtimeSegment.b.id != entry.Value.EndNodeId)
+                {
+                    FuseLog.Info(
+                        $"FUSE apply package='{definition.Id}' operation='apply-merged-segments' " +
+                        $"kind='track segment' id='{entry.Id}' " +
+                        $"message='endpoint change detected " +
+                        $"oldStart=\"{runtimeSegment.a.id}\" newStart=\"{entry.Value.StartNodeId}\" " +
+                        $"oldEnd=\"{runtimeSegment.b.id}\" newEnd=\"{entry.Value.EndNodeId}\" " +
+                        $"newStartExists={startNode != null} newEndExists={endNode != null}'.");
+
+                    TrackAPI.RemoveSegment(entry.Id);
+                    TrackAPI.AddSegment(entry.Id, entry.Value);
+                }
+                else
+                {
+                    TrackAPI.UpdateSegment(entry.Id, entry.Value);
+                }
+            });
+        }
+
+        private static void ApplyMergedTurntable(FuseMergedTrackEntry<FuseTurntable> entry)
+        {
+            var transaction = entry.Owner.Transaction;
+            var definition = entry.Owner.Loaded.Definition;
+            if (!TryClaimOrSkip(FuseClaimKind.Turntable, "turntable", entry.Id, definition.Id, transaction))
+            {
+                return;
+            }
+
+            var exists = TurntableAPI.GetTurntable(entry.Id) != null;
+            transaction.TryApply("turntable", entry.Id, exists, () =>
+            {
+                if (exists)
+                {
+                    TurntableAPI.UpdateTurntable(entry.Id, entry.Value);
+                }
+                else
+                {
+                    TurntableAPI.AddTurntable(entry.Id, entry.Value);
+                }
+            });
+        }
+
+        private static void ApplyMergedSpan(FuseMergedTrackEntry<FuseSpan> entry)
+        {
+            var transaction = entry.Owner.Transaction;
+            var definition = entry.Owner.Loaded.Definition;
+            if (!TryClaimOrSkip(FuseClaimKind.Span, "track span", entry.Id, definition.Id, transaction))
+            {
+                return;
+            }
+
+            var exists = TrackAPI.GetSpan(entry.Id) != null;
+            transaction.TryApply("track span", entry.Id, exists, () =>
+            {
+                if (exists)
+                {
+                    TrackAPI.UpdateSpan(entry.Id, entry.Value);
+                }
+                else
+                {
+                    TrackAPI.AddSpan(entry.Id, entry.Value);
+                }
+            });
         }
 
         public static int ReapplyLoadedDefinitions(string reason)
@@ -244,14 +910,13 @@ namespace FUSE.Loading
                 CollectSegmentGroupIds(loaded?.Definition?.Tracks, groupsFromSegments);
             }
 
-            // Match legacy AlinasMapMod behavior: every group that any segment
-            // belongs to gets enabled at content-load time so the spans can
-            // bind. Gameplay gating (delivery-phase progressions like GCR's
-            // gcr-m/gcr-t/tt or KingG's branch unlocks) is the base game's
-            // job - it can disable groups again after the player's save state
-            // loads. Without this, "spanless" segments get culled by the graph
-            // rebuild and downstream span/component apply throws "Track
-            // segment 'X' was not found" for every reference.
+            // Every group that any segment belongs to must be present in
+            // Graph.enabledGroupIds before the merged graph rebuild, otherwise
+            // Graph.AddSegment filters those segments out and dependent spans
+            // cannot bind. This is a transient keep-alive only; after
+            // progression definitions are applied, ProgressionAPI refreshes the
+            // base-game MapFeature state so locked groups/objects are disabled
+            // again before post-bind validation.
             groupsToEnable.UnionWith(groupsFromSegments);
 
             if (groupsToEnable.Count == 0)
@@ -259,12 +924,25 @@ namespace FUSE.Loading
                 return;
             }
 
+            var graph = Graph.Shared;
+            if (graph == null)
+            {
+                FuseLog.Warning(
+                    "FUSE pre-enable track groups skipped package='<all>' operation='pre-enable track groups' " +
+                    "kind='graph' id='<shared>' message='Graph.Shared was not available'.");
+                return;
+            }
+
             var enabledCount = 0;
+            var changedCount = 0;
             foreach (var groupId in groupsToEnable)
             {
                 try
                 {
-                    TrackAPI.SetGroupEnabled(groupId, true);
+                    if (graph.SetGroupEnabled(groupId, true))
+                    {
+                        changedCount++;
+                    }
                     enabledCount++;
                 }
                 catch (Exception ex)
@@ -277,8 +955,9 @@ namespace FUSE.Loading
 
             FuseLog.Info(
                 $"FUSE pre-enabled {enabledCount} track group(s) " +
+                $"changed={changedCount} " +
                 $"({groupsFromSegments.Count} from segment groupIds) " +
-                "before apply-segments to prevent graph-rebuild culling.");
+                "before apply-segments to prevent graph-rebuild culling; progression refresh will restore gated state after apply.");
         }
 
         private static void CollectSegmentGroupIds(FuseTrackDefinition tracks, HashSet<string> sink)
@@ -547,7 +1226,8 @@ namespace FUSE.Loading
                     $"created={outcome.CreatedObjects} updated={outcome.UpdatedObjects} removed={outcome.RemovedObjects} " +
                     $"objectSkipped={outcome.SkippedObjects} warnings={outcome.Warnings} errors={outcome.Errors} " +
                     $"reason='{outcome.Reason}'.";
-                if (outcome.Errored > 0 || outcome.Skipped > 0)
+                if (outcome.Errored > 0 ||
+                    (outcome.Skipped > 0 && !FusePackageFaultRegistry.IsOptionalSkipReason(outcome.Reason)))
                 {
                     FuseLog.Warning(line);
                 }
@@ -583,7 +1263,11 @@ namespace FUSE.Loading
             }
 
             var transaction = new FuseApplyTransaction(definition.Id, reason, reapply);
-            transaction.RunPhase("preflight-validation", () => RunPreflightValidation(definition, transaction));
+            var referenceContext = BuildPreflightReferenceContext(
+                GetLoadedModsInOrder()
+                    .Select(mod => mod?.Definition)
+                    .Concat(new[] { definition }));
+            transaction.RunPhase("preflight-validation", () => RunPreflightValidation(definition, transaction, referenceContext));
 
             using (var registryTx = FuseRegistry.BeginReapplyTransaction(definition.Id))
             {
@@ -603,39 +1287,63 @@ namespace FUSE.Loading
                             ApplyTurntables(definition, transaction);
                         });
                         transaction.RunPhase("apply-segments", () => ApplyTrackSegments(definition, transaction));
-                        transaction.RunPhase("apply-spans", () => ApplyTrackSpans(definition, transaction));
                     }
                     finally
                     {
                         TrackAPI.EndBatch(false);
                     }
 
-                    if (MutatesTrackGraph(definition))
+                    if (MutatesTrackStructure(definition))
                     {
                         transaction.RunPhase("single-graph-rebuild", () =>
                         {
                             TrackAPI.RebuildGraph();
-                            transaction.PostBind("graph", definition.Id, "rebuilt");
+                            transaction.PostBind("graph", definition.Id, "rebuilt-before-spans");
                         });
                     }
                     else
                     {
-                        // No track nodes/segments/spans/turntables/removals were
-                        // mutated by this package, so the existing graph is still
-                        // current. Skipping the rebuild typically saves 300-700 ms
-                        // per non-track package on multi-package map loads.
+                        // Spans validate against the current route graph, but they
+                        // do not themselves require node/segment graph rebuilds.
+                        // If this package only adds spans/areas/ops, keep the
+                        // existing graph and avoid an unnecessary rebuild.
                         FuseLog.Info(
                             $"FUSE apply phase package='{definition.Id}' " +
-                            "operation='single-graph-rebuild' skipped: no track mutations in this package.");
+                            "operation='single-graph-rebuild' skipped: no structural track mutations in this package.");
                         transaction.PostBind("graph", definition.Id, "rebuild-skipped");
+                    }
+
+                    // IMPORTANT: spans must be applied after the node/segment
+                    // graph has been rebuilt. TrackSpan route validation asks
+                    // the runtime graph for a valid route; applying spans before
+                    // RebuildGraph() makes valid legacy/Strange-Customs spans
+                    // intermittently fail with "span did not resolve to a valid route".
+                    TrackAPI.BeginBatch();
+                    try
+                    {
+                        transaction.RunPhase("apply-spans", () => ApplyTrackSpans(definition, transaction));
+                    }
+                    finally
+                    {
+                        TrackAPI.EndBatch(false);
                     }
                     transaction.RunPhase("apply-audio", () => ApplyAudioDefinition(definition, loaded.FolderPath, transaction));
                     transaction.RunPhase("apply-world-objects", () => ApplyWorldDefinition(definition, loaded.FolderPath, loaded.DefinitionPath, transaction));
                     transaction.RunPhase("apply-operations", () =>
                     {
-                        ApplyTrackAreas(definition, transaction);
-                        ApplyOperationsDefinition(definition, transaction);
+                        IndustryAPI.BeginIndustryApplyBatch();
+                        try
+                        {
+                            ApplyTrackAreas(definition, transaction, false);
+                            ApplyOperationsDefinition(definition, transaction);
+                        }
+                        finally
+                        {
+                            IndustryAPI.EndIndustryApplyBatch("resident ApplyOperationsDefinition");
+                        }
+                        TrackAPI.ApplyAreaOrdering();
                     });
+                    ApplyDeferredOperationBindings(new[] { definition.Id }, reason);
                     transaction.RunPhase("apply-progression", () => ApplyProgressionDefinition(definition, transaction));
                     transaction.RunPhase("apply-world-suppressions", () => FuseWorldSuppressor.ApplyDefinition(definition, transaction));
                     transaction.RunPhase("post-bind-validation", () => ValidatePostBind(definition, transaction));
@@ -670,13 +1378,21 @@ namespace FUSE.Loading
             return transaction.Report;
         }
 
-        private static void RunPreflightValidation(FuseModDefinition definition, FuseApplyTransaction transaction)
+        private static void RunPreflightValidation(
+            FuseModDefinition definition,
+            FuseApplyTransaction transaction,
+            FusePreflightReferenceContext referenceContext = null)
         {
             var validation = Validator.Validate(definition);
             FuseEvents.RaiseValidationCompleted(definition != null ? definition.Id : string.Empty, validation);
 
             foreach (var warning in validation.Warnings)
             {
+                if (IsResolvedExternalReferenceWarning(warning, referenceContext))
+                {
+                    continue;
+                }
+
                 transaction.Warning("preflight", warning.Field, FormatValidationIssue(warning));
             }
 
@@ -685,10 +1401,76 @@ namespace FUSE.Loading
                 transaction.Error("preflight", error.Field, FormatValidationIssue(error));
             }
 
-            ValidateRuntimeReferences(definition, transaction);
+            ValidateRuntimeReferences(definition, transaction, referenceContext);
             if (transaction.Report.Errors.Count > 0)
             {
                 transaction.Fatal("definition", definition?.Id ?? string.Empty, $"preflight validation failed with {transaction.Report.Errors.Count} error(s)");
+            }
+        }
+
+        private static bool IsResolvedExternalReferenceWarning(
+            ValidationIssue issue,
+            FusePreflightReferenceContext referenceContext)
+        {
+            if (issue == null || referenceContext == null)
+            {
+                return false;
+            }
+
+            var value = issue.Value as string;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            switch (issue.Code)
+            {
+                case "fuse.track.node.external":
+                    return referenceContext.NodeIds.Contains(value) || RuntimeNodeExists(value);
+                case "fuse.track.segment.external":
+                    return referenceContext.SegmentIds.Contains(value) || RuntimeSegmentExists(value);
+                default:
+                    return false;
+            }
+        }
+
+        private static bool RuntimeNodeExists(string nodeId)
+        {
+            if (string.IsNullOrWhiteSpace(nodeId))
+            {
+                return false;
+            }
+
+            try
+            {
+                return TrackAPI.GetNode(nodeId) != null;
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE preflight runtime node lookup failed operation='preflight-validation' " +
+                    $"id='{nodeId}' reason='{ex.Message}'.");
+                return false;
+            }
+        }
+
+        private static bool RuntimeSegmentExists(string segmentId)
+        {
+            if (string.IsNullOrWhiteSpace(segmentId))
+            {
+                return false;
+            }
+
+            try
+            {
+                return TrackAPI.GetSegment(segmentId) != null;
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE preflight runtime segment lookup failed operation='preflight-validation' " +
+                    $"id='{segmentId}' reason='{ex.Message}'.");
+                return false;
             }
         }
 
@@ -704,7 +1486,50 @@ namespace FUSE.Loading
             return $"{issue.Message}{code}{value}";
         }
 
-        private static void ValidateRuntimeReferences(FuseModDefinition definition, FuseApplyTransaction transaction)
+        private static FusePreflightReferenceContext BuildPreflightReferenceContext(
+            IEnumerable<FuseModDefinition> definitions)
+        {
+            var context = new FusePreflightReferenceContext();
+            if (definitions == null)
+            {
+                return context;
+            }
+
+            foreach (var definition in definitions.Where(item => item != null))
+            {
+                AddKeys(context.NodeIds, definition.Tracks?.Nodes);
+                AddKeys(context.SegmentIds, definition.Tracks?.Segments);
+                AddKeys(context.SpanIds, definition.Tracks?.Spans);
+                AddKeys(context.LoadIds, definition.Operations?.Loads);
+                AddKeys(context.IndustryIds, definition.Operations?.Industries);
+                context.NodeIds.UnionWith(CollectGeneratedNodeIds(definition));
+                context.SegmentIds.UnionWith(CollectGeneratedSegmentIds(definition));
+
+                foreach (var industry in definition.Operations?.Industries ?? new Dictionary<string, FuseIndustry>())
+                {
+                    foreach (var component in industry.Value?.Components ?? new Dictionary<string, FuseIndustryComponent>())
+                    {
+                        if (string.Equals(component.Value?.Type, "passengerStop", StringComparison.OrdinalIgnoreCase) &&
+                            !string.IsNullOrWhiteSpace(component.Key))
+                        {
+                            context.PassengerStopIds.Add(component.Key);
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(component.Value?.PassengerStopId))
+                        {
+                            context.PassengerStopIds.Add(component.Value.PassengerStopId);
+                        }
+                    }
+                }
+            }
+
+            return context;
+        }
+
+        private static void ValidateRuntimeReferences(
+            FuseModDefinition definition,
+            FuseApplyTransaction transaction,
+            FusePreflightReferenceContext referenceContext)
         {
             if (definition == null)
             {
@@ -718,8 +1543,8 @@ namespace FUSE.Loading
                 return;
             }
 
-            ValidateTrackRuntimeReferences(definition, transaction);
-            ValidateOperationRuntimeReferences(definition, transaction);
+            ValidateTrackRuntimeReferences(definition, transaction, referenceContext);
+            ValidateOperationRuntimeReferences(definition, transaction, referenceContext);
         }
 
         private static bool RequiresGraph(FuseModDefinition definition)
@@ -752,9 +1577,24 @@ namespace FUSE.Loading
                 return false;
             }
 
+            return MutatesTrackStructure(definition) ||
+                   (definition.Tracks?.Spans?.Count ?? 0) > 0;
+        }
+
+        /// <summary>
+        /// Returns true when the package changes the node/segment topology that
+        /// TrackSpan route validation depends on. Spans are intentionally excluded:
+        /// they must be applied after this structural graph rebuild, not before it.
+        /// </summary>
+        private static bool MutatesTrackStructure(FuseModDefinition definition)
+        {
+            if (definition == null)
+            {
+                return false;
+            }
+
             return (definition.Tracks?.Nodes?.Count ?? 0) > 0 ||
                    (definition.Tracks?.Segments?.Count ?? 0) > 0 ||
-                   (definition.Tracks?.Spans?.Count ?? 0) > 0 ||
                    HasAny(definition.Tracks?.Removals?.Nodes) ||
                    HasAny(definition.Tracks?.Removals?.Segments) ||
                    HasAny(definition.Tracks?.Removals?.Spans) ||
@@ -766,7 +1606,10 @@ namespace FUSE.Loading
             return values != null && values.Any(value => !string.IsNullOrWhiteSpace(value));
         }
 
-        private static void ValidateTrackRuntimeReferences(FuseModDefinition definition, FuseApplyTransaction transaction)
+        private static void ValidateTrackRuntimeReferences(
+            FuseModDefinition definition,
+            FuseApplyTransaction transaction,
+            FusePreflightReferenceContext referenceContext)
         {
             var tracks = definition.Tracks;
             if (tracks == null)
@@ -774,10 +1617,14 @@ namespace FUSE.Loading
                 return;
             }
 
-            var definedNodes = new HashSet<string>(tracks.Nodes?.Keys ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-            var definedSegments = new HashSet<string>(tracks.Segments?.Keys ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-            var generatedNodes = CollectGeneratedNodeIds(definition);
-            var generatedSegments = CollectGeneratedSegmentIds(definition);
+            var definedNodes = referenceContext?.NodeIds ?? CollectLoadedNodeIds(definition);
+            var definedSegments = referenceContext?.SegmentIds ?? CollectLoadedSegmentIds(definition);
+            var generatedNodes = referenceContext != null
+                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : CollectLoadedGeneratedNodeIds(definition);
+            var generatedSegments = referenceContext != null
+                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : CollectLoadedGeneratedSegmentIds(definition);
 
             foreach (var segment in tracks.Segments ?? new Dictionary<string, FuseSegment>())
             {
@@ -792,7 +1639,10 @@ namespace FUSE.Loading
             }
         }
 
-        private static void ValidateOperationRuntimeReferences(FuseModDefinition definition, FuseApplyTransaction transaction)
+        private static void ValidateOperationRuntimeReferences(
+            FuseModDefinition definition,
+            FuseApplyTransaction transaction,
+            FusePreflightReferenceContext referenceContext)
         {
             var operations = definition.Operations;
             if (operations == null)
@@ -800,8 +1650,8 @@ namespace FUSE.Loading
                 return;
             }
 
-            var definedLoads = new HashSet<string>(operations.Loads?.Keys ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-            var definedSpans = new HashSet<string>(definition.Tracks?.Spans?.Keys ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            var definedLoads = referenceContext?.LoadIds ?? CollectLoadedLoadIds(definition);
+            var definedSpans = referenceContext?.SpanIds ?? CollectLoadedSpanIds(definition);
 
             foreach (var industry in operations.Industries ?? new Dictionary<string, FuseIndustry>())
             {
@@ -817,6 +1667,7 @@ namespace FUSE.Loading
             foreach (var loader in operations.Loaders ?? new Dictionary<string, FuseLoader>())
             {
                 if (!string.IsNullOrWhiteSpace(loader.Value?.IndustryId) &&
+                    (referenceContext == null || !referenceContext.IndustryIds.Contains(loader.Value.IndustryId)) &&
                     (operations.Industries == null || !operations.Industries.ContainsKey(loader.Value.IndustryId)) &&
                     IndustryAPI.GetIndustry(loader.Value.IndustryId) == null)
                 {
@@ -827,6 +1678,7 @@ namespace FUSE.Loading
             foreach (var station in operations.Stations ?? new Dictionary<string, FuseStation>())
             {
                 if (!string.IsNullOrWhiteSpace(station.Value?.PassengerStopId) &&
+                    (referenceContext == null || !referenceContext.PassengerStopIds.Contains(station.Value.PassengerStopId)) &&
                     !HasPassengerStop(definition, station.Value.PassengerStopId))
                 {
                     transaction.Warning("station", station.Key, $"passengerStopId '{station.Value.PassengerStopId}' was not found in this package or runtime");
@@ -855,6 +1707,92 @@ namespace FUSE.Loading
                 segmentId,
                 $"{field} references node '{nodeId}' that is not defined in this FUSE document. " +
                 "It must exist in the base game graph at runtime or be generated during apply.");
+        }
+
+        private static HashSet<string> CollectLoadedNodeIds(FuseModDefinition current)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            AddKeys(result, current?.Tracks?.Nodes);
+            foreach (var loaded in LoadedMods.Values)
+            {
+                AddKeys(result, loaded?.Definition?.Tracks?.Nodes);
+            }
+
+            return result;
+        }
+
+        private static HashSet<string> CollectLoadedSegmentIds(FuseModDefinition current)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            AddKeys(result, current?.Tracks?.Segments);
+            foreach (var loaded in LoadedMods.Values)
+            {
+                AddKeys(result, loaded?.Definition?.Tracks?.Segments);
+            }
+
+            return result;
+        }
+
+        private static HashSet<string> CollectLoadedSpanIds(FuseModDefinition current)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            AddKeys(result, current?.Tracks?.Spans);
+            foreach (var loaded in LoadedMods.Values)
+            {
+                AddKeys(result, loaded?.Definition?.Tracks?.Spans);
+            }
+
+            return result;
+        }
+
+        private static HashSet<string> CollectLoadedLoadIds(FuseModDefinition current)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            AddKeys(result, current?.Operations?.Loads);
+            foreach (var loaded in LoadedMods.Values)
+            {
+                AddKeys(result, loaded?.Definition?.Operations?.Loads);
+            }
+
+            return result;
+        }
+
+        private static HashSet<string> CollectLoadedGeneratedNodeIds(FuseModDefinition current)
+        {
+            var result = CollectGeneratedNodeIds(current);
+            foreach (var loaded in LoadedMods.Values)
+            {
+                result.UnionWith(CollectGeneratedNodeIds(loaded?.Definition));
+            }
+
+            return result;
+        }
+
+        private static HashSet<string> CollectLoadedGeneratedSegmentIds(FuseModDefinition current)
+        {
+            var result = CollectGeneratedSegmentIds(current);
+            foreach (var loaded in LoadedMods.Values)
+            {
+                result.UnionWith(CollectGeneratedSegmentIds(loaded?.Definition));
+            }
+
+            return result;
+        }
+
+        private static void AddKeys<TValue>(ISet<string> sink, IDictionary<string, TValue> dictionary)
+        {
+            if (sink == null || dictionary == null)
+            {
+                return;
+            }
+
+            foreach (var key in dictionary.Keys)
+            {
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    sink.Add(key);
+                }
+            }
         }
 
         private static void ValidateSegmentReference(string spanId, string field, string segmentId, ISet<string> definedSegments, ISet<string> generatedSegments, FuseApplyTransaction transaction)
@@ -975,6 +1913,11 @@ namespace FUSE.Loading
 
         public static void UnloadMod(string modId)
         {
+            UnloadMod(modId, restoreTrackSnapshots: true);
+        }
+
+        internal static void UnloadMod(string modId, bool restoreTrackSnapshots)
+        {
             if (string.IsNullOrWhiteSpace(modId))
             {
                 return;
@@ -982,13 +1925,23 @@ namespace FUSE.Loading
 
             if (LoadedMods.Remove(modId))
             {
-                try
+                if (restoreTrackSnapshots)
                 {
-                    FuseTrackRemovalSnapshotStore.RestorePackage(modId);
+                    try
+                    {
+                        FuseTrackRemovalSnapshotStore.RestorePackage(modId);
+                    }
+                    catch (Exception ex)
+                    {
+                        FuseLog.Exception($"FUSE failed to restore removed base-game track for unloaded mod '{modId}'", ex);
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
-                    FuseLog.Exception($"FUSE failed to restore removed base-game track for unloaded mod '{modId}'", ex);
+                    if (FuseTrackRemovalSnapshotStore.ClearPackage(modId))
+                    {
+                        FuseLog.Info($"FUSE skipped removed base-game track snapshot restore for '{modId}' because the map is unloading or a staged reload requested no restore.");
+                    }
                 }
 
                 try
@@ -1072,12 +2025,17 @@ namespace FUSE.Loading
 
         internal static void UnloadAll(bool resetDiscovery)
         {
+            UnloadAll(resetDiscovery, restoreTrackSnapshots: true);
+        }
+
+        internal static void UnloadAll(bool resetDiscovery, bool restoreTrackSnapshots)
+        {
             var loadedIds = LoadedMods.Keys.ToArray();
             for (var index = 0; index < loadedIds.Length; index++)
             {
                 try
                 {
-                    UnloadMod(loadedIds[index]);
+                    UnloadMod(loadedIds[index], restoreTrackSnapshots);
                 }
                 catch (Exception ex)
                 {
@@ -1088,9 +2046,15 @@ namespace FUSE.Loading
             LoadedOrder.Clear();
             AppliedDefinitionIds.Clear();
             FuseTrackRemovalSnapshotStore.ClearAll();
-            MapAPI.RestoreAllTelegraphPoleMovements("unload all");
+            if (restoreTrackSnapshots)
+            {
+                MapAPI.RestoreAllTelegraphPoleMovements("unload all");
+            }
             SpawnPointAPI.ClearRuntimeCache();
-            FuseWorldSuppressor.RestoreAll("unload all");
+            if (restoreTrackSnapshots)
+            {
+                FuseWorldSuppressor.RestoreAll("unload all");
+            }
             // Per-mod claims were released in UnloadMod; reset registry to drop
             // any orphaned shared claims and the conflict history.
             FuseRegistry.Reset();
@@ -1327,7 +2291,7 @@ namespace FUSE.Loading
             string packageId,
             FuseApplyTransaction transaction)
         {
-            if (FuseRegistry.TryClaim(kind, id, packageId, out var owner))
+            if (FuseRegistry.TryClaim(kind, id, packageId, true, out var owner))
             {
                 return true;
             }
@@ -1343,6 +2307,13 @@ namespace FUSE.Loading
                         $"kind='{transactionKind}' id='{id}' previousOwner='{previousOwner ?? string.Empty}'.");
                     return true;
                 }
+            }
+
+            // Now that sibling handoff has been ruled out, make the real claim
+            // attempt so the registry records a user-facing conflict.
+            if (FuseRegistry.TryClaim(kind, id, packageId, out owner))
+            {
+                return true;
             }
 
             transaction.Skipped(transactionKind, id, $"claimed-by:{owner ?? "unknown"}");
@@ -1547,7 +2518,7 @@ namespace FUSE.Loading
             }
         }
 
-        private static void ApplyTrackAreas(FuseModDefinition definition, FuseApplyTransaction transaction)
+        private static void ApplyTrackAreas(FuseModDefinition definition, FuseApplyTransaction transaction, bool applyOrdering = true)
         {
             if (definition?.Tracks?.Areas == null)
             {
@@ -1570,7 +2541,10 @@ namespace FUSE.Loading
                 });
             }
 
-            TrackAPI.ApplyAreaOrdering();
+            if (applyOrdering)
+            {
+                TrackAPI.ApplyAreaOrdering();
+            }
         }
 
         private static void ApplyTurntables(FuseModDefinition definition, FuseApplyTransaction transaction)
@@ -1810,7 +2784,7 @@ namespace FUSE.Loading
                         entity.InitializeIdentity(scenery.Key, definition.Id);
                         entity.BindDefinition(definition, definitionPath);
                         entity.LoadDefinition(scenery.Value);
-                        if (!FuseAuthoringPersistenceService.ApplyToRuntime(entity))
+                        if (!FuseAuthoringPersistenceService.ApplyPackageEntityToRuntime(entity))
                         {
                             throw new InvalidOperationException($"Scenery authoring entity '{scenery.Key}' failed validation.");
                         }
@@ -1934,7 +2908,7 @@ namespace FUSE.Loading
                         entity.InitializeIdentity(sceneClone.Key, definition.Id);
                         entity.BindDefinition(definition, definitionPath);
                         entity.LoadDefinition(sceneClone.Value);
-                        if (!FuseAuthoringPersistenceService.ApplyToRuntime(entity))
+                        if (!FuseAuthoringPersistenceService.ApplyPackageEntityToRuntime(entity))
                         {
                             throw new InvalidOperationException($"Configurable structure authoring entity '{sceneClone.Key}' failed validation.");
                         }
@@ -2048,18 +3022,21 @@ namespace FUSE.Loading
                     {
                         if (exists)
                         {
-                            ProgressionAPI.UpdateProgression(progression.Key, progression.Value);
+                            ProgressionAPI.UpdateProgression(progression.Key, progression.Value, definition.Id);
                         }
                         else
                         {
-                            ProgressionAPI.AddProgression(progression.Key, progression.Value);
+                            ProgressionAPI.AddProgression(progression.Key, progression.Value, definition.Id);
                         }
                     });
                 }
             }
         }
 
-        private static void ValidatePostBind(FuseModDefinition definition, FuseApplyTransaction transaction)
+        private static void ValidatePostBind(
+            FuseModDefinition definition,
+            FuseApplyTransaction transaction,
+            FuseMergedTrackPlan mergedTrackPlan = null)
         {
             if (definition == null)
             {
@@ -2069,24 +3046,56 @@ namespace FUSE.Loading
 
             foreach (var nodeId in definition.Tracks?.Nodes?.Keys ?? Enumerable.Empty<string>())
             {
+                if (mergedTrackPlan != null && !mergedTrackPlan.ShouldValidateNode(definition.Id, nodeId))
+                {
+                    continue;
+                }
+
                 if (TrackAPI.GetNode(nodeId) == null)
                 {
+                    FuseLoadReport.RecordGraphPostBindIssue(definition.Id, "track node", nodeId, "missing after apply");
                     transaction.Warning("track node", nodeId, "missing after apply");
                 }
             }
 
             foreach (var segmentId in definition.Tracks?.Segments?.Keys ?? Enumerable.Empty<string>())
             {
+                if (mergedTrackPlan != null && !mergedTrackPlan.ShouldValidateSegment(definition.Id, segmentId))
+                {
+                    continue;
+                }
+
                 if (TrackAPI.GetSegment(segmentId) == null)
                 {
+                    var segmentDefinition = GetPostBindSegmentDefinition(definition, mergedTrackPlan, segmentId);
+                    if (IsSegmentHiddenByDisabledGroup(segmentDefinition))
+                    {
+                        transaction.PostBind("track segment", segmentId, $"hidden by disabled group '{segmentDefinition.GroupId}'");
+                        continue;
+                    }
+
+                    FuseLoadReport.RecordGraphPostBindIssue(definition.Id, "track segment", segmentId, "missing after apply");
                     transaction.Warning("track segment", segmentId, "missing after apply");
                 }
             }
 
-            foreach (var spanId in definition.Tracks?.Spans?.Keys ?? Enumerable.Empty<string>())
+            foreach (var spanEntry in definition.Tracks?.Spans ?? Enumerable.Empty<KeyValuePair<string, FuseSpan>>())
             {
+                var spanId = spanEntry.Key;
+                if (mergedTrackPlan != null && !mergedTrackPlan.ShouldValidateSpan(definition.Id, spanId))
+                {
+                    continue;
+                }
+
                 if (TrackAPI.GetSpan(spanId) == null)
                 {
+                    if (IsSpanHiddenByDisabledGroup(definition, mergedTrackPlan, spanEntry.Value))
+                    {
+                        transaction.PostBind("track span", spanId, "hidden by disabled endpoint group");
+                        continue;
+                    }
+
+                    FuseLoadReport.RecordGraphPostBindIssue(definition.Id, "track span", spanId, "missing after apply");
                     transaction.Warning("track span", spanId, "missing after apply");
                 }
             }
@@ -2178,6 +3187,59 @@ namespace FUSE.Loading
             }
 
             transaction.PostBind("scene", definition.Id, $"industries={IndustryAPI.GetAllIndustries().Count()} components={UnityEngine.Object.FindObjectsOfType<IndustryComponent>(true).Length}");
+        }
+
+        private static FuseSegment GetPostBindSegmentDefinition(
+            FuseModDefinition definition,
+            FuseMergedTrackPlan mergedTrackPlan,
+            string segmentId)
+        {
+            if (string.IsNullOrWhiteSpace(segmentId))
+            {
+                return null;
+            }
+
+            if (mergedTrackPlan != null && mergedTrackPlan.TryGetSegmentDefinition(segmentId, out var mergedDefinition))
+            {
+                return mergedDefinition;
+            }
+
+            return definition?.Tracks?.Segments != null &&
+                   definition.Tracks.Segments.TryGetValue(segmentId, out var localDefinition)
+                ? localDefinition
+                : null;
+        }
+
+        private static bool IsSpanHiddenByDisabledGroup(
+            FuseModDefinition definition,
+            FuseMergedTrackPlan mergedTrackPlan,
+            FuseSpan span)
+        {
+            if (span == null)
+            {
+                return false;
+            }
+
+            return IsSegmentHiddenByDisabledGroup(GetPostBindSegmentDefinition(definition, mergedTrackPlan, span.Upper?.SegmentId)) ||
+                   IsSegmentHiddenByDisabledGroup(GetPostBindSegmentDefinition(definition, mergedTrackPlan, span.Lower?.SegmentId));
+        }
+
+        private static bool IsSegmentHiddenByDisabledGroup(FuseSegment segment)
+        {
+            var groupId = segment?.GroupId;
+            if (string.IsNullOrWhiteSpace(groupId))
+            {
+                return false;
+            }
+
+            var graph = Graph.Shared;
+            if (graph == null)
+            {
+                return false;
+            }
+
+            return graph.enabledGroupIds == null ||
+                   !graph.enabledGroupIds.Contains(groupId);
         }
     }
 }

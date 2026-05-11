@@ -110,6 +110,7 @@ namespace FUSE.API
 
             root.SetActive(true);
             RefreshTurntableTemplateVisuals(root);
+            MapAPI.RefreshAttachedMapMasks(root, $"turntable '{id}' add");
             FusePrefabSanitizer.SanitizeTurntable(root, id, turntable).Log($"FUSE turntable '{id}'");
             FuseTurntableRuntimeIndex.Instance.Set(id, turntable);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Turntable, id, definition);
@@ -162,6 +163,7 @@ namespace FUSE.API
             turntable.UpdateSegmentIndex(false);
             ClearBridgeGroup(turntable);
             RefreshTurntableTemplateVisuals(turntable.gameObject);
+            MapAPI.RefreshAttachedMapMasks(turntable.gameObject, $"turntable '{id}' update");
             FusePrefabSanitizer.SanitizeTurntable(turntable.gameObject, id, turntable).Log($"FUSE turntable '{id}'");
 
             FuseTurntableRuntimeIndex.Instance.Set(id, turntable);
@@ -626,6 +628,7 @@ namespace FUSE.API
                     continue;
                 }
 
+                lodGroup.enabled = true;
                 lodGroup.ForceLOD(0);
                 lodGroup.RecalculateBounds();
             }

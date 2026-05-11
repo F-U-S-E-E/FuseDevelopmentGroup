@@ -163,7 +163,13 @@ namespace FUSE.Loading
         }
 
         public static int FaultCount => Faults.Values.Sum(items => items.Count);
-        public static int WarningCount => DisabledPackages.Count + SkippedPackages.Count;
+        public static int WarningCount => DisabledPackages.Count + SkippedPackages.Count(item => !IsOptionalSkipReason(item.Value));
+
+        public static bool IsOptionalSkipReason(string reason)
+        {
+            return !string.IsNullOrWhiteSpace(reason) &&
+                   reason.StartsWith("mixinto dependency missing", StringComparison.OrdinalIgnoreCase);
+        }
 
         public static void LogFinalReport(string reason, int residentDefinitionCount)
         {
@@ -206,7 +212,16 @@ namespace FUSE.Loading
         {
             foreach (var entry in values.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
             {
-                FuseLog.Warning($"FUSE final package report {label}: package='{entry.Key}' reason='{entry.Value}'.");
+                var line = $"FUSE final package report {label}: package='{entry.Key}' reason='{entry.Value}'.";
+                if (string.Equals(label, "skipped", StringComparison.OrdinalIgnoreCase) &&
+                    IsOptionalSkipReason(entry.Value))
+                {
+                    FuseLog.Info(line);
+                }
+                else
+                {
+                    FuseLog.Warning(line);
+                }
             }
         }
 

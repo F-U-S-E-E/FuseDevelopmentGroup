@@ -149,10 +149,9 @@ namespace FUSE.Validation
                     result.AddError($"{path}.tagColor", "Area tagColor must contain 3 or 4 values.", "fuse.track.area.tagColor", area.Value.TagColor.Length);
                 }
 
-                if (area.Value.Order.HasValue && area.Value.Order.Value < 0)
-                {
-                    result.AddError($"{path}.order", "Area order must be greater than or equal to 0.", "fuse.track.area.order", area.Value.Order.Value);
-                }
+                // Order is a signed sort key. Legacy route mods commonly use
+                // negative values to place extension towns before base-game
+                // areas, so validation must allow the full int range.
             }
         }
 
@@ -249,18 +248,9 @@ namespace FUSE.Validation
                 result.AddWarning($"{path}.lower.distance", "Lower track location is outside the estimated straight-line segment length. Runtime graph validation will use the actual curved segment length.", "fuse.track.span.lower.distance", lowerDistance.Value);
             }
 
-            var upperFromA = string.Equals(upperEnd, "A", StringComparison.OrdinalIgnoreCase)
-                ? upperDistance.Value
-                : length.Value - upperDistance.Value;
-            var lowerFromA = string.Equals(lowerEnd, "A", StringComparison.OrdinalIgnoreCase)
-                ? lowerDistance.Value
-                : length.Value - lowerDistance.Value;
-            var startSide = string.Equals(upperEnd, "A", StringComparison.OrdinalIgnoreCase) ? upperFromA : lowerFromA;
-            var endSide = string.Equals(upperEnd, "A", StringComparison.OrdinalIgnoreCase) ? lowerFromA : upperFromA;
-            if (startSide >= endSide)
-            {
-                result.AddWarning(path, "Same-segment span endpoints appear crossed against the estimated straight-line segment length. Runtime graph validation will use the actual curved segment length.", "fuse.track.span.sameSegment.crossed", span.Upper.SegmentId);
-            }
+            // Runtime span apply has a compatibility repair for legacy AMM
+            // same-segment crossed endpoints. Treat this as recoverable here
+            // so preflight only reports span issues that need user action.
         }
 
         private static string NormalizeLocationEnd(string value)
@@ -393,10 +383,8 @@ namespace FUSE.Validation
             foreach (var industry in operations.Industries)
             {
                 Required(result, $"operations.industries.{industry.Key}.name", industry.Value.Name);
-                if (industry.Value.Order.HasValue && industry.Value.Order.Value < 0)
-                {
-                    result.AddError($"operations.industries.{industry.Key}.order", "Industry order must be greater than or equal to 0.", "fuse.operations.industry.order", industry.Value.Order.Value);
-                }
+                // Order is a signed sort key for preserving legacy source
+                // ordering in the company locations list.
 
                 foreach (var component in industry.Value.Components)
                 {
@@ -930,25 +918,34 @@ namespace FUSE.Validation
             var type = FuseIndustryComponentTypes.Normalize(component.Type);
             if (!string.IsNullOrWhiteSpace(type) && !FuseIndustryComponentTypes.IsKnown(type))
             {
-                result.AddError(
-                    $"{path}.type",
-                    $"Industry component type must be one of: {FuseIndustryComponentTypes.KnownTypesForMessage()}.",
-                    "fuse.operations.component.type",
-                    component.Type);
-                return;
+                if (FuseIndustryComponentTypes.IsCustomTypeCandidate(type))
+                {
+                    result.AddWarning(
+                        $"{path}.type",
+                        $"Industry component type '{component.Type}' is not a built-in FUSE type; runtime will attempt to resolve '{type}' from loaded assemblies.",
+                        "fuse.operations.component.type.custom",
+                        type);
+                }
+                else
+                {
+                    result.AddError(
+                        $"{path}.type",
+                        $"Industry component type must be one of: {FuseIndustryComponentTypes.KnownTypesForMessage()}, or a fully-qualified custom component type.",
+                        "fuse.operations.component.type",
+                        component.Type);
+                    return;
+                }
             }
 
             if (FuseIndustryComponentTypes.UsesTrackSpanIds(type) &&
                 (component.TrackSpanIds == null || component.TrackSpanIds.Length == 0))
             {
-                // Legacy AlinasMapMod accepted spanless passengerStop components
-                // ("virtual" stops with no physical platform - GCR's Topton is one
-                // example, declaring only neighborIds + branches). Demote to a
-                // warning so the package still loads; loader/unloader/teamTrack
-                // etc. genuinely need spans and stay errors.
                 if (string.Equals(type, FuseIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase))
                 {
-                    result.AddWarning($"{path}.trackSpanIds", $"PassengerStop component '{path}' has no track spans; treating as a virtual stop with no physical platform. Add 'trackSpans' in the legacy source if you want a real platform.", "fuse.operations.component.trackSpanIds");
+                    // Legacy AMM accepted spanless passengerStop components
+                    // ("virtual" timetable stops with no physical platform).
+                    // GCR's Topton stop is one example; converter reports it
+                    // once, but runtime validation should not warn every load.
                 }
                 else
                 {
@@ -960,7 +957,10 @@ namespace FUSE.Validation
             {
                 if (string.IsNullOrWhiteSpace(component.LoadId))
                 {
-                    result.AddWarning($"{path}.loadId", $"Industry component type '{type}' usually needs a loadId to function.", "fuse.operations.component.loadId");
+                    if (!string.Equals(type, FuseIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.AddWarning($"{path}.loadId", $"Industry component type '{type}' usually needs a loadId to function.", "fuse.operations.component.loadId");
+                    }
                 }
             }
 

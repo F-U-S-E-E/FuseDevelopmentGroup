@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Game.Progression;
+using Game.State;
 using Model;
 using Model.Ops;
 using Model.Ops.Definition;
 using FUSE.Cache;
 using FUSE.Data;
 using FUSE.Infrastructure;
+using FUSE.Loading;
 using UnityEngine;
 
 namespace FUSE.API
@@ -17,11 +19,16 @@ namespace FUSE.API
     {
         private static readonly FieldInfo ManagerFeaturesField = typeof(MapFeatureManager).GetField("_features", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ManagerProgressionsField = typeof(ProgressionManager).GetField("_progressions", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo ManagerCurrentProgressionField = typeof(ProgressionManager).GetField("_current", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly PropertyInfo ManagerFeatureEnablesProperty = typeof(MapFeatureManager).GetProperty("FeatureEnables", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly MethodInfo ManagerHandleFeatureEnablesChangedMethod = typeof(MapFeatureManager).GetMethod("HandleFeatureEnablesChanged", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ProgressionSectionsField = typeof(Progression).GetField("<Sections>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly MethodInfo ProgressionUpdateSectionStatesMethod = typeof(Progression).GetMethod("UpdateSectionStates", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo SectionInterchangeTransfersField = typeof(Section).GetField("<InterchangeTransfers>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo InterchangeTransferFromField = typeof(InterchangeTransfer).GetField("from", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo InterchangeTransferToField = typeof(InterchangeTransfer).GetField("to", BindingFlags.Instance | BindingFlags.NonPublic);
         private const string FuseInterchangeTransferPrefix = "FUSE Interchange Transfer ";
+        private static readonly HashSet<string> PlaceholderMapFeatureIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public static MapFeature AddMapFeature(string id, FuseMapFeature definition)
         {
@@ -61,6 +68,7 @@ namespace FUSE.API
                 throw new ArgumentNullException(nameof(definition));
             }
 
+            PlaceholderMapFeatureIds.Remove(id);
             ApplyMapFeatureDefinition(feature, definition);
             FuseMapFeatureRuntimeIndex.Instance.Set(id, feature);
             if (MapFeatureManager.Shared != null)
@@ -91,7 +99,7 @@ namespace FUSE.API
             }
 
             return !string.IsNullOrWhiteSpace(id)
-                ? UnityEngine.Object.FindObjectsOfType<MapFeature>().FirstOrDefault(feature => feature.identifier == id)
+                ? UnityEngine.Object.FindObjectsOfType<MapFeature>(true).FirstOrDefault(feature => feature.identifier == id)
                 : null;
         }
 
@@ -131,6 +139,11 @@ namespace FUSE.API
 
         public static Progression AddProgression(string id, FuseProgression definition)
         {
+            return AddProgression(id, definition, null);
+        }
+
+        internal static Progression AddProgression(string id, FuseProgression definition, string packageId)
+        {
             RequireId(id, nameof(id));
             if (definition == null)
             {
@@ -149,7 +162,7 @@ namespace FUSE.API
             progression.identifier = id;
             progression.mapFeatureManager = MapFeatureManager.Shared;
 
-            ApplyProgressionDefinition(progression, definition);
+            ApplyProgressionDefinition(progression, definition, packageId);
             FuseProgressionRuntimeIndex.Instance.Set(id, progression);
             RefreshProgressionManager();
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Progression, id, definition);
@@ -158,13 +171,18 @@ namespace FUSE.API
 
         public static void UpdateProgression(string id, FuseProgression definition)
         {
+            UpdateProgression(id, definition, null);
+        }
+
+        internal static void UpdateProgression(string id, FuseProgression definition, string packageId)
+        {
             var progression = RequireProgression(id);
             if (definition == null)
             {
                 throw new ArgumentNullException(nameof(definition));
             }
 
-            ApplyProgressionDefinition(progression, definition);
+            ApplyProgressionDefinition(progression, definition, packageId);
             FuseProgressionRuntimeIndex.Instance.Set(id, progression);
             RefreshProgressionManager();
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Progression, id, definition);
@@ -188,7 +206,7 @@ namespace FUSE.API
             }
 
             return !string.IsNullOrWhiteSpace(id)
-                ? UnityEngine.Object.FindObjectsOfType<Progression>().FirstOrDefault(progression => progression.identifier == id)
+                ? UnityEngine.Object.FindObjectsOfType<Progression>(true).FirstOrDefault(progression => progression.identifier == id)
                 : null;
         }
 
@@ -254,6 +272,48 @@ namespace FUSE.API
             manager.SetFeatureEnabled(id, enabled);
         }
 
+        public static void RefreshRuntimeStateAfterApply(string reason)
+        {
+            var manager = MapFeatureManager.Shared;
+            if (manager == null)
+            {
+                FuseLog.Warning(
+                    $"FUSE progression refresh skipped package='<all>' operation='refresh progression state' " +
+                    $"kind='map feature manager' id='<shared>' reason='{reason ?? "unspecified"}' message='MapFeatureManager.Shared was not available'.");
+                return;
+            }
+
+            RefreshMapFeatureManager(manager);
+            RefreshProgressionManager();
+
+            var invokedCurrentProgression = false;
+            try
+            {
+                var progressionManager = UnityEngine.Object.FindObjectOfType<ProgressionManager>();
+                var current = progressionManager != null
+                    ? ManagerCurrentProgressionField?.GetValue(progressionManager) as Progression
+                    : null;
+                if (current != null && ProgressionUpdateSectionStatesMethod != null)
+                {
+                    ProgressionUpdateSectionStatesMethod.Invoke(current, Array.Empty<object>());
+                    invokedCurrentProgression = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE progression refresh package='<all>' operation='refresh progression state' " +
+                    $"kind='progression' id='<current>' reason='{reason ?? "unspecified"}' message='{ex.Message}'.");
+            }
+
+            var initialized = InitializeMissingMapFeatureStates(manager);
+            var forcedFeatureState = ForceApplyCurrentMapFeatureState(manager, reason);
+            FuseLog.Info(
+                $"FUSE refreshed progression runtime state package='<all>' operation='refresh progression state' " +
+                $"kind='map features' id='<all>' reason='{reason ?? "unspecified"}' " +
+                $"currentProgressionRefreshed={invokedCurrentProgression} initializedFeatureStates={initialized} forcedFeatureState={forcedFeatureState}.");
+        }
+
         private static void ApplyMapFeatureDefinition(MapFeature feature, FuseMapFeature definition)
         {
             feature.displayName = string.IsNullOrWhiteSpace(definition.DisplayName) ? feature.identifier : definition.DisplayName;
@@ -270,7 +330,7 @@ namespace FUSE.API
             SanitizeMapFeature(feature);
         }
 
-        private static void ApplyProgressionDefinition(Progression progression, FuseProgression definition)
+        private static void ApplyProgressionDefinition(Progression progression, FuseProgression definition, string packageId)
         {
             if (progression.mapFeatureManager == null)
             {
@@ -300,14 +360,14 @@ namespace FUSE.API
                     throw new InvalidOperationException($"Progression section '{sectionDefinition.Key}' could not be created.");
                 }
 
-                ApplySectionDefinition(section, sectionDefinition.Value);
+                ApplySectionDefinition(section, sectionDefinition.Value, packageId);
                 FuseSectionRuntimeIndex.Instance.Set(section.identifier, section);
             }
 
             ProgressionSectionsField?.SetValue(progression, progression.GetComponentsInChildren<Section>());
         }
 
-        private static void ApplySectionDefinition(Section section, FuseSection definition)
+        private static void ApplySectionDefinition(Section section, FuseSection definition, string packageId)
         {
             if (definition == null)
             {
@@ -320,15 +380,17 @@ namespace FUSE.API
 
             section.prerequisiteSections = ResolveSections(definition.PrerequisiteSectionIds);
             section.enableFeaturesOnUnlock = AppendFeature(
-                ResolveMapFeatures(definition.EnableFeaturesOnUnlock),
-                sectionUnlockFeature);
+                AppendFeature(
+                    ResolveMapFeatures(definition.EnableFeaturesOnUnlock),
+                    sectionUnlockFeature),
+                GetPlaceholderMapFeature(section.identifier));
             section.enableFeaturesOnAvailable = ResolveMapFeatures(definition.EnableFeaturesOnAvailable);
             section.disableFeaturesOnUnlock = ResolveMapFeatures(definition.DisableFeaturesOnUnlock);
             section.deliveryPhases = (definition.DeliveryPhases ?? Array.Empty<FuseDeliveryPhase>()).Select(CreateDeliveryPhase).ToArray();
-            ApplyInterchangeTransfers(section, definition.InterchangeTransfers);
+            ApplyInterchangeTransfers(section, definition.InterchangeTransfers, packageId);
         }
 
-        private static void ApplyInterchangeTransfers(Section section, IDictionary<string, string> transfers)
+        private static void ApplyInterchangeTransfers(Section section, IDictionary<string, string> transfers, string packageId)
         {
             var preserved = (section.GetComponentsInChildren<InterchangeTransfer>(true) ?? Array.Empty<InterchangeTransfer>())
                 .Where(transfer => transfer != null && !IsFuseInterchangeTransfer(transfer))
@@ -351,12 +413,33 @@ namespace FUSE.API
                 {
                     if (string.IsNullOrWhiteSpace(transfer.Key))
                     {
-                        FuseLog.Warning($"FUSE progression section '{section.identifier}' skipped interchange transfer with blank source id.");
+                        FuseLoadReport.RecordProgressionTransferSkip(
+                            packageId,
+                            section.identifier,
+                            transfer.Key,
+                            transfer.Value,
+                            "blank source id");
+                        FuseLog.Warning(
+                            $"FUSE progression transfer skipped package='{packageId ?? string.Empty}' " +
+                            $"operation='apply progression' phase='interchange transfers' kind='interchange transfer' " +
+                            $"id='{section.identifier ?? string.Empty}' source='{transfer.Key ?? string.Empty}' " +
+                            $"target='{transfer.Value ?? string.Empty}' reason='blank source id'.");
                         continue;
                     }
 
                     if (string.IsNullOrWhiteSpace(transfer.Value))
                     {
+                        FuseLoadReport.RecordProgressionTransferSkip(
+                            packageId,
+                            section.identifier,
+                            transfer.Key,
+                            transfer.Value,
+                            "blank target id");
+                        FuseLog.Warning(
+                            $"FUSE progression transfer skipped package='{packageId ?? string.Empty}' " +
+                            $"operation='apply progression' phase='interchange transfers' kind='interchange transfer' " +
+                            $"id='{section.identifier ?? string.Empty}' source='{transfer.Key ?? string.Empty}' " +
+                            $"target='{transfer.Value ?? string.Empty}' reason='blank target id'.");
                         continue;
                     }
 
@@ -364,13 +447,33 @@ namespace FUSE.API
                     var to = ResolveInterchange(transfer.Value);
                     if (from == null || to == null)
                     {
-                        FuseLog.Warning($"FUSE progression section '{section.identifier}' skipped interchange transfer '{transfer.Key}' -> '{transfer.Value}' because one or both interchange components were not found.");
+                        FuseLoadReport.RecordProgressionTransferSkip(
+                            packageId,
+                            section.identifier,
+                            transfer.Key,
+                            transfer.Value,
+                            "one or both interchange components were not found");
+                        FuseLog.Warning(
+                            $"FUSE progression transfer skipped package='{packageId ?? string.Empty}' " +
+                            $"operation='apply progression' phase='interchange transfers' kind='interchange transfer' " +
+                            $"id='{section.identifier ?? string.Empty}' source='{transfer.Key ?? string.Empty}' " +
+                            $"target='{transfer.Value ?? string.Empty}' reason='one or both interchange components were not found'.");
                         continue;
                     }
 
                     if (InterchangeTransferFromField == null || InterchangeTransferToField == null)
                     {
-                        FuseLog.Warning($"FUSE progression section '{section.identifier}' could not bind interchange transfer '{transfer.Key}' -> '{transfer.Value}' because base game fields were not found.");
+                        FuseLoadReport.RecordProgressionTransferSkip(
+                            packageId,
+                            section.identifier,
+                            transfer.Key,
+                            transfer.Value,
+                            "base game fields were not found");
+                        FuseLog.Warning(
+                            $"FUSE progression transfer skipped package='{packageId ?? string.Empty}' " +
+                            $"operation='apply progression' phase='interchange transfers' kind='interchange transfer' " +
+                            $"id='{section.identifier ?? string.Empty}' source='{transfer.Key ?? string.Empty}' " +
+                            $"target='{transfer.Value ?? string.Empty}' reason='base game fields were not found'.");
                         continue;
                     }
 
@@ -586,7 +689,71 @@ namespace FUSE.API
 
         private static MapFeature[] ResolveMapFeatures(string[] ids)
         {
-            return ResolveObjects(ids, GetMapFeature, "map feature");
+            if (ids == null || ids.Length == 0)
+            {
+                return Array.Empty<MapFeature>();
+            }
+
+            var resolved = new List<MapFeature>();
+            foreach (var id in ids.Where(id => !string.IsNullOrWhiteSpace(id)))
+            {
+                var feature = GetMapFeature(id) ?? EnsurePlaceholderMapFeature(id);
+                if (feature == null)
+                {
+                    FuseLog.Warning($"FUSE progression skipped unresolved map feature reference '{id}'.");
+                    continue;
+                }
+
+                resolved.Add(feature);
+            }
+
+            return resolved
+                .GroupBy(feature => feature.identifier ?? feature.name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToArray();
+        }
+
+        private static MapFeature GetPlaceholderMapFeature(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id) || !PlaceholderMapFeatureIds.Contains(id))
+            {
+                return null;
+            }
+
+            return GetMapFeature(id);
+        }
+
+        private static MapFeature EnsurePlaceholderMapFeature(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            var existing = GetMapFeature(id);
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            try
+            {
+                var feature = AddMapFeature(id, new FuseMapFeature
+                {
+                    DisplayName = id,
+                    Description = "FUSE placeholder for a legacy forward reference. A later package or progression section may replace or enable this feature.",
+                    InitiallyEnabled = false
+                });
+
+                PlaceholderMapFeatureIds.Add(id);
+                FuseLog.Info($"FUSE created placeholder map feature '{id}' for a legacy forward reference. If a later definition or matching progression section exists, it will bind normally.");
+                return feature;
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not create placeholder map feature '{id}' for a legacy forward reference: {ex.Message}");
+                return null;
+            }
         }
 
         private static Area[] ResolveAreas(string[] ids)
@@ -606,7 +773,7 @@ namespace FUSE.API
 
         private static GameObject[] ResolveGameObjects(string[] paths)
         {
-            return ResolveObjects(paths, ResolveGameObject, "game object");
+            return ResolveOptionalObjects(paths, ResolveGameObject, "game object");
         }
 
         private static T[] ResolveObjects<T>(string[] ids, Func<string, T> resolver, string label)
@@ -627,6 +794,30 @@ namespace FUSE.API
 
                 return value;
             }).ToArray();
+        }
+
+        private static T[] ResolveOptionalObjects<T>(string[] ids, Func<string, T> resolver, string label)
+            where T : class
+        {
+            if (ids == null || ids.Length == 0)
+            {
+                return Array.Empty<T>();
+            }
+
+            var resolved = new List<T>();
+            foreach (var id in ids.Where(id => !string.IsNullOrWhiteSpace(id)))
+            {
+                var value = resolver(id);
+                if (value == null)
+                {
+                    FuseLog.Warning($"FUSE progression skipped unresolved optional {label} reference '{id}'.");
+                    continue;
+                }
+
+                resolved.Add(value);
+            }
+
+            return resolved.ToArray();
         }
 
         private static Area ResolveArea(string id)
@@ -676,11 +867,127 @@ namespace FUSE.API
                 return cached;
             }
 
-            return UnityEngine.Object.FindObjectsOfType<Interchange>(true)
+            var sceneMatch = UnityEngine.Object.FindObjectsOfType<Interchange>(true)
                 .FirstOrDefault(component => ComponentMatchesId(component, id));
+            if (sceneMatch != null)
+            {
+                return sceneMatch;
+            }
+
+            var industryMatch = ResolveInterchangeFromLegacyIndustryComponentId(id);
+            if (industryMatch != null)
+            {
+                return industryMatch;
+            }
+
+            return null;
+        }
+
+        private static Interchange ResolveInterchangeFromLegacyIndustryComponentId(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            var dot = id.LastIndexOf('.');
+            if (dot <= 0 || dot >= id.Length - 1)
+            {
+                return null;
+            }
+
+            var industryId = id.Substring(0, dot);
+            var legacySubId = id.Substring(dot + 1);
+            var industry = ResolveIndustry(industryId);
+            if (industry == null)
+            {
+                return null;
+            }
+
+            var interchanges = industry.GetComponentsInChildren<Interchange>(true)
+                .Where(component => component != null)
+                .ToArray();
+            if (interchanges.Length == 0)
+            {
+                return null;
+            }
+
+            var exactSubId = interchanges.FirstOrDefault(component =>
+                string.Equals(component.subIdentifier, legacySubId, StringComparison.OrdinalIgnoreCase));
+            if (exactSubId != null)
+            {
+                return exactSubId;
+            }
+
+            var canonicalSubId = interchanges.FirstOrDefault(component =>
+                string.Equals(component.subIdentifier, "interchange", StringComparison.OrdinalIgnoreCase));
+            if (canonicalSubId != null &&
+                (string.Equals(legacySubId, "t1", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(legacySubId, "interchange", StringComparison.OrdinalIgnoreCase)))
+            {
+                FuseLog.Info($"FUSE resolved legacy interchange transfer id '{id}' to '{industry.identifier}.{canonicalSubId.subIdentifier}'.");
+                return canonicalSubId;
+            }
+
+            if (interchanges.Length == 1)
+            {
+                FuseLog.Info($"FUSE resolved legacy interchange transfer id '{id}' to only interchange component '{industry.identifier}.{interchanges[0].subIdentifier}'.");
+                return interchanges[0];
+            }
+
+            return null;
         }
 
         private static GameObject ResolveGameObject(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            var marker = path.IndexOf("://", StringComparison.Ordinal);
+            if (marker >= 0)
+            {
+                var scheme = path.Substring(0, marker);
+                var value = path.Substring(marker + 3);
+                if (string.Equals(scheme, "scenery", StringComparison.OrdinalIgnoreCase))
+                {
+                    var scenery = SceneryAPI.GetScenery(value);
+                    if (scenery != null)
+                    {
+                        return scenery.gameObject;
+                    }
+
+                    return ResolveGameObjectPath(value);
+                }
+
+                if (string.Equals(scheme, "sceneClone", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(scheme, "sceneclone", StringComparison.OrdinalIgnoreCase))
+                {
+                    return SceneCloneAPI.GetSceneClone(value) ?? ResolveGameObjectPath(value);
+                }
+
+                if (string.Equals(scheme, "path", StringComparison.OrdinalIgnoreCase))
+                {
+                    const string scenePrefix = "scene/";
+                    if (value.StartsWith(scenePrefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        value = value.Substring(scenePrefix.Length);
+                    }
+
+                    return ResolveGameObjectPath(value);
+                }
+
+                if (string.Equals(scheme, "scene", StringComparison.OrdinalIgnoreCase))
+                {
+                    return ResolveGameObjectPath(value);
+                }
+            }
+
+            return ResolveGameObjectPath(path);
+        }
+
+        private static GameObject ResolveGameObjectPath(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -693,8 +1000,16 @@ namespace FUSE.API
                 return direct;
             }
 
+            var resolved = FusePrefabResolver.ResolveScenePath(path);
+            if (resolved != null)
+            {
+                return resolved;
+            }
+
             return UnityEngine.Object.FindObjectsOfType<Transform>(true)
-                .FirstOrDefault(transform => string.Equals(GetScenePath(transform), path, StringComparison.OrdinalIgnoreCase))
+                .FirstOrDefault(transform =>
+                    string.Equals(transform.name, path, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(GetScenePath(transform), path, StringComparison.OrdinalIgnoreCase))
                 ?.gameObject;
         }
 
@@ -711,6 +1026,11 @@ namespace FUSE.API
                 {
                     return true;
                 }
+
+                if (LooseIdEquals(component.Identifier, id))
+                {
+                    return true;
+                }
             }
             catch
             {
@@ -718,10 +1038,39 @@ namespace FUSE.API
             }
 
             var industry = component.GetComponentInParent<Industry>(true);
-            return industry != null &&
-                   !string.IsNullOrWhiteSpace(industry.identifier) &&
-                   !string.IsNullOrWhiteSpace(component.subIdentifier) &&
-                   string.Equals(industry.identifier + "." + component.subIdentifier, id, StringComparison.OrdinalIgnoreCase);
+            if (industry == null ||
+                string.IsNullOrWhiteSpace(industry.identifier) ||
+                string.IsNullOrWhiteSpace(component.subIdentifier))
+            {
+                return false;
+            }
+
+            var fullId = industry.identifier + "." + component.subIdentifier;
+            return string.Equals(fullId, id, StringComparison.OrdinalIgnoreCase) ||
+                   LooseIdEquals(fullId, id);
+        }
+
+        private static bool LooseIdEquals(string left, string right)
+        {
+            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+            {
+                return false;
+            }
+
+            return string.Equals(NormalizeLooseId(left), NormalizeLooseId(right), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeLooseId(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return string.Empty;
+            }
+
+            return new string(id
+                .Where(char.IsLetterOrDigit)
+                .Select(char.ToLowerInvariant)
+                .ToArray());
         }
 
         private static string[] ToSectionIds(IEnumerable<Section> sections)
@@ -830,24 +1179,60 @@ namespace FUSE.API
             }
 
             return !string.IsNullOrWhiteSpace(id)
-                ? UnityEngine.Object.FindObjectsOfType<Section>().FirstOrDefault(section => section.identifier == id)
+                ? UnityEngine.Object.FindObjectsOfType<Section>(true).FirstOrDefault(section => section.identifier == id)
                 : null;
         }
 
         private static ProgressionIndustryComponent ResolveIndustryComponent(string id)
         {
-            if (!FuseIndustryComponentRuntimeIndex.Instance.TryGetValue(id, out var cached))
+            if (!FuseIndustryComponentRuntimeIndex.Instance.TryGetValue(id, out var cached) || cached == null)
             {
-                cached = UnityEngine.Object.FindObjectsOfType<IndustryComponent>().FirstOrDefault(component => component.Identifier == id);
+                cached = UnityEngine.Object.FindObjectsOfType<IndustryComponent>(true)
+                    .FirstOrDefault(component => ComponentMatchesId(component, id));
             }
 
             var component = cached as ProgressionIndustryComponent;
             if (component == null)
             {
+                component = ResolveProgressionIndustryComponentFromIndustry(id);
+            }
+
+            if (component == null)
+            {
                 throw new InvalidOperationException($"Progression industry component '{id}' was not found.");
             }
 
+            FuseIndustryComponentRuntimeIndex.Instance.Set(id, component);
             return component;
+        }
+
+        private static ProgressionIndustryComponent ResolveProgressionIndustryComponentFromIndustry(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            var splitIndex = id.LastIndexOf('.');
+            if (splitIndex <= 0 || splitIndex >= id.Length - 1)
+            {
+                return null;
+            }
+
+            var industryId = id.Substring(0, splitIndex);
+            var componentId = id.Substring(splitIndex + 1);
+            var industry = IndustryAPI.GetIndustry(industryId);
+            if (industry == null)
+            {
+                return null;
+            }
+
+            return industry.GetComponentsInChildren<ProgressionIndustryComponent>(true)
+                .FirstOrDefault(component =>
+                    component != null &&
+                    (string.Equals(component.subIdentifier, componentId, StringComparison.OrdinalIgnoreCase) ||
+                     LooseIdEquals(component.subIdentifier, componentId) ||
+                     ComponentMatchesId(component, id)));
         }
 
         private static Load ResolveLoad(string loadId)
@@ -857,7 +1242,8 @@ namespace FUSE.API
                 return null;
             }
 
-            var load = CarPrototypeLibrary.instance?.LoadForId(loadId);
+            var load = LoadAPI.GetLoad(loadId) ??
+                       LoadAPI.GetOrCreatePlaceholderLoad(loadId, "progression delivery references a load id that is not defined by any loaded package");
             if (load == null)
             {
                 throw new InvalidOperationException($"Load '{loadId}' was not found.");
@@ -953,6 +1339,103 @@ namespace FUSE.API
             }
 
             ManagerFeaturesField?.SetValue(manager, features);
+        }
+
+        private static int InitializeMissingMapFeatureStates(MapFeatureManager manager)
+        {
+            if (manager == null)
+            {
+                return 0;
+            }
+
+            var features = manager.AvailableFeatures
+                .Where(feature => feature != null && !string.IsNullOrWhiteSpace(feature.identifier))
+                .ToArray();
+            if (features.Length == 0)
+            {
+                return 0;
+            }
+
+            var existing = ReadFeatureEnables(manager);
+            var defaults = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var feature in features)
+            {
+                if (existing.ContainsKey(feature.identifier))
+                {
+                    continue;
+                }
+
+                defaults[feature.identifier] = feature.defaultEnableInSandbox && StateManager.IsSandbox;
+            }
+
+            if (defaults.Count == 0)
+            {
+                return 0;
+            }
+
+            try
+            {
+                manager.SetFeatureEnables(defaults);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE progression refresh package='<all>' operation='initialize map feature state' " +
+                    $"kind='map features' id='<all>' message='{ex.Message}'.");
+                return 0;
+            }
+
+            return defaults.Count;
+        }
+
+        private static bool ForceApplyCurrentMapFeatureState(MapFeatureManager manager, string reason)
+        {
+            if (manager == null || ManagerHandleFeatureEnablesChangedMethod == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var current = ReadFeatureEnables(manager);
+                ManagerHandleFeatureEnablesChangedMethod.Invoke(
+                    manager,
+                    new object[]
+                    {
+                        new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase),
+                        current,
+                        true
+                    });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE progression refresh package='<all>' operation='force apply map feature state' " +
+                    $"kind='map features' id='<all>' reason='{reason ?? "unspecified"}' message='{ex.Message}'.");
+                return false;
+            }
+        }
+
+        private static Dictionary<string, bool> ReadFeatureEnables(MapFeatureManager manager)
+        {
+            if (manager == null || ManagerFeatureEnablesProperty == null)
+            {
+                return new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            try
+            {
+                return ManagerFeatureEnablesProperty.GetValue(manager, null) as Dictionary<string, bool> ??
+                       new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE progression refresh package='<all>' operation='read map feature state' " +
+                    $"kind='map features' id='<all>' message='{ex.Message}'.");
+                return new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            }
         }
 
         private static void SanitizeMapFeature(MapFeature feature)

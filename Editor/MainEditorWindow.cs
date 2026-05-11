@@ -43,6 +43,21 @@ namespace FUSE.Editor
             _window = GetComponent<Window>();
         }
 
+        private bool IsWindowValid()
+        {
+            return _window != null && _window.gameObject != null && _window.contentRectTransform != null;
+        }
+
+        private bool EnsureWindow()
+        {
+            if (IsWindowValid())
+                return true;
+
+            _window = null;
+            CreateWindow();
+            return IsWindowValid();
+        }
+
         private void OnEnable()
         {
             // Register for map events
@@ -60,6 +75,10 @@ namespace FUSE.Editor
                 _panel.Dispose();
                 _panel = null;
             }
+
+            // Teleport / UI rebuilds can invalidate the old ProgrammaticWindowCreator tree.
+            // Never keep a stale Unity UI reference across disable/unload.
+            _window = null;
         }
 
         private void OnMapLoaded(MapDidLoadEvent _)
@@ -71,10 +90,21 @@ namespace FUSE.Editor
         private void OnMapUnload(MapWillUnloadEvent _)
         {
             _isMapLoaded = false;
-            if (_window != null && _window.IsShown)
+
+            if (_panel != null)
+            {
+                _panel.Dispose();
+                _panel = null;
+            }
+
+            if (IsWindowValid() && _window.IsShown)
             {
                 _window.CloseWindow();
             }
+
+            // The UI parent can be rebuilt after teleport/map unload.
+            // Force lazy recreation next time the editor opens.
+            _window = null;
         }
 
         public static void Toggle()
@@ -85,6 +115,9 @@ namespace FUSE.Editor
             GameObject currentSelectedGameObject = EventSystem.current.currentSelectedGameObject;
             bool flag = currentSelectedGameObject != null && currentSelectedGameObject.GetComponent<TMP_InputField>() != null;
             if (flag) return;
+
+            if (!Shared.EnsureWindow())
+                return;
 
             if (Shared._window.IsShown)
             {
@@ -99,17 +132,24 @@ namespace FUSE.Editor
         public void Show()
         {
             if (!_isMapLoaded) return;
+            if (!EnsureWindow()) return;
+
             Populate();
-            _window.ShowWindow();
+
+            if (IsWindowValid())
+                _window.ShowWindow();
         }
 
         private void Populate()
         {
+            if (!EnsureWindow()) return;
+
             _window.Title = "Node Editor";
 
             if (_panel != null)
             {
                 _panel.Dispose();
+                _panel = null;
             }
 
             _panel = WindowCreatorHelper.Shared.PopulateWindow(_window, builder =>
@@ -129,9 +169,9 @@ namespace FUSE.Editor
 
         public void Close()
         {
-            if (Shared._window.IsShown)
+            if (IsWindowValid() && _window.IsShown)
             {
-                Shared._window.CloseWindow();
+                _window.CloseWindow();
             }
 
         }

@@ -70,6 +70,86 @@ RR_CROSSING_HANDLERS = {
     "cutil.railroadcrossing",
 }
 
+SUPPORTED_CUSTOM_INDUSTRY_COMPONENT_TYPES = {
+    "confusingsupplements.industrycomponents.captiveconversionloader",
+    "confusingsupplements.industrycomponents.captiveconversionunloader",
+    "confusingsupplements.industrycomponents.pay4resource",
+    "confusingsupplements.industrycomponents.empty",
+}
+
+CANONICAL_COMPONENT_TYPES = {
+    "loader",
+    "unloader",
+    "formulaic",
+    "repairTrack",
+    "teamTrack",
+    "interchange",
+    "interchangedLoader",
+    "interchangedUnloader",
+    "teleportLoading",
+    "progression",
+    "passengerStop",
+}
+
+COMPONENT_SCHEMA_KEYS = {
+    "type",
+    "name",
+    "trackspanids",
+    "trackspans",
+    "spans",
+    "cartypefilter",
+    "loadid",
+    "load",
+    "convertedloadid",
+    "convertedloadid",
+    "convertedload",
+    "sharedstorage",
+    "storagechangerate",
+    "maxstorage",
+    "cartransferrate",
+    "costperunit",
+    "notbeforehour",
+    "notafterhour",
+    "fillpercentage",
+    "bookreasons",
+    "title",
+    "orderaroundempties",
+    "orderaroundloaded",
+    "inputspanids",
+    "outputspanids",
+    "inputtermsperday",
+    "outputtermsperday",
+    "idealcars",
+    "teamprofiles",
+    "canoverhaul",
+    "passengerstopid",
+    "timetablecode",
+    "basepopulation",
+    "neighborids",
+    "branch",
+    "branchdefinitions",
+    "branches",
+    "carloadperiod",
+    "carlengthfeet",
+    "extradata",
+    "fields",
+}
+
+LOAD_SCHEMA_KEYS = {
+    "name",
+    "description",
+    "units",
+    "density",
+    "unitweightinpounds",
+    "importable",
+    "payperquantity",
+    "costperunit",
+    "cartypefilter",
+    "emptycartype",
+    "loadedcartype",
+    "icon",
+    "fields",
+}
 
 def load_json(path):
     try:
@@ -477,6 +557,46 @@ def _estimate_segment_lengths(converted_fragments):
     return lengths
 
 
+def _collect_converted_track_graph(converted_fragments):
+    nodes = {}
+    segments = {}
+    for _source_name, _out_name, _source_index, rail in converted_fragments:
+        tracks = rail.get("tracks") or {}
+        for node_id, node in (tracks.get("nodes") or {}).items():
+            if isinstance(node, dict):
+                nodes[node_id] = node.get("position")
+        for segment_id, segment in (tracks.get("segments") or {}).items():
+            if isinstance(segment, dict):
+                segments[segment_id] = segment
+
+    lengths = {}
+    node_to_segments = {}
+    for segment_id, segment in segments.items():
+        start_node = segment.get("startNodeId")
+        end_node = segment.get("endNodeId")
+        for node_id in (start_node, end_node):
+            if node_id:
+                node_to_segments.setdefault(node_id, set()).add(segment_id)
+        length = _vector_distance(nodes.get(start_node), nodes.get(end_node))
+        if length is not None and length > 0:
+            lengths[segment_id] = length
+
+    segment_neighbors = {segment_id: set() for segment_id in segments}
+    for connected_segments in node_to_segments.values():
+        connected = list(connected_segments)
+        for index, left in enumerate(connected):
+            for right in connected[index + 1:]:
+                segment_neighbors[left].add(right)
+                segment_neighbors[right].add(left)
+
+    return {
+        "nodes": nodes,
+        "segments": segments,
+        "lengths": lengths,
+        "neighbors": segment_neighbors,
+    }
+
+
 def _clamp_span_endpoint(span_id, endpoint_name, location, segment_length, source_name):
     distance = _location_distance(location, segment_length)
     if distance is None:
@@ -537,45 +657,173 @@ def _repair_same_segment_span(span_id, span, segment_length, source_name):
         )
         return True
 
-    gap = min(max(float(segment_length) * 0.001, 0.001), 0.1)
-    if upper.get("end") == "A" and lower.get("end") == "B":
-        upper_from_a = _distance_from_segment_a(upper, segment_length) or 0.0
-        upper_from_a = min(max(upper_from_a, 0.0), float(segment_length) - gap)
-        _set_location_distance(upper, upper_from_a)
-        _set_location_distance(lower, float(segment_length) - upper_from_a - gap)
-    elif upper.get("end") == "B" and lower.get("end") == "A":
-        lower_from_a = _distance_from_segment_a(lower, segment_length) or 0.0
-        lower_from_a = min(max(lower_from_a, 0.0), float(segment_length) - gap)
-        _set_location_distance(lower, lower_from_a)
-        _set_location_distance(upper, float(segment_length) - lower_from_a - gap)
-    else:
-        return repaired
-
     _warn(
-        f"Span '{span_id}' on segment '{upper.get('segmentId')}' had crossed endpoints for estimated "
-        f"segment length {segment_length:.3f}; adjusted the end-anchored endpoint to leave a {gap:.3f}m gap.",
+        f"Span '{span_id}' on segment '{upper.get('segmentId')}' has crossed endpoints for estimated "
+        f"segment length {segment_length:.3f}; converter preserved the original endpoints because no safe "
+        "automatic repair was available.",
         file=source_name,
-        concept="span-repaired",
+        concept="span-geometry-crossed",
     )
+    return repaired
+
+
+def _shared_node(segment_a, segment_b):
+    if not isinstance(segment_a, dict) or not isinstance(segment_b, dict):
+        return None
+    nodes_a = {segment_a.get("startNodeId"), segment_a.get("endNodeId")}
+    nodes_b = {segment_b.get("startNodeId"), segment_b.get("endNodeId")}
+    shared = [node for node in nodes_a.intersection(nodes_b) if node]
+    return shared[0] if len(shared) == 1 else None
+
+
+def _opposite_end_for_node(segment, node_id):
+    if not isinstance(segment, dict) or not node_id:
+        return None
+    if segment.get("startNodeId") == node_id:
+        return "B"
+    if segment.get("endNodeId") == node_id:
+        return "A"
+    return None
+
+
+def _flip_location_end_preserving_position(location, desired_end, segment_length):
+    if not isinstance(location, dict) or desired_end not in ("A", "B"):
+        return False
+    current_end = location.get("end")
+    if current_end == desired_end:
+        return False
+    distance = _location_distance(location, segment_length)
+    if distance is None or segment_length is None:
+        return False
+    location["end"] = desired_end
+    _set_location_distance(location, float(segment_length) - distance)
     return True
 
 
+def _find_segment_path(start_segment_id, end_segment_id, neighbors):
+    if start_segment_id == end_segment_id:
+        return [start_segment_id]
+    if start_segment_id not in neighbors or end_segment_id not in neighbors:
+        return None
+
+    queue = [(start_segment_id, [start_segment_id])]
+    visited = {start_segment_id}
+    while queue:
+        current, path = queue.pop(0)
+        for neighbor in sorted(neighbors.get(current, ())):
+            if neighbor in visited:
+                continue
+            next_path = path + [neighbor]
+            if neighbor == end_segment_id:
+                return next_path
+            visited.add(neighbor)
+            queue.append((neighbor, next_path))
+    return None
+
+
+def _repair_multi_segment_span(span_id, span, graph, source_name):
+    if not isinstance(span, dict):
+        return False
+    upper = span.get("upper")
+    lower = span.get("lower")
+    if not isinstance(upper, dict) or not isinstance(lower, dict):
+        return False
+
+    upper_segment_id = upper.get("segmentId")
+    lower_segment_id = lower.get("segmentId")
+    if not upper_segment_id or not lower_segment_id or upper_segment_id == lower_segment_id:
+        return False
+
+    segments = graph["segments"]
+    lengths = graph["lengths"]
+    if upper_segment_id not in segments or lower_segment_id not in segments:
+        missing = [
+            segment_id
+            for segment_id in (upper_segment_id, lower_segment_id)
+            if segment_id and segment_id not in segments
+        ]
+        if missing:
+            _warn(
+                f"Span '{span_id}' references segment(s) not defined in converted source files: "
+                f"{', '.join(missing)}. Treating them as external/base-game dependencies.",
+                file=source_name,
+                concept="span-external-segment",
+            )
+        return False
+
+    path = _find_segment_path(lower_segment_id, upper_segment_id, graph["neighbors"])
+    if not path or len(path) < 2:
+        _warn(
+            f"Span '{span_id}' endpoints '{lower_segment_id}' -> '{upper_segment_id}' are both converted "
+            "but no connected segment path was found between them. Preserved original anchors.",
+            file=source_name,
+            concept="span-route-unresolved",
+        )
+        return False
+
+    lower_shared_node = _shared_node(segments[lower_segment_id], segments[path[1]])
+    upper_shared_node = _shared_node(segments[upper_segment_id], segments[path[-2]])
+    desired_lower_end = _opposite_end_for_node(segments[lower_segment_id], lower_shared_node)
+    desired_upper_end = _opposite_end_for_node(segments[upper_segment_id], upper_shared_node)
+
+    if desired_lower_end not in ("A", "B") or desired_upper_end not in ("A", "B"):
+        _warn(
+            f"Span '{span_id}' has a connected segment path but the converter could not infer endpoint "
+            "direction at one side. Preserved original anchors.",
+            file=source_name,
+            concept="span-route-unresolved",
+        )
+        return False
+
+    lower_length = lengths.get(lower_segment_id)
+    upper_length = lengths.get(upper_segment_id)
+    if lower_length is None or upper_length is None:
+        _warn(
+            f"Span '{span_id}' needs A/B anchor repair, but one endpoint segment has no estimated length. "
+            "Preserved original anchors.",
+            file=source_name,
+            concept="span-route-unresolved",
+        )
+        return False
+
+    old_lower = lower.get("end")
+    old_upper = upper.get("end")
+    repaired = False
+    repaired |= _flip_location_end_preserving_position(lower, desired_lower_end, lower_length)
+    repaired |= _flip_location_end_preserving_position(upper, desired_upper_end, upper_length)
+
+    if repaired:
+        _warn(
+            f"Span '{span_id}' endpoint anchors were aligned to converted segment topology "
+            f"path='{ ' -> '.join(path) }' lowerEnd {old_lower}->{lower.get('end')} "
+            f"upperEnd {old_upper}->{upper.get('end')}.",
+            file=source_name,
+            concept="span-repaired",
+        )
+
+    return repaired
+
+
 def repair_package_spans(converted_fragments):
-    segment_lengths = _estimate_segment_lengths(converted_fragments)
-    if not segment_lengths:
+    graph = _collect_converted_track_graph(converted_fragments)
+    segment_lengths = graph["lengths"]
+    if not graph["segments"]:
         return
     for source_name, _out_name, _source_index, rail in converted_fragments:
         for span_id, span in (rail.get("tracks", {}).get("spans") or {}).items():
             upper = span.get("upper") if isinstance(span, dict) else None
             lower = span.get("lower") if isinstance(span, dict) else None
             segment_id = upper.get("segmentId") if isinstance(upper, dict) else None
-            if not segment_id or not isinstance(lower, dict) or segment_id != lower.get("segmentId"):
+            if not segment_id or not isinstance(lower, dict):
                 continue
-            _repair_same_segment_span(span_id, span, segment_lengths.get(segment_id), source_name)
+            if segment_id == lower.get("segmentId"):
+                _repair_same_segment_span(span_id, span, segment_lengths.get(segment_id), source_name)
+            else:
+                _repair_multi_segment_span(span_id, span, graph, source_name)
 
 
 def convert_load(load_id, item):
-    return {
+    result = {
         "name": item.get("name") or item.get("description") or load_id,
         "units": item.get("units") or "Quantity",
         "density": item.get("density"),
@@ -585,6 +833,69 @@ def convert_load(load_id, item):
         "costPerUnit": item.get("costPerUnit"),
         "carTypeFilter": item.get("carTypeFilter"),
     }
+    fields = {}
+    explicit = item.get("fields")
+    if isinstance(explicit, dict):
+        fields.update(explicit)
+    for key, value in item.items():
+        if value is None:
+            continue
+        if str(key).strip().lower() in LOAD_SCHEMA_KEYS:
+            continue
+        fields.setdefault(key, value)
+    if fields:
+        result["fields"] = fields
+    return result
+
+
+KNOWN_COMPAT_LOADS = {
+    "machine-parts": {
+        "name": "Machine Parts",
+        "units": "Pounds",
+        "density": 42.5,
+        "unitWeightInPounds": 0.0,
+        "importable": True,
+        "payPerQuantity": 0.0,
+        "costPerUnit": 0.0,
+    },
+    "mining-explosives": {
+        "name": "Mining Explosives",
+        "units": "Pounds",
+        "density": 37.5,
+        "unitWeightInPounds": 0.0,
+        "importable": True,
+        "payPerQuantity": 0.0,
+        "costPerUnit": 0.0,
+    },
+}
+
+
+def _collect_load_references(value, sink):
+    if isinstance(value, list):
+        for item in value:
+            _collect_load_references(item, sink)
+        return
+    if not isinstance(value, dict):
+        return
+
+    for key, item in value.items():
+        if key in ("loadId", "convertedLoadId", "load") and isinstance(item, str) and item.strip():
+            sink.add(item.strip())
+        else:
+            _collect_load_references(item, sink)
+
+
+def ensure_known_compat_loads(rail):
+    defined = set((rail.get("operations", {}).get("loads") or {}).keys())
+    referenced = set()
+    _collect_load_references(rail.get("operations"), referenced)
+    _collect_load_references(rail.get("progression"), referenced)
+    missing = sorted(
+        load_id for load_id in referenced
+        if load_id not in defined and load_id.lower() in KNOWN_COMPAT_LOADS
+    )
+    for load_id in missing:
+        rail["operations"]["loads"][load_id] = dict(KNOWN_COMPAT_LOADS[load_id.lower()])
 
 
 def convert_area(area_id, item, order=None):
@@ -632,16 +943,34 @@ def _normalize_tag_color(area_id, value):
 def convert_component(component_id, item):
     component_type = normalize_component_type(item.get("type") or component_id)
     is_passenger = component_type == "passengerStop"
+    extra = item.get("extraData") or item.get("ExtraData") or {}
+
+    def get_field(*keys):
+        for key in keys:
+            if key in item:
+                return item.get(key)
+        for key in keys:
+            if isinstance(extra, dict) and key in extra:
+                return extra.get(key)
+        return None
+
     result = {
         "type": component_type,
         "name": item.get("name") or component_id,
         "trackSpanIds": item.get("trackSpanIds") or item.get("trackSpans") or item.get("spans") or [],
         "carTypeFilter": item.get("carTypeFilter"),
-        "loadId": item.get("loadId"),
+        "loadId": get_field("loadId", "LoadId", "load") or ("passengers" if is_passenger else None),
+        "convertedLoadId": get_field("convertedLoadId", "convertedLoadID", "convertedLoad", "ConvertedLoadId"),
         "sharedStorage": item.get("sharedStorage", True),
-        "storageChangeRate": item.get("storageChangeRate"),
-        "maxStorage": item.get("maxStorage"),
-        "carTransferRate": item.get("carTransferRate"),
+        "storageChangeRate": get_field("storageChangeRate", "StorageChangeRate"),
+        "maxStorage": get_field("maxStorage", "MaxStorage"),
+        "carTransferRate": get_field("carTransferRate", "CarTransferRate"),
+        "costPerUnit": get_field("costPerUnit"),
+        "notBeforeHour": get_field("notBeforeHour"),
+        "notAfterHour": get_field("notAfterHour"),
+        "fillPercentage": get_field("fillPercentage"),
+        "bookReasons": get_field("bookReasons"),
+        "title": get_field("title"),
         "orderAroundEmpties": item.get("orderAroundEmpties"),
         "orderAroundLoaded": item.get("orderAroundLoaded"),
         "inputSpanIds": item.get("inputSpanIds"),
@@ -656,11 +985,37 @@ def convert_component(component_id, item):
         "basePopulation": item.get("basePopulation"),
         "neighborIds": item.get("neighborIds"),
         "branch": item.get("branch"),
-        "branchDefinitions": item.get("branchDefinitions"),
+        "branchDefinitions": item.get("branchDefinitions") or item.get("branches"),
         "carLoadPeriod": item.get("carLoadPeriod"),
         "carLengthFeet": item.get("carLengthFeet"),
     }
+
+    custom_fields = collect_custom_component_fields(component_type, item, extra)
+    if custom_fields:
+        result["fields"] = custom_fields
+
     return clean(result)
+
+
+def collect_custom_component_fields(component_type, item, extra):
+    normalized = str(component_type or "").strip()
+    if not normalized or normalized in CANONICAL_COMPONENT_TYPES:
+        return {}
+
+    fields = {}
+    explicit = item.get("fields")
+    if isinstance(explicit, dict):
+        fields.update(explicit)
+
+    for source in (item, extra if isinstance(extra, dict) else {}):
+        for key, value in source.items():
+            if value is None:
+                continue
+            if str(key).strip().lower() in COMPONENT_SCHEMA_KEYS:
+                continue
+            fields.setdefault(key, value)
+
+    return fields
 
 
 def normalize_component_type(component_type):
@@ -705,8 +1060,27 @@ def normalize_component_type(component_type):
         "paxstationcomponent": "passengerStop",
         "passenger-stop": "passengerStop",
         "passengerstop": "passengerStop",
+        "captiveconversionloader": "ConfusingSupplements.IndustryComponents.CaptiveConversionLoader",
+        "captive-conversion-loader": "ConfusingSupplements.IndustryComponents.CaptiveConversionLoader",
+        "confusingsupplements.captiveconversionloader": "ConfusingSupplements.IndustryComponents.CaptiveConversionLoader",
+        "confusingsupplements.industrycomponents.captiveconversionloader": "ConfusingSupplements.IndustryComponents.CaptiveConversionLoader",
+        "captiveconversionunloader": "ConfusingSupplements.IndustryComponents.CaptiveConversionUnloader",
+        "captive-conversion-unloader": "ConfusingSupplements.IndustryComponents.CaptiveConversionUnloader",
+        "confusingsupplements.captiveconversionunloader": "ConfusingSupplements.IndustryComponents.CaptiveConversionUnloader",
+        "confusingsupplements.industrycomponents.captiveconversionunloader": "ConfusingSupplements.IndustryComponents.CaptiveConversionUnloader",
+        "pay4resource": "ConfusingSupplements.IndustryComponents.Pay4Resource",
+        "pay-for-resource": "ConfusingSupplements.IndustryComponents.Pay4Resource",
+        "confusingsupplements.pay4resource": "ConfusingSupplements.IndustryComponents.Pay4Resource",
+        "confusingsupplements.industrycomponents.pay4resource": "ConfusingSupplements.IndustryComponents.Pay4Resource",
+        "confusingsupplements.empty": "ConfusingSupplements.IndustryComponents.Empty",
+        "confusingsupplements.industrycomponents.empty": "ConfusingSupplements.IndustryComponents.Empty",
     }
     return aliases.get(normalized, value)
+
+
+def is_supported_custom_component_type(component_type):
+    normalized = str(normalize_component_type(component_type) or "").strip().lower()
+    return normalized in SUPPORTED_CUSTOM_INDUSTRY_COMPONENT_TYPES
 
 
 def _flag_spanless_passenger_stop(industry_id, component_id, converted):
@@ -730,13 +1104,47 @@ def _flag_spanless_passenger_stop(industry_id, component_id, converted):
     )
 
 
+def _make_component_sub_id(industry_id, component_id, converted, existing):
+    raw = str(component_id or "").strip()
+    if raw:
+        return raw
+
+    component_type = str(converted.get("type") or "").strip()
+    if component_type == "formulaic":
+        preferred = "formula"
+    elif component_type == "repairTrack":
+        preferred = "repair"
+    elif component_type == "teamTrack":
+        preferred = "teamtrack"
+    elif converted.get("loadId"):
+        preferred = str(converted.get("loadId"))
+    elif converted.get("name"):
+        preferred = str(converted.get("name"))
+    else:
+        preferred = "component"
+
+    base = re.sub(r"[^0-9A-Za-z]+", "-", preferred.strip().lower()).strip("-") or "component"
+    sub_id = base
+    index = 2
+    while sub_id in existing:
+        sub_id = f"{base}-{index}"
+        index += 1
+
+    _warn(
+        f"Industry '{industry_id}' had a legacy component with a blank id; generated component id '{sub_id}'.",
+        concept="industry-component-empty-id",
+    )
+    return sub_id
+
+
 def convert_industry(industry_id, item, area_id=None, order=None):
     components = {}
     for component_id, component in (item.get("components") or {}).items():
         if isinstance(component, dict):
             converted = convert_component(component_id, component)
-            _flag_spanless_passenger_stop(industry_id, component_id, converted)
-            components[component_id] = converted
+            sub_id = _make_component_sub_id(industry_id, component_id, converted, components)
+            _flag_spanless_passenger_stop(industry_id, sub_id, converted)
+            components[sub_id] = converted
 
     return clean({
         "name": item.get("name") or industry_id,
@@ -780,8 +1188,8 @@ def convert_turntable(table_id, item):
     return clean(result)
 
 
-def convert_scenery(item):
-    model = (
+def scenery_model_identifier(item):
+    return (
         item.get("assetIdentifier")
         or item.get("model")
         or item.get("modelIdentifier")
@@ -789,6 +1197,10 @@ def convert_scenery(item):
         or item.get("prefab")
         or ""
     )
+
+
+def convert_scenery(item):
+    model = scenery_model_identifier(item)
     if model and "://" not in model:
         model = f"scenery://{model}"
     result = {
@@ -812,6 +1224,11 @@ def convert_scenery(item):
 def convert_spliney(item):
     handler = item.get("handler") or ""
     spliney_type = infer_spliney_type(item, handler)
+    offset_y = item.get("offsetY", item.get("offsety"))
+    if offset_y is None and handler == "StrangeCustoms.FlowyThingBuilder":
+        # Strange Customs' FlowyData defaults OffsetY to -0.1. Preserve that
+        # instead of letting FUSE deserialize the missing float as 0.
+        offset_y = -0.1
     points = []
     for point in item.get("points") or []:
         if not isinstance(point, dict):
@@ -828,7 +1245,7 @@ def convert_spliney(item):
         "type": spliney_type,
         "profile": item.get("profile"),
         "style": item.get("style"),
-        "offsetY": item.get("offsetY", item.get("offsety")),
+        "offsetY": offset_y,
         "headStyle": item.get("headStyle") or item.get("headstyle"),
         "tailStyle": item.get("tailStyle") or item.get("tailstyle"),
         "points": points,
@@ -1050,12 +1467,130 @@ def normalize_progression_value(value):
     return clean(result)
 
 
-def next_area_order(order_state, area_id):
+def _iter_progression_section_definitions(progression_root):
+    if not isinstance(progression_root, dict):
+        return
+
+    top_sections = progression_root.get("sections")
+    if isinstance(top_sections, dict):
+        for section_id, section in top_sections.items():
+            if isinstance(section, dict):
+                yield str(section_id), section
+    elif isinstance(top_sections, list):
+        for section in top_sections:
+            if not isinstance(section, dict):
+                continue
+            section_id = section.get("id") or section.get("identifier")
+            if section_id:
+                yield str(section_id), section
+
+    for progression in (progression_root.get("progressions") or {}).values():
+        if not isinstance(progression, dict):
+            continue
+        sections = progression.get("sections")
+        if isinstance(sections, dict):
+            for section_id, section in sections.items():
+                if isinstance(section, dict):
+                    yield str(section_id), section
+        elif isinstance(sections, list):
+            for section in sections:
+                if not isinstance(section, dict):
+                    continue
+                section_id = section.get("id") or section.get("identifier")
+                if section_id:
+                    yield str(section_id), section
+
+
+def _append_unique_id(container, field, item_id):
+    if not item_id:
+        return
+    values = container.get(field)
+    if values is None:
+        values = []
+    elif isinstance(values, dict):
+        values = bool_dictionary_to_array(values) or []
+    elif not isinstance(values, list):
+        values = [values]
+
+    text = str(item_id).strip()
+    if text and not any(str(existing).lower() == text.lower() for existing in values):
+        values.append(text)
+    container[field] = values
+
+
+def reconcile_progression_section_feature_aliases(rail):
+    progression_root = (rail.get("progression") or {})
+    map_features = progression_root.get("mapFeatures")
+    if not isinstance(map_features, dict):
+        return
+
+    section_defs = {}
+    for section_id, section in _iter_progression_section_definitions(progression_root):
+        key = str(section_id or "").strip()
+        if key:
+            section_defs.setdefault(key, []).append(section)
+
+    if not section_defs:
+        return
+
+    referenced_features = set()
+    for feature in map_features.values():
+        if not isinstance(feature, dict):
+            continue
+        for field in ("prerequisiteFeatureIds", "enableFeaturesOnUnlock", "disableFeaturesOnUnlock"):
+            for feature_id in feature.get(field) or []:
+                text = str(feature_id or "").strip()
+                if text:
+                    referenced_features.add(text)
+
+    for feature_id in sorted(referenced_features):
+        sections = section_defs.get(feature_id)
+        if not sections or feature_id in map_features:
+            continue
+
+        first_section = sections[0]
+        map_features[feature_id] = clean({
+            "displayName": first_section.get("displayName") or feature_id,
+            "description": first_section.get("description"),
+            "initiallyEnabled": False,
+        })
+        for section in sections:
+            _append_unique_id(section, "enableFeaturesOnUnlock", feature_id)
+        _warn(
+            f"Progression map feature reference '{feature_id}' points to a section id; emitted a FUSE map-feature alias and enabled it when that section unlocks.",
+            concept="progression-section-feature-alias",
+        )
+
+
+def _legacy_order_value(item):
+    if not isinstance(item, dict) or "order" not in item:
+        return None
+
+    value = item.get("order")
+    if value is None or isinstance(value, bool):
+        return None
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        _warn(
+            f"Legacy order value '{value}' is not an integer; falling back to source encounter order.",
+            concept="invalid-order-value",
+        )
+        return None
+
+
+def next_area_order(order_state, area_id, item=None):
     if order_state is None:
         return None
 
     area_orders = order_state.setdefault("area_orders", {})
     key = str(area_id or "").lower()
+    explicit_order = _legacy_order_value(item)
+    if explicit_order is not None:
+        area_orders[key] = explicit_order
+        return explicit_order
+
     if key in area_orders:
         return area_orders[key]
 
@@ -1065,7 +1600,7 @@ def next_area_order(order_state, area_id):
     return order
 
 
-def next_industry_order(order_state, area_id, industry_id):
+def next_industry_order(order_state, area_id, industry_id, item=None):
     if order_state is None:
         return None
 
@@ -1074,6 +1609,11 @@ def next_industry_order(order_state, area_id, industry_id):
     next_by_area = order_state.setdefault("next_industry_order_by_area", {})
     industry_orders = industry_orders_by_area.setdefault(area_key, {})
     industry_key = str(industry_id or "").lower()
+    explicit_order = _legacy_order_value(item)
+    if explicit_order is not None:
+        industry_orders[industry_key] = explicit_order
+        return explicit_order
+
     if industry_key in industry_orders:
         return industry_orders[industry_key]
 
@@ -1132,17 +1672,17 @@ def convert_source(source, rail, source_name=None, order_state=None):
     for area_id, area in (source.get("areas") or {}).items():
         if not isinstance(area, dict):
             continue
-        area_order = next_area_order(order_state, area_id)
+        area_order = next_area_order(order_state, area_id, area)
         rail["tracks"]["areas"][area_id] = convert_area(area_id, area, area_order)
         for industry_id, industry in (area.get("industries") or {}).items():
             if isinstance(industry, dict):
-                industry_order = next_industry_order(order_state, area_id, industry_id)
+                industry_order = next_industry_order(order_state, area_id, industry_id, industry)
                 rail["operations"]["industries"][industry_id] = convert_industry(industry_id, industry, area_id, industry_order)
 
     for industry_id, industry in (source.get("industries") or {}).items():
         if isinstance(industry, dict):
             area_id = industry.get("areaId") or industry.get("area")
-            industry_order = next_industry_order(order_state, area_id, industry_id)
+            industry_order = next_industry_order(order_state, area_id, industry_id, industry)
             rail["operations"]["industries"][industry_id] = convert_industry(industry_id, industry, order=industry_order)
 
     for table_id, table in (source.get("turntables") or {}).items():
@@ -1215,6 +1755,7 @@ def convert_source(source, rail, source_name=None, order_state=None):
         })
 
     convert_progression(source, rail)
+    ensure_known_compat_loads(rail)
 
 
 def convert_progression(source, rail):
@@ -1234,6 +1775,8 @@ def convert_progression(source, rail):
 
     if isinstance(source.get("mapFeatures"), dict):
         rail["progression"]["mapFeatures"].update(normalize_progression_value(source.get("mapFeatures")))
+
+    reconcile_progression_section_feature_aliases(rail)
 
 
 def count_content(rail):
@@ -1319,7 +1862,6 @@ def convert_mod(mod_folder, out_folder):
     mod_id, mod_name, version, author = meta(mod_folder)
     mixinto_sources, mixinto_order = mixinto_metadata(mod_folder)
     mixinto_order_index = {name: index for index, name in enumerate(mixinto_order)}
-    referenced_source_files = set(mixinto_order_index)
     source_files = sorted(
         (
             path for path in mod_folder.iterdir()
@@ -1327,7 +1869,6 @@ def convert_mod(mod_folder, out_folder):
             and path.name not in ("Definition.json", "Info.json")
             and not path.name.lower().endswith(".bak")
             and "signal" not in path.name.lower()
-            and (not referenced_source_files or path.name.lower() in referenced_source_files)
         ),
         key=lambda path: source_file_order(path, mixinto_order_index),
     )
@@ -1381,16 +1922,11 @@ def convert_mod(mod_folder, out_folder):
 
     _emit_track_group_coverage_warning(declared_initial_groups)
 
-    if mixinto_order:
-        rail_data_files = sorted(
-            written,
-            key=lambda name: (written_order.get(name, 1000000), name.lower()),
-        )
-    else:
-        rail_data_files = sorted(
-            written,
-            key=lambda name: rail_data_file_order(name, written_order.get(name, 1000000), written_counts.get(name)),
-        )
+    # Preserve the source-file conversion order. Earlier converter passes tried
+    # to be clever and re-sort by content type ("track first", "world late"),
+    # but legacy packages often rely on their own file-per-concern order and
+    # modders expect a one-to-one source -> FUSE file mapping.
+    rail_data_files = list(written)
     info = {
         "$schema": ".\\schemas\\umm-info.schema.json",
         "Id": f"{mod_id}.FUSE",
@@ -1410,7 +1946,7 @@ def source_file_order(path, mixinto_order_index):
     lower = path.name.lower()
     if lower in mixinto_order_index:
         return 0, mixinto_order_index[lower], lower
-    return 1, rail_data_file_weight(lower), lower
+    return 1, lower
 
 
 def rail_data_file_order(name, source_order=1000000, counts=None):

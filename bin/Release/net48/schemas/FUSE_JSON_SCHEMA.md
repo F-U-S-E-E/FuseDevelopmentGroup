@@ -46,7 +46,7 @@ FUSE migrations run version by version on load. Unknown future schema versions a
 
 When a field is renamed, FUSE keeps the old field readable for one minor version, logs one deprecation warning per package when it migrates that field, and removes the old field in the following minor version. For example, scenery asset keys were renamed from `model` to `assetIdentifier`; v1.0 packages with only `model` still load, and FUSE fills `assetIdentifier` in memory.
 
-Areas are defined under `tracks.areas` and can be used to group industries in the company window. `order` controls the display order of areas and industries:
+Areas are defined under `tracks.areas` and can be used to group industries in the company window. `order` is a signed sort key that controls the display order of areas and industries; lower values appear earlier. Legacy conversions preserve source order values, including negative values, when the source file provides them:
 
 ```json
 {
@@ -208,6 +208,7 @@ Spliney `type` describes the physical spline family, not its material flavor:
 - `trestle`: auto-generated trestle spline.
 
 Converted Strange Customs `FlowyThingBuilder` data must inspect `style` and `profile`; entries with `style: "River"` or river profiles should be emitted as `type: "river"`, not as roads.
+When converting `FlowyThingBuilder` entries, preserve the legacy default `offsetY: -0.1` if the source omits it; the field keeps road and river surfaces at the same vertical bias Strange Customs used.
 
 Telegraph pole definitions use the existing Railroader telegraph pole and wire prefabs by default. `profile` selects the first vanilla pole prefab whose name contains that profile string. `polePrefab` and `wirePrefab` can override that with explicit prefab URIs.
 
@@ -228,7 +229,7 @@ Telegraph pole definitions use the existing Railroader telegraph pole and wire p
 
 FUSE applies pole movements idempotently per package, so snapshot reapply does not stack the same offset repeatedly. Unloading the package restores the captured base pole positions, then reapplies any remaining package claims.
 
-Industry components currently supported by the runtime include `loader`, `unloader`, `formulaic`, `repairTrack`, `teamTrack`, `interchange`, `interchangedLoader`, `interchangedUnloader`, `teleportLoading`, `progression`, and `passengerStop`. Formulaic components are attached directly to the industry object to match the base game component layout expectations; other component types get child objects.
+Industry components currently supported by the runtime include `loader`, `unloader`, `formulaic`, `repairTrack`, `teamTrack`, `interchange`, `interchangedLoader`, `interchangedUnloader`, `teleportLoading`, `progression`, and `passengerStop`. Formulaic components are attached directly to the industry object to match the base game component layout expectations; other component types get child objects. Fully-qualified custom `IndustryComponent` type names are accepted as beta compatibility surface when the owning assembly is loaded; FUSE reflectively binds common fields such as `load`, `convertedLoad`, `carLoadRate`, `carUnloadRate`, `loadRate`, `maxStorage`, `costPerUnit`, working hours, fill percentage, title, and book reasons. Custom components may also use `fields` for additional reflection-bound field/property values, so a separate component mod can expose data without requiring a FUSE code change. Legacy ConfusingSupplements shortcuts (`CaptiveConversionLoader`, `CaptiveConversionUnloader`, `Pay4Resource`, and `Empty`) are normalized to their fully-qualified `ConfusingSupplements.IndustryComponents.*` runtime types.
 
 The converter emits canonical FUSE component type names. Legacy aliases such as `Model.Ops.IndustryLoader`, `Model.OpsNew.InterchangedIndustryUnloader`, and `AlinasMapMod.PaxStationComponent` are normalized at load time for compatibility, but new JSON should use the FUSE names above so it does not depend on external mod assemblies.
 
@@ -277,7 +278,7 @@ FUSE treats these as overlays on top of the base game's `StreamingAssets/Maps/<d
 ## Runtime Notes
 
 - `tracks.areas` are applied at runtime and are used as preferred parents for FUSE-created industries. Area and industry `order` values are also used when rebuilding company-window location ordering.
-- `operations.loads` are applied at runtime by creating or updating `CarPrototypeLibrary.instance.opsLoads` entries. Use `units`, `density`, `unitWeightInPounds`, `importable`, `payPerQuantity`, and `costPerUnit` when the custom load needs full behavior parity with legacy mod data.
+- `operations.loads` are applied at runtime by creating or updating `CarPrototypeLibrary.instance.opsLoads` entries. Use `units`, `density`, `unitWeightInPounds`, `importable`, `payPerQuantity`, and `costPerUnit` when the custom load needs full behavior parity with legacy mod data. Custom load mods may use `fields` for reflection-bound field/property values on the runtime `Load` object.
 - `world.mapMasks` are applied at runtime using the default behavior above.
 - `world.telegraphPoles` are applied at runtime by generating pole instances along the provided point path at the requested spacing.
 - `world.telegraphPoleMovements` are applied at runtime by translating existing base-game telegraph pole graph nodes by index. FUSE forces the telegraph manager to refresh when possible.
@@ -331,7 +332,7 @@ FUSE-specific package ordering uses `FuseLoadPriority`, `FuseLoadAfter`, and `Fu
 
 If explicit data-file entries are missing, FUSE falls back to the first `.bson` file in the package root, then the first `.json` file other than `Info.json`.
 
-Asset-pack-only packages can expose existing Railroader `AssetPack` runtime stores with `FuseAssetPacks`. FUSE mirrors those folders into Railroader's external `AssetPacks` directory before the game builds its prefab catalog:
+Asset-pack-only packages can expose existing Railroader `AssetPack` runtime stores with `FuseAssetPacks`. FUSE registers these folders as direct prefab stores from the mod directory by default; the old LocalLow mirror path is an opt-in compatibility fallback, not the normal load path:
 
 ```json
 {

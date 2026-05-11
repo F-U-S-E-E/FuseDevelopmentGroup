@@ -332,6 +332,16 @@ namespace FUSE.Authoring
                 "FUSE.Authoring.FuseAuthoringPersistenceService.ApplyToRuntime",
                 "runtime authoring mutation");
 
+            return ApplyToRuntimeCore(entity);
+        }
+
+        internal static bool ApplyPackageEntityToRuntime(FuseAuthoringEntity entity)
+        {
+            return ApplyToRuntimeCore(entity);
+        }
+
+        private static bool ApplyToRuntimeCore(FuseAuthoringEntity entity)
+        {
             var resolved = RequireEntity(entity);
             var validation = resolved.Validate();
             NotifyValidation(resolved, validation);
