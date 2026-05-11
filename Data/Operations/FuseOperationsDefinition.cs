@@ -25,6 +25,7 @@ namespace FUSE.Data
         public string EmptyCarType { get; set; }
         public string LoadedCarType { get; set; }
         public string Icon { get; set; }
+        public Dictionary<string, object> Fields { get; set; } = new Dictionary<string, object>();
     }
 
     public sealed class FuseIndustry
@@ -45,10 +46,17 @@ namespace FUSE.Data
         public string[] TrackSpanIds { get; set; }
         public string CarTypeFilter { get; set; }
         public string LoadId { get; set; }
+        public string ConvertedLoadId { get; set; }
         public bool SharedStorage { get; set; } = true;
         public float? StorageChangeRate { get; set; }
         public float? MaxStorage { get; set; }
         public float? CarTransferRate { get; set; }
+        public float? CostPerUnit { get; set; }
+        public float? NotBeforeHour { get; set; }
+        public float? NotAfterHour { get; set; }
+        public float? FillPercentage { get; set; }
+        public string[] BookReasons { get; set; }
+        public string Title { get; set; }
         public bool? OrderAroundEmpties { get; set; }
         public bool? OrderAroundLoaded { get; set; }
         public string[] InputSpanIds { get; set; }
@@ -70,6 +78,12 @@ namespace FUSE.Data
         public string[] OutputSpanIds { get; set; }
         public float? CarLoadPeriod { get; set; }
         public float? CarLengthFeet { get; set; }
+
+        /// <summary>
+        /// Optional reflection-bound payload for custom community
+        /// IndustryComponent implementations supplied by separate mods.
+        /// </summary>
+        public Dictionary<string, object> Fields { get; set; } = new Dictionary<string, object>();
     }
 
     public sealed class FuseTeamTrackEntry

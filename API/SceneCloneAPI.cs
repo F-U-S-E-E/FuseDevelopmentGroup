@@ -51,7 +51,7 @@ namespace FUSE.API
             var root = FindRemovableSceneClone(id);
             if (root == null)
             {
-                FuseLog.Warning($"FUSE world removal skipped missing scene clone '{id}'.");
+                FuseLog.Info($"FUSE world removal skipped missing scene clone '{id}'.");
                 return false;
             }
 
@@ -73,6 +73,13 @@ namespace FUSE.API
             return UnityEngine.Object.FindObjectsOfType<FuseSceneCloneMarker>(true)
                 .FirstOrDefault(marker => string.Equals(marker.Id, id, StringComparison.OrdinalIgnoreCase))
                 ?.gameObject;
+        }
+
+        public static IEnumerable<GameObject> GetAllSceneClones()
+        {
+            return UnityEngine.Object.FindObjectsOfType<FuseSceneCloneMarker>(true)
+                .Where(marker => marker != null && marker.gameObject != null)
+                .Select(marker => marker.gameObject);
         }
 
         public static FuseSceneClone GetSceneCloneDefinition(string id)
@@ -194,7 +201,16 @@ namespace FUSE.API
                 FusePrefabSanitizer.SanitizeSceneClone(targetObject, id).Log($"FUSE scene clone '{id}'");
             }
 
-            FusePrefabSanitizer.ValidateSceneClonePostBind(targetObject, id).Log($"FUSE scene clone '{id}' post-bind");
+            MapAPI.RefreshAttachedMapMasks(targetObject, $"scene clone '{id}' apply");
+            if (definition.Enabled != false)
+            {
+                FusePrefabSanitizer.ValidateSceneClonePostBind(targetObject, id).Log($"FUSE scene clone '{id}' post-bind");
+            }
+            else
+            {
+                FuseLog.Info($"FUSE scene clone '{id}' post-bind validation skipped because the legacy definition leaves the target disabled.");
+            }
+
             FuseLog.Info($"FUSE scene clone '{id}' materialized at {targetObject.transform.position}; {DescribeRendererState(targetObject)}.");
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.SceneClone, id, definition);
             return targetObject;
@@ -323,6 +339,7 @@ namespace FUSE.API
                     continue;
                 }
 
+                lodGroup.enabled = true;
                 lodGroup.ForceLOD(0);
                 lodGroup.RecalculateBounds();
             }

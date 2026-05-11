@@ -1,17 +1,22 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Model.Definition.Data;
 using Model;
 using Model.Ops.Definition;
 using FUSE.Cache;
 using FUSE.Data;
+using FUSE.Infrastructure;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 namespace FUSE.API
 {
     public static class LoadAPI
     {
+        private static readonly HashSet<string> PlaceholderLoadWarnings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         public static Load GetLoad(string id)
         {
             if (FuseLoadRuntimeIndex.Instance.TryGetValue(id, out var cached))
@@ -23,6 +28,26 @@ namespace FUSE.API
             if (load != null)
             {
                 FuseLoadRuntimeIndex.Instance.Set(load.id, load);
+            }
+
+            return load;
+        }
+
+        public static Load GetOrCreatePlaceholderLoad(string id, string reason)
+        {
+            var existing = GetLoad(id);
+            if (existing != null || string.IsNullOrWhiteSpace(id))
+            {
+                return existing;
+            }
+
+            var definition = CreatePlaceholderDefinition(id);
+            var load = AddLoad(id, definition);
+            if (PlaceholderLoadWarnings.Add(id))
+            {
+                FuseLog.Warning(
+                    $"FUSE created placeholder load '{id}' reason='{reason ?? "missing referenced load"}'. " +
+                    "A converted load pack should define this id explicitly; placeholder values keep legacy progressions/industries loadable instead of dropping the reference.");
             }
 
             return load;
@@ -128,6 +153,163 @@ namespace FUSE.API
             load.importable = definition.Importable ?? true;
             load.payPerQuantity = definition.PayPerQuantity ?? 0f;
             load.costPerUnit = definition.CostPerUnit ?? 0f;
+            ApplyCustomLoadFields(load, definition.Fields);
+        }
+
+        private static void ApplyCustomLoadFields(Load load, IDictionary<string, object> fields)
+        {
+            if (load == null || fields == null || fields.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var pair in fields)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key))
+                {
+                    continue;
+                }
+
+                SetMemberValue(load, pair.Key, pair.Value);
+            }
+        }
+
+        private static void SetMemberValue(object instance, string memberName, object value)
+        {
+            if (instance == null || string.IsNullOrWhiteSpace(memberName) || value == null)
+            {
+                return;
+            }
+
+            var type = instance.GetType();
+            while (type != null)
+            {
+                var field = type.GetField(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (field != null)
+                {
+                    TrySet(instance, memberName, field.FieldType, converted => field.SetValue(instance, converted), value);
+                    return;
+                }
+
+                var property = type.GetProperty(memberName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (property != null && property.CanWrite)
+                {
+                    TrySet(instance, memberName, property.PropertyType, converted => property.SetValue(instance, converted, null), value);
+                    return;
+                }
+
+                type = type.BaseType;
+            }
+        }
+
+        private static void TrySet(object instance, string memberName, Type memberType, Action<object> setter, object value)
+        {
+            try
+            {
+                var converted = ConvertLoadFieldValue(memberType, value);
+                if (converted != null || !memberType.IsValueType || Nullable.GetUnderlyingType(memberType) != null)
+                {
+                    setter(converted);
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE could not set custom load field '{memberName}' " +
+                    $"type='{instance.GetType().FullName}' error='{ex.Message}'.");
+            }
+        }
+
+        private static object ConvertLoadFieldValue(Type targetType, object value)
+        {
+            if (targetType == null || value == null)
+            {
+                return null;
+            }
+
+            var nullableType = Nullable.GetUnderlyingType(targetType);
+            if (nullableType != null)
+            {
+                targetType = nullableType;
+            }
+
+            if (value is JValue jValue)
+            {
+                value = jValue.Value;
+            }
+
+            if (value is JToken token)
+            {
+                return token.ToObject(targetType);
+            }
+
+            if (targetType.IsInstanceOfType(value))
+            {
+                return value;
+            }
+
+            if (targetType.IsEnum)
+            {
+                return value is string text
+                    ? Enum.Parse(targetType, text, true)
+                    : Enum.ToObject(targetType, value);
+            }
+
+            return Convert.ChangeType(value, targetType);
+        }
+
+        private static FuseLoad CreatePlaceholderDefinition(string id)
+        {
+            var normalized = id?.Trim() ?? string.Empty;
+            if (string.Equals(normalized, "machine-parts", StringComparison.OrdinalIgnoreCase))
+            {
+                return new FuseLoad
+                {
+                    Name = "Machine Parts",
+                    Units = nameof(LoadUnits.Pounds),
+                    Density = 42.5f,
+                    UnitWeightInPounds = 0f,
+                    Importable = true,
+                    PayPerQuantity = 0f,
+                    CostPerUnit = 0f
+                };
+            }
+
+            if (string.Equals(normalized, "mining-explosives", StringComparison.OrdinalIgnoreCase))
+            {
+                return new FuseLoad
+                {
+                    Name = "Mining Explosives",
+                    Units = nameof(LoadUnits.Pounds),
+                    Density = 37.5f,
+                    UnitWeightInPounds = 0f,
+                    Importable = true,
+                    PayPerQuantity = 0f,
+                    CostPerUnit = 0f
+                };
+            }
+
+            return new FuseLoad
+            {
+                Name = HumanizeLoadId(normalized),
+                Units = nameof(LoadUnits.Pounds),
+                Density = 50f,
+                UnitWeightInPounds = 0f,
+                Importable = true,
+                PayPerQuantity = 0f,
+                CostPerUnit = 0f
+            };
+        }
+
+        private static string HumanizeLoadId(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return "Unknown Load";
+            }
+
+            return string.Join(" ", id.Split(new[] { '-', '_', '.' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(token => token.Length == 0 ? token : char.ToUpperInvariant(token[0]) + token.Substring(1)));
         }
 
         private static LoadUnits ParseUnits(string units)

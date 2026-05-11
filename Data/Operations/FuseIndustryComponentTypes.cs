@@ -85,7 +85,21 @@ namespace FUSE.Data
                 { "passenger-stop", PassengerStop },
                 { "paxstationcomponent", PassengerStop },
                 { "alinasmapmod.paxstationcomponent", PassengerStop },
-                { "alinasmapmod.stations.paxstationcomponent", PassengerStop }
+                { "alinasmapmod.stations.paxstationcomponent", PassengerStop },
+                { "captiveconversionloader", "ConfusingSupplements.IndustryComponents.CaptiveConversionLoader" },
+                { "captive-conversion-loader", "ConfusingSupplements.IndustryComponents.CaptiveConversionLoader" },
+                { "confusingsupplements.captiveconversionloader", "ConfusingSupplements.IndustryComponents.CaptiveConversionLoader" },
+                { "confusingsupplements.industrycomponents.captiveconversionloader", "ConfusingSupplements.IndustryComponents.CaptiveConversionLoader" },
+                { "captiveconversionunloader", "ConfusingSupplements.IndustryComponents.CaptiveConversionUnloader" },
+                { "captive-conversion-unloader", "ConfusingSupplements.IndustryComponents.CaptiveConversionUnloader" },
+                { "confusingsupplements.captiveconversionunloader", "ConfusingSupplements.IndustryComponents.CaptiveConversionUnloader" },
+                { "confusingsupplements.industrycomponents.captiveconversionunloader", "ConfusingSupplements.IndustryComponents.CaptiveConversionUnloader" },
+                { "pay4resource", "ConfusingSupplements.IndustryComponents.Pay4Resource" },
+                { "pay-for-resource", "ConfusingSupplements.IndustryComponents.Pay4Resource" },
+                { "confusingsupplements.pay4resource", "ConfusingSupplements.IndustryComponents.Pay4Resource" },
+                { "confusingsupplements.industrycomponents.pay4resource", "ConfusingSupplements.IndustryComponents.Pay4Resource" },
+                { "confusingsupplements.empty", "ConfusingSupplements.IndustryComponents.Empty" },
+                { "confusingsupplements.industrycomponents.empty", "ConfusingSupplements.IndustryComponents.Empty" }
             };
 
         public static IReadOnlyCollection<string> Canonical => CanonicalTypes;
@@ -106,6 +120,14 @@ namespace FUSE.Data
         public static bool IsKnown(string type)
         {
             return CanonicalTypeSet.Contains(Normalize(type) ?? string.Empty);
+        }
+
+        public static bool IsCustomTypeCandidate(string type)
+        {
+            var normalized = Normalize(type);
+            return !string.IsNullOrWhiteSpace(normalized) &&
+                   !IsKnown(normalized) &&
+                   normalized.Contains(".");
         }
 
         public static bool UsesLoadId(string type)

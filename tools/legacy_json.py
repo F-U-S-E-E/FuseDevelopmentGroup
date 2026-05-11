@@ -26,6 +26,9 @@ def loads(text: str, repair: bool = True) -> Any:
     cleaned = remove_trailing_commas(cleaned)
     if repair:
         cleaned = close_unbalanced_json(cleaned)
+        # Closing a truncated object can expose a trailing comma that was not
+        # followed by a brace/bracket during the first pass.
+        cleaned = remove_trailing_commas(cleaned)
     return json.loads(cleaned)
 
 

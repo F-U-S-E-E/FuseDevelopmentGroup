@@ -55,7 +55,11 @@ namespace FUSE.API
             return result;
         }
 
-        public static FusePrefabSanitizerResult SanitizeLoader(GameObject root, string id, Industry industry)
+        public static FusePrefabSanitizerResult SanitizeLoader(
+            GameObject root,
+            string id,
+            Industry industry,
+            bool requiresIndustry)
         {
             var result = new FusePrefabSanitizerResult();
             if (!ValidateRoot(root, "loader", id, result))
@@ -66,8 +70,12 @@ namespace FUSE.API
             ReplaceGlobalObjectIds(root, id + ".loader", result);
             DisableTrackMarkers(root, result);
             ClearCachedIdentityFields(root, result);
-            RelinkLoaderIndustry(root, industry, result);
-            ValidateRequiredComponent<CarLoadTargetLoader>(root, "loader", result);
+            RelinkLoaderIndustry(root, industry, requiresIndustry, result);
+            if (requiresIndustry)
+            {
+                ValidateRequiredComponent<CarLoadTargetLoader>(root, "loader", result);
+            }
+
             ValidateRendererPresence(root, "loader", result);
             return result;
         }
@@ -114,7 +122,11 @@ namespace FUSE.API
             return result;
         }
 
-        public static FusePrefabSanitizerResult ValidateLoaderPostBind(GameObject root, string id, Industry expectedIndustry)
+        public static FusePrefabSanitizerResult ValidateLoaderPostBind(
+            GameObject root,
+            string id,
+            Industry expectedIndustry,
+            bool requiresIndustry)
         {
             var result = new FusePrefabSanitizerResult();
             if (!ValidateRoot(root, "loader", id, result))
@@ -136,7 +148,10 @@ namespace FUSE.API
             var targetLoader = root.GetComponentInChildren<CarLoadTargetLoader>(true);
             if (targetLoader == null)
             {
-                result.Warnings.Add("loader has no CarLoadTargetLoader after bind.");
+                if (requiresIndustry)
+                {
+                    result.Warnings.Add("loader has no CarLoadTargetLoader after bind.");
+                }
             }
             else if (expectedIndustry != null && !ReferenceEquals(targetLoader.sourceIndustry, expectedIndustry))
             {
@@ -350,11 +365,19 @@ namespace FUSE.API
             }
         }
 
-        private static void RelinkLoaderIndustry(GameObject root, Industry industry, FusePrefabSanitizerResult result)
+        private static void RelinkLoaderIndustry(
+            GameObject root,
+            Industry industry,
+            bool requiresIndustry,
+            FusePrefabSanitizerResult result)
         {
             if (industry == null)
             {
-                result.Warnings.Add("loader has no resolved industry reference.");
+                if (requiresIndustry)
+                {
+                    result.Warnings.Add("loader has no resolved industry reference.");
+                }
+
                 return;
             }
 

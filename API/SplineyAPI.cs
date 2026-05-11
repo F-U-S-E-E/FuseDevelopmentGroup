@@ -166,6 +166,8 @@ namespace FUSE.API
             {
                 case SplineyKind.Road:
                 case SplineyKind.River:
+                case SplineyKind.TerrainRoad:
+                case SplineyKind.Waterfall:
                     ConfigureFlowy(root, definition, kind, points);
                     break;
                 case SplineyKind.Trestle:
@@ -208,7 +210,7 @@ namespace FUSE.API
             root.transform.localPosition = center;
 
             var riverPath = root.GetComponent<RiverPath>() ?? root.AddComponent<RiverPath>();
-            riverPath.style = kind == SplineyKind.River ? RiverPath.RiverPathStyle.River : RiverPath.RiverPathStyle.Road;
+            riverPath.style = IsWaterSpline(kind) ? RiverPath.RiverPathStyle.River : RiverPath.RiverPathStyle.Road;
             riverPath.yOffset = definition.OffsetY;
             riverPath.points = points.Select(point => new RiverPath.Point(
                 point.Position - center,
@@ -267,7 +269,7 @@ namespace FUSE.API
             return ResolveNamedObject(
                 profiles,
                 profileName,
-                kind == SplineyKind.River ? "river" : "road");
+                GetSplineProfileFallbackHint(kind));
         }
 
         private static AutoTrestleProfile ResolveAutoTrestleProfile(string profileName)
@@ -378,12 +380,43 @@ namespace FUSE.API
                 return SplineyKind.Trestle;
             }
 
+            if (string.Equals(value, "terrainRoad", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "terrain-road", StringComparison.OrdinalIgnoreCase))
+            {
+                return SplineyKind.TerrainRoad;
+            }
+
+            if (string.Equals(value, "waterfall", StringComparison.OrdinalIgnoreCase))
+            {
+                return SplineyKind.Waterfall;
+            }
+
             if (string.Equals(value, "river", StringComparison.OrdinalIgnoreCase))
             {
                 return SplineyKind.River;
             }
 
             return SplineyKind.Road;
+        }
+
+        private static bool IsWaterSpline(SplineyKind kind)
+        {
+            return kind == SplineyKind.River || kind == SplineyKind.Waterfall;
+        }
+
+        private static string GetSplineProfileFallbackHint(SplineyKind kind)
+        {
+            switch (kind)
+            {
+                case SplineyKind.River:
+                    return "river";
+                case SplineyKind.Waterfall:
+                    return "waterfall";
+                case SplineyKind.TerrainRoad:
+                    return "road";
+                default:
+                    return "road";
+            }
         }
 
         private static AutoTrestle.AutoTrestle.EndStyle ParseEndStyle(string value)
@@ -444,6 +477,8 @@ namespace FUSE.API
         {
             Road,
             River,
+            TerrainRoad,
+            Waterfall,
             Trestle
         }
     }

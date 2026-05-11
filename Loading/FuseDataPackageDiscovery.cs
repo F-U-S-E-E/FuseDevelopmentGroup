@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using FUSE.Infrastructure;
@@ -27,12 +28,14 @@ namespace FUSE.Loading
                 return _discoveredPackageFolders;
             }
 
+            var stopwatch = Stopwatch.StartNew();
             var modsRoot = GetModsRoot();
             if (string.IsNullOrWhiteSpace(modsRoot) || !Directory.Exists(modsRoot))
             {
                 FuseLog.Warning("FUSE could not locate the Unity Mod Manager Mods folder.");
                 _discoveredPackageFolders = Array.Empty<string>();
                 _discoveryComplete = true;
+                FuseLog.Info($"FUSE load timing phase='discover packages' elapsedMs={stopwatch.ElapsedMilliseconds} packageCount=0 status='mods-root-missing'.");
                 return _discoveredPackageFolders;
             }
 
@@ -50,6 +53,7 @@ namespace FUSE.Loading
 
             _discoveryComplete = true;
             FuseLog.Info($"FUSE discovered {_discoveredPackageFolders.Length} candidate data package(s) in '{modsRoot}'.");
+            FuseLog.Info($"FUSE load timing phase='discover packages' elapsedMs={stopwatch.ElapsedMilliseconds} packageCount={_discoveredPackageFolders.Length}.");
             for (var index = 0; index < _discoveredPackageFolders.Length; index++)
             {
                 var manifest = index < _discoveredPackageManifests.Length ? _discoveredPackageManifests[index] : null;
@@ -74,9 +78,11 @@ namespace FUSE.Loading
 
         public static int LoadPackagesFromDisk(bool forceReload)
         {
+            var stopwatch = Stopwatch.StartNew();
             if (_definitionsLoadedFromDisk && !forceReload)
             {
                 FuseLog.Info($"FUSE package disk load skipped because {FuseModLoader.LoadedDefinitionCount} definition(s) are already loaded.");
+                FuseLog.Info($"FUSE load timing phase='load packages from disk' elapsedMs={stopwatch.ElapsedMilliseconds} loaded=0 skipped='resident-definitions-already-loaded'.");
                 FusePackageFaultRegistry.LogFinalReport("disk load skipped", FuseModLoader.LoadedDefinitionCount);
                 return 0;
             }
@@ -84,7 +90,7 @@ namespace FUSE.Loading
             if (forceReload)
             {
                 FuseLog.Info("FUSE forced package disk reload requested; using existing discovery cache.");
-                FuseModLoader.UnloadAll(resetDiscovery: false);
+                FuseModLoader.UnloadAll(resetDiscovery: false, restoreTrackSnapshots: false);
                 FusePackageFaultRegistry.Reset();
                 _definitionsLoadedFromDisk = false;
             }
@@ -94,10 +100,12 @@ namespace FUSE.Loading
             {
                 _definitionsLoadedFromDisk = true;
                 FuseLog.Info("FUSE loaded 0 package definition(s) from disk because discovery found no packages.");
+                FuseLog.Info($"FUSE load timing phase='load packages from disk' elapsedMs={stopwatch.ElapsedMilliseconds} loaded=0 packageCount=0.");
                 FusePackageFaultRegistry.LogFinalReport("disk load", FuseModLoader.LoadedDefinitionCount);
                 return 0;
             }
 
+            var assetStopwatch = Stopwatch.StartNew();
             try
             {
                 FuseAssetPackRegistry.MountAllAvailableAssetPacks();
@@ -106,6 +114,7 @@ namespace FUSE.Loading
             {
                 FuseLog.Exception("FUSE asset pack mount failed before package disk load; continuing with definition loading.", ex);
             }
+            FuseLog.Info($"FUSE load timing phase='asset pack registration' elapsedMs={assetStopwatch.ElapsedMilliseconds}.");
 
             var loadedCount = 0;
             var manifests = _discoveredPackageManifests.Length > 0
@@ -141,9 +150,10 @@ namespace FUSE.Loading
 
                 try
                 {
+                    var packageStopwatch = Stopwatch.StartNew();
                     FuseModLoader.LoadMod(packagePath);
                     FusePackageFaultRegistry.MarkLoadedFromDisk(manifest.Id);
-                    FuseLog.Info($"FUSE loaded package '{Path.GetFileName(packagePath)}' id='{manifest.Id}' from disk into resident definitions. Runtime apply has not run in this step.");
+                    FuseLog.Info($"FUSE loaded package '{Path.GetFileName(packagePath)}' id='{manifest.Id}' from disk into resident definitions in {packageStopwatch.ElapsedMilliseconds} ms. Runtime apply has not run in this step.");
                     loadedCount++;
                 }
                 catch (Exception ex)
@@ -156,14 +166,17 @@ namespace FUSE.Loading
 
             _definitionsLoadedFromDisk = true;
             FuseLog.Info($"FUSE loaded {loadedCount} data package folder(s) from disk; {FuseModLoader.LoadedDefinitionCount} resident definition(s). Runtime apply is separate.");
+            FuseLog.Info($"FUSE load timing phase='load packages from disk' elapsedMs={stopwatch.ElapsedMilliseconds} loaded={loadedCount} residentDefinitions={FuseModLoader.LoadedDefinitionCount}.");
             FusePackageFaultRegistry.LogFinalReport("disk load", FuseModLoader.LoadedDefinitionCount);
             return loadedCount;
         }
 
         public static int ApplyLoadedPackages(string reason)
         {
+            var stopwatch = Stopwatch.StartNew();
             var appliedCount = FuseModLoader.ApplyLoadedDefinitions(reason);
             FuseLog.Info($"FUSE applied {appliedCount} resident definition(s) to runtime for '{reason ?? "unspecified"}'.");
+            FuseLog.Info($"FUSE load timing phase='apply resident definitions' reason='{reason ?? "unspecified"}' elapsedMs={stopwatch.ElapsedMilliseconds} applied={appliedCount} residentDefinitions={FuseModLoader.LoadedDefinitionCount}.");
             FusePackageFaultRegistry.LogFinalReport(reason ?? "runtime apply", FuseModLoader.LoadedDefinitionCount);
             return appliedCount;
         }
@@ -175,9 +188,11 @@ namespace FUSE.Loading
 
         public static int LoadAndApplyAvailablePackages(string reason, bool forceReload = false)
         {
+            var stopwatch = Stopwatch.StartNew();
             var loadedCount = LoadPackagesFromDisk(forceReload);
             var appliedCount = ApplyLoadedPackages(reason);
             FuseLog.Info($"FUSE load/apply complete for '{reason ?? "unspecified"}': loadedFromDisk={loadedCount}, appliedToRuntime={appliedCount}.");
+            FuseLog.Info($"FUSE load timing phase='load and apply packages' reason='{reason ?? "unspecified"}' elapsedMs={stopwatch.ElapsedMilliseconds} loadedFromDisk={loadedCount} appliedToRuntime={appliedCount}.");
             return appliedCount;
         }
 

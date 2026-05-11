@@ -8,6 +8,8 @@
   "EntryMethod": "FUSE.FusePlugin.Load",
   "HomePage": "",
   "Settings": {
-    "EnableExperimentalEarlyScenePathSuppression": false
+    "EnableExperimentalEarlyScenePathSuppression": false,
+    "MirrorAssetPacksToLocalLow": false,
+    "VerboseApplyReportDetails": false
   }
 }

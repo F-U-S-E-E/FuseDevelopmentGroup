@@ -17,12 +17,11 @@ namespace FUSE.Patches
         {
             try
             {
-                FuseMapTileRegistry.RefreshFromAvailablePackages();
                 var directoryName = Path.GetFileName(basePath?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 var mountedCount = FuseMapTileRegistry.MountIntoStore(__instance, directoryName);
                 if (mountedCount > 0)
                 {
-                    FuseLog.Info($"Mounted {mountedCount} FUSE map tile(s) for '{directoryName}'.");
+                    FuseLog.Info($"Mounted {mountedCount} FUSE map tile(s) for '{directoryName}' reason='MapStore.Load'.");
                 }
             }
             catch (Exception ex)
