@@ -660,6 +660,22 @@ namespace FUSE.Loading
             {
                 var graphTransaction = new FuseApplyTransaction("__merged-graph-rebuild__", reason, false);
                 graphTransaction.RunPhase("merged-single-graph-rebuild", () => TrackAPI.RebuildGraph());
+                if (graphTransaction.Report.IsFatal || graphTransaction.Report.HasErrors)
+                {
+                    var failure = FormatMergedGraphRebuildFailure(graphTransaction.Report);
+                    foreach (var candidate in plan.OrderedCandidates.Where(item => item?.Transaction != null && !item.Transaction.Report.IsFatal))
+                    {
+                        var definitionId = candidate.Loaded?.Definition?.Id ?? string.Empty;
+                        candidate.Transaction.RunPhase("merged-single-graph-rebuild", () =>
+                            candidate.Transaction.Fatal("graph", definitionId, failure));
+                    }
+
+                    FuseLog.Warning(
+                        "FUSE merged graph apply operation='merged-single-graph-rebuild' failed; " +
+                        "final span apply and later runtime phases were aborted for active definitions.");
+                    return;
+                }
+
                 foreach (var candidate in plan.OrderedCandidates.Where(item => !item.Transaction.Report.IsFatal))
                 {
                     candidate.Transaction.PostBind("graph", candidate.Loaded.Definition.Id, "merged-rebuilt-before-final-spans");
@@ -684,6 +700,19 @@ namespace FUSE.Loading
             {
                 TrackAPI.EndBatch(false);
             }
+        }
+
+        private static string FormatMergedGraphRebuildFailure(FuseApplyReport report)
+        {
+            var message = report?.FatalReason;
+            if (string.IsNullOrWhiteSpace(message) && report?.Errors != null && report.Errors.Count > 0)
+            {
+                message = report.Errors[0];
+            }
+
+            return string.IsNullOrWhiteSpace(message)
+                ? "merged graph rebuild failed"
+                : "merged graph rebuild failed: " + message;
         }
 
         private static void ApplyMergedSpanRemoval(FuseMergedTrackRemoval removal)
