@@ -73,10 +73,15 @@ namespace FUSE.API
                 return;
             }
 
-            RemovePackageEntries(Whistles, packageId);
-            RemovePackageEntries(Horns, packageId);
-            RemovePackageEntries(Bells, packageId);
-            FuseLog.Info($"FUSE audio package='{packageId}' operation='release audio definitions'.");
+            var whistles = RemovePackageEntries(Whistles, packageId);
+            var horns = RemovePackageEntries(Horns, packageId);
+            var bells = RemovePackageEntries(Bells, packageId);
+            if (whistles + horns + bells > 0)
+            {
+                FuseLog.Info(
+                    $"FUSE audio package='{packageId}' operation='release audio definitions' " +
+                    $"whistles={whistles} horns={horns} bells={bells}.");
+            }
         }
 
         public static IReadOnlyList<FuseAudioChoice> HornChoices()
@@ -111,6 +116,8 @@ namespace FUSE.API
                     {
                         Audio = new AssetReference
                         {
+                            // "rail" is Railroader's built-in asset-pack id, not the old RAIL mod name.
+                            // FUSE intercepts these loose-file definitions before the base asset loader runs.
                             AssetPackIdentifier = "rail",
                             AssetIdentifier = whistle.Id
                         },
@@ -600,14 +607,18 @@ namespace FUSE.API
             return registry.Values.Count(entry => string.Equals(entry.PackageId, packageId, StringComparison.OrdinalIgnoreCase));
         }
 
-        private static void RemovePackageEntries<T>(Dictionary<string, T> registry, string packageId) where T : RegisteredAudio
+        private static int RemovePackageEntries<T>(Dictionary<string, T> registry, string packageId) where T : RegisteredAudio
         {
+            var removed = 0;
             foreach (var key in registry.Where(pair => string.Equals(pair.Value.PackageId, packageId, StringComparison.OrdinalIgnoreCase))
                          .Select(pair => pair.Key)
                          .ToArray())
             {
                 registry.Remove(key);
+                removed++;
             }
+
+            return removed;
         }
 
         private abstract class RegisteredAudio

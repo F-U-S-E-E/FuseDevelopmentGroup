@@ -17,6 +17,8 @@ namespace FUSE.API
         private static readonly FieldInfo RiverBuilderSplineProfileField = typeof(RiverBuilder).GetField("splineProfile", BindingFlags.Instance | BindingFlags.NonPublic);
         private static Transform _fallbackRiverRoot;
         private static Transform _fallbackTrestleRoot;
+        private static List<SplineProfile> _splineProfiles;
+        private static List<AutoTrestleProfile> _autoTrestleProfiles;
 
         public static GameObject AddSpliney(string id, FuseSpliney definition)
         {
@@ -82,6 +84,11 @@ namespace FUSE.API
             if (FuseSplineyRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (GameObject)cached;
+            }
+
+            if (FuseCacheRegistry.IsReady)
+            {
+                return null;
             }
 
             return !string.IsNullOrWhiteSpace(id)
@@ -258,31 +265,63 @@ namespace FUSE.API
 
         private static SplineProfile ResolveSplineProfile(string profileName, SplineyKind kind)
         {
-            var profiles = Resources.FindObjectsOfTypeAll<SplineProfile>()
-                .Where(profile => profile != null)
-                .ToList();
-
-            profiles.AddRange(UnityEngine.Object.FindObjectsOfType<RiverBuilder>(true)
-                .Select(builder => RiverBuilderSplineProfileField?.GetValue(builder) as SplineProfile)
-                .Where(profile => profile != null));
-
             return ResolveNamedObject(
-                profiles,
+                GetSplineProfiles(),
                 profileName,
                 GetSplineProfileFallbackHint(kind));
         }
 
         private static AutoTrestleProfile ResolveAutoTrestleProfile(string profileName)
         {
-            var profiles = Resources.FindObjectsOfTypeAll<AutoTrestleProfile>()
+            return ResolveNamedObject(GetAutoTrestleProfiles(), profileName, "trestle");
+        }
+
+        private static IReadOnlyList<SplineProfile> GetSplineProfiles()
+        {
+            if (_splineProfiles != null && _splineProfiles.Any(profile => profile != null))
+            {
+                return _splineProfiles;
+            }
+
+            _splineProfiles = Resources.FindObjectsOfTypeAll<SplineProfile>()
                 .Where(profile => profile != null)
                 .ToList();
 
-            profiles.AddRange(UnityEngine.Object.FindObjectsOfType<AutoTrestle.AutoTrestle>(true)
+            _splineProfiles.AddRange(UnityEngine.Object.FindObjectsOfType<RiverBuilder>(true)
+                .Select(builder => RiverBuilderSplineProfileField?.GetValue(builder) as SplineProfile)
+                .Where(profile => profile != null));
+
+            _splineProfiles = _splineProfiles
+                .Where(profile => profile != null)
+                .GroupBy(profile => profile.GetInstanceID())
+                .Select(group => group.First())
+                .ToList();
+
+            return _splineProfiles;
+        }
+
+        private static IReadOnlyList<AutoTrestleProfile> GetAutoTrestleProfiles()
+        {
+            if (_autoTrestleProfiles != null && _autoTrestleProfiles.Any(profile => profile != null))
+            {
+                return _autoTrestleProfiles;
+            }
+
+            _autoTrestleProfiles = Resources.FindObjectsOfTypeAll<AutoTrestleProfile>()
+                .Where(profile => profile != null)
+                .ToList();
+
+            _autoTrestleProfiles.AddRange(UnityEngine.Object.FindObjectsOfType<AutoTrestle.AutoTrestle>(true)
                 .Select(trestle => trestle != null ? trestle.profile : null)
                 .Where(profile => profile != null));
 
-            return ResolveNamedObject(profiles, profileName, "trestle");
+            _autoTrestleProfiles = _autoTrestleProfiles
+                .Where(profile => profile != null)
+                .GroupBy(profile => profile.GetInstanceID())
+                .Select(group => group.First())
+                .ToList();
+
+            return _autoTrestleProfiles;
         }
 
         private static T ResolveNamedObject<T>(IEnumerable<T> candidates, string preferredName, string fallbackHint) where T : UnityEngine.Object

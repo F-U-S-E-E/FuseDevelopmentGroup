@@ -759,7 +759,7 @@ def record_runtime_id(
         return
 
     report.add(
-        "WARN",
+        "INFO",
         f"Duplicate legacy {runtime_kind} id '{object_id}' also appeared in '{first_file.name}'. "
         "FUSE keeps one output file per source file and preserves the same runtime id so later mixinto files update/replace the earlier object.",
         file,

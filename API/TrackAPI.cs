@@ -16,11 +16,14 @@ namespace FUSE.API
     public static class TrackAPI
     {
         private const float SpanDistanceTolerance = 0.001f;
+        private const int AreaOrderSiblingSpacing = 100;
 
         private static int _batchDepth;
         private static bool _rebuildRequested;
         private static Transform _fallbackAreaRoot;
         private static readonly Dictionary<string, int> AreaOrders = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, int> AreaFallbackOrders = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, string> AreaAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, FuseNode> BaseNodeDefinitions = new Dictionary<string, FuseNode>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, FuseSegment> BaseSegmentDefinitions = new Dictionary<string, FuseSegment>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, FuseSpan> BaseSpanDefinitions = new Dictionary<string, FuseSpan>(StringComparer.OrdinalIgnoreCase);
@@ -539,6 +542,13 @@ namespace FUSE.API
             };
         }
 
+        public static void ClearRuntimeMetadata()
+        {
+            AreaOrders.Clear();
+            AreaFallbackOrders.Clear();
+            AreaAliases.Clear();
+        }
+
         public static TrackSpan TryEnsureBaseGraphSpan(string id, string reason)
         {
             if (string.IsNullOrWhiteSpace(id))
@@ -621,6 +631,27 @@ namespace FUSE.API
             }
 
             var displayName = string.IsNullOrWhiteSpace(definition.Name) ? id : definition.Name;
+            var existingNamedArea = FindSingleAreaByDisplayName(displayName);
+            if (existingNamedArea != null)
+            {
+                var existingAreaKey = string.IsNullOrWhiteSpace(existingNamedArea.identifier)
+                    ? existingNamedArea.name
+                    : existingNamedArea.identifier;
+                AreaAliases[id] = existingAreaKey;
+                ApplyAreaDefinition(existingNamedArea, definition);
+                RememberAreaOrder(id, definition.Order);
+                FuseAreaRuntimeIndex.Instance.Set(id, existingNamedArea);
+                if (!string.IsNullOrWhiteSpace(existingAreaKey))
+                {
+                    FuseAreaRuntimeIndex.Instance.Set(existingAreaKey, existingNamedArea);
+                }
+                FuseLog.Info(
+                    $"FUSE aliased area '{id}' name='{displayName}' to existing area id='{existingAreaKey}' " +
+                    $"parent='{DescribeAreaParent(existingNamedArea.transform.parent)}' position={existingNamedArea.transform.localPosition} radius={existingNamedArea.radius}.");
+                FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackArea, id, definition);
+                return existingNamedArea;
+            }
+
             var gameObject = new GameObject(displayName);
             gameObject.transform.SetParent(GetAreaRoot(), false);
             var area = gameObject.AddComponent<Area>();
@@ -658,6 +689,18 @@ namespace FUSE.API
             if (FuseAreaRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (Area)cached;
+            }
+
+            if (AreaAliases.TryGetValue(id, out var aliasedId) &&
+                !string.IsNullOrWhiteSpace(aliasedId) &&
+                !string.Equals(aliasedId, id, StringComparison.OrdinalIgnoreCase))
+            {
+                var aliasedArea = GetArea(aliasedId);
+                if (aliasedArea != null)
+                {
+                    FuseAreaRuntimeIndex.Instance.Set(id, aliasedArea);
+                    return aliasedArea;
+                }
             }
 
             var controller = OpsController.Shared;
@@ -708,29 +751,154 @@ namespace FUSE.API
 
         public static void ApplyAreaOrdering()
         {
-            var orderedAreas = GetAllAreas()
-                .Where(area => area != null && !string.IsNullOrWhiteSpace(area.identifier) && AreaOrders.ContainsKey(area.identifier))
-                .OrderBy(area => AreaOrders[area.identifier])
-                .ThenBy(area => area.name, StringComparer.OrdinalIgnoreCase)
+            var areas = GetAllAreas()
+                .Where(area => area != null)
                 .ToArray();
-            if (orderedAreas.Length == 0)
+            var explicitCount = areas.Count(area =>
             {
-                return;
-            }
-
-            var firstIndex = orderedAreas.Min(area => area.transform.GetSiblingIndex());
-            for (var index = 0; index < orderedAreas.Length; index++)
+                int _;
+                return TryGetAreaOrder(area, out _);
+            });
+            if (explicitCount > 0)
             {
-                orderedAreas[index].transform.SetSiblingIndex(firstIndex + index);
+                var movedCount = ApplyAreaSiblingOrdering(areas);
+                FuseLog.Info(
+                    $"FUSE cached area ordering for {areas.Length} area(s), explicitOrdered={explicitCount}, " +
+                    $"moved={movedCount}, firstAreas='{BuildAreaOrderPreview()}'.");
             }
-
-            FuseLog.Info($"FUSE applied area ordering for {orderedAreas.Length} area(s).");
         }
 
         public static void SetGroupEnabled(string groupId, bool enabled)
         {
             RequireGraph().SetGroupEnabled(groupId, enabled);
             RequestRebuild();
+        }
+
+        public static bool TryGetAreaOrder(Area area, out int order)
+        {
+            order = 0;
+            return area != null &&
+                   !string.IsNullOrWhiteSpace(area.identifier) &&
+                   (AreaOrders.TryGetValue(area.identifier, out order) ||
+                    TryGetAliasedAreaOrder(area.identifier, out order));
+        }
+
+        public static int GetAreaSortOrder(Area area, int fallbackSiblingIndex)
+        {
+            int order;
+            return TryGetAreaOrder(area, out order)
+                ? order
+                : GetAreaFallbackOrder(area, fallbackSiblingIndex);
+        }
+
+        public static int GetSiblingAreaSortOrder(int siblingIndex)
+        {
+            if (siblingIndex < 0)
+            {
+                return int.MaxValue;
+            }
+
+            if (siblingIndex >= int.MaxValue / AreaOrderSiblingSpacing)
+            {
+                return int.MaxValue;
+            }
+
+            return siblingIndex * AreaOrderSiblingSpacing;
+        }
+
+        private static string BuildAreaOrderPreview()
+        {
+            try
+            {
+                var areas = OpsController.Shared != null
+                    ? OpsController.Shared.Areas
+                    : GetAllAreas();
+                var indexedAreas = areas
+                    .Where(area => area != null)
+                    .Select((area, index) =>
+                    {
+                        int order;
+                        var hasOrder = TryGetAreaOrder(area, out order);
+                        return new
+                        {
+                            Area = area,
+                            Index = index,
+                            HasOrder = hasOrder,
+                            Order = hasOrder ? order : GetAreaFallbackOrder(area, index)
+                        };
+                    });
+
+                return string.Join(
+                    " > ",
+                    indexedAreas
+                        .OrderBy(item => item.Order)
+                        .ThenBy(item => item.Index)
+                        .Take(12)
+                        .Select(item => string.IsNullOrWhiteSpace(item.Area.name) ? item.Area.identifier : item.Area.name)
+                        .ToArray());
+            }
+            catch (Exception ex)
+            {
+                return "unavailable: " + ex.Message;
+            }
+        }
+
+        private static int ApplyAreaSiblingOrdering(IEnumerable<Area> areas)
+        {
+            var movedCount = 0;
+            try
+            {
+                foreach (var parentGroup in areas
+                             .Where(area => area != null && area.transform != null && area.transform.parent != null)
+                             .Select(area =>
+                             {
+                                 int order;
+                                 var hasOrder = TryGetAreaOrder(area, out order);
+                                 return new
+                                 {
+                                     Area = area,
+                                     Parent = area.transform.parent,
+                                     SiblingIndex = area.transform.GetSiblingIndex(),
+                                     HasOrder = hasOrder,
+                                     Order = hasOrder ? order : GetAreaFallbackOrder(area, area.transform.GetSiblingIndex())
+                                 };
+                             })
+                             .GroupBy(item => item.Parent))
+                {
+                    if (!parentGroup.Any(item => item.HasOrder))
+                    {
+                        continue;
+                    }
+
+                    var original = parentGroup
+                        .OrderBy(item => item.SiblingIndex)
+                        .ToArray();
+                    var ordered = original
+                        .OrderBy(item => item.Order)
+                        .ThenBy(item => item.SiblingIndex)
+                        .ToArray();
+
+                    var baseIndex = original.Min(item => item.SiblingIndex);
+                    for (var index = 0; index < ordered.Length; index++)
+                    {
+                        var targetIndex = baseIndex + index;
+                        var area = ordered[index].Area;
+                        if (area == null || area.transform == null || area.transform.GetSiblingIndex() == targetIndex)
+                        {
+                            continue;
+                        }
+
+                        area.transform.SetSiblingIndex(targetIndex);
+                        movedCount++;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not apply area sibling ordering for the Locations list: {ex.Message}");
+            }
+
+            return movedCount;
         }
 
         public static void BeginBatch()
@@ -781,6 +949,12 @@ namespace FUSE.API
             {
                 var marker = markers[index];
                 if (marker == null || !marker.enabled)
+                {
+                    continue;
+                }
+
+                if (marker.type == TrackMarkerType.PassengerStop &&
+                    marker.GetComponentInParent<FusePassengerStopComponent>() != null)
                 {
                     continue;
                 }
@@ -1224,6 +1398,68 @@ namespace FUSE.API
             }
 
             AreaOrders.Remove(id);
+        }
+
+        private static Area FindSingleAreaByDisplayName(string displayName)
+        {
+            if (string.IsNullOrWhiteSpace(displayName))
+            {
+                return null;
+            }
+
+            var matches = GetAllAreas()
+                .Where(area => area != null &&
+                               string.Equals(area.name, displayName, StringComparison.OrdinalIgnoreCase))
+                .Take(2)
+                .ToArray();
+            return matches.Length == 1 ? matches[0] : null;
+        }
+
+        private static bool TryGetAliasedAreaOrder(string areaId, out int order)
+        {
+            foreach (var alias in AreaAliases)
+            {
+                if (string.Equals(alias.Value, areaId, StringComparison.OrdinalIgnoreCase) &&
+                    AreaOrders.TryGetValue(alias.Key, out order))
+                {
+                    return true;
+                }
+            }
+
+            order = 0;
+            return false;
+        }
+
+        private static int GetAreaFallbackOrder(Area area, int fallbackSiblingIndex)
+        {
+            var key = GetAreaOrderKey(area);
+            if (!string.IsNullOrWhiteSpace(key) && AreaFallbackOrders.TryGetValue(key, out var order))
+            {
+                return order;
+            }
+
+            order = GetSiblingAreaSortOrder(fallbackSiblingIndex);
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                AreaFallbackOrders[key] = order;
+            }
+
+            return order;
+        }
+
+        private static string GetAreaOrderKey(Area area)
+        {
+            if (area == null)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(area.identifier))
+            {
+                return area.identifier;
+            }
+
+            return !string.IsNullOrWhiteSpace(area.name) ? area.name : null;
         }
 
         private static Color ParseAreaColor(float[] values)
