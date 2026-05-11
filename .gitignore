@@ -1,6 +1,17 @@
 Local.Build.props
-/obj
-/.vs
-/obj
-obj/project.assets.json
-obj/project.nuget.cache
+
+# IDE and local build settings
+/.vs/
+
+# Build output
+/bin/
+/obj/
+/dist/
+
+# Local .NET SDK/runtime caches
+/.dotnet/
+/.dotnet-home/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
