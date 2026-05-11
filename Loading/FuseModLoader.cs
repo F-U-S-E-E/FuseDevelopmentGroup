@@ -2051,6 +2051,7 @@ namespace FUSE.Loading
                 MapAPI.RestoreAllTelegraphPoleMovements("unload all");
             }
             SpawnPointAPI.ClearRuntimeCache();
+            TrackAPI.ClearRuntimeMetadata();
             if (restoreTrackSnapshots)
             {
                 FuseWorldSuppressor.RestoreAll("unload all");
@@ -2187,14 +2188,14 @@ namespace FUSE.Loading
 
         private static IEnumerable<string> ResolveExplicitDefinitionPaths(string modFolder, JObject info)
         {
-            foreach (var railDataFile in EnumerateFuseDataFiles(info["FuseDataFile"]))
+            foreach (var fuseDataFile in EnumerateFuseDataFiles(info["FuseDataFile"]))
             {
-                yield return ResolveExistingDefinitionPath(modFolder, railDataFile);
+                yield return ResolveExistingDefinitionPath(modFolder, fuseDataFile);
             }
 
-            foreach (var railDataFile in EnumerateFuseDataFiles(info["FuseDataFiles"]))
+            foreach (var fuseDataFile in EnumerateFuseDataFiles(info["FuseDataFiles"]))
             {
-                yield return ResolveExistingDefinitionPath(modFolder, railDataFile);
+                yield return ResolveExistingDefinitionPath(modFolder, fuseDataFile);
             }
         }
 
@@ -2236,12 +2237,12 @@ namespace FUSE.Loading
             }
         }
 
-        private static string ResolveExistingDefinitionPath(string modFolder, string railDataFile)
+        private static string ResolveExistingDefinitionPath(string modFolder, string fuseDataFile)
         {
-            var explicitPath = Path.Combine(modFolder, railDataFile);
+            var explicitPath = Path.Combine(modFolder, fuseDataFile);
             if (!File.Exists(explicitPath))
             {
-                throw new FileNotFoundException($"FUSE data file '{railDataFile}' was not found in '{modFolder}'.", explicitPath);
+                throw new FileNotFoundException($"FUSE data file '{fuseDataFile}' was not found in '{modFolder}'.", explicitPath);
             }
 
             return explicitPath;

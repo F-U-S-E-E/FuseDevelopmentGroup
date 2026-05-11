@@ -115,6 +115,11 @@ namespace FUSE.API
                 return (SceneryAssetInstance)cached;
             }
 
+            if (FuseCacheRegistry.IsReady)
+            {
+                return null;
+            }
+
             return !string.IsNullOrWhiteSpace(id)
                 ? UnityEngine.Object.FindObjectsOfType<SceneryAssetInstance>().FirstOrDefault(instance => instance.name == id)
                 : null;
