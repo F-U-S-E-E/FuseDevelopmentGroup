@@ -284,6 +284,22 @@
                 },
                 "tags": {
                     "$ref": "#/$defs/stringArray"
+                },
+                "gauge": {
+                    "type": "string",
+                    "enum": [
+                        "Standard",
+                        "Narrow",
+                        "3ft",
+                        "3 ft",
+                        "ThreeFoot",
+                        "Three Foot",
+                        "DualGauge",
+                        "Dual",
+                        "Mixed",
+                        "MixedGauge"
+                    ],
+                    "description": "Optional NarrowGaugeMod metadata. FUSE stores the value for companion mods; Railroader's base graph still uses the normal track geometry."
                 }
             }
         },
@@ -897,6 +913,80 @@
                 },
                 "roundhouse": {
                     "$ref": "#/$defs/roundhouse"
+                },
+                "visuals": {
+                    "$ref": "#/$defs/turntableVisuals"
+                }
+            }
+        },
+        "turntableVisuals": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "pitAssetIdentifier": {
+                    "type": "string",
+                    "description": "Optional scenery asset identifier for a static custom pit visual."
+                },
+                "pitPosition": {
+                    "$ref": "#/$defs/vec3",
+                    "default": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    }
+                },
+                "pitRotation": {
+                    "$ref": "#/$defs/vec3",
+                    "default": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    }
+                },
+                "pitScale": {
+                    "$ref": "#/$defs/vec3",
+                    "default": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "bridgeAssetIdentifier": {
+                    "type": "string",
+                    "description": "Optional scenery asset identifier for a bridge visual that rotates with the turntable."
+                },
+                "bridgePosition": {
+                    "$ref": "#/$defs/vec3",
+                    "default": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    }
+                },
+                "bridgeRotation": {
+                    "$ref": "#/$defs/vec3",
+                    "default": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    }
+                },
+                "bridgeScale": {
+                    "$ref": "#/$defs/vec3",
+                    "default": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "controllerType": {
+                    "type": "string",
+                    "description": "Optional assembly-qualified MonoBehaviour type implementing FUSE.API.IFuseTurntableController."
+                },
+                "interactionRadius": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "default": 16
                 }
             }
         },
