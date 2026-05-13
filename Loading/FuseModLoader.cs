@@ -399,11 +399,23 @@ namespace FUSE.Loading
                     {
                         FusePackageFaultRegistry.RecordFault(definition.Id, "runtime apply", transaction.Report.FatalReason);
                         FusePackageFaultRegistry.MarkSkipped(definition.Id, transaction.Report.FatalReason);
+                        if (HasRuntimeMutations(transaction.Report))
+                        {
+                            candidate.RegistryTransaction?.Commit();
+                            FuseLog.Warning($"FUSE runtime apply for resident definition '{definition.Id}' failed after mutating runtime state; retained registry claims for created={transaction.Report.CreatedObjects.Count} updated={transaction.Report.UpdatedObjects.Count} removed={transaction.Report.RemovedObjects.Count} object(s).");
+                        }
+
                         outcomes.Add(PackageApplyOutcome.FromReport(definition.Id, transaction.Report, 0, 1, 1));
                     }
                     else if (transaction.Report.HasErrors)
                     {
                         FusePackageFaultRegistry.RecordFault(definition.Id, "runtime apply", $"Runtime apply completed with {transaction.Report.Errors.Count} error(s).");
+                        if (HasRuntimeMutations(transaction.Report))
+                        {
+                            candidate.RegistryTransaction?.Commit();
+                            FuseLog.Warning($"FUSE runtime apply for resident definition '{definition.Id}' completed with nonfatal errors after mutating runtime state; retained registry claims for created={transaction.Report.CreatedObjects.Count} updated={transaction.Report.UpdatedObjects.Count} removed={transaction.Report.RemovedObjects.Count} object(s).");
+                        }
+
                         outcomes.Add(PackageApplyOutcome.FromReport(definition.Id, transaction.Report, 0, 0, 1));
                     }
                     else
@@ -438,6 +450,13 @@ namespace FUSE.Loading
                 $"definitions={prepared.Count} applied={appliedCount} " +
                 "mode='package-grouped mixinto order, final-state deletes, single graph commit'.");
             return appliedCount;
+        }
+
+        private static bool HasRuntimeMutations(FuseApplyReport report)
+        {
+            return (report?.CreatedObjects?.Count ?? 0) > 0 ||
+                   (report?.UpdatedObjects?.Count ?? 0) > 0 ||
+                   (report?.RemovedObjects?.Count ?? 0) > 0;
         }
 
         private static FuseMergedTrackPlan BuildMergedTrackPlan(IReadOnlyList<FuseStagedApplyCandidate> active)
@@ -641,6 +660,22 @@ namespace FUSE.Loading
             {
                 var graphTransaction = new FuseApplyTransaction("__merged-graph-rebuild__", reason, false);
                 graphTransaction.RunPhase("merged-single-graph-rebuild", () => TrackAPI.RebuildGraph());
+                if (graphTransaction.Report.IsFatal || graphTransaction.Report.HasErrors)
+                {
+                    var failure = FormatMergedGraphRebuildFailure(graphTransaction.Report);
+                    foreach (var candidate in plan.OrderedCandidates.Where(item => item?.Transaction != null && !item.Transaction.Report.IsFatal))
+                    {
+                        var definitionId = candidate.Loaded?.Definition?.Id ?? string.Empty;
+                        candidate.Transaction.RunPhase("merged-single-graph-rebuild", () =>
+                            candidate.Transaction.Fatal("graph", definitionId, failure));
+                    }
+
+                    FuseLog.Warning(
+                        "FUSE merged graph apply operation='merged-single-graph-rebuild' failed; " +
+                        "final span apply and later runtime phases were aborted for active definitions.");
+                    return;
+                }
+
                 foreach (var candidate in plan.OrderedCandidates.Where(item => !item.Transaction.Report.IsFatal))
                 {
                     candidate.Transaction.PostBind("graph", candidate.Loaded.Definition.Id, "merged-rebuilt-before-final-spans");
@@ -665,6 +700,19 @@ namespace FUSE.Loading
             {
                 TrackAPI.EndBatch(false);
             }
+        }
+
+        private static string FormatMergedGraphRebuildFailure(FuseApplyReport report)
+        {
+            var message = report?.FatalReason;
+            if (string.IsNullOrWhiteSpace(message) && report?.Errors != null && report.Errors.Count > 0)
+            {
+                message = report.Errors[0];
+            }
+
+            return string.IsNullOrWhiteSpace(message)
+                ? "merged graph rebuild failed"
+                : "merged graph rebuild failed: " + message;
         }
 
         private static void ApplyMergedSpanRemoval(FuseMergedTrackRemoval removal)
@@ -2144,18 +2192,10 @@ namespace FUSE.Loading
                 }
             }
 
-            var bsonFiles = Directory.GetFiles(modFolder, "*.bson", SearchOption.TopDirectoryOnly);
-            if (bsonFiles.Length > 0)
+            var fallbackPaths = FuseDefinitionFileDiscovery.ResolveFallbackDefinitionPaths(modFolder);
+            if (fallbackPaths.Length > 0)
             {
-                return new[] { bsonFiles[0] };
-            }
-
-            var jsonFiles = Directory.GetFiles(modFolder, "*.json", SearchOption.TopDirectoryOnly)
-                .Where(IsFallbackDefinitionJsonFile)
-                .ToArray();
-            if (jsonFiles.Length > 0)
-            {
-                return new[] { jsonFiles[0] };
+                return fallbackPaths;
             }
 
             throw new FileNotFoundException($"No FUSE .bson or .json definition was found in '{modFolder}'.");
@@ -2164,26 +2204,6 @@ namespace FUSE.Loading
         private static bool HasFuseAssetPacks(JObject info)
         {
             return info != null && info["FuseAssetPacks"] != null;
-        }
-
-        private static bool IsFallbackDefinitionJsonFile(string path)
-        {
-            var fileName = Path.GetFileName(path);
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                return false;
-            }
-
-            if (string.Equals(fileName, "Info.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "conversion-report.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "Catalog.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "Definitions.json", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(fileName, "Definition.json", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            return fileName.EndsWith(".fuse.json", StringComparison.OrdinalIgnoreCase);
         }
 
         private static IEnumerable<string> ResolveExplicitDefinitionPaths(string modFolder, JObject info)
