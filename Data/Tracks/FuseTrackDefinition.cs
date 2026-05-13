@@ -40,6 +40,7 @@ namespace FUSE.Data
         public int Priority { get; set; }
         public string GroupId { get; set; }
         public string[] Tags { get; set; }
+        public string Gauge { get; set; }
     }
 
     public sealed class FuseSpan

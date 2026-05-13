@@ -173,6 +173,12 @@ When translating legacy turntables that already have authored helper node IDs, s
           "startPrefab": "vanilla://roundhouseStart",
           "endPrefab": "vanilla://roundhouseEnd",
           "stallPrefab": "vanilla://roundhouseStall"
+        },
+        "visuals": {
+          "pitAssetIdentifier": "rlw-ng-turntable-pit",
+          "bridgeAssetIdentifier": "rlw-ng-turntable-bridge",
+          "controllerType": "Toolshed.Turntables.HandTurntableController, Toolshed",
+          "interactionRadius": 16
         }
       }
     }
@@ -180,7 +186,28 @@ When translating legacy turntables that already have authored helper node IDs, s
 }
 ```
 
+`visuals` is optional. If it is omitted, FUSE uses the vanilla turntable template and `TurntableController`. If it names custom pit/bridge scenery assets, FUSE creates a bare runtime `Track.Turntable`, loads the pit as a static visual, rotates the bridge visual with the runtime turntable angle, and attaches the optional `controllerType`. The controller type should be an assembly-qualified `MonoBehaviour` implementing `FUSE.API.IFuseTurntableController`.
+
 Track segment `speedLimit` may be `0` through `80`. Some legacy graphs use `0` for unrestricted or placeholder track speeds, and FUSE preserves that value during translation.
+
+Track segments may also set optional companion-mod gauge metadata:
+
+```json
+{
+  "tracks": {
+    "segments": {
+      "murphy:s:ng-yard": {
+        "startNodeId": "murphy:n:001",
+        "endNodeId": "murphy:n:002",
+        "style": "yard",
+        "gauge": "Narrow"
+      }
+    }
+  }
+}
+```
+
+FUSE stores `gauge` for mods such as NarrowGaugeMod; base Railroader track geometry remains unchanged unless a companion mod acts on it.
 
 Asset and prefab references are URI strings:
 

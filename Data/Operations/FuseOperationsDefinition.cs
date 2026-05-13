@@ -124,6 +124,25 @@ namespace FUSE.Data
         public int Subdivisions { get; set; } = 16;
         public string LegacyIdentifier { get; set; }
         public FuseRoundhouse Roundhouse { get; set; }
+        public FuseTurntableVisuals Visuals { get; set; }
+    }
+
+    public sealed class FuseTurntableVisuals
+    {
+        public string PitAssetIdentifier { get; set; }
+        public Vector3 PitPosition { get; set; }
+        public Vector3 PitRotation { get; set; }
+        public Vector3 PitScale { get; set; } = Vector3.one;
+        public string BridgeAssetIdentifier { get; set; }
+        public Vector3 BridgePosition { get; set; }
+        public Vector3 BridgeRotation { get; set; }
+        public Vector3 BridgeScale { get; set; } = Vector3.one;
+        public bool BridgeTrackEnabled { get; set; } = true;
+        public float BridgeTrackGauge { get; set; } = 1.435f;
+        public float BridgeTrackLength { get; set; }
+        public float BridgeTrackYOffset { get; set; } = 0.08f;
+        public string ControllerType { get; set; }
+        public float InteractionRadius { get; set; } = 16f;
     }
 
     public sealed class FuseRoundhouse

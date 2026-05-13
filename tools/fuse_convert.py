@@ -399,6 +399,7 @@ def convert_segment(item, segment_id=None):
         "speedLimit": int(item.get("speedLimit", item.get("SpeedLimit", 45))),
         "priority": int(item.get("priority", 0)),
         "groupId": group_id,
+        "gauge": item.get("gauge") or item.get("Gauge"),
     }
 
 

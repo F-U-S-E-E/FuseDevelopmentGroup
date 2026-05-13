@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Core;
+using Helpers;
 using KeyValue.Runtime;
 using FUSE.Cache;
 using FUSE.Data;
@@ -18,6 +20,21 @@ namespace FUSE.API
         private static readonly FieldInfo BridgeGroupIdField = typeof(Turntable).GetField("bridgeGroupId", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo BridgeSegmentField = typeof(Turntable).GetField("_segment", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo CachedTurntableControllersField = typeof(Graph).GetField("_cachedTurntableControllers", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly ConstructorInfo GaugeConstructor = typeof(Gauge).GetConstructor(
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            null,
+            new[] { typeof(float), typeof(float), typeof(float) },
+            null);
+        private static readonly Type TrackMeshBuilderType = ResolveTrackMeshBuilderType();
+        private static readonly MethodInfo BuildStockRailMeshMethod = TrackMeshBuilderType?.GetMethod(
+            "BuildStockRailMesh",
+            BindingFlags.Static | BindingFlags.Public,
+            null,
+            new[] { typeof(LineCurve), typeof(Vector3), typeof(Gauge), typeof(Func<int, float>) },
+            null);
+        private const string CustomVisualRootName = "FUSE Custom Turntable Visuals";
+        private const string BridgeTrackRootName = "FUSE Bridge Track";
+        private static Material _bridgeRailMaterial;
         private static readonly string[] RuntimeCloneComponentTypeNames =
         {
             "KinematicCharacterController.PhysicsMover",
@@ -102,19 +119,19 @@ namespace FUSE.API
 
             NodesField?.SetValue(turntable, pitNodes);
 
-            AttachTurntableTemplate(root, turntable);
+            ConfigureTurntableVisuals(root, turntable, definition);
             ConfigureRoundhouse(root, definition);
             ClearBridgeGroup(turntable);
             turntable.UpdateSegmentIndex(false);
             ClearBridgeGroup(turntable);
 
             root.SetActive(true);
-            RefreshTurntableTemplateVisuals(root);
+            RefreshTurntableVisuals(root, definition);
             MapAPI.RefreshAttachedMapMasks(root, $"turntable '{id}' add");
-            FusePrefabSanitizer.SanitizeTurntable(root, id, turntable).Log($"FUSE turntable '{id}'");
+            FusePrefabSanitizer.SanitizeTurntable(root, id, turntable, RequiresVanillaController(definition)).Log($"FUSE turntable '{id}'");
             FuseTurntableRuntimeIndex.Instance.Set(id, turntable);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Turntable, id, definition);
-            FusePrefabSanitizer.ValidateTurntablePostBind(root, id, turntable).Log($"FUSE turntable '{id}' post-bind");
+            FusePrefabSanitizer.ValidateTurntablePostBind(root, id, turntable, RequiresVanillaController(definition)).Log($"FUSE turntable '{id}' post-bind");
             FuseNodeRuntimeIndex.Instance.Rebuild();
             FuseSegmentRuntimeIndex.Instance.Rebuild();
             InvalidateTurntableControllerCache();
@@ -157,18 +174,18 @@ namespace FUSE.API
             }
 
             NodesField?.SetValue(turntable, pitNodes);
-            AttachTurntableTemplate(turntable.gameObject, turntable);
+            ConfigureTurntableVisuals(turntable.gameObject, turntable, definition);
             ConfigureRoundhouse(turntable.gameObject, definition);
             ClearBridgeGroup(turntable);
             turntable.UpdateSegmentIndex(false);
             ClearBridgeGroup(turntable);
-            RefreshTurntableTemplateVisuals(turntable.gameObject);
+            RefreshTurntableVisuals(turntable.gameObject, definition);
             MapAPI.RefreshAttachedMapMasks(turntable.gameObject, $"turntable '{id}' update");
-            FusePrefabSanitizer.SanitizeTurntable(turntable.gameObject, id, turntable).Log($"FUSE turntable '{id}'");
+            FusePrefabSanitizer.SanitizeTurntable(turntable.gameObject, id, turntable, RequiresVanillaController(definition)).Log($"FUSE turntable '{id}'");
 
             FuseTurntableRuntimeIndex.Instance.Set(id, turntable);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Turntable, id, definition);
-            FusePrefabSanitizer.ValidateTurntablePostBind(turntable.gameObject, id, turntable).Log($"FUSE turntable '{id}' post-bind");
+            FusePrefabSanitizer.ValidateTurntablePostBind(turntable.gameObject, id, turntable, RequiresVanillaController(definition)).Log($"FUSE turntable '{id}' post-bind");
             FuseNodeRuntimeIndex.Instance.Rebuild();
             FuseSegmentRuntimeIndex.Instance.Rebuild();
             InvalidateTurntableControllerCache();
@@ -476,6 +493,504 @@ namespace FUSE.API
             }
         }
 
+        private static void ConfigureTurntableVisuals(GameObject root, Turntable turntable, FuseTurntable definition)
+        {
+            if (UsesCustomVisuals(definition))
+            {
+                RemoveVanillaTurntableTemplate(root);
+                ConfigureCustomVisuals(root, turntable, definition);
+                return;
+            }
+
+            RemoveCustomVisuals(root);
+            RemoveCustomControllers(root, null);
+            var binding = root.GetComponent<FuseTurntableVisualBinding>();
+            if (binding != null)
+            {
+                UnityEngine.Object.Destroy(binding);
+            }
+
+            AttachTurntableTemplate(root, turntable);
+        }
+
+        private static bool UsesCustomVisuals(FuseTurntable definition)
+        {
+            var visuals = definition?.Visuals;
+            return visuals != null &&
+                   (!string.IsNullOrWhiteSpace(visuals.PitAssetIdentifier) ||
+                    !string.IsNullOrWhiteSpace(visuals.BridgeAssetIdentifier) ||
+                    !string.IsNullOrWhiteSpace(visuals.ControllerType));
+        }
+
+        private static bool RequiresVanillaController(FuseTurntable definition)
+        {
+            return !UsesCustomVisuals(definition);
+        }
+
+        private static void ConfigureCustomVisuals(GameObject root, Turntable turntable, FuseTurntable definition)
+        {
+            RemoveCustomVisuals(root);
+
+            var visuals = definition.Visuals;
+            var visualRoot = new GameObject(CustomVisualRootName);
+            visualRoot.transform.SetParent(root.transform, false);
+            visualRoot.transform.localPosition = Vector3.zero;
+            visualRoot.transform.localEulerAngles = Vector3.zero;
+            visualRoot.transform.localScale = Vector3.one;
+
+            CreateSceneryAssetChild(
+                visualRoot.transform,
+                "Pit",
+                visuals.PitAssetIdentifier,
+                visuals.PitPosition,
+                visuals.PitRotation,
+                visuals.PitScale);
+
+            var bridgeRoot = new GameObject("Bridge").transform;
+            bridgeRoot.SetParent(visualRoot.transform, false);
+            bridgeRoot.localPosition = Vector3.zero;
+            bridgeRoot.localEulerAngles = Vector3.zero;
+            bridgeRoot.localScale = Vector3.one;
+
+            CreateSceneryAssetChild(
+                bridgeRoot,
+                "Bridge Asset",
+                visuals.BridgeAssetIdentifier,
+                visuals.BridgePosition,
+                visuals.BridgeRotation,
+                visuals.BridgeScale);
+            CreateBridgeTrackVisual(bridgeRoot, turntable, definition);
+
+            var binding = root.GetComponent<FuseTurntableVisualBinding>() ?? root.AddComponent<FuseTurntableVisualBinding>();
+            binding.Turntable = turntable;
+            binding.BridgeRoot = bridgeRoot;
+            binding.Sync();
+
+            ConfigureExternalController(root, turntable, bridgeRoot, definition);
+            visualRoot.SetActive(true);
+        }
+
+        private static void CreateSceneryAssetChild(
+            Transform parent,
+            string name,
+            string assetIdentifier,
+            Vector3 localPosition,
+            Vector3 localRotation,
+            Vector3 localScale)
+        {
+            if (string.IsNullOrWhiteSpace(assetIdentifier))
+            {
+                return;
+            }
+
+            var sceneryDefinition = new FuseScenery
+            {
+                AssetIdentifier = assetIdentifier,
+                Model = assetIdentifier
+            };
+
+            if (!SceneryAPI.TryResolveAssetIdentifier(name, sceneryDefinition, out var resolvedAssetIdentifier))
+            {
+                FuseLog.Warning(
+                    $"FUSE skipped turntable visual '{name}' because scenery asset '{assetIdentifier}' " +
+                    "could not be resolved.");
+                return;
+            }
+
+            var child = new GameObject(name);
+            child.SetActive(false);
+            child.transform.SetParent(parent, false);
+            child.transform.localPosition = localPosition;
+            child.transform.localEulerAngles = localRotation;
+            child.transform.localScale = localScale == default ? Vector3.one : localScale;
+
+            var scenery = child.AddComponent<SceneryAssetInstance>();
+            scenery.identifier = resolvedAssetIdentifier;
+            scenery.OnDidLoadModels += loadedRoot =>
+            {
+                if (loadedRoot != null)
+                {
+                    EnableRenderers(loadedRoot.gameObject);
+                }
+
+                MapAPI.RefreshAttachedMapMasks(child, $"turntable visual '{name}' load");
+            };
+            child.SetActive(true);
+            FuseLog.Info($"FUSE turntable visual '{name}' created from scenery asset '{resolvedAssetIdentifier}'.");
+        }
+
+        private static void CreateBridgeTrackVisual(Transform bridgeRoot, Turntable turntable, FuseTurntable definition)
+        {
+            var visuals = definition?.Visuals;
+            if (bridgeRoot == null || turntable == null || visuals == null || !visuals.BridgeTrackEnabled)
+            {
+                return;
+            }
+
+            var existing = bridgeRoot.Find(BridgeTrackRootName);
+            if (existing != null)
+            {
+                UnityEngine.Object.Destroy(existing.gameObject);
+            }
+
+            var trackRoot = new GameObject(BridgeTrackRootName);
+            trackRoot.transform.SetParent(bridgeRoot, false);
+            trackRoot.transform.localPosition = Vector3.zero;
+            trackRoot.transform.localRotation = Quaternion.identity;
+            trackRoot.transform.localScale = Vector3.one;
+
+            var gaugeInside = visuals.BridgeTrackGauge > 0f ? visuals.BridgeTrackGauge : Gauge.Standard.Inside;
+            var length = visuals.BridgeTrackLength > 0f
+                ? visuals.BridgeTrackLength
+                : Mathf.Max(turntable.radius * 2f, 1f);
+            var y = visuals.BridgeTrackYOffset;
+
+            try
+            {
+                var gauge = CreateGauge(gaugeInside);
+                var half = length * 0.5f;
+                var handle = Mathf.Max(length / 3f, 0.1f);
+                var curve = new BezierCurve(
+                    new Vector3(0f, y, -half),
+                    new Vector3(0f, y, -half + handle),
+                    new Vector3(0f, y, half - handle),
+                    new Vector3(0f, y, half),
+                    Vector3.up,
+                    Vector3.up);
+                var rails = SwitchGeometry.MakeTrackLineSegments(curve, gauge);
+                CreateBridgeRailObject(trackRoot.transform, "L", rails.left, gauge);
+                CreateBridgeRailObject(trackRoot.transform, "R", rails.right, gauge);
+                trackRoot.SetActive(true);
+                FuseLog.Info(
+                    $"FUSE turntable bridge track visual created length={length:F3}m gauge={gaugeInside:F3}m y={y:F3}.");
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE bridge rail mesh creation failed, using simple rail boxes: {ex.Message}");
+                CreateFallbackBridgeRails(trackRoot.transform, gaugeInside, length, y);
+                trackRoot.SetActive(true);
+            }
+        }
+
+        private static void CreateBridgeRailObject(Transform parent, string name, LineCurve curve, Gauge gauge)
+        {
+            if (BuildStockRailMeshMethod == null)
+            {
+                throw new MissingMethodException("TrackMeshBuilder.BuildStockRailMesh was not found.");
+            }
+
+            var mesh = (Mesh)BuildStockRailMeshMethod.Invoke(
+                null,
+                new object[] { curve, Vector3.zero, gauge, new Func<int, float>(_ => 1f) });
+            mesh.name = "FUSE Turntable Bridge Rail " + name;
+
+            var rail = new GameObject(name);
+            rail.transform.SetParent(parent, false);
+            rail.transform.localPosition = Vector3.zero;
+            rail.transform.localRotation = Quaternion.identity;
+            rail.transform.localScale = Vector3.one;
+            rail.AddComponent<MeshFilter>().sharedMesh = mesh;
+            ConfigureBridgeRailRenderer(rail.AddComponent<MeshRenderer>());
+            rail.SetActive(true);
+        }
+
+        private static void CreateFallbackBridgeRails(Transform parent, float gaugeInside, float length, float y)
+        {
+            var xOffset = gaugeInside * 0.5f;
+            CreateFallbackBridgeRail(parent, "L", -xOffset, length, y);
+            CreateFallbackBridgeRail(parent, "R", xOffset, length, y);
+        }
+
+        private static void CreateFallbackBridgeRail(Transform parent, string name, float x, float length, float y)
+        {
+            var rail = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            rail.name = name;
+            rail.transform.SetParent(parent, false);
+            rail.transform.localPosition = new Vector3(x, y - 0.06f, 0f);
+            rail.transform.localRotation = Quaternion.identity;
+            rail.transform.localScale = new Vector3(0.08f, 0.12f, length);
+            var collider = rail.GetComponent("BoxCollider");
+            if (collider != null)
+            {
+                UnityEngine.Object.Destroy(collider);
+            }
+
+            var renderer = rail.GetComponent<MeshRenderer>();
+            if (renderer != null)
+            {
+                ConfigureBridgeRailRenderer(renderer);
+            }
+        }
+
+        private static void ConfigureBridgeRailRenderer(MeshRenderer renderer)
+        {
+            if (renderer == null)
+            {
+                return;
+            }
+
+            var material = GetBridgeRailMaterial();
+            if (material != null)
+            {
+                renderer.material = material;
+            }
+
+            renderer.enabled = true;
+            renderer.forceRenderingOff = false;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            renderer.receiveShadows = true;
+        }
+
+        private static Gauge CreateGauge(float inside)
+        {
+            if (GaugeConstructor == null || inside <= 0f)
+            {
+                return Gauge.Standard;
+            }
+
+            return (Gauge)GaugeConstructor.Invoke(
+                new object[] { inside, Gauge.Standard.HeadWidth, Gauge.Standard.RailHeight });
+        }
+
+        private static Material GetBridgeRailMaterial()
+        {
+            if (_bridgeRailMaterial != null)
+            {
+                return _bridgeRailMaterial;
+            }
+
+            var trackMaterial = TrackObjectManager.Instance != null &&
+                                TrackObjectManager.Instance.profile != null
+                ? TrackObjectManager.Instance.profile.trackMaterial
+                : null;
+            if (trackMaterial != null)
+            {
+                _bridgeRailMaterial = trackMaterial;
+                return _bridgeRailMaterial;
+            }
+
+            foreach (var renderer in UnityEngine.Object.FindObjectsOfType<MeshRenderer>())
+            {
+                if (renderer == null ||
+                    renderer.sharedMaterial == null ||
+                    renderer.gameObject == null ||
+                    renderer.gameObject.tag != TrackObjectBuilder.TagGenerated)
+                {
+                    continue;
+                }
+
+                var name = renderer.gameObject.name;
+                if (name == "L" || name == "R" || name == "StockL" || name == "StockR")
+                {
+                    _bridgeRailMaterial = renderer.sharedMaterial;
+                    return _bridgeRailMaterial;
+                }
+            }
+
+            var shader = Shader.Find("Unlit/Color") ??
+                         Shader.Find("Standard") ??
+                         Shader.Find("Diffuse") ??
+                         Shader.Find("Legacy Shaders/Diffuse");
+            if (shader == null)
+            {
+                return null;
+            }
+
+            _bridgeRailMaterial = new Material(shader)
+            {
+                color = new Color(0.17f, 0.15f, 0.13f, 1f)
+            };
+            return _bridgeRailMaterial;
+        }
+
+        private static Type ResolveTrackMeshBuilderType()
+        {
+            var direct = Type.GetType("TrackMeshBuilder, Assembly-CSharp", false, false);
+            if (direct != null)
+            {
+                return direct;
+            }
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type type;
+                try
+                {
+                    type = assembly.GetType("TrackMeshBuilder", false, false);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (type != null)
+                {
+                    return type;
+                }
+            }
+
+            return null;
+        }
+
+        private static string NormalizeSceneryAssetIdentifier(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            var marker = value.IndexOf("://", StringComparison.Ordinal);
+            return marker < 0 ? value : value.Substring(marker + 3);
+        }
+
+        private static void ConfigureExternalController(
+            GameObject root,
+            Turntable turntable,
+            Transform bridgeRoot,
+            FuseTurntable definition)
+        {
+            var controllerTypeName = definition?.Visuals?.ControllerType;
+            if (string.IsNullOrWhiteSpace(controllerTypeName))
+            {
+                RemoveCustomControllers(root, null);
+                return;
+            }
+
+            var controllerType = ResolveControllerType(controllerTypeName);
+            if (controllerType == null)
+            {
+                FuseLog.Warning($"FUSE turntable '{GetDefinitionTurntableId(turntable)}' could not resolve controller type '{controllerTypeName}'.");
+                RemoveCustomControllers(root, null);
+                return;
+            }
+
+            if (!typeof(MonoBehaviour).IsAssignableFrom(controllerType))
+            {
+                FuseLog.Warning($"FUSE turntable controller type '{controllerTypeName}' is not a Unity MonoBehaviour.");
+                RemoveCustomControllers(root, null);
+                return;
+            }
+
+            RemoveCustomControllers(root, controllerType);
+            var behaviour = root.GetComponent(controllerType) as MonoBehaviour;
+            if (behaviour == null)
+            {
+                behaviour = root.AddComponent(controllerType) as MonoBehaviour;
+            }
+
+            if (behaviour is IFuseTurntableController typedController)
+            {
+                typedController.Configure(turntable, bridgeRoot, definition);
+                return;
+            }
+
+            var configure = controllerType.GetMethod(
+                "Configure",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null,
+                new[] { typeof(Turntable), typeof(Transform), typeof(FuseTurntable) },
+                null);
+            if (configure != null)
+            {
+                configure.Invoke(behaviour, new object[] { turntable, bridgeRoot, definition });
+                return;
+            }
+
+            FuseLog.Warning(
+                $"FUSE turntable controller '{controllerType.FullName}' does not implement IFuseTurntableController " +
+                "and does not expose Configure(Turntable, Transform, FuseTurntable).");
+        }
+
+        private static Type ResolveControllerType(string typeName)
+        {
+            var direct = Type.GetType(typeName, false, true);
+            if (direct != null)
+            {
+                return direct;
+            }
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type type;
+                try
+                {
+                    type = assembly.GetType(typeName, false, true);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (type != null)
+                {
+                    return type;
+                }
+            }
+
+            return null;
+        }
+
+        private static void RemoveCustomVisuals(GameObject root)
+        {
+            var existing = root.transform.Find(CustomVisualRootName);
+            if (existing == null)
+            {
+                return;
+            }
+
+            existing.gameObject.SetActive(false);
+            UnityEngine.Object.Destroy(existing.gameObject);
+        }
+
+        private static void RemoveVanillaTurntableTemplate(GameObject root)
+        {
+            foreach (var controller in root.GetComponentsInChildren<TurntableController>(true))
+            {
+                if (controller == null)
+                {
+                    continue;
+                }
+
+                var destroyTarget = controller.transform;
+                while (destroyTarget.parent != null && destroyTarget.parent != root.transform)
+                {
+                    destroyTarget = destroyTarget.parent;
+                }
+
+                if (destroyTarget == root.transform)
+                {
+                    UnityEngine.Object.Destroy(controller);
+                    continue;
+                }
+
+                destroyTarget.gameObject.SetActive(false);
+                UnityEngine.Object.Destroy(destroyTarget.gameObject);
+            }
+        }
+
+        private static void RemoveCustomControllers(GameObject root, Type keepType)
+        {
+            foreach (var behaviour in root.GetComponents<MonoBehaviour>())
+            {
+                if (behaviour == null || behaviour is FuseTurntableVisualBinding)
+                {
+                    continue;
+                }
+
+                if (!(behaviour is IFuseTurntableController))
+                {
+                    continue;
+                }
+
+                if (keepType != null && behaviour.GetType() == keepType)
+                {
+                    continue;
+                }
+
+                UnityEngine.Object.Destroy(behaviour);
+            }
+        }
+
         private static void AttachTurntableTemplate(GameObject root, Turntable turntable)
         {
             var template = ResolveTurntableTemplateObject();
@@ -528,6 +1043,58 @@ namespace FUSE.API
             }
 
             ActivatePrimaryVisualRenderers(controller.gameObject);
+        }
+
+        private static void RefreshTurntableVisuals(GameObject root, FuseTurntable definition)
+        {
+            if (UsesCustomVisuals(definition))
+            {
+                var binding = root != null ? root.GetComponent<FuseTurntableVisualBinding>() : null;
+                binding?.Sync();
+                RefreshCustomSceneryVisuals(root);
+                return;
+            }
+
+            RefreshTurntableTemplateVisuals(root);
+        }
+
+        private static void RefreshCustomSceneryVisuals(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            foreach (var scenery in root.GetComponentsInChildren<SceneryAssetInstance>(true))
+            {
+                if (scenery == null || !scenery.gameObject.activeInHierarchy)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    scenery.RequestUpdateCullingPosition();
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning(
+                        $"FUSE turntable visual '{scenery.name}' could not refresh culling position: {ex.Message}");
+                }
+
+                try
+                {
+                    scenery.CullingSphereStateChanged(true, 0);
+                    MapAPI.RefreshAttachedMapMasks(
+                        scenery.gameObject,
+                        $"turntable visual '{scenery.name}' refresh");
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning(
+                        $"FUSE turntable visual '{scenery.name}' could not force initial scenery load: {ex.Message}");
+                }
+            }
         }
 
         private static void ApplyTemplateLocalTransform(GameObject instance, GameObject template)
