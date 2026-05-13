@@ -210,6 +210,19 @@ namespace FUSE.API
                     EndPrefab   = src.Roundhouse.EndPrefab,
                     StallPrefab = src.Roundhouse.StallPrefab,
                 },
+                Visuals          = src.Visuals == null ? null : new FuseTurntableVisuals
+                {
+                    PitAssetIdentifier    = src.Visuals.PitAssetIdentifier,
+                    PitPosition           = src.Visuals.PitPosition,
+                    PitRotation           = src.Visuals.PitRotation,
+                    PitScale              = src.Visuals.PitScale,
+                    BridgeAssetIdentifier = src.Visuals.BridgeAssetIdentifier,
+                    BridgePosition        = src.Visuals.BridgePosition,
+                    BridgeRotation        = src.Visuals.BridgeRotation,
+                    BridgeScale           = src.Visuals.BridgeScale,
+                    ControllerType        = src.Visuals.ControllerType,
+                    InteractionRadius     = src.Visuals.InteractionRadius,
+                },
             };
         }
 

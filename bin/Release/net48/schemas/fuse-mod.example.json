@@ -84,7 +84,8 @@
         "trackClass": "yard",
         "speedLimit": 10,
         "priority": 5,
-        "groupId": "murphy:yard"
+        "groupId": "murphy:yard",
+        "gauge": "Narrow"
       }
     },
     "spans": {
@@ -345,6 +346,12 @@
           "startPrefab": "vanilla://roundhouseStart",
           "endPrefab": "vanilla://roundhouseEnd",
           "stallPrefab": "vanilla://roundhouseStall"
+        },
+        "visuals": {
+          "pitAssetIdentifier": "",
+          "bridgeAssetIdentifier": "",
+          "controllerType": "",
+          "interactionRadius": 16
         }
       }
     },

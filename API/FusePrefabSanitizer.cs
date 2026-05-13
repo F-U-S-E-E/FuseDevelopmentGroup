@@ -103,7 +103,11 @@ namespace FUSE.API
             return result;
         }
 
-        public static FusePrefabSanitizerResult SanitizeTurntable(GameObject root, string id, Turntable turntable)
+        public static FusePrefabSanitizerResult SanitizeTurntable(
+            GameObject root,
+            string id,
+            Turntable turntable,
+            bool requiresVanillaController = true)
         {
             var result = new FusePrefabSanitizerResult();
             if (!ValidateRoot(root, "turntable", id, result))
@@ -114,10 +118,16 @@ namespace FUSE.API
             ReplaceGlobalObjectIds(root, id + ".turntable", result);
             DisableTrackMarkers(root, result);
             ClearCachedIdentityFields(root, result);
-            RelinkTurntableController(root, turntable, result);
+            if (requiresVanillaController)
+            {
+                RelinkTurntableController(root, turntable, result);
+            }
             ForceLodZero(root, result);
             ValidateRequiredComponent<Turntable>(root, "turntable", result);
-            ValidateRequiredComponent<TurntableController>(root, "turntable controller", result);
+            if (requiresVanillaController)
+            {
+                ValidateRequiredComponent<TurntableController>(root, "turntable controller", result);
+            }
             ValidateRendererPresence(root, "turntable", result);
             return result;
         }
@@ -211,7 +221,11 @@ namespace FUSE.API
             return result;
         }
 
-        public static FusePrefabSanitizerResult ValidateTurntablePostBind(GameObject root, string id, Turntable turntable)
+        public static FusePrefabSanitizerResult ValidateTurntablePostBind(
+            GameObject root,
+            string id,
+            Turntable turntable,
+            bool requiresVanillaController = true)
         {
             var result = new FusePrefabSanitizerResult();
             if (!ValidateRoot(root, "turntable", id, result))
@@ -237,7 +251,7 @@ namespace FUSE.API
             }
 
             var controllers = root.GetComponentsInChildren<TurntableController>(true);
-            if (controllers.Length == 0)
+            if (requiresVanillaController && controllers.Length == 0)
             {
                 result.Warnings.Add("turntable has no TurntableController after bind.");
             }

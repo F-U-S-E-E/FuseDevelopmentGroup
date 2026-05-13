@@ -48,6 +48,10 @@
       <HintPath>$(UnityManagedDir)\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Core" Condition="Exists('$(UnityManagedDir)\Core.dll')">
+      <HintPath>$(UnityManagedDir)\Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Definition" Condition="Exists('$(UnityManagedDir)\Definition.dll')">
       <HintPath>$(UnityManagedDir)\Definition.dll</HintPath>
       <Private>false</Private>
@@ -118,6 +122,7 @@
     <Error Condition="!Exists('$(UnityModManagerDir)\0Harmony.dll') and !Exists('$(UnityManagedDir)\0Harmony.dll')" Text="0Harmony.dll was not found. Set UnityModManagerDir or GameDir to your installed Railroader + UMM location." />
     <Error Condition="!Exists('$(UnityManagedDir)\Newtonsoft.Json.dll')" Text="Newtonsoft.Json.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Assembly-CSharp.dll')" Text="Assembly-CSharp.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Core.dll')" Text="Core.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Definition.dll')" Text="Definition.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\KeyValue.Runtime.dll')" Text="KeyValue.Runtime.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Map.Runtime.dll')" Text="Map.Runtime.dll was not found in the Railroader Managed folder." />
