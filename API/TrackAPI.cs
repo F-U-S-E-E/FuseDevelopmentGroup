@@ -439,6 +439,40 @@ namespace FUSE.API
                 .Where(span => span != null && !string.IsNullOrWhiteSpace(span.id));
         }
 
+        private static IEnumerable<TrackSpan> GetRegisteredGraphSpans()
+        {
+            var graph = Graph.Shared;
+            var spans = graph != null
+                ? GraphSpansField?.GetValue(graph) as Dictionary<string, TrackSpan>
+                : null;
+            if (spans != null)
+            {
+                return spans.Values
+                    .Where(IsResolvedGraphSpan)
+                    .ToArray();
+            }
+
+            return GetAllSpans()
+                .Where(IsResolvedGraphSpan)
+                .ToArray();
+        }
+
+        private static bool IsResolvedGraphSpan(TrackSpan span)
+        {
+            if (span == null || string.IsNullOrWhiteSpace(span.id) ||
+                !span.upper.HasValue || !span.lower.HasValue)
+            {
+                return false;
+            }
+
+            var upper = span.upper.Value;
+            var lower = span.lower.Value;
+            return upper.segment != null &&
+                   lower.segment != null &&
+                   !string.IsNullOrWhiteSpace(upper.segment.id) &&
+                   !string.IsNullOrWhiteSpace(lower.segment.id);
+        }
+
         public static void CaptureBaseGraphSnapshot(string reason)
         {
             if (_baseGraphSnapshotCaptured)
@@ -538,6 +572,41 @@ namespace FUSE.API
                     item => CloneSpanDefinition(item.Value),
                     StringComparer.OrdinalIgnoreCase),
                 Areas = new Dictionary<string, FuseArea>(StringComparer.OrdinalIgnoreCase),
+                Removals = new FuseTrackRemovals()
+            };
+        }
+
+        public static FuseTrackDefinition GetRuntimeGraphDefinition()
+        {
+            return new FuseTrackDefinition
+            {
+                Nodes = GetAllNodes()
+                    .Where(node => node != null && !string.IsNullOrWhiteSpace(node.id))
+                    .GroupBy(node => node.id, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        group => group.Key,
+                        group => CloneNodeDefinition(GetDefinition(group.First())),
+                        StringComparer.OrdinalIgnoreCase),
+                Segments = GetAllSegments()
+                    .Where(segment => segment != null && !string.IsNullOrWhiteSpace(segment.id))
+                    .GroupBy(segment => segment.id, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        group => group.Key,
+                        group => CloneSegmentDefinition(GetDefinition(group.First())),
+                        StringComparer.OrdinalIgnoreCase),
+                Spans = GetRegisteredGraphSpans()
+                    .GroupBy(span => span.id, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        group => group.Key,
+                        group => CloneSpanDefinition(GetDefinition(group.First())),
+                        StringComparer.OrdinalIgnoreCase),
+                Areas = GetAllAreas()
+                    .Where(area => area != null && !string.IsNullOrWhiteSpace(area.identifier))
+                    .GroupBy(area => area.identifier, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        group => group.Key,
+                        group => GetDefinition(group.First()),
+                        StringComparer.OrdinalIgnoreCase),
                 Removals = new FuseTrackRemovals()
             };
         }

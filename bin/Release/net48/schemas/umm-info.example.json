@@ -1,8 +1,8 @@
 {
   "$schema": "./umm-info.schema.json",
-  "Id": "HunterR.MurphyBranch",
+  "Id": "FUSE.Example.MurphyBranch",
   "DisplayName": "Murphy Branch",
-  "Author": "Hunter Rogers",
+  "Author": "",
   "Version": "1.0.0",
   "ManagerVersion": "0.27.10",
   "GameVersion": "2025.1",

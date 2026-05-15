@@ -88,6 +88,14 @@
       <HintPath>$(UnityManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.TextRenderingModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.UIModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.UIModule.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.UIModule.dll</HintPath>
       <Private>false</Private>
@@ -114,7 +122,12 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>schemas\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </None>
+    <None Include="tools\assets\fuse_converter_icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>assets\fuse_icon.png</Link>
+    </None>
     <SchemaFiles Include="schemas\**\*" />
+    <FuseAssets Include="tools\assets\fuse_converter_icon.png" />
   </ItemGroup>
 
   <Target Name="ValidateUnityReferences" BeforeTargets="ResolveReferences">
@@ -130,6 +143,8 @@
     <Error Condition="!Exists('$(UnityManagedDir)\Unity.TextMeshPro.dll')" Text="Unity.TextMeshPro.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')" Text="UnityEngine.IMGUIModule.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll')" Text="UnityEngine.ImageConversionModule.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.TextRenderingModule.dll')" Text="UnityEngine.TextRenderingModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.UIModule.dll')" Text="UnityEngine.UIModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.UI.dll')" Text="UnityEngine.UI.dll was not found in the Railroader Managed folder." />
   </Target>
@@ -137,8 +152,10 @@
   <Target Name="DeployToUnityModManagerFolder" AfterTargets="Build" Condition="'$(EnableModDeploy)' == 'true'">
     <MakeDir Directories="$(ModDeployDir)" />
     <MakeDir Directories="$(ModDeployDir)\schemas" />
+    <MakeDir Directories="$(ModDeployDir)\assets" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="Info.json" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" />
     <Copy SourceFiles="@(SchemaFiles)" DestinationFiles="@(SchemaFiles->'$(ModDeployDir)\schemas\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(FuseAssets)" DestinationFiles="@(FuseAssets->'$(ModDeployDir)\assets\fuse_icon.png')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

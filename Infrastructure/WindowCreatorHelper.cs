@@ -7,6 +7,7 @@ using UI.Builder;
 using UI.Common;
 using UI;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace FUSE.Infrastructure
 {
@@ -41,13 +42,42 @@ namespace FUSE.Infrastructure
             if (creator == null || window == null || window.gameObject == null || window.contentRectTransform == null)
                 return null;
 
+            PrepareWindowContent(window.contentRectTransform);
             return UIPanel.Create(window.contentRectTransform, creator.builderAssets, closure);
+        }
+
+        private static void PrepareWindowContent(RectTransform content)
+        {
+            var layout = content.GetComponent<LayoutGroup>();
+            if (layout == null)
+            {
+                layout = content.gameObject.AddComponent<VerticalLayoutGroup>();
+            }
+
+            if (layout is HorizontalOrVerticalLayoutGroup stack)
+            {
+                stack.childAlignment = TextAnchor.UpperLeft;
+                stack.childControlWidth = true;
+                stack.childControlHeight = true;
+                stack.childForceExpandWidth = true;
+                stack.childForceExpandHeight = false;
+                stack.spacing = 4f;
+                stack.padding = new RectOffset(10, 10, 6, 10);
+            }
+        }
+
+        public Window CreateWindow(string identifier, int width, int height, Window.Position position)
+        {
+            var safeIdentifier = string.IsNullOrWhiteSpace(identifier)
+                ? "FUSE.Window." + DateTime.Now.Ticks
+                : identifier.Trim();
+            return CreateWindowInternal(safeIdentifier, width, height, position);
         }
 
         public Window CreateWindow(int width, int height, Window.Position position)
         {
             // Generate a unique identifier for the window
-            string identifier = "ligma" + DateTime.Now.Ticks;
+            string identifier = "FUSE.Window." + DateTime.Now.Ticks;
             return CreateWindowInternal(identifier, width, height, position);
         }
 
@@ -57,4 +87,3 @@ namespace FUSE.Infrastructure
         }
     }
 }
-
