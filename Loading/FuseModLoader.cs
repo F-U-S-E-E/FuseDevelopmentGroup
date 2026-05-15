@@ -446,7 +446,7 @@ namespace FUSE.Loading
             }
 
             FuseLog.Info(
-                $"FUSE Strange-Customs-style staged graph resolver completed reason='{reason ?? "unspecified"}' " +
+                $"FUSE legacy custom content staged graph resolver completed reason='{reason ?? "unspecified"}' " +
                 $"definitions={prepared.Count} applied={appliedCount} " +
                 "mode='package-grouped mixinto order, final-state deletes, single graph commit'.");
             return appliedCount;
@@ -467,7 +467,7 @@ namespace FUSE.Loading
                 return plan;
             }
 
-            // Strange Customs effectively respected the mod/package as the unit,
+            // The legacy custom content framework effectively respected the mod/package as the unit,
             // then respected Definition.json mixinto order inside that package.
             // FUSE already loads explicit FuseDataFiles in declared order, so the
             // safest compatibility behavior is: first package-folder encounter
@@ -1364,7 +1364,7 @@ namespace FUSE.Loading
                     // IMPORTANT: spans must be applied after the node/segment
                     // graph has been rebuilt. TrackSpan route validation asks
                     // the runtime graph for a valid route; applying spans before
-                    // RebuildGraph() makes valid legacy/Strange-Customs spans
+                    // RebuildGraph() makes valid legacy custom content spans
                     // intermittently fail with "span did not resolve to a valid route".
                     TrackAPI.BeginBatch();
                     try
