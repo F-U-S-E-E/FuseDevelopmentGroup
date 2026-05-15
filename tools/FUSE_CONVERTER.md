@@ -53,7 +53,8 @@ For Linux or anyone who wants to convert a whole folder at once:
 python3 tools/fuse_converter.py --batch "/path/to/legacy-mod-folder"
 ```
 
-That scans the immediate children of the folder and writes output to:
+That recursively scans the folder for recognized legacy mod folders, zip files,
+and data JSON files, then writes output to:
 
 `/path/to/legacy-mod-folder/FUSEConverted`
 
@@ -80,7 +81,8 @@ python3 FUSEConvertFolder.pyz
 ```
 
 It converts every recognized child folder, zip, and data JSON into
-`FUSEConverted`.
+`FUSEConverted`. Wrapper folders such as `Mods` are traversed automatically, and
+zip files that contain multiple mods produce one `.FUSE` output per mod.
 
 Useful options:
 
@@ -91,7 +93,7 @@ Useful options:
 | `--kind route` | Force route/track/data conversion. |
 | `--kind audio` | Force horn/whistle/bell conversion. |
 | `--kind asset` | Force asset-pack wrapper conversion. |
-| `--batch` | Convert every recognized child item in the input folder. |
+| `--batch` | Recursively convert every recognized child mod, zip, or JSON in the input folder. |
 
 ## Outputs
 
