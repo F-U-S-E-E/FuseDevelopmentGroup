@@ -12,6 +12,7 @@
     "EnableExperimentalEarlyScenePathSuppression": false,
     "MirrorAssetPacksToLocalLow": false,
     "VerboseApplyReportDetails": false,
-    "BlockNonHostMultiplayerClientWorldApply": false
+    "BlockNonHostMultiplayerClientWorldApply": false,
+    "ShowAdvancedHealthDetails": false
   }
 }
