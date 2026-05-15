@@ -9,7 +9,7 @@ Evidence used for this snapshot:
 - FUSE source tree at `C:\Hrogers_Railroader_mods_Projects\Rail`
 - Legacy corpus at `C:\Railroader mods\Installed\Map`
 - FUSE log snapshot at `C:\Users\roger\AppData\LocalLow\Giraffe Lab LLC\Railroader\FUSE.log`
-- RailLoader logs at `C:\Steam\steamapps\common\Railroader\railloader*.log`
+- Legacy mod loader logs from the Railroader install folder
 - Current converter tools under `tools\`
 
 Important note: the 2026-05-15 LocalLow `FUSE.log` is now the authoritative runtime evidence for the current FUSE run.
@@ -33,7 +33,7 @@ Important note: the 2026-05-15 LocalLow `FUSE.log` is now the authoritative runt
   - Scratch verified again 2026-05-11 after classifying successful converter repairs as info instead of warnings: batch converted 12/12 current inputs with 0 errors into `_work\full-corpus-conversion-20260511-clean-reporting`; warnings dropped to 4, all tied to unresolved/source-authored issues instead of repaired content.
 - [x] Converter emits one useful report per conversion: repaired, preserved, unresolved, unsupported, and dependency-required entries. Code complete 2026-05-08; `conversion-report.json` and `conversion-report.md` now include outcome buckets and per-source-file summaries. Scratch verified with `CoppersPaperboardRemover` and Asheville.
 - [x] Converted mods preserve legacy file concerns: one source JSON becomes one FUSE JSON unless the source is metadata-only. Scratch verified 2026-05-08: corpus reports include one file summary per converted source concern, and output filenames follow the source JSON stems instead of artificial concern buckets.
-- [ ] FUSE load time is benchmarked against RailLoader and is within the same range or faster for equivalent installed content.
+- [ ] FUSE load time is benchmarked against the legacy mod loader and is within the same range or faster for equivalent installed content.
 - [x] Runtime logs are readable without hunting through stack traces.
   - Code pass 2026-05-08: successful legacy span auto-repairs are now info-level, same-segment preflight compatibility repairs no longer dirty apply reports, package world apply no longer triggers the public experimental authoring warning, FUSE passenger-stop helper spans are anonymous runtime-only spans, FUSE formulaic components allow legacy one-sided producer/consumer formulas without base-game validation errors, and passenger stops default blank legacy car filters to `*`. Needs fresh Player.log verification.
   - Runtime verified 2026-05-08: formulaic-component validation spam and `passenger-stop.*` duplicate span ids no longer appear.
@@ -191,7 +191,7 @@ These gates keep FUSE from becoming a larger version of the legacy stack. The go
 - [x] P0: Fix progression/load dependency faults, especially Copper missing-load and interchange-transfer cases. Runtime verified 2026-05-07: missing-load placeholders kept Copper progressions loadable and legacy `.t1` interchange-transfer aliases resolved 10 transfers with `skipped interchange transfer = 0`.
   - Code/converter pass 2026-05-08: known Copper-only missing loads are now real converted load definitions instead of runtime placeholders.
 - [x] P0: Verify track group pre-enable does not make progression-gated scenery or track visible early. Code path fixed 2026-05-07; runtime route verification still needed.
-- [ ] P1: Match legacy industry component behavior for all AMM, Strange Customs, Zamu, Copper, and ConfusingSupplements components.
+- [ ] P1: Match legacy industry component behavior for all AMM, legacy custom content framework, Zamu, Copper, and ConfusingSupplements components.
 - [ ] P1: Finalize station/passenger stop ordering, span binding, map icons, and company window display.
   - Verified 2026-05-08: `Editor\MainEditorWindow.cs` and `Infrastructure\WindowCreatorHelper.cs` do not reference, destroy, or null the base-game company window. They only manage FUSE's own editor window instance/panel references.
   - Code pass 2026-05-08: passenger stop child `TrackSpan` helpers now keep blank graph ids to stop duplicate graph-span warnings, and virtual passenger stops suppress base `IndustryComponent` validation that does not apply to FUSE passenger-stop shims. Needs fresh Player.log verification.
@@ -200,7 +200,7 @@ These gates keep FUSE from becoming a larger version of the legacy stack. The go
   - Fresh 2026-05-15 log verification: `Player.log` contains no `CompanyWindow`, `ShortName`, `LocationsPanelBuilder`, or `OpsController.get_Areas` failures after the ordering/company-window patch. FUSE cached 60 areas with first area preview `Asheville > Emma > Boswell > Sulfur Springs > Enka > Hominy > Candler > Luthers > Coburn > Canton > Starney > Moore`. Still needs visual verification that the Locations tab order and reopen behavior match this.
 - [x] P1: Clean converter/runtime turntable handling so physical turntables and progression industries named "turntable" are never confused. Code complete 2026-05-07; duplicate physical turntable ids now apply as final-state overrides during staged graph apply. Needs Kirkland runtime verification.
 - [x] P1: Finish spliney parity: dirt roads, asphalt roads, rivers, trestles, terrain roads, waterfalls.
-  - Code/build complete 2026-05-10: runtime now accepts the full schema spliney type set (`road`, `river`, `terrainRoad`, `trestle`) instead of silently collapsing terrain roads/waterfalls to normal roads. Converter preserves Strange Customs `FlowyThingBuilder` river/road style/profile and emits the legacy `offsetY: -0.1` default when source data omits it. Release DLL deployed; converter `.pyz` and `.exe` rebuilt.
+  - Code/build complete 2026-05-10: runtime now accepts the full schema spliney type set (`road`, `river`, `terrainRoad`, `trestle`) instead of silently collapsing terrain roads/waterfalls to normal roads. Converter preserves legacy custom content `FlowyThingBuilder` river/road style/profile and emits the legacy `offsetY: -0.1` default when source data omits it. Release DLL deployed; converter `.pyz` and `.exe` rebuilt.
 - [ ] P2: Finish horn, whistle, and bell parity and regression-test converted audio packs.
 - [x] P2: Refresh schema docs and examples after runtime/converter behavior is stable.
   - Documentation pass 2026-05-14: refreshed `schemas\fuse-mod.example.json`, `schemas\umm-info.example.json`, and `schemas\FUSE_JSON_SCHEMA.md` for the current beta runtime/converter surface.
@@ -219,14 +219,14 @@ These gates keep FUSE from becoming a larger version of the legacy stack. The go
   - Evidence: `FuseAssetPackRegistry` supports `fuseasset://` direct stores and `FuseAssetPackPatches`, but `MountAllAvailableAssetPacks()` still copies packs into LocalLow.
   - Fix: LocalLow asset-pack mirroring is now disabled by default and guarded by `Settings.MirrorAssetPacksToLocalLow`; direct `PrefabStore` stores remain the default.
 
-- [ ] P0: Benchmark load phases against RailLoader.
-  - RailLoader observed behavior: discovers mods quickly and adds direct asset stores from the Mods folder.
-  - Timing logs added 2026-05-07 for map-load total, cache rebuild, discovery, asset-pack registration, disk load, runtime apply, map-mask rebuild, console registration, and per-package load. Actual RailLoader comparison still needs a fresh game run.
-  - Fresh 2026-05-09 FUSE timing: discovery 17 ms, load-from-disk 223 ms, runtime apply 18,644 ms, total map-load 19,309 ms for 15 packages / 73 resident definitions / 62 applied definitions. Still needs equivalent RailLoader timing comparison.
-  - Log audit 2026-05-10: FUSE disk work is already small (latest disk load 309 ms); the bottleneck is runtime apply (~18.6 s). RailLoader logs from 2026-05-06 show plugin definition/mod loading in roughly 170 ms and Strange Customs graph patching roughly 2.7-2.9 s after scene load begins, but the installed content sets are not perfectly equivalent.
+- [ ] P0: Benchmark load phases against the legacy mod loader.
+  - The legacy mod loader's observed behavior: discovers mods quickly and adds direct asset stores from the Mods folder.
+  - Timing logs added 2026-05-07 for map-load total, cache rebuild, discovery, asset-pack registration, disk load, runtime apply, map-mask rebuild, console registration, and per-package load. Actual legacy mod loader comparison still needs a fresh game run.
+  - Fresh 2026-05-09 FUSE timing: discovery 17 ms, load-from-disk 223 ms, runtime apply 18,644 ms, total map-load 19,309 ms for 15 packages / 73 resident definitions / 62 applied definitions. Still needs equivalent legacy mod loader timing comparison.
+  - Log audit 2026-05-10: FUSE disk work is already small (latest disk load 309 ms); the bottleneck is runtime apply (~18.6 s). Legacy mod loader logs from 2026-05-06 show plugin definition/mod loading in roughly 170 ms and legacy custom content graph patching roughly 2.7-2.9 s after scene load begins, but the installed content sets are not perfectly equivalent.
   - Code pass 2026-05-10: staged operations now defer `TrackAPI.ApplyAreaOrdering()` and run it once after the industry batch instead of once per data fragment. Needs fresh timing log to measure impact.
   - Code/build pass 2026-05-10: per-entity authoring bind info logs are now gated behind `Settings.VerboseApplyReportDetails`; normal map loads should no longer write hundreds of scenery bind lines to `FUSE.log`. Needs fresh timing/log-size comparison.
-  - Fresh 2026-05-15 FUSE timing: discovery 18 ms, asset-pack registration 0 ms, total map-load pipeline 11,307 ms for 15 package folders / 62 applied definitions. Direct asset stores are active and LocalLow mirroring remains disabled by default; equivalent RailLoader timing comparison is still required.
+  - Fresh 2026-05-15 FUSE timing: discovery 18 ms, asset-pack registration 0 ms, total map-load pipeline 11,307 ms for 15 package folders / 62 applied definitions. Direct asset stores are active and LocalLow mirroring remains disabled by default; equivalent legacy mod loader timing comparison is still required.
   - Timing audit 2026-05-11: latest available run spent most runtime-apply time in `apply-world-objects` (9,067 ms total), then `apply-operations` (2,557 ms), and the single graph rebuild (1,730 ms). Top world rows were KingG scenery (2,474 ms), Griz game-graph world objects (2,377 ms), Asheville game-graph world objects (839 ms), and GCR track world objects (759 ms).
   - Code/build pass 2026-05-11: scenery and spliney existence checks now trust the rebuilt FUSE runtime indexes during package apply instead of falling back to repeated full-scene `FindObjectsOfType` scans for every new object. Spline/trestle profile discovery is cached per map session. Release DLL deployed; needs fresh timing log to measure improvement.
 
@@ -346,7 +346,7 @@ These gates keep FUSE from becoming a larger version of the legacy stack. The go
 
 - [x] P1: Add graph validation that explains route direction errors using start/end, A/B, upper/lower, and distance.
   - Code/build complete 2026-05-10: failed runtime span route validation now reports `upper`/`lower` segment id, A/B Start/End anchor, distance, and segment length. Release DLL deployed to `C:\Steam\steamapps\common\Railroader\Mods\FUSE\FUSE.dll`.
-  - Runtime note 2026-05-08: Asheville `NERbalsam-pigeon_dpem` switch geometry error matches the legacy source node/segment data exactly and should be treated as an authoring/legacy-geometry warning unless RailLoader/AMM prove they repair it. Do not spend release time inventing a FUSE-only geometry rewrite for one bad authored switch.
+  - Runtime note 2026-05-08: Asheville `NERbalsam-pigeon_dpem` switch geometry error matches the legacy source node/segment data exactly and should be treated as an authoring/legacy-geometry warning unless AMM or the legacy mod loader prove they repair it. Do not spend release time inventing a FUSE-only geometry rewrite for one bad authored switch.
 
 - [x] P1: Add converter/runtime validation for duplicate node, segment, span, and object IDs inside one package.
   - Code/build complete 2026-05-10: JSON package loading now rejects duplicate object keys before deserialization using `DuplicatePropertyNameHandling.Error`, so duplicate `tracks.nodes`, `tracks.segments`, `tracks.spans`, operations, world, and progression entries cannot silently overwrite earlier definitions. Release DLL deployed to `C:\Steam\steamapps\common\Railroader\Mods\FUSE\FUSE.dll`.
@@ -419,7 +419,7 @@ These gates keep FUSE from becoming a larger version of the legacy stack. The go
 
 ## Operations And Industry Components
 
-- [x] P0: FUSE-created industries must match AMM and Strange Customs materialization.
+- [x] P0: FUSE-created industries must match AMM and legacy custom content materialization.
   - Parent under Area when possible.
   - Create inactive.
   - Add Formulaic components on industry GameObject.
@@ -543,14 +543,14 @@ These gates keep FUSE from becoming a larger version of the legacy stack. The go
 
 ## Splineys And World Builders
 
-- [x] P0: Strange Customs road splineys must distinguish dirt and asphalt/pavement.
+- [x] P0: Legacy custom content road splineys must distinguish dirt and asphalt/pavement.
   - Code audit 2026-05-10: converter preserves legacy `profile` and `style` on `FlowyThingBuilder`; runtime resolves named `SplineProfile` first, so dirt/asphalt/pavement remain profile-driven instead of becoming one generic road.
 
-- [x] P0: Strange Customs rivers must use the river path/profile only, not road fallback.
+- [x] P0: Legacy custom content rivers must use the river path/profile only, not road fallback.
   - Code/build complete 2026-05-10: `FlowyThingBuilder` entries with `style: River` or river profiles convert as `type: river`; runtime uses `RiverPathStyle.River` and river/waterfall profile fallback hints.
 
 - [x] P0: Trestles must match AutoTrestleBuilder placement, profile, and height behavior.
-  - Code audit 2026-05-10: FUSE `AutoTrestle` placement matches Strange Customs center-relative control points and resolves the vanilla profile from existing `AutoTrestle` instances/resources; no active log faults remain for trestle generation.
+  - Code audit 2026-05-10: FUSE `AutoTrestle` placement matches legacy custom content center-relative control points and resolves the vanilla profile from existing `AutoTrestle` instances/resources; no active log faults remain for trestle generation.
 
 - [x] P1: Terrain roads, waterfalls, and any single-point spliney objects must either have runtime support or converter-level repair.
   - Code/build complete 2026-05-10: runtime supports `terrainRoad` and `waterfall` as flowy spline families, and converter preserves one-point/non-runtime legacy spliney objects under `extensions.legacySplineyObjects` instead of dropping them.
@@ -563,7 +563,7 @@ These gates keep FUSE from becoming a larger version of the legacy stack. The go
 
 ## Horns, Whistles, And Bells
 
-- [ ] P0: Converted audio packs must load without requiring Strange Customs.
+- [ ] P0: Converted audio packs must load without requiring the legacy custom content framework.
 
 - [ ] P0: Horn/whistle/bell asset identifiers must match legacy pack behavior.
 
@@ -581,8 +581,8 @@ These gates keep FUSE from becoming a larger version of the legacy stack. The go
 
 ## Schema And Public Extension Surface
 
-- [ ] P0: Schema must represent every AMM and Strange Customs feature we are intentionally supporting.
-  - Rule: if AMM/Strange Customs loaded it, FUSE needs the full feature, not a cut-down placeholder.
+- [ ] P0: Schema must represent every AMM and legacy custom content framework feature we are intentionally supporting.
+  - Rule: if AMM or the legacy custom content framework loaded it, FUSE needs the full feature, not a cut-down placeholder.
 
 - [x] P0: Custom industry and load components must be representable as separate dependency mods.
   - Code/build pass 2026-05-10: FUSE JSON can name external component runtime types directly, carry custom `fields`, and rely on package `FuseLoadAfter`/requirements for the owning component/load mod. Converter preserves unknown legacy component/load fields into that payload.
@@ -722,7 +722,7 @@ These gates keep FUSE from becoming a larger version of the legacy stack. The go
 - [ ] Progression-gated objects are hidden until unlocked.
   - Pending fresh route verification after the 2026-05-10 forced map-feature-state refresh build.
 - [ ] Roads, rivers, trestles, map masks, mandelas, turntables, stations, industries, loaders, interchanges, audio, and map tiles visually/functionally match legacy behavior.
-- [ ] Load time matches or beats RailLoader for equivalent installed content.
+- [ ] Load time matches or beats the legacy mod loader for equivalent installed content.
 
 ---
 
@@ -992,7 +992,7 @@ The converter is now part of the product, not just a helper script.
 
 ## Performance / Load-Time Beta Gates
 
-- [ ] Load time benchmark is recorded against RailLoader/legacy stack for equivalent content.
+- [ ] Load time benchmark is recorded against the legacy mod loader stack for equivalent content.
 - [ ] Load time benchmark includes cold start and warm start where practical.
 - [ ] Converter time is benchmarked separately from runtime load time.
 - [x] FUSE avoids repeated map tile remount loops.
@@ -1012,7 +1012,7 @@ Beta does not need full multiplayer support unless explicitly promised, but beha
 - [x] README states multiplayer support level: unsupported, host-only, degraded-safe, or supported.
   - Documentation pass 2026-05-15: `README.md` states beta multiplayer is compatibility-mode only. FUSE does not sync packages; host and clients must have identical enabled FUSE packages and load order.
 - [x] Clients apply local package mutations only under documented compatibility mode or strict-block settings.
-  - Code/build complete 2026-05-15: default non-host clients apply the local package stack with a warning, matching legacy RailLoader behavior when every player has the same mods. `Settings.BlockNonHostMultiplayerClientWorldApply=true` restores strict non-host mutation blocking for server tests.
+  - Code/build complete 2026-05-15: default non-host clients apply the local package stack with a warning, matching legacy mod loader behavior when every player has the same mods. `Settings.BlockNonHostMultiplayerClientWorldApply=true` restores strict non-host mutation blocking for server tests.
 - [x] Host/client package mismatch behavior is documented.
   - Documentation pass 2026-05-15: `README.md` and `KNOWN_ISSUES.md` state that FUSE does not negotiate host/client package mismatches; every player must use the same FUSE version, enabled packages, and load order.
 - [x] Network-bound mutations are blocked or host-authoritative.

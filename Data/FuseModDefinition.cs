@@ -41,7 +41,8 @@ namespace FUSE.Data
         public string SourceFile { get; set; }
 
         /// <summary>
-        /// Optional mod requirements copied from RailLoader/Strange Customs
+        /// Optional mod requirements copied from the legacy mod loader and
+        /// legacy custom content framework
         /// conditional mixintos. If any requirement is not satisfied, FUSE
         /// skips this fragment instead of treating it as a package fault.
         /// </summary>

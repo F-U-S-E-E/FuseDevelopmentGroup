@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Small tolerant JSON reader for legacy Railroader mod data files.
 
-Legacy Strange Customs/RailLoader packages in the wild often contain JSONC
+Legacy custom content framework and legacy mod loader packages in the wild often contain JSONC
 comments, trailing commas, and occasionally files truncated after the last real
 entry. This reader keeps the recovery narrow: it never executes code, it only
 removes comments/trailing commas and, when requested, appends missing closing
