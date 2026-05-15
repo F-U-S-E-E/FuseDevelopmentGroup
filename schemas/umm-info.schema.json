@@ -126,6 +126,26 @@
           "type": "boolean",
           "default": false,
           "description": "Experimental. Gates Unity async scene activation so world.suppressBaseScenePaths can be applied as early as Unity exposes scene objects. Disabled by default because a failed gate can wedge scene loading."
+        },
+        "MirrorAssetPacksToLocalLow": {
+          "type": "boolean",
+          "default": false,
+          "description": "Copies asset-pack folders to LocalLow before loading. Disabled by default; direct asset-pack store registration is preferred for performance."
+        },
+        "VerboseApplyReportDetails": {
+          "type": "boolean",
+          "default": false,
+          "description": "Writes per-object apply details to FUSE.log for package debugging. Disabled by default to keep public beta logs readable."
+        },
+        "BlockNonHostMultiplayerClientWorldApply": {
+          "type": "boolean",
+          "default": false,
+          "description": "Strict multiplayer safety switch. When true, non-host clients skip runtime graph/world/operations/progression mutation instead of using legacy-style compatibility mode."
+        },
+        "ShowAdvancedHealthDetails": {
+          "type": "boolean",
+          "default": false,
+          "description": "Shows advanced FUSE Health diagnostics such as asset duplicate winners, full asset store paths, registry internals, and live log tails. Disabled by default to keep the public UI curated."
         }
       }
     }

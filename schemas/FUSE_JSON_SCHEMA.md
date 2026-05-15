@@ -3,7 +3,7 @@
 This folder defines the JSON side of the FUSE mod format.
 
 - `fuse-mod.schema.json` is the authoritative JSON Schema for hand-authored and editor-exported `.json` files.
-- `fuse-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, loaders, turntables, roundhouses, stations, scenery, spawn points, span-anchored scenery, splineys, telegraph poles, labels, speed signs, masks, map tiles, scene clones, world removals, progression data, and editor state.
+- `fuse-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, built-in and custom industry components, loaders, turntables, roundhouses, stations, scenery, spawn points, span-anchored scenery, splineys, telegraph poles, labels, speed signs, masks, suppressions, map tiles, scene clones, world removals, progression data, audio definitions, mixinto metadata, and editor state.
 - `umm-info.schema.json` documents the Unity Mod Manager `Info.json` shape FUSE expects for API mods, data packages, and asset-pack packages.
 - `umm-info.example.json` is a data-only map package manifest that depends on `FUSE`.
 
@@ -56,6 +56,28 @@ Compatibility aliases are intentional and narrow:
 - The literal asset-pack id `rail` can still appear inside Railroader `AssetReference` values. That string is Railroader's built-in asset-pack identifier, not the old RAIL mod name.
 
 Do not author new public docs or examples with `RAIL` as the mod name.
+
+## Example Coverage
+
+The shipped examples cover the public beta authoring cases:
+
+| Case | Example file | Notes |
+| --- | --- | --- |
+| Route/data package | `fuse-mod.example.json` | Track, areas, spans, operations, world objects, progression, audio, and editor metadata. |
+| UMM package manifest | `umm-info.example.json` | `FuseDataFiles`, load ordering, and `FuseAssetPacks`. |
+| Asset pack package | `umm-info.example.json` | Use `FuseAssetPacks` to point at one or more package-relative asset pack roots. |
+| Map tiles | `fuse-mod.example.json` | `world.mapTiles` overlays `tile_XXX_YYY.data` files for a `MapManager.directoryName`. |
+| Audio pack | `fuse-mod.example.json` | `audio.whistles`, `audio.horns`, and `audio.bells`. |
+| Industry component pack | `fuse-mod.example.json` | Built-in component types plus a fully-qualified custom component type with `fields`. |
+| Load component pack | `fuse-mod.example.json` | `operations.loads.*.fields` can carry reflection-bound custom load data. |
+| Mixinto | `fuse-mod.example.json` | `mixinto.target`, `mixinto.sourceFile`, and conditional `requires`. |
+| Progression section | `fuse-mod.example.json` | Root `progression.sections[]`, delivery phases, unlock features, and interchange transfers. |
+| Map mask | `fuse-mod.example.json` | `world.mapMasks` for terrain/object mask authoring. |
+| Scene clone | `fuse-mod.example.json` | `world.sceneClones` for base-game object cloning/retargeting. |
+| Span-anchored scenery | `fuse-mod.example.json` | `world.scenery.*.anchorSpanIds`. |
+| Signals | Not included | Signals are deferred for beta and should not be treated as supported yet. |
+
+The converter guide at `tools/FUSE_CONVERTER.md` covers drag/drop conversion, batch conversion, output reports, and warning classification.
 
 Areas are defined under `tracks.areas` and can be used to group industries in the company window. `order` is a signed sort key that controls the display order of areas and industries; lower values appear earlier. Legacy conversions preserve source order values, including negative values, when the source file provides them:
 
@@ -214,7 +236,7 @@ Asset and prefab references are URI strings:
 - `vanilla://waterTower`
 - `scenery://aspen-corner-drug`
 - `path://scene/World/Large Scenery/Whittier/Coal Conveyor`
-- `asset://HunterR.MurphyBranch/depotSmall`
+- `asset://example.route/depotSmall`
 - `fuse://some-shared-catalog/object-id`
 
 The current runtime directly understands `vanilla://`, `path://`, `scenery://`, and `empty://`. Other schemes may be reserved by tools or future loaders.

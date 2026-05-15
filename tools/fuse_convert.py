@@ -1093,7 +1093,7 @@ def is_supported_custom_component_type(component_type):
     return normalized in SUPPORTED_CUSTOM_INDUSTRY_COMPONENT_TYPES
 
 
-def _flag_spanless_passenger_stop(industry_id, component_id, converted):
+def _flag_spanless_passenger_stop(industry_id, component_id, converted, source_name=None):
     # Spanless passenger stops were dropped by an earlier converter pass
     # because FUSE's validator errored on them. The runtime now downgrades
     # that check to a warning (matching legacy AlinasMapMod behavior), so
@@ -1110,6 +1110,7 @@ def _flag_spanless_passenger_stop(industry_id, component_id, converted):
         f"Industry '{industry_id}' component '{component_id}' is a passengerStop with no "
         "trackSpans; emitting as a virtual stop. Add 'trackSpans' in the legacy source to "
         "give it a physical platform.",
+        file=source_name or "",
         concept="passenger-stop-spanless",
     )
 
@@ -1147,13 +1148,13 @@ def _make_component_sub_id(industry_id, component_id, converted, existing):
     return sub_id
 
 
-def convert_industry(industry_id, item, area_id=None, order=None):
+def convert_industry(industry_id, item, area_id=None, order=None, source_name=None):
     components = {}
     for component_id, component in (item.get("components") or {}).items():
         if isinstance(component, dict):
             converted = convert_component(component_id, component)
             sub_id = _make_component_sub_id(industry_id, component_id, converted, components)
-            _flag_spanless_passenger_stop(industry_id, sub_id, converted)
+            _flag_spanless_passenger_stop(industry_id, sub_id, converted, source_name)
             components[sub_id] = converted
 
     return clean({
@@ -1689,13 +1690,13 @@ def convert_source(source, rail, source_name=None, order_state=None):
         for industry_id, industry in (area.get("industries") or {}).items():
             if isinstance(industry, dict):
                 industry_order = next_industry_order(order_state, area_id, industry_id, industry)
-                rail["operations"]["industries"][industry_id] = convert_industry(industry_id, industry, area_id, industry_order)
+                rail["operations"]["industries"][industry_id] = convert_industry(industry_id, industry, area_id, industry_order, source_name)
 
     for industry_id, industry in (source.get("industries") or {}).items():
         if isinstance(industry, dict):
             area_id = industry.get("areaId") or industry.get("area")
             industry_order = next_industry_order(order_state, area_id, industry_id, industry)
-            rail["operations"]["industries"][industry_id] = convert_industry(industry_id, industry, order=industry_order)
+            rail["operations"]["industries"][industry_id] = convert_industry(industry_id, industry, order=industry_order, source_name=source_name)
 
     for table_id, table in (source.get("turntables") or {}).items():
         if isinstance(table, dict):

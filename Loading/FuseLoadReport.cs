@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using FUSE.Infrastructure;
 using FUSE.Registry;
+using Newtonsoft.Json.Linq;
 using UI.Common;
 
 namespace FUSE.Loading
@@ -19,6 +20,7 @@ namespace FUSE.Loading
 
         private static string _lastSummary = "FUSE load report has not been generated yet.";
         private static string _lastDetails = "FUSE load report has not been generated yet.";
+        private static string _lastJson = "{ \"status\": \"FUSE load report has not been generated yet.\" }";
 
         public static string LastSummary
         {
@@ -41,6 +43,7 @@ namespace FUSE.Loading
                 ProgressionTransferSkips.Clear();
                 _lastSummary = "FUSE load report is pending.";
                 _lastDetails = "FUSE load report is pending.";
+                _lastJson = "{ \"status\": \"FUSE load report is pending.\" }";
             }
         }
 
@@ -118,6 +121,14 @@ namespace FUSE.Loading
             }
         }
 
+        public static string GetLastJsonReport()
+        {
+            lock (Sync)
+            {
+                return _lastJson;
+            }
+        }
+
         public static void PublishMapLoadReport(string reason, int loadedFromDiskThisPass, int appliedToRuntimeThisPass)
         {
             var snapshot = CaptureSnapshot(reason, loadedFromDiskThisPass, appliedToRuntimeThisPass);
@@ -128,6 +139,7 @@ namespace FUSE.Loading
             {
                 _lastSummary = summary;
                 _lastDetails = details;
+                _lastJson = BuildJson(snapshot, summary);
             }
 
             if (snapshot.HasProblems)
@@ -202,12 +214,10 @@ namespace FUSE.Loading
                 snapshot.AreaSuppressions.Length;
 
             return
-                $"FUSE: {loadedCount} loaded, {snapshot.FaultedPackageCount} faulted, " +
-                $"{snapshot.Conflicts.Length} conflicts, {suppressionCount} suppressions, " +
-                $"{snapshot.UnknownSceneryAssets.Length} unknown scenery assets, " +
-                $"{snapshot.GraphPostBindIssues.Length} graph issues, " +
-                $"{snapshot.ProgressionTransferSkips.Length} transfer skips. " +
-                "Details: /fuse.report /fuse.loaded /fuse.conflicts";
+                $"FUSE: {loadedCount} loaded | faults {snapshot.FaultedPackageCount} | " +
+                $"conflicts {snapshot.Conflicts.Length} | assets {snapshot.UnknownSceneryAssets.Length} | " +
+                $"graph {snapshot.GraphPostBindIssues.Length} | transfers {snapshot.ProgressionTransferSkips.Length} | " +
+                $"suppressions {suppressionCount} | /fuse.report";
         }
 
         private static string BuildDetails(ReportSnapshot snapshot, string summary)
@@ -263,6 +273,78 @@ namespace FUSE.Loading
             AppendList(sb, "Progression transfer skips", snapshot.ProgressionTransferSkips);
             AppendList(sb, "Notices", snapshot.Notices);
             return sb.ToString();
+        }
+
+        private static string BuildJson(ReportSnapshot snapshot, string summary)
+        {
+            var suppressionCount =
+                snapshot.SceneSuppressions.Length +
+                snapshot.TrackGroupSuppressions.Length +
+                snapshot.AreaSuppressions.Length;
+
+            var root = new JObject
+            {
+                ["summary"] = summary ?? string.Empty,
+                ["reason"] = snapshot.Reason ?? string.Empty,
+                ["hasProblems"] = snapshot.HasProblems,
+                ["counts"] = new JObject
+                {
+                    ["loadedFromDiskThisPass"] = snapshot.LoadedFromDiskThisPass,
+                    ["appliedToRuntimeThisPass"] = snapshot.AppliedToRuntimeThisPass,
+                    ["residentDefinitions"] = snapshot.ResidentDefinitionCount,
+                    ["loadedPackages"] = snapshot.LoadedPackageIds.Length,
+                    ["appliedPackages"] = snapshot.AppliedPackageIds.Length,
+                    ["skippedPackages"] = snapshot.SkippedPackages.Count,
+                    ["disabledPackages"] = snapshot.DisabledPackages.Count,
+                    ["faultedPackages"] = snapshot.FaultedPackageCount,
+                    ["conflicts"] = snapshot.Conflicts.Length,
+                    ["unknownSceneryAssets"] = snapshot.UnknownSceneryAssets.Length,
+                    ["graphIssues"] = snapshot.GraphPostBindIssues.Length,
+                    ["progressionTransferSkips"] = snapshot.ProgressionTransferSkips.Length,
+                    ["suppressions"] = suppressionCount,
+                    ["notices"] = snapshot.Notices.Length
+                },
+                ["packages"] = new JObject
+                {
+                    ["loaded"] = ToArray(snapshot.LoadedPackageIds),
+                    ["applied"] = ToArray(snapshot.AppliedPackageIds),
+                    ["skipped"] = ToObject(snapshot.SkippedPackages),
+                    ["disabled"] = ToObject(snapshot.DisabledPackages),
+                    ["faults"] = new JArray(snapshot.Faults.Select(fault => new JObject
+                    {
+                        ["packageId"] = fault.PackageId ?? string.Empty,
+                        ["stage"] = fault.Stage ?? string.Empty,
+                        ["message"] = fault.Message ?? string.Empty
+                    }))
+                },
+                ["conflicts"] = new JArray(snapshot.Conflicts.Select(conflict => new JObject
+                {
+                    ["kind"] = conflict.Kind.ToString(),
+                    ["target"] = conflict.Target ?? string.Empty,
+                    ["objectId"] = conflict.Id ?? string.Empty,
+                    ["ownerPackageId"] = conflict.OwnerPackageId ?? string.Empty,
+                    ["attemptedPackageId"] = conflict.AttemptedPackageId ?? string.Empty,
+                    ["resolution"] = conflict.Resolution ?? string.Empty
+                })),
+                ["suppressions"] = new JObject
+                {
+                    ["scenePaths"] = ToArray(snapshot.SceneSuppressions),
+                    ["trackGroups"] = ToArray(snapshot.TrackGroupSuppressions),
+                    ["areas"] = ToArray(snapshot.AreaSuppressions)
+                },
+                ["unknownSceneryAssets"] = new JArray(snapshot.UnknownSceneryAssets.Select(item => new JObject
+                {
+                    ["packageId"] = item.PackageId ?? string.Empty,
+                    ["sceneryId"] = item.SceneryId ?? string.Empty,
+                    ["assetIdentifier"] = item.AssetIdentifier ?? string.Empty,
+                    ["model"] = item.Model ?? string.Empty
+                })),
+                ["graphPostBindIssues"] = ToArray(snapshot.GraphPostBindIssues),
+                ["progressionTransferSkips"] = ToArray(snapshot.ProgressionTransferSkips),
+                ["notices"] = ToArray(snapshot.Notices)
+            };
+
+            return root.ToString(Newtonsoft.Json.Formatting.Indented);
         }
 
         private static void AppendList(StringBuilder sb, string label, IEnumerable<string> values)
@@ -363,6 +445,29 @@ namespace FUSE.Loading
                 (ProgressionTransferSkips != null && ProgressionTransferSkips.Length > 0) ||
                 (SkippedPackages != null && SkippedPackages.Any(item => !FusePackageFaultRegistry.IsOptionalSkipReason(item.Value))) ||
                 (Notices != null && Notices.Length > 0);
+        }
+
+        private static JArray ToArray(IEnumerable<string> values)
+        {
+            return new JArray((values ?? Enumerable.Empty<string>())
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .OrderBy(value => value, StringComparer.OrdinalIgnoreCase));
+        }
+
+        private static JObject ToObject(IReadOnlyDictionary<string, string> values)
+        {
+            var obj = new JObject();
+            if (values == null)
+            {
+                return obj;
+            }
+
+            foreach (var entry in values.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                obj[entry.Key] = entry.Value ?? string.Empty;
+            }
+
+            return obj;
         }
     }
 }

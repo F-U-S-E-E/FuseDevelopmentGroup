@@ -1,13 +1,18 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using FUSE.Console;
 using FUSE.Events;
 using FUSE.Infrastructure;
+using FUSE.Interface;
 using FUSE.Lifecycle;
 using FUSE.Loading;
+using FUSE.Migrations;
 using FUSE.Patches;
+using Newtonsoft.Json.Linq;
+using UnityEngine;
 using UnityModManagerNet;
 using FUSE.Editor;
 
@@ -16,6 +21,12 @@ namespace FUSE
     public static class FusePlugin
     {
         private const string HarmonyId = "FUSE";
+        private const string ConverterVersion = "0.2.0";
+#if DEBUG
+        private const string BuildConfiguration = "Debug";
+#else
+        private const string BuildConfiguration = "Release";
+#endif
 
         private static Harmony _harmony;
         private static bool _isLoaded;
@@ -44,6 +55,7 @@ namespace FUSE
 
             try
             {
+                LogStartupVersions(modEntry);
                 FuseSettings.Load(modEntry);
                 FuseAssetPackRegistry.MountAllAvailableAssetPacks();
 
@@ -58,6 +70,7 @@ namespace FUSE
                 FuseConsoleRegistrar.TryRegisterAll();
 
                 FuseEditor.OnFuseLoad();
+                FuseHealthUi.Ensure();
 
                 modEntry.OnUnload = OnUnload;
                 _isLoaded = true;
@@ -70,6 +83,68 @@ namespace FUSE
                 FuseLog.Exception("FUSE failed to load", ex);
                 Shutdown();
                 return false;
+            }
+        }
+
+        private static void LogStartupVersions(UnityModManager.ModEntry modEntry)
+        {
+            try
+            {
+                var infoPath = Path.Combine(modEntry.Path ?? string.Empty, "Info.json");
+                var fuseVersion = ReadInfoJsonString(infoPath, "Version") ?? ReadModEntryInfoString(modEntry, "Version") ?? "unknown";
+                var supportedRailroaderVersion = ReadInfoJsonString(infoPath, "GameVersion") ?? "unspecified";
+                var currentRailroaderVersion = string.IsNullOrWhiteSpace(Application.version) ? "unknown" : Application.version;
+                var unityVersion = string.IsNullOrWhiteSpace(Application.unityVersion) ? "unknown" : Application.unityVersion;
+
+                FuseLog.Info(
+                    "FUSE startup version report: " +
+                    $"fuseVersion='{fuseVersion}' " +
+                    $"schemaVersion='{FuseMigration.CurrentVersion}' " +
+                    $"converterVersion='{ConverterVersion}' " +
+                    $"buildConfiguration='{BuildConfiguration}' " +
+                    $"supportedRailroaderVersion='{supportedRailroaderVersion}' " +
+                    $"currentRailroaderVersion='{currentRailroaderVersion}' " +
+                    $"unityVersion='{unityVersion}'.");
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE startup version report failed: {ex.Message}");
+            }
+        }
+
+        private static string ReadInfoJsonString(string infoPath, string propertyName)
+        {
+            if (string.IsNullOrWhiteSpace(infoPath) || !File.Exists(infoPath))
+            {
+                return null;
+            }
+
+            var manifest = JObject.Parse(File.ReadAllText(infoPath));
+            var property = manifest.Properties()
+                .FirstOrDefault(candidate => string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase));
+            return property?.Value?.Type == JTokenType.String
+                ? property.Value.Value<string>()
+                : property?.Value?.ToString();
+        }
+
+        private static string ReadModEntryInfoString(UnityModManager.ModEntry modEntry, string memberName)
+        {
+            try
+            {
+                var info = modEntry?.GetType().GetProperty("Info")?.GetValue(modEntry) ??
+                           modEntry?.GetType().GetField("Info")?.GetValue(modEntry);
+                if (info == null)
+                {
+                    return null;
+                }
+
+                var member = info.GetType().GetProperty(memberName)?.GetValue(info) ??
+                             info.GetType().GetField(memberName)?.GetValue(info);
+                return member?.ToString();
+            }
+            catch
+            {
+                return null;
             }
         }
 
@@ -108,6 +183,8 @@ namespace FUSE
 
                 _lifecycle = null;
             }
+
+            FuseHealthUi.Shutdown();
 
             if (_isLoaded)
             {

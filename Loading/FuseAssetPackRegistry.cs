@@ -87,6 +87,11 @@ namespace FUSE.Loading
             var mountedCount = 0;
             foreach (var packagePath in Directory.GetDirectories(modsRoot).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
             {
+                if (!ShouldInspectPackage(packagePath))
+                {
+                    continue;
+                }
+
                 try
                 {
                     mountedCount += MountAssetPacksFromPackage(packagePath);
@@ -175,6 +180,11 @@ namespace FUSE.Loading
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var packagePath in Directory.GetDirectories(modsRoot).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
             {
+                if (!ShouldInspectPackage(packagePath))
+                {
+                    continue;
+                }
+
                 foreach (var folder in EnumerateAssetPackFoldersForPackage(packagePath))
                 {
                     if (seen.Add(folder))
@@ -183,6 +193,117 @@ namespace FUSE.Loading
                     }
                 }
             }
+        }
+
+        internal static FuseAssetPackDiagnostics GetDiagnostics()
+        {
+            var folders = EnumerateAvailableAssetPackFolders().ToArray();
+            var firstSourceByKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var duplicateKeys = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            var failedLookups = new List<string>();
+
+            foreach (var folder in folders)
+            {
+                var definitionsPath = Path.Combine(folder, "Definitions.json");
+                if (!File.Exists(definitionsPath))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var root = JObject.Parse(File.ReadAllText(definitionsPath));
+                    foreach (var obj in (root["objects"] as JArray)?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
+                    {
+                        var key =
+                            GetStringProperty(obj, "name") ??
+                            GetStringProperty(obj, "identifier") ??
+                            GetStringProperty(obj, "id") ??
+                            GetStringProperty(obj["definition"] as JObject, "name") ??
+                            GetStringProperty(obj["definition"] as JObject, "identifier") ??
+                            GetStringProperty(obj["definition"] as JObject, "id");
+                        if (string.IsNullOrWhiteSpace(key))
+                        {
+                            continue;
+                        }
+
+                        if (!firstSourceByKey.TryGetValue(key, out var existing))
+                        {
+                            firstSourceByKey[key] = folder;
+                            continue;
+                        }
+
+                        if (!duplicateKeys.TryGetValue(key, out var sources))
+                        {
+                            sources = new List<string> { existing };
+                            duplicateKeys[key] = sources;
+                        }
+
+                        if (!sources.Contains(folder, StringComparer.OrdinalIgnoreCase))
+                        {
+                            sources.Add(folder);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failedLookups.Add($"{Path.GetFileName(folder)}: {ex.Message}");
+                }
+            }
+
+            return new FuseAssetPackDiagnostics
+            {
+                StoreFolders = folders,
+                UniqueAssetKeys = firstSourceByKey.Count,
+                DuplicateKeys = duplicateKeys
+                    .OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(item => new FuseDuplicateAssetKey
+                    {
+                        Key = item.Key,
+                        Sources = item.Value.Select(Path.GetFileName).ToArray()
+                    })
+                    .ToArray(),
+                FailedDefinitionLoads = failedLookups.ToArray()
+            };
+        }
+
+        private static bool ShouldInspectPackage(string packagePath)
+        {
+            if (string.IsNullOrWhiteSpace(packagePath))
+            {
+                return false;
+            }
+
+            var packageId = TryReadPackageId(packagePath);
+            if (FuseUmmState.TryGetDisabledReason(packagePath, packageId, out _))
+            {
+                return false;
+            }
+
+            return FuseModSetService.IsPackageEnabledByActiveSet(packageId, packagePath);
+        }
+
+        private static string TryReadPackageId(string packagePath)
+        {
+            try
+            {
+                var infoPath = Path.Combine(packagePath, "Info.json");
+                if (File.Exists(infoPath))
+                {
+                    var info = JObject.Parse(File.ReadAllText(infoPath));
+                    var id = (string)info["Id"];
+                    if (!string.IsNullOrWhiteSpace(id))
+                    {
+                        return id.Trim();
+                    }
+                }
+            }
+            catch
+            {
+                // Asset-pack discovery can still fall back to folder name.
+            }
+
+            return Path.GetFileName(packagePath);
         }
 
         private static IEnumerable<string> EnumerateAssetPackFoldersForPackage(string packagePath)
@@ -294,14 +415,18 @@ namespace FUSE.Loading
 
         internal static void AddDirectAssetPackStores(PrefabStore prefabStore)
         {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             if (prefabStore == null)
             {
+                FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
                 return;
             }
 
             var sourcePaths = EnumerateAvailableAssetPackFolders().ToArray();
             if (sourcePaths.Length == 0)
             {
+                FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
+                FusePerformanceMetrics.RecordCount("direct asset pack store count", 0);
                 return;
             }
 
@@ -319,6 +444,8 @@ namespace FUSE.Loading
                 FuseLog.Warning(
                     "FUSE direct asset pack mounting is unavailable. " +
                     "Set Settings.MirrorAssetPacksToLocalLow=true in Info.json to use the slower LocalLow mirror fallback.");
+                FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
+                FusePerformanceMetrics.RecordCount("direct asset pack store count", DirectAssetPackStoreIdentifiers.Count);
                 return;
             }
 
@@ -328,6 +455,8 @@ namespace FUSE.Loading
                 FuseLog.Warning(
                     "FUSE direct asset pack mounting is unavailable. " +
                     "Set Settings.MirrorAssetPacksToLocalLow=true in Info.json to use the slower LocalLow mirror fallback.");
+                FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
+                FusePerformanceMetrics.RecordCount("direct asset pack store count", DirectAssetPackStoreIdentifiers.Count);
                 return;
             }
 
@@ -366,6 +495,9 @@ namespace FUSE.Loading
             {
                 FuseLog.Info($"FUSE skipped {skipped} already-registered direct asset pack store(s).");
             }
+
+            FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
+            FusePerformanceMetrics.RecordCount("direct asset pack store count", DirectAssetPackStoreIdentifiers.Count);
         }
 
         internal static bool TryResolveDirectStoreBasePath(string identifier, out string path)
@@ -757,5 +889,19 @@ namespace FUSE.Loading
 
             return path + Path.DirectorySeparatorChar;
         }
+    }
+
+    internal sealed class FuseAssetPackDiagnostics
+    {
+        public string[] StoreFolders { get; set; } = Array.Empty<string>();
+        public int UniqueAssetKeys { get; set; }
+        public FuseDuplicateAssetKey[] DuplicateKeys { get; set; } = Array.Empty<FuseDuplicateAssetKey>();
+        public string[] FailedDefinitionLoads { get; set; } = Array.Empty<string>();
+    }
+
+    internal sealed class FuseDuplicateAssetKey
+    {
+        public string Key { get; set; } = string.Empty;
+        public string[] Sources { get; set; } = Array.Empty<string>();
     }
 }

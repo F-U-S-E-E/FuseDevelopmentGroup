@@ -35,6 +35,7 @@ namespace FUSE.Loading
                 FuseLog.Warning("FUSE could not locate the Unity Mod Manager Mods folder.");
                 _discoveredPackageFolders = Array.Empty<string>();
                 _discoveryComplete = true;
+                FusePerformanceMetrics.RecordTiming("discover packages", stopwatch.ElapsedMilliseconds);
                 FuseLog.Info($"FUSE load timing phase='discover packages' elapsedMs={stopwatch.ElapsedMilliseconds} packageCount=0 status='mods-root-missing'.");
                 return _discoveredPackageFolders;
             }
@@ -53,6 +54,7 @@ namespace FUSE.Loading
 
             _discoveryComplete = true;
             FuseLog.Info($"FUSE discovered {_discoveredPackageFolders.Length} candidate data package(s) in '{modsRoot}'.");
+            FusePerformanceMetrics.RecordTiming("discover packages", stopwatch.ElapsedMilliseconds);
             FuseLog.Info($"FUSE load timing phase='discover packages' elapsedMs={stopwatch.ElapsedMilliseconds} packageCount={_discoveredPackageFolders.Length}.");
             for (var index = 0; index < _discoveredPackageFolders.Length; index++)
             {
@@ -76,12 +78,35 @@ namespace FUSE.Loading
             return DiscoverPackagesOnce();
         }
 
+        internal static IReadOnlyList<FusePackageManifestSnapshot> GetPackageManifestSnapshots()
+        {
+            DiscoverPackagesOnce();
+            return _discoveredPackageManifests
+                .Select((manifest, index) => new FusePackageManifestSnapshot
+                {
+                    Order = index + 1,
+                    Id = manifest.Id ?? string.Empty,
+                    DisplayName = manifest.DisplayName ?? string.Empty,
+                    Version = manifest.Version ?? string.Empty,
+                    FolderName = string.IsNullOrWhiteSpace(manifest.FolderPath) ? string.Empty : Path.GetFileName(manifest.FolderPath),
+                    FolderPath = manifest.FolderPath ?? string.Empty,
+                    Priority = manifest.Priority,
+                    LoadAfter = manifest.LoadAfter ?? Array.Empty<string>(),
+                    LoadBefore = manifest.LoadBefore ?? Array.Empty<string>(),
+                    Disabled = manifest.Disabled,
+                    DisabledReason = manifest.DisabledReason ?? string.Empty,
+                    Faults = manifest.Faults.ToArray()
+                })
+                .ToArray();
+        }
+
         public static int LoadPackagesFromDisk(bool forceReload)
         {
             var stopwatch = Stopwatch.StartNew();
             if (_definitionsLoadedFromDisk && !forceReload)
             {
                 FuseLog.Info($"FUSE package disk load skipped because {FuseModLoader.LoadedDefinitionCount} definition(s) are already loaded.");
+                FusePerformanceMetrics.RecordTiming("load packages from disk", stopwatch.ElapsedMilliseconds);
                 FuseLog.Info($"FUSE load timing phase='load packages from disk' elapsedMs={stopwatch.ElapsedMilliseconds} loaded=0 skipped='resident-definitions-already-loaded'.");
                 FusePackageFaultRegistry.LogFinalReport("disk load skipped", FuseModLoader.LoadedDefinitionCount);
                 return 0;
@@ -100,6 +125,7 @@ namespace FUSE.Loading
             {
                 _definitionsLoadedFromDisk = true;
                 FuseLog.Info("FUSE loaded 0 package definition(s) from disk because discovery found no packages.");
+                FusePerformanceMetrics.RecordTiming("load packages from disk", stopwatch.ElapsedMilliseconds);
                 FuseLog.Info($"FUSE load timing phase='load packages from disk' elapsedMs={stopwatch.ElapsedMilliseconds} loaded=0 packageCount=0.");
                 FusePackageFaultRegistry.LogFinalReport("disk load", FuseModLoader.LoadedDefinitionCount);
                 return 0;
@@ -114,6 +140,7 @@ namespace FUSE.Loading
             {
                 FuseLog.Exception("FUSE asset pack mount failed before package disk load; continuing with definition loading.", ex);
             }
+            FusePerformanceMetrics.RecordTiming("asset pack registration", assetStopwatch.ElapsedMilliseconds);
             FuseLog.Info($"FUSE load timing phase='asset pack registration' elapsedMs={assetStopwatch.ElapsedMilliseconds}.");
 
             var loadedCount = 0;
@@ -166,6 +193,7 @@ namespace FUSE.Loading
 
             _definitionsLoadedFromDisk = true;
             FuseLog.Info($"FUSE loaded {loadedCount} data package folder(s) from disk; {FuseModLoader.LoadedDefinitionCount} resident definition(s). Runtime apply is separate.");
+            FusePerformanceMetrics.RecordTiming("load packages from disk", stopwatch.ElapsedMilliseconds);
             FuseLog.Info($"FUSE load timing phase='load packages from disk' elapsedMs={stopwatch.ElapsedMilliseconds} loaded={loadedCount} residentDefinitions={FuseModLoader.LoadedDefinitionCount}.");
             FusePackageFaultRegistry.LogFinalReport("disk load", FuseModLoader.LoadedDefinitionCount);
             return loadedCount;
@@ -174,8 +202,18 @@ namespace FUSE.Loading
         public static int ApplyLoadedPackages(string reason)
         {
             var stopwatch = Stopwatch.StartNew();
+            FusePerformanceMetrics.ResetApplyTimings();
+            if (!FuseMultiplayerGuard.CanApplyWorldMutations(reason ?? "runtime apply"))
+            {
+                FusePerformanceMetrics.RecordTiming("apply resident definitions", stopwatch.ElapsedMilliseconds);
+                FuseLog.Info($"FUSE load timing phase='apply resident definitions' reason='{reason ?? "unspecified"}' elapsedMs={stopwatch.ElapsedMilliseconds} applied=0 residentDefinitions={FuseModLoader.LoadedDefinitionCount} skipped='non-host-multiplayer-client'.");
+                FusePackageFaultRegistry.LogFinalReport(reason ?? "runtime apply skipped", FuseModLoader.LoadedDefinitionCount);
+                return 0;
+            }
+
             var appliedCount = FuseModLoader.ApplyLoadedDefinitions(reason);
             FuseLog.Info($"FUSE applied {appliedCount} resident definition(s) to runtime for '{reason ?? "unspecified"}'.");
+            FusePerformanceMetrics.RecordTiming("apply resident definitions", stopwatch.ElapsedMilliseconds);
             FuseLog.Info($"FUSE load timing phase='apply resident definitions' reason='{reason ?? "unspecified"}' elapsedMs={stopwatch.ElapsedMilliseconds} applied={appliedCount} residentDefinitions={FuseModLoader.LoadedDefinitionCount}.");
             FusePackageFaultRegistry.LogFinalReport(reason ?? "runtime apply", FuseModLoader.LoadedDefinitionCount);
             return appliedCount;
@@ -192,6 +230,7 @@ namespace FUSE.Loading
             var loadedCount = LoadPackagesFromDisk(forceReload);
             var appliedCount = ApplyLoadedPackages(reason);
             FuseLog.Info($"FUSE load/apply complete for '{reason ?? "unspecified"}': loadedFromDisk={loadedCount}, appliedToRuntime={appliedCount}.");
+            FusePerformanceMetrics.RecordTiming("load and apply packages", stopwatch.ElapsedMilliseconds);
             FuseLog.Info($"FUSE load timing phase='load and apply packages' reason='{reason ?? "unspecified"}' elapsedMs={stopwatch.ElapsedMilliseconds} loadedFromDisk={loadedCount} appliedToRuntime={appliedCount}.");
             return appliedCount;
         }
@@ -297,15 +336,31 @@ namespace FUSE.Loading
                 return false;
             }
 
+            if (FuseUmmState.TryGetDisabledReason(folderPath, id, out var ummDisabledReason))
+            {
+                FuseLog.Info($"FUSE ignored UMM-disabled data package '{id}' path='{folderPath}' reason='{ummDisabledReason}'.");
+                return false;
+            }
+
+            var disabled = ReadDisabled(info);
+            var disabledReason = ReadDisabledReason(info);
+            if (!disabled && !FuseModSetService.IsPackageEnabledByActiveSet(id, folderPath))
+            {
+                disabled = true;
+                disabledReason = FuseModSetService.GetPackageDisabledReason(id, folderPath);
+            }
+
             manifest = new FusePackageManifest
             {
                 Id = string.IsNullOrWhiteSpace(id) ? Path.GetFileName(folderPath) : id,
+                DisplayName = ((string)info["DisplayName"] ?? (string)info["Name"] ?? (string)info["name"] ?? id ?? string.Empty).Trim(),
+                Version = ((string)info["Version"] ?? (string)info["version"] ?? string.Empty).Trim(),
                 FolderPath = folderPath,
                 Priority = ReadPriority(info["FuseLoadPriority"]),
                 LoadAfter = ReadDependencyIds(info["FuseLoadAfter"]),
                 LoadBefore = ReadDependencyIds(info["FuseLoadBefore"]),
-                Disabled = ReadDisabled(info),
-                DisabledReason = ReadDisabledReason(info)
+                Disabled = disabled,
+                DisabledReason = disabledReason
             };
             return true;
         }
@@ -742,6 +797,8 @@ namespace FUSE.Loading
         private sealed class FusePackageManifest
         {
             public string Id { get; set; }
+            public string DisplayName { get; set; }
+            public string Version { get; set; }
             public string FolderPath { get; set; }
             public int Priority { get; set; }
             public string[] LoadAfter { get; set; } = Array.Empty<string>();
@@ -751,5 +808,21 @@ namespace FUSE.Loading
             public List<string> Faults { get; } = new List<string>();
             public bool HasBlockingFaults => Faults.Count > 0;
         }
+    }
+
+    internal sealed class FusePackageManifestSnapshot
+    {
+        public int Order { get; set; }
+        public string Id { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string Version { get; set; } = string.Empty;
+        public string FolderName { get; set; } = string.Empty;
+        public string FolderPath { get; set; } = string.Empty;
+        public int Priority { get; set; }
+        public string[] LoadAfter { get; set; } = Array.Empty<string>();
+        public string[] LoadBefore { get; set; } = Array.Empty<string>();
+        public bool Disabled { get; set; }
+        public string DisabledReason { get; set; } = string.Empty;
+        public string[] Faults { get; set; } = Array.Empty<string>();
     }
 }

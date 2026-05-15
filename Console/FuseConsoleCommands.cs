@@ -33,6 +33,7 @@ namespace FUSE.Console
                 new FuseProgressionsCommand(),
                 new FuseOperationsCommand(),
                 new FuseDumpGraphCommand(),
+                new FuseDumpRuntimeGraphCommand(),
                 new FuseDumpMandelasCommand(),
                 new FuseGroupsCommand(),
                 new FuseValidateCommand(),
@@ -175,6 +176,46 @@ namespace FUSE.Console
             {
                 FuseLog.Exception("FUSE dumpgraph console command failed.", ex);
                 return $"FUSE dumpgraph failed: {ex.Message}";
+            }
+        }
+    }
+
+    [ConsoleCommand("/fuse.dumpruntimegraph", "Dump the active post-FUSE Railroader track graph to FUSE-runtime-graph.json in the Railroader folder.")]
+    public sealed class FuseDumpRuntimeGraphCommand : IConsoleCommand
+    {
+        public string Execute(string[] components)
+        {
+            try
+            {
+                if (Graph.Shared == null || !Graph.Shared.HasPopulatedCollections)
+                {
+                    return "FUSE dumpruntimegraph: runtime graph is not populated yet. Load a map with FUSE active, then run the command after map load.";
+                }
+
+                var snapshot = TrackAPI.GetRuntimeGraphDefinition();
+                var data = new
+                {
+                    tool = "FUSE",
+                    dumpType = "runtimeGraph",
+                    createdLocal = DateTime.Now.ToString("O"),
+                    source = "Captured from the active Railroader runtime graph after loaded FUSE packages have applied.",
+                    counts = new
+                    {
+                        nodes = snapshot.Nodes?.Count ?? 0,
+                        segments = snapshot.Segments?.Count ?? 0,
+                        spans = snapshot.Spans?.Count ?? 0,
+                        areas = snapshot.Areas?.Count ?? 0
+                    },
+                    tracks = snapshot
+                };
+
+                var path = FuseConsoleCommands.WriteJsonToRailroaderRoot("FUSE-runtime-graph.json", data);
+                return $"FUSE dumpruntimegraph wrote '{path}' nodes={snapshot.Nodes?.Count ?? 0} segments={snapshot.Segments?.Count ?? 0} spans={snapshot.Spans?.Count ?? 0} areas={snapshot.Areas?.Count ?? 0}.";
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE dumpruntimegraph console command failed.", ex);
+                return $"FUSE dumpruntimegraph failed: {ex.Message}";
             }
         }
     }
@@ -556,11 +597,18 @@ namespace FUSE.Console
         }
     }
 
-    [ConsoleCommand("/fuse.report", "Show the last human-readable FUSE map-load report.")]
+    [ConsoleCommand("/fuse.report", "Show the last FUSE map-load report. Pass 'json' for machine-readable output.")]
     public sealed class FuseReportCommand : IConsoleCommand
     {
         public string Execute(string[] components)
         {
+            if (components != null && components.Any(component =>
+                    string.Equals(component, "json", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(component, "--json", StringComparison.OrdinalIgnoreCase)))
+            {
+                return FuseLoadReport.GetLastJsonReport();
+            }
+
             return FuseLoadReport.GetLastDetailReport();
         }
     }
