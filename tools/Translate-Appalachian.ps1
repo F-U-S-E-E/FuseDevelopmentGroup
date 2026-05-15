@@ -1057,7 +1057,7 @@ $rail['extensions']['dev.hunterr.translation'] = [ordered]@{
     notes = @(
         'Legacy passenger stop components were translated into native FUSE passengerStop components.',
         'Legacy turntable builders were translated into operations.turntables with legacy track identifiers so generated roundhouse helpers still line up.',
-        'Strange Customs mandelas were translated into world.sceneClones so their hierarchy-local transforms survive the migration.',
+        'Legacy custom content mandelas were translated into world.sceneClones so their hierarchy-local transforms survive the migration.',
         'Legacy null track entries are preserved as tracks.removals so base-game nodes, segments, and spans can be deleted at load time.',
         'Any remaining unsupported components are preserved here instead of being silently dropped.'
     )
