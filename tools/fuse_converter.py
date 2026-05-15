@@ -38,6 +38,7 @@ TOOL_VERSION = "0.2.0"
 DEFAULT_STEAM_MODS = Path(r"C:\Steam\steamapps\common\Railroader\Mods")
 DEFAULT_MANAGER_VERSION = "0.27.10"
 JSON_MANIFEST_NAMES = {"definition.json", "info.json"}
+BATCH_SKIP_DIR_NAMES = {"fuseconverted", "converted", "dist", "__pycache__"}
 LEGACY_DATA_KEYS = {
     "tracks",
     "areas",
@@ -254,6 +255,21 @@ def iter_json_files(source: Path) -> Iterable[Path]:
         yield path
 
 
+def iter_direct_json_files(source: Path) -> Iterable[Path]:
+    if is_json_file(source):
+        yield source
+        return
+    if not source.is_dir():
+        return
+    try:
+        children = sorted(source.iterdir(), key=lambda item: item.name.lower())
+    except OSError:
+        return
+    for child in children:
+        if child.is_file() and child.suffix.lower() == ".json" and not child.name.lower().endswith(".bak"):
+            yield child
+
+
 def has_case_file(folder: Path, name: str) -> bool:
     wanted = name.lower()
     try:
@@ -405,6 +421,14 @@ def detect_audio_json(path: Path) -> str:
     return ""
 
 
+def detects_direct_audio(source: Path) -> bool:
+    manifest, _ = read_manifest(source)
+    mixintos = manifest.get("mixintos") or manifest.get("Mixintos") or {}
+    if isinstance(mixintos, dict) and any(str(key).lower() in ("whistles", "horns", "bells", "hellsbells") for key in mixintos):
+        return True
+    return any(detect_audio_json(path) for path in iter_direct_json_files(source) if path.name.lower() not in JSON_MANIFEST_NAMES)
+
+
 def read_manifest(source: Path) -> tuple[dict[str, Any], Path | None]:
     if source.is_file():
         folder = source.parent
@@ -444,6 +468,23 @@ def detects_route_data(source: Path) -> bool:
     return False
 
 
+def detects_direct_route_data(source: Path) -> bool:
+    for path in iter_direct_json_files(source):
+        if path.name.lower() in JSON_MANIFEST_NAMES:
+            continue
+        try:
+            data = read_json(path)
+        except Exception:
+            continue
+        if isinstance(data, dict) and any(key in data for key in LEGACY_DATA_KEYS):
+            return True
+    return False
+
+
+def has_direct_convertible_json(source: Path) -> bool:
+    return any(path.name.lower() not in JSON_MANIFEST_NAMES for path in iter_direct_json_files(source))
+
+
 def has_direct_route_data(folder: Path) -> bool:
     if not folder.is_dir():
         return False
@@ -462,6 +503,79 @@ def has_direct_route_data(folder: Path) -> bool:
         if isinstance(data, dict) and any(key in data for key in LEGACY_DATA_KEYS):
             return True
     return False
+
+
+def has_direct_map_tile_sources(source: Path) -> bool:
+    if not source.is_dir():
+        return False
+
+    def contains_tiles(folder: Path) -> bool:
+        try:
+            return any(tile.is_file() and tile.suffix.lower() == ".data" for tile in folder.iterdir())
+        except OSError:
+            return False
+
+    if contains_tiles(source):
+        return True
+
+    maps_root = source / "Maps"
+    if maps_root.is_dir():
+        if contains_tiles(maps_root):
+            return True
+        try:
+            if any(child.is_dir() and contains_tiles(child) for child in maps_root.iterdir()):
+                return True
+        except OSError:
+            return False
+
+    return False
+
+
+def has_direct_asset_pack_sources(source: Path) -> bool:
+    if not source.is_dir():
+        return False
+    if is_asset_pack_folder(source):
+        return True
+    if has_asset_packs_recursive(source / "SCAssetPacks"):
+        return True
+    return has_direct_asset_pack_children(source)
+
+
+def detect_direct_kind(source: Path, requested: str) -> str:
+    if source.is_file():
+        if source.suffix.lower() == ".zip":
+            return requested if requested != "auto" else "archive"
+        if source.suffix.lower() == ".json" and source.name.lower() not in JSON_MANIFEST_NAMES:
+            if requested != "auto":
+                return requested
+            if detects_direct_audio(source) and not detects_direct_route_data(source):
+                return "audio"
+            return "route"
+        return "unknown"
+
+    if not source.is_dir():
+        return "unknown"
+
+    direct_audio = detects_direct_audio(source)
+    direct_route = detects_direct_route_data(source)
+    direct_tiles = has_direct_map_tile_sources(source)
+    direct_assets = has_direct_asset_pack_sources(source)
+    direct_json = has_direct_convertible_json(source)
+
+    if requested == "route":
+        return "route" if direct_route or direct_tiles or direct_json else "unknown"
+    if requested == "audio":
+        return "audio" if direct_audio or direct_json else "unknown"
+    if requested == "asset":
+        return "asset" if direct_assets else "unknown"
+
+    if direct_audio and not direct_route:
+        return "audio"
+    if direct_route or direct_tiles:
+        return "route"
+    if direct_assets:
+        return "asset"
+    return "unknown"
 
 
 def find_route_root(source: Path) -> Path:
@@ -1071,6 +1185,14 @@ def choose_zip_root(extract_root: Path) -> Path:
     return extract_root
 
 
+def zip_internal_source(zip_path: Path, extract_root: Path, candidate: Path) -> Path:
+    try:
+        internal = candidate.relative_to(extract_root).as_posix()
+    except ValueError:
+        internal = candidate.name
+    return Path(f"{zip_path}!{internal}")
+
+
 def convert_input(input_path: Path, out_root: Path, kind: str, clean_output: bool) -> ConversionReport:
     original = input_path.resolve()
     if not original.exists():
@@ -1121,7 +1243,7 @@ def is_batch_candidate(path: Path, kind: str) -> bool:
     lower = name.lower()
     if name.startswith("."):
         return False
-    if lower in {"fuseconverted", "converted", "dist", "__pycache__"}:
+    if lower in BATCH_SKIP_DIR_NAMES:
         return False
     if path.is_dir() and (lower.endswith(".fuse") or lower.endswith(".rail")):
         return False
@@ -1129,18 +1251,72 @@ def is_batch_candidate(path: Path, kind: str) -> bool:
         return False
     if path.is_file() and path.name.lower() in JSON_MANIFEST_NAMES:
         return False
-    if kind != "auto":
-        return path.is_dir() or path.suffix.lower() in {".zip", ".json"}
-    if path.is_file() and path.suffix.lower() == ".zip":
-        return True
-    detected = detect_kind(path, "auto")
+    detected = detect_direct_kind(path, kind)
     return detected != "unknown"
 
 
-def iter_batch_candidates(folder: Path, kind: str) -> Iterable[Path]:
-    for child in sorted(folder.iterdir(), key=lambda item: item.name.lower()):
-        if is_batch_candidate(child, kind):
-            yield child
+def is_within(path: Path, root: Path) -> bool:
+    return path == root or root in path.parents
+
+
+def should_skip_batch_path(path: Path, resolved_out_root: Path | None) -> bool:
+    name = path.name
+    lower = name.lower()
+    if name.startswith("."):
+        return True
+    if path.is_dir() and (lower in BATCH_SKIP_DIR_NAMES or lower.endswith(".fuse") or lower.endswith(".rail")):
+        return True
+    if resolved_out_root is not None:
+        try:
+            if is_within(path.resolve(), resolved_out_root):
+                return True
+        except OSError:
+            return True
+    return False
+
+
+def iter_batch_candidates(folder: Path, kind: str, out_root: Path | None = None) -> Iterable[Path]:
+    resolved_out_root = out_root.resolve() if out_root else None
+
+    def walk(current: Path) -> Iterable[Path]:
+        try:
+            children = sorted(current.iterdir(), key=lambda item: item.name.lower())
+        except OSError:
+            return
+        for child in children:
+            if should_skip_batch_path(child, resolved_out_root):
+                continue
+            if is_batch_candidate(child, kind):
+                yield child
+                continue
+            if child.is_dir():
+                yield from walk(child)
+
+    yield from walk(folder)
+
+
+def convert_batch_zip(zip_path: Path, out_root: Path, kind: str, clean_output: bool) -> list[ConversionReport]:
+    with tempfile.TemporaryDirectory(prefix="fuse-batch-zip-") as temp_dir:
+        extract_root = Path(temp_dir) / "zip"
+        extract_root.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zip_path, "r") as archive:
+            archive.extractall(extract_root)
+
+        if detect_direct_kind(extract_root, kind) != "unknown":
+            return [convert_input(zip_path, out_root, kind, clean_output)]
+
+        candidates = list(iter_batch_candidates(extract_root, kind, out_root=None))
+        if len(candidates) <= 1:
+            return [convert_input(zip_path, out_root, kind, clean_output)]
+
+        reports: list[ConversionReport] = []
+        for candidate in candidates:
+            report = convert_input(candidate, out_root, kind, clean_output)
+            report.source = zip_internal_source(zip_path, extract_root, candidate)
+            report.add("INFO", f"Converted from archive '{zip_path}'.", zip_path, "batch-zip")
+            write_reports(report)
+            reports.append(report)
+        return reports
 
 
 def convert_batch_folder(folder: Path, out_root: Path, kind: str, clean_output: bool) -> list[ConversionReport]:
@@ -1150,11 +1326,10 @@ def convert_batch_folder(folder: Path, out_root: Path, kind: str, clean_output: 
         return [report]
 
     out_root.mkdir(parents=True, exist_ok=True)
-    resolved_out_root = out_root.resolve()
     reports: list[ConversionReport] = []
-    for candidate in iter_batch_candidates(folder, kind):
-        resolved_candidate = candidate.resolve()
-        if resolved_candidate == resolved_out_root or resolved_out_root in resolved_candidate.parents:
+    for candidate in iter_batch_candidates(folder, kind, out_root):
+        if candidate.is_file() and candidate.suffix.lower() == ".zip":
+            reports.extend(convert_batch_zip(candidate, out_root, kind, clean_output))
             continue
         reports.append(convert_input(candidate, out_root, kind, clean_output))
     return reports
@@ -1181,7 +1356,7 @@ def main() -> int:
     parser.add_argument("--out", default=None, help="Output root. Default is Railroader Mods if found, or FUSEConverted for --batch.")
     parser.add_argument("--kind", choices=("auto", "route", "audio", "asset"), default="auto", help="Force a package type.")
     parser.add_argument("--clean", action="store_true", help="Replace existing .FUSE output folders under the output root.")
-    parser.add_argument("--batch", action="store_true", help="Treat each input folder as a container and convert every child mod/zip/json in it.")
+    parser.add_argument("--batch", action="store_true", help="Treat each input folder as a container and recursively convert every recognized child mod, zip, or JSON in it.")
     args = parser.parse_args()
 
     reports: list[ConversionReport] = []
