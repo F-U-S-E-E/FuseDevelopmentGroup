@@ -1,6 +1,6 @@
 # FUSE
 
-FUSE is a Unity Mod Manager modding layer for Railroader. It loads FUSE data packages for route extensions, asset packs, audio packs, track graph changes, world scenery, operations, progression data, and compatibility imports from the legacy AMM, Strange Customs, and RailLoader ecosystem.
+FUSE is a Unity Mod Manager modding layer for Railroader. It loads FUSE data packages for route extensions, asset packs, audio packs, track graph changes, world scenery, operations, progression data, and compatibility imports from the legacy AMM, legacy custom content framework, and legacy mod loader ecosystem.
 
 This repository is currently targeting a beta release. Signals are intentionally deferred until the rest of the legacy surface is stable.
 
@@ -32,7 +32,7 @@ The FUSE JSON schema lives at `schemas/fuse-mod.schema.json`. The hand-written s
 
 - Signals
 - Full public in-game editor workflow
-- Multiplayer is compatibility-mode only for beta. FUSE does not sync package contents over the network; instead every host/client applies its own local package stack, matching the legacy RailLoader expectation that everyone has the same mods installed. Non-host clients log a warning the first time they apply runtime world changes. Servers that want strict client blocking can set `Settings.BlockNonHostMultiplayerClientWorldApply` to `true`.
+- Multiplayer is compatibility-mode only for beta. FUSE does not sync package contents over the network; instead every host/client applies its own local package stack, matching the legacy mod loader expectation that everyone has the same mods installed. Non-host clients log a warning the first time they apply runtime world changes. Servers that want strict client blocking can set `Settings.BlockNonHostMultiplayerClientWorldApply` to `true`.
 - Arbitrary legacy script mods that are not data, asset, audio, or supported runtime component packages
 - Rolling stock and locomotive/car mods, except audio definitions that FUSE can import
 - Mid-session scene-path suppression re-enable

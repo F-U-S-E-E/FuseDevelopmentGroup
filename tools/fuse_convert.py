@@ -1237,7 +1237,7 @@ def convert_spliney(item):
     spliney_type = infer_spliney_type(item, handler)
     offset_y = item.get("offsetY", item.get("offsety"))
     if offset_y is None and handler == "StrangeCustoms.FlowyThingBuilder":
-        # Strange Customs' FlowyData defaults OffsetY to -0.1. Preserve that
+        # Legacy custom content FlowyData defaults OffsetY to -0.1. Preserve that
         # instead of letting FUSE deserialize the missing float as 0.
         offset_y = -0.1
     points = []
@@ -1271,7 +1271,7 @@ def infer_spliney_type(item, handler):
     profile = str(item.get("profile") or "")
     explicit_type = item.get("type")
 
-    # Strange Customs FlowyThingBuilder is shared by roads and rivers. The
+    # Legacy custom content FlowyThingBuilder is shared by roads and rivers. The
     # style/profile tells us which physical spline family the runtime needs.
     if handler == "StrangeCustoms.FlowyThingBuilder" and (
         style.lower() == "river" or "river" in profile.lower()

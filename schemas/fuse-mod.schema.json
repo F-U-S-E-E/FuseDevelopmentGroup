@@ -62,7 +62,7 @@
         },
         "mixinto": {
             "$ref": "#/$defs/mixinto",
-            "description": "Optional legacy conditional mixinto metadata. FUSE applies this fragment only when its requirements are satisfied, matching RailLoader/Strange Customs conditional mixins."
+            "description": "Optional legacy conditional mixinto metadata. FUSE applies this fragment only when its requirements are satisfied, matching legacy mod loader and custom content framework conditional mixins."
         },
         "tracks": {
             "$ref": "#/$defs/tracks"
@@ -1337,7 +1337,7 @@
                 },
                 "offsetY": {
                     "type": "number",
-                    "description": "Vertical offset passed through to Railroader's RiverPath. Converted Strange Customs FlowyThingBuilder entries should emit -0.1 when the legacy source omits this field.",
+                    "description": "Vertical offset passed through to Railroader's RiverPath. Converted legacy custom content FlowyThingBuilder entries should emit -0.1 when the legacy source omits this field.",
                     "default": 0
                 },
                 "headStyle": {
