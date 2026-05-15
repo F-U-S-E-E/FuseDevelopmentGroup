@@ -133,11 +133,13 @@ namespace FUSE.Loading
             {
                 action?.Invoke();
                 stopwatch.Stop();
+                FusePerformanceMetrics.RecordApplyPhase(Report.DefinitionId, CurrentPhase, stopwatch.ElapsedMilliseconds);
                 FuseLog.Info($"FUSE apply phase package='{Report.DefinitionId}' operation='{CurrentPhase}' completed in {stopwatch.ElapsedMilliseconds} ms.");
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
+                FusePerformanceMetrics.RecordApplyPhase(Report.DefinitionId, CurrentPhase, stopwatch.ElapsedMilliseconds);
                 Fatal("phase", CurrentPhase, ex.Message);
                 FuseLog.Exception($"FUSE apply phase package='{Report.DefinitionId}' operation='{CurrentPhase}' failed after {stopwatch.ElapsedMilliseconds} ms", ex);
             }

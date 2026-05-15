@@ -305,6 +305,126 @@
             "canOverhaul": true
           }
         }
+      },
+      "murphy:ind:interchange": {
+        "name": "Murphy Interchange",
+        "areaId": "murphy:area:town",
+        "order": 3,
+        "position": {
+          "x": 105,
+          "y": 0,
+          "z": 12
+        },
+        "components": {
+          "interchange": {
+            "type": "interchange",
+            "name": "Interchange Track",
+            "trackSpanIds": [
+              "murphy:span:team"
+            ],
+            "carTypeFilter": "*"
+          },
+          "interchanged-loader": {
+            "type": "interchangedLoader",
+            "name": "Inbound Interchanged Loader",
+            "trackSpanIds": [
+              "murphy:span:team"
+            ],
+            "outputSpanIds": [
+              "murphy:span:depot"
+            ],
+            "loadId": "lumber",
+            "carTypeFilter": "boxcar"
+          },
+          "interchanged-unloader": {
+            "type": "interchangedUnloader",
+            "name": "Outbound Interchanged Unloader",
+            "trackSpanIds": [
+              "murphy:span:depot"
+            ],
+            "loadId": "pulpwood",
+            "convertedLoadId": "lumber",
+            "carTypeFilter": "boxcar"
+          }
+        }
+      },
+      "murphy:ind:loader-examples": {
+        "name": "Murphy Loader Examples",
+        "areaId": "murphy:area:town",
+        "order": 4,
+        "position": {
+          "x": 116,
+          "y": 0,
+          "z": 18
+        },
+        "components": {
+          "loader": {
+            "type": "loader",
+            "name": "Freight Loader",
+            "trackSpanIds": [
+              "murphy:span:team"
+            ],
+            "loadId": "lumber",
+            "carTypeFilter": "boxcar",
+            "carLoadPeriod": 0.25,
+            "maxStorage": 100
+          },
+          "teleport-loading": {
+            "type": "teleportLoading",
+            "name": "Teleport Loading Example",
+            "trackSpanIds": [
+              "murphy:span:depot"
+            ],
+            "loadId": "repair-parts",
+            "carTypeFilter": "*"
+          }
+        }
+      },
+      "murphy:ind:progression-example": {
+        "name": "Murphy Progression Industry",
+        "areaId": "murphy:area:town",
+        "order": 5,
+        "position": {
+          "x": 128,
+          "y": 0,
+          "z": 20
+        },
+        "components": {
+          "progression": {
+            "type": "progression",
+            "name": "Build Materials",
+            "trackSpanIds": [
+              "murphy:span:team"
+            ],
+            "loadId": "lumber",
+            "sharedStorage": true,
+            "maxStorage": 2000000
+          }
+        }
+      },
+      "murphy:ind:custom-component-example": {
+        "name": "Murphy Custom Component Example",
+        "areaId": "murphy:area:town",
+        "order": 6,
+        "position": {
+          "x": 140,
+          "y": 0,
+          "z": 24
+        },
+        "components": {
+          "custom": {
+            "type": "Example.Components.CustomIndustryComponent",
+            "name": "External Component",
+            "trackSpanIds": [
+              "murphy:span:team"
+            ],
+            "loadId": "lumber",
+            "fields": {
+              "customRate": 1.25,
+              "customEnabled": true
+            }
+          }
+        }
       }
     },
     "loaders": {
@@ -459,6 +579,28 @@
           }
         ]
       },
+      "murphy:road:asphalt": {
+        "type": "road",
+        "style": "asphalt",
+        "points": [
+          {
+            "position": {
+              "x": -12,
+              "y": 0,
+              "z": 16
+            },
+            "width": 6
+          },
+          {
+            "position": {
+              "x": 74,
+              "y": 0,
+              "z": 18
+            },
+            "width": 6
+          }
+        ]
+      },
       "murphy:trestle:001": {
         "type": "trestle",
         "profile": "wood",
@@ -487,6 +629,26 @@
               "x": 0,
               "y": 85,
               "z": 0
+            }
+          }
+        ]
+      },
+      "murphy:waterfall:001": {
+        "type": "waterfall",
+        "profile": "default",
+        "points": [
+          {
+            "position": {
+              "x": 82,
+              "y": 12,
+              "z": -32
+            }
+          },
+          {
+            "position": {
+              "x": 84,
+              "y": 3,
+              "z": -30
             }
           }
         ]
@@ -602,6 +764,13 @@
         "priority": 100
       }
     },
+    "suppressBaseScenePaths": [],
+    "suppressBaseTrackGroups": [
+      "legacy:unused-yard"
+    ],
+    "suppressBaseAreas": [
+      "legacy:old-area"
+    ],
     "sceneClones": {
       "murphy:clone:coal-conveyor": {
         "targetPath": "World/Large Scenery/Murphy/Coal Conveyor",

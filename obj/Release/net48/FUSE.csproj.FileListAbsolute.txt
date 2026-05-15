@@ -14,3 +14,4 @@ C:\Hrogers_Railroader_mods_Projects\Rail\obj\Release\net48\FUSE.csproj.CoreCompi
 C:\Hrogers_Railroader_mods_Projects\Rail\obj\Release\net48\FUSE.sourcelink.json
 C:\Hrogers_Railroader_mods_Projects\Rail\obj\Release\net48\FUSE.dll
 C:\Hrogers_Railroader_mods_Projects\Rail\obj\Release\net48\FUSE.pdb
+C:\Hrogers_Railroader_mods_Projects\Rail\bin\Release\net48\assets\fuse_icon.png
