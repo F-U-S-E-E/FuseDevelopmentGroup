@@ -64,7 +64,7 @@ Vector values are always objects:
 { "x": 0, "y": 0, "z": 0 }
 ```
 
-Track spans use two structured locations rather than Strange Customs style strings. Think of each location as an arrow measured from one segment end into the span. `Start`/`A` points from the segment's start toward its end; `End`/`B` points from the segment's end toward its start. The two endpoint arrows must face each other and the measured distance must stay within that segment.
+Track spans use two structured locations rather than legacy custom content style strings. Think of each location as an arrow measured from one segment end into the span. `Start`/`A` points from the segment's start toward its end; `End`/`B` points from the segment's end toward its start. The two endpoint arrows must face each other and the measured distance must stay within that segment.
 
 ```json
 {
@@ -189,7 +189,7 @@ Spliney `type` describes the physical spline family, not its material flavor:
 - `terrainRoad`: terrain-carved road spline. Use `style`/`profile` for dirt versus pavement.
 - `trestle`: auto-generated trestle spline.
 
-Converted Strange Customs `FlowyThingBuilder` data must inspect `style` and `profile`; entries with `style: "River"` or river profiles should be emitted as `type: "river"`, not as roads.
+Converted legacy custom content `FlowyThingBuilder` data must inspect `style` and `profile`; entries with `style: "River"` or river profiles should be emitted as `type: "river"`, not as roads.
 
 Telegraph pole definitions use the existing Railroader telegraph pole and wire prefabs by default. `profile` selects the first vanilla pole prefab whose name contains that profile string. `polePrefab` and `wirePrefab` can override that with explicit prefab URIs.
 
