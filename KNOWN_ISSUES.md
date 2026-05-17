@@ -20,14 +20,14 @@
 ## External Mod Conflicts
 
 - Do not load a legacy route and its converted FUSE route at the same time unless testing conflicts.
-- Legacy loaders, AMM, the legacy custom content framework, and the legacy mod loader may create duplicate objects when used with converted packages for the same route.
+- Legacy loaders, AMM, Strange Customs, and RailLoader may create duplicate objects when used with converted packages for the same route.
 - FUSE can load custom industry components only when the owning component assembly is installed and loaded.
 
 ## Multiplayer
 
 - FUSE beta uses legacy-style multiplayer compatibility mode: every player must have the same FUSE build, enabled package list, and load order installed locally.
 - FUSE does not negotiate host/client package mismatches. A mismatched client can desync visually or operationally even though FUSE will warn on first non-host runtime apply.
-- Strict non-host client blocking is available through `Settings.BlockNonHostMultiplayerClientWorldApply`, but it is disabled by default so private multiplayer tests can behave like the legacy mod loader.
+- Strict non-host client blocking is available through `Settings.BlockNonHostMultiplayerClientWorldApply`, but it is disabled by default so private multiplayer tests can behave like RailLoader.
 
 ## Current Verification Notes
 

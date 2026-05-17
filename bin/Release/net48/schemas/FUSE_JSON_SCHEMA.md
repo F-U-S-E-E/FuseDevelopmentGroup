@@ -20,7 +20,7 @@ Top-level object groups:
 - `editor`: optional editor-only state that FUSE can ignore at runtime.
 - `extensions`: optional namespaced third-party data.
 
-`mixinto` is optional metadata for converted legacy mod loader and custom content framework conditional mixin files. The converted file remains a normal FUSE fragment, but FUSE checks `mixinto.requires[]` immediately before runtime apply. If any required mod is missing, older than `notBefore`, or newer than `notAfter`, that fragment is skipped without faulting the rest of the package.
+`mixinto` is optional metadata for converted RailLoader/Strange Customs conditional mixin files. The converted file remains a normal FUSE fragment, but FUSE checks `mixinto.requires[]` immediately before runtime apply. If any required mod is missing, older than `notBefore`, or newer than `notAfter`, that fragment is skipped without faulting the rest of the package.
 
 ```json
 {
@@ -113,7 +113,7 @@ Vector values are always objects:
 { "x": 0, "y": 0, "z": 0 }
 ```
 
-Track spans use two structured locations rather than legacy custom content style strings. Think of each location as an arrow measured from one segment end into the span. `Start`/`A` points from the segment's start toward its end; `End`/`B` points from the segment's end toward its start. The two endpoint arrows must face each other and the measured distance must stay within that segment.
+Track spans use two structured locations rather than Strange Customs style strings. Think of each location as an arrow measured from one segment end into the span. `Start`/`A` points from the segment's start toward its end; `End`/`B` points from the segment's end toward its start. The two endpoint arrows must face each other and the measured distance must stay within that segment.
 
 ```json
 {
@@ -267,8 +267,8 @@ Spliney `type` describes the physical spline family, not its material flavor:
 - `terrainRoad`: terrain-carved road spline. Use `style`/`profile` for dirt versus pavement.
 - `trestle`: auto-generated trestle spline.
 
-Converted legacy custom content `FlowyThingBuilder` data must inspect `style` and `profile`; entries with `style: "River"` or river profiles should be emitted as `type: "river"`, not as roads.
-When converting `FlowyThingBuilder` entries, preserve the legacy default `offsetY: -0.1` if the source omits it; the field keeps road and river surfaces at the same vertical bias the legacy custom content framework used.
+Converted Strange Customs `FlowyThingBuilder` data must inspect `style` and `profile`; entries with `style: "River"` or river profiles should be emitted as `type: "river"`, not as roads.
+When converting `FlowyThingBuilder` entries, preserve the legacy default `offsetY: -0.1` if the source omits it; the field keeps road and river surfaces at the same vertical bias Strange Customs used.
 
 Telegraph pole definitions use the existing Railroader telegraph pole and wire prefabs by default. `profile` selects the first vanilla pole prefab whose name contains that profile string. `polePrefab` and `wirePrefab` can override that with explicit prefab URIs.
 

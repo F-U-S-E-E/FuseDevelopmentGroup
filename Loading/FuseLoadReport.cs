@@ -182,6 +182,7 @@ namespace FUSE.Loading
             var disabledPackages = FusePackageFaultRegistry.GetDisabledPackages();
             var faults = FusePackageFaultRegistry.GetFaults().ToArray();
             var conflicts = FuseRegistry.Conflicts.ToArray();
+            var legacyConvertedPackageIds = FuseDataPackageDiscovery.GetLegacyConvertedPackageIds().ToArray();
 
             return new ReportSnapshot
             {
@@ -193,6 +194,7 @@ namespace FUSE.Loading
                 AppliedPackageIds = appliedPackageIds,
                 SkippedPackages = skippedPackages,
                 DisabledPackages = disabledPackages,
+                LegacyConvertedPackageIds = legacyConvertedPackageIds,
                 Faults = faults,
                 Conflicts = conflicts,
                 SceneSuppressions = sceneSuppressions,
@@ -237,6 +239,7 @@ namespace FUSE.Loading
 
             AppendList(sb, "Loaded packages", snapshot.LoadedPackageIds);
             AppendList(sb, "Applied packages", snapshot.AppliedPackageIds);
+            AppendList(sb, "Legacy-converted packages", snapshot.LegacyConvertedPackageIds);
             AppendMap(sb, "Skipped packages", snapshot.SkippedPackages);
             AppendMap(sb, "Disabled packages", snapshot.DisabledPackages);
 
@@ -296,6 +299,7 @@ namespace FUSE.Loading
                     ["appliedPackages"] = snapshot.AppliedPackageIds.Length,
                     ["skippedPackages"] = snapshot.SkippedPackages.Count,
                     ["disabledPackages"] = snapshot.DisabledPackages.Count,
+                    ["legacyConvertedPackages"] = snapshot.LegacyConvertedPackageIds.Length,
                     ["faultedPackages"] = snapshot.FaultedPackageCount,
                     ["conflicts"] = snapshot.Conflicts.Length,
                     ["unknownSceneryAssets"] = snapshot.UnknownSceneryAssets.Length,
@@ -308,6 +312,7 @@ namespace FUSE.Loading
                 {
                     ["loaded"] = ToArray(snapshot.LoadedPackageIds),
                     ["applied"] = ToArray(snapshot.AppliedPackageIds),
+                    ["legacyConverted"] = ToArray(snapshot.LegacyConvertedPackageIds),
                     ["skipped"] = ToObject(snapshot.SkippedPackages),
                     ["disabled"] = ToObject(snapshot.DisabledPackages),
                     ["faults"] = new JArray(snapshot.Faults.Select(fault => new JObject
@@ -422,6 +427,7 @@ namespace FUSE.Loading
             public string[] AppliedPackageIds { get; set; }
             public IReadOnlyDictionary<string, string> SkippedPackages { get; set; }
             public IReadOnlyDictionary<string, string> DisabledPackages { get; set; }
+            public string[] LegacyConvertedPackageIds { get; set; }
             public FusePackageFault[] Faults { get; set; }
             public FuseRegistryConflict[] Conflicts { get; set; }
             public string[] SceneSuppressions { get; set; }

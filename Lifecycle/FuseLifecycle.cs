@@ -55,6 +55,7 @@ namespace FUSE.Lifecycle
 
             try
             {
+                FuseLegacyAssemblyHost.LoadAllAvailableAssemblies("map load fallback");
                 var cacheStopwatch = Stopwatch.StartNew();
                 FuseCacheRegistry.RebuildAll();
                 FusePerformanceMetrics.RecordTiming("cache rebuild before map load apply", cacheStopwatch.ElapsedMilliseconds);
@@ -114,6 +115,7 @@ namespace FUSE.Lifecycle
             {
                 var consoleStopwatch = Stopwatch.StartNew();
                 FuseConsoleRegistrar.TryRegisterAll();
+                FuseLegacyAssemblyHost.RetryPendingConsoleCommands();
                 FusePerformanceMetrics.RecordTiming("console registration", consoleStopwatch.ElapsedMilliseconds);
                 FuseLog.Info($"FUSE load timing phase='console registration' elapsedMs={consoleStopwatch.ElapsedMilliseconds}.");
             }
