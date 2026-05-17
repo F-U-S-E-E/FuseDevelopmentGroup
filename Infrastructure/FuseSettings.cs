@@ -14,6 +14,8 @@ namespace FUSE.Infrastructure
         public const bool DefaultVerboseApplyReportDetails = false;
         public const bool DefaultBlockNonHostMultiplayerClientWorldApply = false;
         public const bool DefaultShowAdvancedHealthDetails = false;
+        public const bool DefaultShowTrackDebugOverlay = false;
+        public const bool DefaultShowTrackDebugSpanPaths = false;
         public const float ExperimentalEarlyScenePathSuppressionTimeoutSeconds = 8f;
 
         public static bool EnableExperimentalEarlyScenePathSuppression { get; private set; } =
@@ -30,6 +32,10 @@ namespace FUSE.Infrastructure
 
         public static bool ShowAdvancedHealthDetails { get; private set; } = DefaultShowAdvancedHealthDetails;
 
+        public static bool ShowTrackDebugOverlay { get; private set; } = DefaultShowTrackDebugOverlay;
+
+        public static bool ShowTrackDebugSpanPaths { get; private set; } = DefaultShowTrackDebugSpanPaths;
+
         public static void Load(UnityModManager.ModEntry modEntry)
         {
             EnableExperimentalEarlyScenePathSuppression = DefaultEnableExperimentalEarlyScenePathSuppression;
@@ -38,6 +44,8 @@ namespace FUSE.Infrastructure
             VerboseApplyReportDetails = DefaultVerboseApplyReportDetails;
             BlockNonHostMultiplayerClientWorldApply = DefaultBlockNonHostMultiplayerClientWorldApply;
             ShowAdvancedHealthDetails = DefaultShowAdvancedHealthDetails;
+            ShowTrackDebugOverlay = DefaultShowTrackDebugOverlay;
+            ShowTrackDebugSpanPaths = DefaultShowTrackDebugSpanPaths;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
             var infoPath = Path.Combine(modEntry?.Path ?? string.Empty, "Info.json");
@@ -63,6 +71,10 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "BlockNonHostMultiplayerClientWorldApply", DefaultBlockNonHostMultiplayerClientWorldApply);
                 ShowAdvancedHealthDetails =
                     ReadBool(settings, "ShowAdvancedHealthDetails", DefaultShowAdvancedHealthDetails);
+                ShowTrackDebugOverlay =
+                    ReadBool(settings, "ShowTrackDebugOverlay", DefaultShowTrackDebugOverlay);
+                ShowTrackDebugSpanPaths =
+                    ReadBool(settings, "ShowTrackDebugSpanPaths", DefaultShowTrackDebugSpanPaths);
                 ApplyUserOverrides();
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -74,6 +86,8 @@ namespace FUSE.Infrastructure
                     $"VerboseApplyReportDetails={VerboseApplyReportDetails} " +
                     $"BlockNonHostMultiplayerClientWorldApply={BlockNonHostMultiplayerClientWorldApply} " +
                     $"ShowAdvancedHealthDetails={ShowAdvancedHealthDetails} " +
+                    $"ShowTrackDebugOverlay={ShowTrackDebugOverlay} " +
+                    $"ShowTrackDebugSpanPaths={ShowTrackDebugSpanPaths} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
             catch (Exception ex)
@@ -84,6 +98,8 @@ namespace FUSE.Infrastructure
                 VerboseApplyReportDetails = DefaultVerboseApplyReportDetails;
                 BlockNonHostMultiplayerClientWorldApply = DefaultBlockNonHostMultiplayerClientWorldApply;
                 ShowAdvancedHealthDetails = DefaultShowAdvancedHealthDetails;
+                ShowTrackDebugOverlay = DefaultShowTrackDebugOverlay;
+                ShowTrackDebugSpanPaths = DefaultShowTrackDebugSpanPaths;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Warning($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled: {ex.Message}");
             }
@@ -117,6 +133,20 @@ namespace FUSE.Infrastructure
             ShowAdvancedHealthDetails = enabled;
             SaveUserOverride(nameof(ShowAdvancedHealthDetails), enabled);
             FuseLog.Info($"FUSE setting changed: {nameof(ShowAdvancedHealthDetails)}={enabled}.");
+        }
+
+        public static void SetShowTrackDebugOverlay(bool enabled)
+        {
+            ShowTrackDebugOverlay = enabled;
+            SaveUserOverride(nameof(ShowTrackDebugOverlay), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(ShowTrackDebugOverlay)}={enabled}.");
+        }
+
+        public static void SetShowTrackDebugSpanPaths(bool enabled)
+        {
+            ShowTrackDebugSpanPaths = enabled;
+            SaveUserOverride(nameof(ShowTrackDebugSpanPaths), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(ShowTrackDebugSpanPaths)}={enabled}.");
         }
 
         public static string GetUserSettingsPath()
@@ -165,6 +195,10 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(BlockNonHostMultiplayerClientWorldApply), BlockNonHostMultiplayerClientWorldApply);
                 ShowAdvancedHealthDetails =
                     ReadBool(settings, nameof(ShowAdvancedHealthDetails), ShowAdvancedHealthDetails);
+                ShowTrackDebugOverlay =
+                    ReadBool(settings, nameof(ShowTrackDebugOverlay), ShowTrackDebugOverlay);
+                ShowTrackDebugSpanPaths =
+                    ReadBool(settings, nameof(ShowTrackDebugSpanPaths), ShowTrackDebugSpanPaths);
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
             }
             catch (Exception ex)
