@@ -2,6 +2,15 @@
 
 Official drag-and-drop converter for legacy Railroader data mods.
 
+## Download
+
+Prebuilt binaries are published on the GitHub Releases page rather than tracked in this repo:
+
+- Windows exe: [FUSE-Converter.exe](https://github.com/Hrogers-Rog/Rail/releases/latest/download/FUSE-Converter.exe)
+- Portable Python zipapp: [FUSEConvertFolder.pyz](https://github.com/Hrogers-Rog/Rail/releases/latest/download/FUSEConvertFolder.pyz)
+
+All releases live at <https://github.com/Hrogers-Rog/Rail/releases>.
+
 ## Quick Use
 
 Drag any of these onto `ConvertToFUSE.cmd` at the repo root:
@@ -20,15 +29,17 @@ The repository also includes the FUSE converter icon at:
 
 ## Building The EXE
 
-Run:
+From the repo root:
 
 ```powershell
-.\BuildFUSEConverterExe.cmd -InstallPyInstaller
+powershell -ExecutionPolicy Bypass -File .\tools\build_converter_exe.ps1 -InstallPyInstaller
 ```
 
 That builds:
 
 `dist/FUSE-Converter.exe`
+
+The `dist/` folder is gitignored — locally-built binaries stay on your machine. Published builds are uploaded to GitHub Releases.
 
 The generated exe uses the FUSE logo from `tools/assets/fuse_converter.ico`.
 If PyInstaller is already installed, you can omit `-InstallPyInstaller`.
