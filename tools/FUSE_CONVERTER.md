@@ -118,7 +118,7 @@ The report is the important bit. It records:
 | Track / route JSON folders | One FUSE data file per source JSON, preserving file-per-concern structure. |
 | Single route JSON file | One standalone FUSE package fragment. |
 | Horn / whistle / bell packs | FUSE audio package with copied audio files. |
-| Legacy custom content asset packs | FUSE asset wrapper with `FuseAssetPacks` in `Info.json`. |
+| Strange Customs asset packs | FUSE asset wrapper with `FuseAssetPacks` in `Info.json`. |
 | Zip files | Extracted to a temporary folder, detected, converted, then cleaned up. |
 
 ## Known Lossy Areas

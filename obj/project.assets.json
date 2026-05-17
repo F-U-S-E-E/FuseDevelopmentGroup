@@ -1,30 +1,30 @@
 {
-  "version": 4,
+  "version": 3,
   "targets": {
-    "net48": {}
+    ".NETFramework,Version=v4.8": {}
   },
   "libraries": {},
   "projectFileDependencyGroups": {
-    "net48": []
+    ".NETFramework,Version=v4.8": []
   },
   "packageFolders": {
-    "C:\\Users\\roger\\.nuget\\packages\\": {},
+    "C:\\Users\\Alex6\\.nuget\\packages\\": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Hrogers_Railroader_mods_Projects\\Rail\\FUSE.csproj",
+      "projectUniqueName": "C:\\Users\\Alex6\\.codex\\worktrees\\c08c\\Rail\\FUSE.csproj",
       "projectName": "FUSE",
-      "projectPath": "C:\\Hrogers_Railroader_mods_Projects\\Rail\\FUSE.csproj",
-      "packagesPath": "C:\\Users\\roger\\.nuget\\packages\\",
-      "outputPath": "C:\\Hrogers_Railroader_mods_Projects\\Rail\\obj\\",
+      "projectPath": "C:\\Users\\Alex6\\.codex\\worktrees\\c08c\\Rail\\FUSE.csproj",
+      "packagesPath": "C:\\Users\\Alex6\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\Alex6\\.codex\\worktrees\\c08c\\Rail\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
       ],
       "configFilePaths": [
-        "C:\\Users\\roger\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\Alex6\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
@@ -33,11 +33,11 @@
       ],
       "sources": {
         "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+        "C:\\Program Files\\dotnet\\library-packs": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
         "net48": {
-          "framework": "net48",
           "targetAlias": "net48",
           "projectReferences": {}
         }
@@ -52,13 +52,12 @@
         "auditLevel": "low",
         "auditMode": "direct"
       },
-      "SdkAnalysisLevel": "10.0.300"
+      "SdkAnalysisLevel": "10.0.200"
     },
     "frameworks": {
       "net48": {
-        "framework": "net48",
         "targetAlias": "net48",
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.300\\RuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.204\\RuntimeIdentifierGraph.json"
       }
     }
   }

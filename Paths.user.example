@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <!-- Directory that Railroader.exe is in -->
+    <GameDir>C:\Program Files\Steam\steamapps\common\Railroader</GameDir>
+    <!-- Full path to the FUSE runtime log on this machine.
+         Default Windows location is %USERPROFILE%\AppData\LocalLow\Giraffe Lab LLC\Railroader\FUSE.log -->
+    <FuseLogPath>C:\Users\YourName\AppData\LocalLow\Giraffe Lab LLC\Railroader\FUSE.log</FuseLogPath>
+    <!-- Full path to the Railroader Player.log on this machine. Sits beside FUSE.log. -->
+    <PlayerLogPath>C:\Users\YourName\AppData\LocalLow\Giraffe Lab LLC\Railroader\Player.log</PlayerLogPath>
+  </PropertyGroup>
+</Project>

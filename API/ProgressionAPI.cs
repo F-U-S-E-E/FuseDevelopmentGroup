@@ -11,6 +11,7 @@ using FUSE.Cache;
 using FUSE.Data;
 using FUSE.Infrastructure;
 using FUSE.Loading;
+using Track;
 using UnityEngine;
 
 namespace FUSE.API
@@ -105,7 +106,7 @@ namespace FUSE.API
 
         public static IEnumerable<MapFeature> GetAllMapFeatures()
         {
-            return UnityEngine.Object.FindObjectsOfType<MapFeature>();
+            return UnityEngine.Object.FindObjectsOfType<MapFeature>(true);
         }
 
         public static FuseMapFeature GetMapFeatureDefinition(string id)
@@ -212,7 +213,7 @@ namespace FUSE.API
 
         public static IEnumerable<Progression> GetAllProgressions()
         {
-            return UnityEngine.Object.FindObjectsOfType<Progression>();
+            return UnityEngine.Object.FindObjectsOfType<Progression>(true);
         }
 
         public static FuseProgression GetProgressionDefinition(string id)
@@ -308,10 +309,12 @@ namespace FUSE.API
 
             var initialized = InitializeMissingMapFeatureStates(manager);
             var forcedFeatureState = ForceApplyCurrentMapFeatureState(manager, reason);
+            var restoredTrackGroups = RestoreDisabledTrackGroups(manager, reason);
             FuseLog.Info(
                 $"FUSE refreshed progression runtime state package='<all>' operation='refresh progression state' " +
                 $"kind='map features' id='<all>' reason='{reason ?? "unspecified"}' " +
-                $"currentProgressionRefreshed={invokedCurrentProgression} initializedFeatureStates={initialized} forcedFeatureState={forcedFeatureState}.");
+                $"currentProgressionRefreshed={invokedCurrentProgression} initializedFeatureStates={initialized} " +
+                $"forcedFeatureState={forcedFeatureState} restoredDisabledTrackGroups={restoredTrackGroups}.");
         }
 
         private static void ApplyMapFeatureDefinition(MapFeature feature, FuseMapFeature definition)
@@ -784,16 +787,20 @@ namespace FUSE.API
                 return Array.Empty<T>();
             }
 
-            return ids.Select(id =>
+            var resolved = new List<T>();
+            foreach (var id in ids.Where(id => !string.IsNullOrWhiteSpace(id)))
             {
                 var value = resolver(id);
                 if (value == null)
                 {
-                    throw new InvalidOperationException($"Referenced {label} '{id}' was not found.");
+                    FuseLog.Warning($"FUSE progression skipped unresolved {label} reference '{id}'.");
+                    continue;
                 }
 
-                return value;
-            }).ToArray();
+                resolved.Add(value);
+            }
+
+            return resolved.ToArray();
         }
 
         private static T[] ResolveOptionalObjects<T>(string[] ids, Func<string, T> resolver, string label)
@@ -975,16 +982,47 @@ namespace FUSE.API
                         value = value.Substring(scenePrefix.Length);
                     }
 
-                    return ResolveGameObjectPath(value);
+                    return ResolveGameObjectPath(value) ?? ResolveAuthoredWorldObject(value);
                 }
 
                 if (string.Equals(scheme, "scene", StringComparison.OrdinalIgnoreCase))
                 {
-                    return ResolveGameObjectPath(value);
+                    return ResolveGameObjectPath(value) ?? ResolveAuthoredWorldObject(value);
                 }
             }
 
-            return ResolveGameObjectPath(path);
+            return ResolveGameObjectPath(path) ?? ResolveAuthoredWorldObject(path);
+        }
+
+        private static GameObject ResolveAuthoredWorldObject(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var id = value.Trim();
+            var scenery = SceneryAPI.GetScenery(id) ?? SceneryAPI.GetScenery(GetPathLeaf(id));
+            if (scenery != null)
+            {
+                return scenery.gameObject;
+            }
+
+            return SceneCloneAPI.GetSceneClone(id) ?? SceneCloneAPI.GetSceneClone(GetPathLeaf(id));
+        }
+
+        private static string GetPathLeaf(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            var normalized = value.Trim().Replace('\\', '/');
+            var slash = normalized.LastIndexOf('/');
+            return slash >= 0 && slash < normalized.Length - 1
+                ? normalized.Substring(slash + 1)
+                : normalized;
         }
 
         private static GameObject ResolveGameObjectPath(string path)
@@ -1414,6 +1452,98 @@ namespace FUSE.API
                     $"FUSE progression refresh package='<all>' operation='force apply map feature state' " +
                     $"kind='map features' id='<all>' reason='{reason ?? "unspecified"}' message='{ex.Message}'.");
                 return false;
+            }
+        }
+
+        private static int RestoreDisabledTrackGroups(MapFeatureManager manager, string reason)
+        {
+            var graph = Graph.Shared;
+            if (manager == null || graph == null)
+            {
+                return 0;
+            }
+
+            var states = ReadFeatureEnables(manager);
+            var enabledGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var disabledGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var feature in manager.AvailableFeatures ?? Enumerable.Empty<MapFeature>())
+            {
+                if (feature == null || string.IsNullOrWhiteSpace(feature.identifier))
+                {
+                    continue;
+                }
+
+                var groups = FeatureTrackGroups(feature).ToArray();
+                if (groups.Length == 0)
+                {
+                    continue;
+                }
+
+                var enabled = IsFeatureEnabled(feature, states);
+                var target = enabled ? enabledGroups : disabledGroups;
+                foreach (var group in groups)
+                {
+                    target.Add(group);
+                }
+            }
+
+            disabledGroups.ExceptWith(enabledGroups);
+
+            var changed = 0;
+            foreach (var group in disabledGroups)
+            {
+                try
+                {
+                    if (graph.SetGroupEnabled(group, false))
+                    {
+                        changed++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning(
+                        $"FUSE progression refresh package='<all>' operation='restore locked track groups' " +
+                        $"kind='track group' id='{group}' reason='{reason ?? "unspecified"}' message='{ex.Message}'.");
+                }
+            }
+
+            return changed;
+        }
+
+        private static bool IsFeatureEnabled(MapFeature feature, IDictionary<string, bool> states)
+        {
+            if (feature == null || string.IsNullOrWhiteSpace(feature.identifier))
+            {
+                return false;
+            }
+
+            return states != null && states.TryGetValue(feature.identifier, out var enabled)
+                ? enabled
+                : feature.defaultEnableInSandbox && StateManager.IsSandbox;
+        }
+
+        private static IEnumerable<string> FeatureTrackGroups(MapFeature feature)
+        {
+            if (feature == null)
+            {
+                yield break;
+            }
+
+            foreach (var group in feature.trackGroupsEnableOnUnlock ?? Array.Empty<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(group))
+                {
+                    yield return group;
+                }
+            }
+
+            foreach (var group in feature.trackGroupsAvailableOnUnlock ?? Array.Empty<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(group))
+                {
+                    yield return group;
+                }
             }
         }
 

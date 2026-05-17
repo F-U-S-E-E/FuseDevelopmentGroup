@@ -285,6 +285,8 @@ namespace FUSE.Loading
 
             var appliedCount = 0;
             var prepared = new List<FuseStagedApplyCandidate>();
+            FuseLegacyGameGraphCompatibility.Expand(
+                candidates.Select(candidate => candidate.Loaded).Where(loaded => loaded != null).ToArray());
             var referenceContext = BuildPreflightReferenceContext(
                 candidates.Select(candidate => candidate.Loaded?.Definition));
             try
@@ -446,7 +448,7 @@ namespace FUSE.Loading
             }
 
             FuseLog.Info(
-                $"FUSE legacy custom content staged graph resolver completed reason='{reason ?? "unspecified"}' " +
+                $"FUSE legacy staged graph resolver completed reason='{reason ?? "unspecified"}' " +
                 $"definitions={prepared.Count} applied={appliedCount} " +
                 "mode='package-grouped mixinto order, final-state deletes, single graph commit'.");
             return appliedCount;
@@ -467,8 +469,8 @@ namespace FUSE.Loading
                 return plan;
             }
 
-            // The legacy custom content framework effectively respected the mod/package as the unit,
-            // then respected Definition.json mixinto order inside that package.
+            // Legacy graph patches respect the mod/package as the unit, then
+            // Definition.json mixinto order inside that package.
             // FUSE already loads explicit FuseDataFiles in declared order, so the
             // safest compatibility behavior is: first package-folder encounter
             // order, then file encounter order within the folder. No schema-level
@@ -803,15 +805,22 @@ namespace FUSE.Loading
 
             var runtimeSegment = TrackAPI.GetSegment(entry.Id);
             var exists = runtimeSegment != null;
-            var startNode = TrackAPI.GetNode(entry.Value.StartNodeId);
-            var endNode = TrackAPI.GetNode(entry.Value.EndNodeId);
+            var segmentValue = ResolveSegmentForApply(entry.Id, entry.Value, runtimeSegment, definition.Id, "apply-merged-segments");
+            if (segmentValue == null)
+            {
+                transaction.Skipped("track segment", entry.Id, "definition missing");
+                return;
+            }
+
+            var startNode = TrackAPI.GetNode(segmentValue.StartNodeId);
+            var endNode = TrackAPI.GetNode(segmentValue.EndNodeId);
             if (startNode == null || endNode == null)
             {
                 FuseLog.Warning(
                     $"FUSE apply pre-check package='{definition.Id}' operation='apply-merged-segments' " +
                     $"kind='track segment' id='{entry.Id}' " +
-                    $"start='{entry.Value.StartNodeId ?? string.Empty}' startExists={startNode != null} " +
-                    $"end='{entry.Value.EndNodeId ?? string.Empty}' endExists={endNode != null} " +
+                    $"start='{segmentValue.StartNodeId ?? string.Empty}' startExists={startNode != null} " +
+                    $"end='{segmentValue.EndNodeId ?? string.Empty}' endExists={endNode != null} " +
                     "message='node reference not bound in merged final graph; AddSegment may fail per-segment'.");
             }
 
@@ -819,26 +828,82 @@ namespace FUSE.Loading
             {
                 if (runtimeSegment == null)
                 {
-                    TrackAPI.AddSegment(entry.Id, entry.Value);
+                    TrackAPI.AddSegment(entry.Id, segmentValue);
                 }
-                else if (runtimeSegment.a.id != entry.Value.StartNodeId || runtimeSegment.b.id != entry.Value.EndNodeId)
+                else if (runtimeSegment.a.id != segmentValue.StartNodeId || runtimeSegment.b.id != segmentValue.EndNodeId)
                 {
                     FuseLog.Info(
                         $"FUSE apply package='{definition.Id}' operation='apply-merged-segments' " +
                         $"kind='track segment' id='{entry.Id}' " +
                         $"message='endpoint change detected " +
-                        $"oldStart=\"{runtimeSegment.a.id}\" newStart=\"{entry.Value.StartNodeId}\" " +
-                        $"oldEnd=\"{runtimeSegment.b.id}\" newEnd=\"{entry.Value.EndNodeId}\" " +
+                        $"oldStart=\"{runtimeSegment.a.id}\" newStart=\"{segmentValue.StartNodeId}\" " +
+                        $"oldEnd=\"{runtimeSegment.b.id}\" newEnd=\"{segmentValue.EndNodeId}\" " +
                         $"newStartExists={startNode != null} newEndExists={endNode != null}'.");
 
                     TrackAPI.RemoveSegment(entry.Id);
-                    TrackAPI.AddSegment(entry.Id, entry.Value);
+                    TrackAPI.AddSegment(entry.Id, segmentValue);
                 }
                 else
                 {
-                    TrackAPI.UpdateSegment(entry.Id, entry.Value);
+                    TrackAPI.UpdateSegment(entry.Id, segmentValue);
                 }
             });
+        }
+
+        private static FuseSegment ResolveSegmentForApply(
+            string id,
+            FuseSegment definition,
+            TrackSegment runtimeSegment,
+            string packageId,
+            string operation)
+        {
+            if (definition == null)
+            {
+                return null;
+            }
+
+            var hasStartNode = !string.IsNullOrWhiteSpace(definition.StartNodeId);
+            var hasEndNode = !string.IsNullOrWhiteSpace(definition.EndNodeId);
+            if (!definition.Partial && hasStartNode && hasEndNode)
+            {
+                return definition;
+            }
+
+            if (runtimeSegment == null)
+            {
+                if (!hasStartNode || !hasEndNode)
+                {
+                    FuseLog.Warning(
+                        $"FUSE legacy segment patch package='{packageId ?? string.Empty}' operation='{operation ?? string.Empty}' " +
+                        $"id='{id ?? string.Empty}' start='{definition.StartNodeId ?? string.Empty}' end='{definition.EndNodeId ?? string.Empty}' " +
+                        "message='cannot hydrate missing endpoint because the target segment is not present in the runtime graph'.");
+                }
+
+                return definition;
+            }
+
+            var current = TrackAPI.GetDefinition(runtimeSegment) ?? new FuseSegment();
+            var result = new FuseSegment
+            {
+                StartNodeId = hasStartNode ? definition.StartNodeId : current.StartNodeId,
+                EndNodeId = hasEndNode ? definition.EndNodeId : current.EndNodeId,
+                Style = definition.PreserveStyle ? current.Style : definition.Style,
+                TrackClass = definition.PreserveTrackClass ? current.TrackClass : definition.TrackClass,
+                SpeedLimit = definition.PreserveSpeedLimit ? current.SpeedLimit : definition.SpeedLimit,
+                Priority = definition.PreservePriority ? current.Priority : definition.Priority,
+                GroupId = definition.PreserveGroupId ? current.GroupId : definition.GroupId,
+                Tags = definition.Tags ?? current.Tags,
+                Gauge = string.IsNullOrWhiteSpace(definition.Gauge) ? current.Gauge : definition.Gauge
+            };
+
+            if (!hasStartNode || !hasEndNode)
+            {
+                FuseLog.Info(
+                    $"FUSE legacy segment patch hydrated package='{packageId ?? string.Empty}' operation='{operation ?? string.Empty}' " +
+                    $"id='{id ?? string.Empty}' start='{result.StartNodeId ?? string.Empty}' end='{result.EndNodeId ?? string.Empty}'.");
+            }
+
+            return result;
         }
 
         private static void ApplyMergedTurntable(FuseMergedTrackEntry<FuseTurntable> entry)
@@ -1364,7 +1429,7 @@ namespace FUSE.Loading
                     // IMPORTANT: spans must be applied after the node/segment
                     // graph has been rebuilt. TrackSpan route validation asks
                     // the runtime graph for a valid route; applying spans before
-                    // RebuildGraph() makes valid legacy custom content spans
+                    // RebuildGraph() makes valid legacy spans
                     // intermittently fail with "span did not resolve to a valid route".
                     TrackAPI.BeginBatch();
                     try
@@ -2179,7 +2244,7 @@ namespace FUSE.Loading
             var infoPath = Path.Combine(modFolder, "Info.json");
             if (File.Exists(infoPath))
             {
-                var info = JObject.Parse(File.ReadAllText(infoPath));
+                var info = FuseLegacyDataConverter.ReadLegacyObject(infoPath);
                 var explicitPaths = ResolveExplicitDefinitionPaths(modFolder, info).ToArray();
                 if (explicitPaths.Length > 0)
                 {
@@ -2447,21 +2512,27 @@ namespace FUSE.Loading
 
                     var runtimeSegment = TrackAPI.GetSegment(segment.Key);
                     var exists = runtimeSegment != null;
+                    var segmentValue = ResolveSegmentForApply(segment.Key, segment.Value, runtimeSegment, definition.Id, "apply-segments");
+                    if (segmentValue == null)
+                    {
+                        transaction.Skipped("track segment", segment.Key, "definition missing");
+                        continue;
+                    }
 
                     // Pre-check: surface node-binding problems before AddSegment
                     // throws. The preflight-warning downgrade lets segments with
                     // missing endpoints reach apply, where they fail per-segment.
                     // Emitting this warning makes the cause visible without
                     // adding any per-success log noise.
-                    var startNode = TrackAPI.GetNode(segment.Value.StartNodeId);
-                    var endNode = TrackAPI.GetNode(segment.Value.EndNodeId);
+                    var startNode = TrackAPI.GetNode(segmentValue.StartNodeId);
+                    var endNode = TrackAPI.GetNode(segmentValue.EndNodeId);
                     if (startNode == null || endNode == null)
                     {
                         FuseLog.Warning(
                             $"FUSE apply pre-check package='{definition.Id}' operation='apply-segments' " +
                             $"kind='track segment' id='{segment.Key}' " +
-                            $"start='{segment.Value.StartNodeId ?? string.Empty}' startExists={startNode != null} " +
-                            $"end='{segment.Value.EndNodeId ?? string.Empty}' endExists={endNode != null} " +
+                            $"start='{segmentValue.StartNodeId ?? string.Empty}' startExists={startNode != null} " +
+                            $"end='{segmentValue.EndNodeId ?? string.Empty}' endExists={endNode != null} " +
                             "message='node reference not yet bound; AddSegment may fail per-segment'.");
                     }
 
@@ -2469,9 +2540,9 @@ namespace FUSE.Loading
                     {
                         if (runtimeSegment == null)
                         {
-                            TrackAPI.AddSegment(segment.Key, segment.Value);
+                            TrackAPI.AddSegment(segment.Key, segmentValue);
                         }
-                        else if (runtimeSegment.a.id != segment.Value.StartNodeId || runtimeSegment.b.id != segment.Value.EndNodeId)
+                        else if (runtimeSegment.a.id != segmentValue.StartNodeId || runtimeSegment.b.id != segmentValue.EndNodeId)
                         {
                             // Endpoint change: the existing segment must be torn
                             // down and re-added because TrackSegment endpoints
@@ -2482,16 +2553,16 @@ namespace FUSE.Loading
                                 $"FUSE apply package='{definition.Id}' operation='apply-segments' " +
                                 $"kind='track segment' id='{segment.Key}' " +
                                 $"message='endpoint change detected " +
-                                $"oldStart=\"{runtimeSegment.a.id}\" newStart=\"{segment.Value.StartNodeId}\" " +
-                                $"oldEnd=\"{runtimeSegment.b.id}\" newEnd=\"{segment.Value.EndNodeId}\" " +
+                                $"oldStart=\"{runtimeSegment.a.id}\" newStart=\"{segmentValue.StartNodeId}\" " +
+                                $"oldEnd=\"{runtimeSegment.b.id}\" newEnd=\"{segmentValue.EndNodeId}\" " +
                                 $"newStartExists={startNode != null} newEndExists={endNode != null}'.");
 
                             TrackAPI.RemoveSegment(segment.Key);
-                            TrackAPI.AddSegment(segment.Key, segment.Value);
+                            TrackAPI.AddSegment(segment.Key, segmentValue);
                         }
                         else
                         {
-                            TrackAPI.UpdateSegment(segment.Key, segment.Value);
+                            TrackAPI.UpdateSegment(segment.Key, segmentValue);
                         }
                     });
                 }

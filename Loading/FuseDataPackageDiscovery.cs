@@ -95,6 +95,7 @@ namespace FUSE.Loading
                     LoadBefore = manifest.LoadBefore ?? Array.Empty<string>(),
                     Disabled = manifest.Disabled,
                     DisabledReason = manifest.DisabledReason ?? string.Empty,
+                    IsLegacyConverted = manifest.IsLegacyDataPackage,
                     Faults = manifest.Faults.ToArray()
                 })
                 .ToArray();
@@ -178,7 +179,14 @@ namespace FUSE.Loading
                 try
                 {
                     var packageStopwatch = Stopwatch.StartNew();
-                    FuseModLoader.LoadMod(packagePath);
+                    if (manifest.IsLegacyDataPackage)
+                    {
+                        FuseLegacyDataConverter.LoadPackage(packagePath);
+                    }
+                    else
+                    {
+                        FuseModLoader.LoadMod(packagePath);
+                    }
                     FusePackageFaultRegistry.MarkLoadedFromDisk(manifest.Id);
                     FuseLog.Info($"FUSE loaded package '{Path.GetFileName(packagePath)}' id='{manifest.Id}' from disk into resident definitions in {packageStopwatch.ElapsedMilliseconds} ms. Runtime apply has not run in this step.");
                     loadedCount++;
@@ -197,6 +205,18 @@ namespace FUSE.Loading
             FuseLog.Info($"FUSE load timing phase='load packages from disk' elapsedMs={stopwatch.ElapsedMilliseconds} loaded={loadedCount} residentDefinitions={FuseModLoader.LoadedDefinitionCount}.");
             FusePackageFaultRegistry.LogFinalReport("disk load", FuseModLoader.LoadedDefinitionCount);
             return loadedCount;
+        }
+
+        internal static IReadOnlyList<string> GetLegacyConvertedPackageIds()
+        {
+            DiscoverPackagesOnce();
+            return _discoveredPackageManifests
+                .Where(manifest => manifest.IsLegacyDataPackage)
+                .Select(manifest => manifest.Id ?? string.Empty)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
         }
 
         public static int ApplyLoadedPackages(string reason)
@@ -306,16 +326,18 @@ namespace FUSE.Loading
             manifest = null;
             if (!File.Exists(infoPath))
             {
-                return false;
+                return TryReadLegacyDataPackageManifest(folderPath, null, out manifest);
             }
 
             JObject info;
             try
             {
-                info = JObject.Parse(File.ReadAllText(infoPath));
+                info = FuseLegacyDataConverter.ReadLegacyObject(infoPath);
             }
             catch (Exception ex)
             {
+                // A malformed Info.json is an authoring error in a FUSE/UMM package, not a signal to
+                // reinterpret the folder as a legacy data package. Surface the parse failure and stop.
                 FuseLog.Warning($"FUSE ignored package '{folderPath}' because Info.json could not be parsed: {ex.Message}");
                 return false;
             }
@@ -333,7 +355,7 @@ namespace FUSE.Loading
                 (!isAssetPackOnly && HasRootDefinitionFile(folderPath) && (ContainsFuseReference(info["Requirements"]) || ContainsFuseReference(info["LoadAfter"])));
             if (!isDataPackage)
             {
-                return false;
+                return TryReadLegacyDataPackageManifest(folderPath, info, out manifest);
             }
 
             if (FuseUmmState.TryGetDisabledReason(folderPath, id, out var ummDisabledReason))
@@ -361,6 +383,45 @@ namespace FUSE.Loading
                 LoadBefore = ReadDependencyIds(info["FuseLoadBefore"]),
                 Disabled = disabled,
                 DisabledReason = disabledReason
+            };
+            return true;
+        }
+
+        private static bool TryReadLegacyDataPackageManifest(string folderPath, JObject info, out FusePackageManifest manifest)
+        {
+            manifest = null;
+            if (!FuseLegacyDataConverter.TryReadLegacyManifest(folderPath, out var legacy))
+            {
+                return false;
+            }
+
+            var id = legacy.PackageId;
+            if (FuseUmmState.TryGetDisabledReason(folderPath, id, out var ummDisabledReason))
+            {
+                FuseLog.Info($"FUSE ignored UMM-disabled legacy data package '{id}' path='{folderPath}' reason='{ummDisabledReason}'.");
+                return false;
+            }
+
+            var disabled = ReadDisabled(info);
+            var disabledReason = ReadDisabledReason(info);
+            if (!disabled && !FuseModSetService.IsPackageEnabledByActiveSet(id, folderPath))
+            {
+                disabled = true;
+                disabledReason = FuseModSetService.GetPackageDisabledReason(id, folderPath);
+            }
+
+            manifest = new FusePackageManifest
+            {
+                Id = id,
+                DisplayName = legacy.DisplayName ?? id,
+                Version = legacy.Version ?? string.Empty,
+                FolderPath = folderPath,
+                Priority = ReadPriority(info?["FuseLoadPriority"]),
+                LoadAfter = legacy.LoadAfter ?? Array.Empty<string>(),
+                LoadBefore = ReadDependencyIds(info?["FuseLoadBefore"]),
+                Disabled = disabled,
+                DisabledReason = disabledReason,
+                IsLegacyDataPackage = true
             };
             return true;
         }
@@ -403,8 +464,15 @@ namespace FUSE.Loading
                         if (dependency.Disabled)
                         {
                             var message = $"Package '{package.Id}' declares FuseLoadAfter '{dependencyId}', but that package is disabled.";
-                            package.Faults.Add(message);
-                            FuseLog.Warning($"FUSE {message}");
+                            if (package.IsLegacyDataPackage)
+                            {
+                                FuseLog.Warning($"FUSE ignored legacy order reference because it is advisory: {message}");
+                            }
+                            else
+                            {
+                                package.Faults.Add(message);
+                                FuseLog.Warning($"FUSE {message}");
+                            }
                             continue;
                         }
 
@@ -413,8 +481,15 @@ namespace FUSE.Loading
                     else
                     {
                         var message = $"Package '{package.Id}' declares FuseLoadAfter '{dependencyId}', but no matching FUSE data package was discovered.";
-                        package.Faults.Add(message);
-                        FuseLog.Warning($"FUSE {message}");
+                        if (package.IsLegacyDataPackage)
+                        {
+                            FuseLog.Warning($"FUSE ignored legacy order reference because it is advisory: {message}");
+                        }
+                        else
+                        {
+                            package.Faults.Add(message);
+                            FuseLog.Warning($"FUSE {message}");
+                        }
                     }
                 }
 
@@ -425,8 +500,15 @@ namespace FUSE.Loading
                         if (dependency.Disabled)
                         {
                             var message = $"Package '{package.Id}' declares FuseLoadBefore '{dependencyId}', but that package is disabled.";
-                            package.Faults.Add(message);
-                            FuseLog.Warning($"FUSE {message}");
+                            if (package.IsLegacyDataPackage)
+                            {
+                                FuseLog.Warning($"FUSE ignored legacy order reference because it is advisory: {message}");
+                            }
+                            else
+                            {
+                                package.Faults.Add(message);
+                                FuseLog.Warning($"FUSE {message}");
+                            }
                             continue;
                         }
 
@@ -435,8 +517,15 @@ namespace FUSE.Loading
                     else
                     {
                         var message = $"Package '{package.Id}' declares FuseLoadBefore '{dependencyId}', but no matching FUSE data package was discovered.";
-                        package.Faults.Add(message);
-                        FuseLog.Warning($"FUSE {message}");
+                        if (package.IsLegacyDataPackage)
+                        {
+                            FuseLog.Warning($"FUSE ignored legacy order reference because it is advisory: {message}");
+                        }
+                        else
+                        {
+                            package.Faults.Add(message);
+                            FuseLog.Warning($"FUSE {message}");
+                        }
                     }
                 }
             }
@@ -805,6 +894,7 @@ namespace FUSE.Loading
             public string[] LoadBefore { get; set; } = Array.Empty<string>();
             public bool Disabled { get; set; }
             public string DisabledReason { get; set; } = string.Empty;
+            public bool IsLegacyDataPackage { get; set; }
             public List<string> Faults { get; } = new List<string>();
             public bool HasBlockingFaults => Faults.Count > 0;
         }
@@ -823,6 +913,7 @@ namespace FUSE.Loading
         public string[] LoadBefore { get; set; } = Array.Empty<string>();
         public bool Disabled { get; set; }
         public string DisabledReason { get; set; } = string.Empty;
+        public bool IsLegacyConverted { get; set; }
         public string[] Faults { get; set; } = Array.Empty<string>();
     }
 }

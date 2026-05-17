@@ -58,7 +58,7 @@ Vector values are always objects:
 { "x": 0, "y": 0, "z": 0 }
 ```
 
-Track spans use structured locations rather than legacy custom content style strings:
+Track spans use structured locations rather than Strange Customs style strings:
 
 ```json
 {
@@ -160,11 +160,11 @@ Spliney `type` describes the physical spline family, not its material flavor:
 - `terrainRoad`: terrain-carved road spline. Use `style`/`profile` for dirt versus pavement.
 - `trestle`: auto-generated trestle spline.
 
-Converted legacy custom content `FlowyThingBuilder` data must inspect `style` and `profile`; entries with `style: "River"` or river profiles should be emitted as `type: "river"`, not as roads.
+Converted Strange Customs `FlowyThingBuilder` data must inspect `style` and `profile`; entries with `style: "River"` or river profiles should be emitted as `type: "river"`, not as roads.
 
 Telegraph pole definitions use the existing Railroader telegraph pole and wire prefabs by default. `profile` selects the first vanilla pole prefab whose name contains that profile string. `polePrefab` and `wirePrefab` can override that with explicit prefab URIs.
 
-Industry components currently supported by the runtime include `loader`, `unloader`, `formulaic`, `repairTrack`, `teamTrack`, `interchange`, `interchangedLoader`, and `passengerStop`. Formulaic components are attached directly to the industry object to match legacy custom content behavior; other component types get child objects.
+Industry components currently supported by the runtime include `loader`, `unloader`, `formulaic`, `repairTrack`, `teamTrack`, `interchange`, `interchangedLoader`, and `passengerStop`. Formulaic components are attached directly to the industry object to match Strange Customs behavior; other component types get child objects.
 
 The converter emits canonical RAIL component type names. Legacy aliases such as `Model.Ops.IndustryLoader` and `AlinasMapMod.PaxStationComponent` are normalized at load time for compatibility, but new JSON should use the RAIL names above so it does not depend on AMM assemblies.
 
