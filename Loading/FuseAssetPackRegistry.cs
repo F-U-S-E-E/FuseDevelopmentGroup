@@ -60,6 +60,8 @@ namespace FUSE.Loading
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> SanitizedDirectContainerWarnings =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object LegacyAssetPackAliasLock = new object();
+        private static Dictionary<string, string> LegacyAssetPackAliases;
         private static readonly FieldInfo RuntimeStoreContainerField =
             AccessTools.Field(typeof(AssetPackRuntimeStore), "_container");
 
@@ -121,6 +123,11 @@ namespace FUSE.Loading
             _mountComplete = false;
             MountedAssetPackSourcesById.Clear();
             DirectAssetPackStoreIdentifiers.Clear();
+            lock (LegacyAssetPackAliasLock)
+            {
+                LegacyAssetPackAliases = null;
+            }
+            FuseLegacyContainerMixintoRegistry.Reset();
             FuseLog.Info("FUSE asset pack mount state reset.");
         }
 
@@ -135,7 +142,7 @@ namespace FUSE.Loading
             JObject info;
             try
             {
-                info = JObject.Parse(File.ReadAllText(infoPath));
+                info = FuseLegacyDataConverter.ReadLegacyObject(infoPath);
             }
             catch (Exception ex)
             {
@@ -212,7 +219,7 @@ namespace FUSE.Loading
 
                 try
                 {
-                    var root = JObject.Parse(File.ReadAllText(definitionsPath));
+                    var root = FuseLegacyDataConverter.ReadLegacyObject(definitionsPath);
                     foreach (var obj in (root["objects"] as JArray)?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
                     {
                         var key =
@@ -290,8 +297,19 @@ namespace FUSE.Loading
                 var infoPath = Path.Combine(packagePath, "Info.json");
                 if (File.Exists(infoPath))
                 {
-                    var info = JObject.Parse(File.ReadAllText(infoPath));
+                    var info = FuseLegacyDataConverter.ReadLegacyObject(infoPath);
                     var id = (string)info["Id"];
+                    if (!string.IsNullOrWhiteSpace(id))
+                    {
+                        return id.Trim();
+                    }
+                }
+
+                var definitionPath = Path.Combine(packagePath, "Definition.json");
+                if (File.Exists(definitionPath))
+                {
+                    var definition = FuseLegacyDataConverter.ReadLegacyObject(definitionPath);
+                    var id = (string)definition["id"] ?? (string)definition["Id"];
                     if (!string.IsNullOrWhiteSpace(id))
                     {
                         return id.Trim();
@@ -314,7 +332,7 @@ namespace FUSE.Loading
             {
                 try
                 {
-                    info = JObject.Parse(File.ReadAllText(infoPath));
+                    info = FuseLegacyDataConverter.ReadLegacyObject(infoPath);
                 }
                 catch
                 {
@@ -520,6 +538,28 @@ namespace FUSE.Loading
             }
         }
 
+        internal static bool TryResolveLegacyAssetPackIdentifier(string identifier, out string resolvedIdentifier)
+        {
+            resolvedIdentifier = null;
+            var normalized = NormalizeLegacyAssetPackIdentifier(identifier);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return false;
+            }
+
+            var aliases = GetLegacyAssetPackAliases();
+            return aliases.TryGetValue(normalized, out resolvedIdentifier) &&
+                   !string.IsNullOrWhiteSpace(resolvedIdentifier) &&
+                   !string.Equals(resolvedIdentifier, identifier, StringComparison.Ordinal);
+        }
+
+        internal static string ResolveLegacyAssetPackIdentifier(string identifier)
+        {
+            return TryResolveLegacyAssetPackIdentifier(identifier, out var resolved)
+                ? resolved
+                : identifier;
+        }
+
         internal static bool TryLoadSanitizedDirectContainer(AssetPackRuntimeStore store, out Container container)
         {
             container = null;
@@ -651,6 +691,111 @@ namespace FUSE.Loading
             return File.Exists(Path.Combine(folderPath, "Bundle")) &&
                    File.Exists(Path.Combine(folderPath, "Catalog.json")) &&
                    File.Exists(Path.Combine(folderPath, "Definitions.json"));
+        }
+
+        private static Dictionary<string, string> GetLegacyAssetPackAliases()
+        {
+            lock (LegacyAssetPackAliasLock)
+            {
+                if (LegacyAssetPackAliases != null)
+                {
+                    return LegacyAssetPackAliases;
+                }
+
+                var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var modsRoot = FuseDataPackageDiscovery.GetModsRoot();
+                if (!string.IsNullOrWhiteSpace(modsRoot) && Directory.Exists(modsRoot))
+                {
+                    foreach (var packagePath in Directory.GetDirectories(modsRoot).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+                    {
+                        if (!ShouldInspectPackage(packagePath))
+                        {
+                            continue;
+                        }
+
+                        var packageId = TryReadPackageId(packagePath);
+                        foreach (var folder in EnumerateAssetPackFoldersForPackage(packagePath))
+                        {
+                            RegisterLegacyAssetPackAliases(aliases, packagePath, packageId, folder);
+                        }
+                    }
+                }
+
+                LegacyAssetPackAliases = aliases;
+                return LegacyAssetPackAliases;
+            }
+        }
+
+        private static void RegisterLegacyAssetPackAliases(
+            IDictionary<string, string> aliases,
+            string packagePath,
+            string packageId,
+            string assetPackFolder)
+        {
+            if (aliases == null || string.IsNullOrWhiteSpace(assetPackFolder))
+            {
+                return;
+            }
+
+            var resolved = ToDirectStoreIdentifier(assetPackFolder);
+            AddLegacyAssetPackAlias(aliases, resolved, resolved);
+            AddLegacyAssetPackAlias(aliases, Path.GetFileName(assetPackFolder), resolved);
+
+            var relative = GetRelativePath(packagePath, assetPackFolder).Replace(Path.DirectorySeparatorChar, '/');
+            if (!string.IsNullOrWhiteSpace(packageId) && !string.IsNullOrWhiteSpace(relative))
+            {
+                AddLegacyAssetPackAlias(aliases, $"zsc://{packageId}/{relative}", resolved);
+                AddLegacyAssetPackAlias(aliases, $"zsc://{Path.GetFileName(packagePath)}/{relative}", resolved);
+            }
+
+            RegisterCatalogAliases(aliases, assetPackFolder, resolved);
+        }
+
+        private static void RegisterCatalogAliases(
+            IDictionary<string, string> aliases,
+            string assetPackFolder,
+            string resolved)
+        {
+            var catalogPath = Path.Combine(assetPackFolder, "Catalog.json");
+            if (!File.Exists(catalogPath))
+            {
+                return;
+            }
+
+            try
+            {
+                var catalog = FuseLegacyDataConverter.ReadLegacyObject(catalogPath);
+                AddLegacyAssetPackAlias(aliases, GetStringProperty(catalog, "identifier"), resolved);
+                AddLegacyAssetPackAlias(aliases, GetStringProperty(catalog, "indentifier"), resolved);
+                AddLegacyAssetPackAlias(aliases, GetStringProperty(catalog, "name"), resolved);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE could not inspect asset pack Catalog.json '{catalogPath}' for legacy aliases: {ex.Message}");
+            }
+        }
+
+        private static void AddLegacyAssetPackAlias(
+            IDictionary<string, string> aliases,
+            string alias,
+            string resolved)
+        {
+            var normalizedAlias = NormalizeLegacyAssetPackIdentifier(alias);
+            if (string.IsNullOrWhiteSpace(normalizedAlias) || string.IsNullOrWhiteSpace(resolved))
+            {
+                return;
+            }
+
+            if (!aliases.ContainsKey(normalizedAlias))
+            {
+                aliases[normalizedAlias] = resolved;
+            }
+        }
+
+        private static string NormalizeLegacyAssetPackIdentifier(string identifier)
+        {
+            return (identifier ?? string.Empty).Trim().Replace('\\', '/').TrimEnd('/');
         }
 
         private static int MountAssetPackFolder(string sourcePath)

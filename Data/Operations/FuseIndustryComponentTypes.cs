@@ -62,6 +62,7 @@ namespace FUSE.Data
                 { "interchange", Interchange },
                 { "model.ops.interchange", Interchange },
                 { "model.opsnew.interchange", Interchange },
+                { "interchangereloader.ops.interchangereloader", Interchange },
                 { "interchangedloader", InterchangedLoader },
                 { "interchanged-loader", InterchangedLoader },
                 { "model.ops.interchangedindustryloader", InterchangedLoader },

@@ -56,6 +56,11 @@ namespace FUSE.Migrations
             NormalizeSchemaVersion(definition, GetPackageId(definition), false);
 
             definition.Author = definition.Author ?? string.Empty;
+            definition.Tags = (definition.Tags ?? Array.Empty<string>())
+                .Where(tag => !string.IsNullOrWhiteSpace(tag))
+                .Select(tag => tag.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
             definition.CoordinateSpace = string.IsNullOrWhiteSpace(definition.CoordinateSpace) ? "world" : definition.CoordinateSpace;
             definition.ModVersion = string.IsNullOrWhiteSpace(definition.ModVersion) ? "1.0.0" : definition.ModVersion;
             NormalizeMixinto(definition.Mixinto);

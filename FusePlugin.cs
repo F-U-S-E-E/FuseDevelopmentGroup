@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
+using FUSE.Compatibility;
 using FUSE.Console;
 using FUSE.Events;
 using FUSE.Infrastructure;
@@ -55,6 +56,7 @@ namespace FUSE
 
             try
             {
+                FuseLegacySupportAssemblyShim.Initialize();
                 LogStartupVersions(modEntry);
                 FuseSettings.Load(modEntry);
                 FuseAssetPackRegistry.MountAllAvailableAssetPacks();
@@ -71,6 +73,7 @@ namespace FUSE
 
                 FuseEditor.OnFuseLoad();
                 FuseHealthUi.Ensure();
+                FuseLegacyAssemblyHost.EnsureStartupHost();
 
                 modEntry.OnUnload = OnUnload;
                 _isLoaded = true;
@@ -184,6 +187,8 @@ namespace FUSE
                 _lifecycle = null;
             }
 
+            FuseLegacyAssemblyHost.Shutdown();
+            FuseLegacySupportAssemblyShim.Shutdown();
             FuseHealthUi.Shutdown();
 
             if (_isLoaded)

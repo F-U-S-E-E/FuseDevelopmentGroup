@@ -130,7 +130,7 @@
         "MirrorAssetPacksToLocalLow": {
           "type": "boolean",
           "default": false,
-          "description": "Copies asset-pack folders to LocalLow before loading. Disabled by default; direct asset-pack store registration is preferred for performance."
+          "description": "Copies asset-pack folders to LocalLow before loading. Disabled by default; use only as a fallback for known-compatible asset packs."
         },
         "VerboseApplyReportDetails": {
           "type": "boolean",
