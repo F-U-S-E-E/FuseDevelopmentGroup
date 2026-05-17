@@ -22,12 +22,18 @@ function Invoke-ConverterPython {
         [string[]]$Arguments
     )
 
-    $py = Get-Command py -ErrorAction SilentlyContinue
-    if ($null -ne $py) {
-        & py -3 @Arguments | ForEach-Object { Write-Host $_ }
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($null -ne $python) {
+        & python @Arguments | ForEach-Object { Write-Host $_ }
     }
     else {
-        & python @Arguments | ForEach-Object { Write-Host $_ }
+        $py = Get-Command py -ErrorAction SilentlyContinue
+        if ($null -eq $py) {
+            Write-Host "Python was not found. Install Python 3 or add it to PATH."
+            return 1
+        }
+
+        & py -3 @Arguments | ForEach-Object { Write-Host $_ }
     }
 
     $exitCode = $LASTEXITCODE
