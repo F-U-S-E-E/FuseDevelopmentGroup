@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <Import Project="Paths.user" Condition="Exists('Paths.user')" />
+  <!-- Paths.user is imported by Directory.Build.props so that $(GameDir) is
+       available to the property defaults below. -->
 
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
