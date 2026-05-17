@@ -16,6 +16,8 @@ namespace FUSE.Infrastructure
         public const bool DefaultShowAdvancedHealthDetails = false;
         public const bool DefaultShowTrackDebugOverlay = false;
         public const bool DefaultShowTrackDebugSpanPaths = false;
+        public const bool DefaultShowSceneryDebugOverlay = false;
+        public const bool DefaultShowSceneryDebugAdvanced = false;
         public const float ExperimentalEarlyScenePathSuppressionTimeoutSeconds = 8f;
 
         public static bool EnableExperimentalEarlyScenePathSuppression { get; private set; } =
@@ -36,6 +38,10 @@ namespace FUSE.Infrastructure
 
         public static bool ShowTrackDebugSpanPaths { get; private set; } = DefaultShowTrackDebugSpanPaths;
 
+        public static bool ShowSceneryDebugOverlay { get; private set; } = DefaultShowSceneryDebugOverlay;
+
+        public static bool ShowSceneryDebugAdvanced { get; private set; } = DefaultShowSceneryDebugAdvanced;
+
         public static void Load(UnityModManager.ModEntry modEntry)
         {
             EnableExperimentalEarlyScenePathSuppression = DefaultEnableExperimentalEarlyScenePathSuppression;
@@ -46,6 +52,8 @@ namespace FUSE.Infrastructure
             ShowAdvancedHealthDetails = DefaultShowAdvancedHealthDetails;
             ShowTrackDebugOverlay = DefaultShowTrackDebugOverlay;
             ShowTrackDebugSpanPaths = DefaultShowTrackDebugSpanPaths;
+            ShowSceneryDebugOverlay = DefaultShowSceneryDebugOverlay;
+            ShowSceneryDebugAdvanced = DefaultShowSceneryDebugAdvanced;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
             var infoPath = Path.Combine(modEntry?.Path ?? string.Empty, "Info.json");
@@ -75,6 +83,10 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "ShowTrackDebugOverlay", DefaultShowTrackDebugOverlay);
                 ShowTrackDebugSpanPaths =
                     ReadBool(settings, "ShowTrackDebugSpanPaths", DefaultShowTrackDebugSpanPaths);
+                ShowSceneryDebugOverlay =
+                    ReadBool(settings, "ShowSceneryDebugOverlay", DefaultShowSceneryDebugOverlay);
+                ShowSceneryDebugAdvanced =
+                    ReadBool(settings, "ShowSceneryDebugAdvanced", DefaultShowSceneryDebugAdvanced);
                 ApplyUserOverrides();
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -88,6 +100,8 @@ namespace FUSE.Infrastructure
                     $"ShowAdvancedHealthDetails={ShowAdvancedHealthDetails} " +
                     $"ShowTrackDebugOverlay={ShowTrackDebugOverlay} " +
                     $"ShowTrackDebugSpanPaths={ShowTrackDebugSpanPaths} " +
+                    $"ShowSceneryDebugOverlay={ShowSceneryDebugOverlay} " +
+                    $"ShowSceneryDebugAdvanced={ShowSceneryDebugAdvanced} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
             catch (Exception ex)
@@ -100,6 +114,8 @@ namespace FUSE.Infrastructure
                 ShowAdvancedHealthDetails = DefaultShowAdvancedHealthDetails;
                 ShowTrackDebugOverlay = DefaultShowTrackDebugOverlay;
                 ShowTrackDebugSpanPaths = DefaultShowTrackDebugSpanPaths;
+                ShowSceneryDebugOverlay = DefaultShowSceneryDebugOverlay;
+                ShowSceneryDebugAdvanced = DefaultShowSceneryDebugAdvanced;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Warning($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled: {ex.Message}");
             }
@@ -147,6 +163,20 @@ namespace FUSE.Infrastructure
             ShowTrackDebugSpanPaths = enabled;
             SaveUserOverride(nameof(ShowTrackDebugSpanPaths), enabled);
             FuseLog.Info($"FUSE setting changed: {nameof(ShowTrackDebugSpanPaths)}={enabled}.");
+        }
+
+        public static void SetShowSceneryDebugOverlay(bool enabled)
+        {
+            ShowSceneryDebugOverlay = enabled;
+            SaveUserOverride(nameof(ShowSceneryDebugOverlay), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(ShowSceneryDebugOverlay)}={enabled}.");
+        }
+
+        public static void SetShowSceneryDebugAdvanced(bool enabled)
+        {
+            ShowSceneryDebugAdvanced = enabled;
+            SaveUserOverride(nameof(ShowSceneryDebugAdvanced), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(ShowSceneryDebugAdvanced)}={enabled}.");
         }
 
         public static string GetUserSettingsPath()
@@ -199,6 +229,10 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(ShowTrackDebugOverlay), ShowTrackDebugOverlay);
                 ShowTrackDebugSpanPaths =
                     ReadBool(settings, nameof(ShowTrackDebugSpanPaths), ShowTrackDebugSpanPaths);
+                ShowSceneryDebugOverlay =
+                    ReadBool(settings, nameof(ShowSceneryDebugOverlay), ShowSceneryDebugOverlay);
+                ShowSceneryDebugAdvanced =
+                    ReadBool(settings, nameof(ShowSceneryDebugAdvanced), ShowSceneryDebugAdvanced);
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
             }
             catch (Exception ex)

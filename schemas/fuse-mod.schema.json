@@ -560,12 +560,10 @@
                 },
                 "payPerQuantity": {
                     "type": "number",
-                    "minimum": 0,
                     "default": 0
                 },
                 "costPerUnit": {
                     "type": "number",
-                    "minimum": 0,
                     "default": 0
                 },
                 "carTypeFilter": {
@@ -711,8 +709,7 @@
                     "minimum": 0
                 },
                 "costPerUnit": {
-                    "type": "number",
-                    "minimum": 0
+                    "type": "number"
                 },
                 "notBeforeHour": {
                     "type": "number",
@@ -2060,7 +2057,6 @@
             "properties": {
                 "cost": {
                     "type": "integer",
-                    "minimum": 0,
                     "default": 0
                 },
                 "industryComponentId": {

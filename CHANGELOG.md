@@ -16,6 +16,9 @@
 - Added clearly marked temporary legacy support for `container:<id>` mixinto fragments and old `zsc://...` asset-pack references, allowing legacy car/load-model patches to bind to FUSE direct asset stores.
 - Applied legacy `$find`, `$replace`, `$add`, and `$remove` directives inside temporary `container:<id>` compatibility patches before passing cloned car definitions to the base deserializer.
 - Added a robust aggregate material lookup path so exact installed material definitions such as `aggregateModelLoadId=gondola-woodchips` remain visible when custom asset packs are mounted.
+- Added a hover-to-inspect scenery debug overlay (`FuseSettings.ShowSceneryDebugOverlay` master, `FuseSettings.ShowSceneryDebugAdvanced` sub-setting). Tooltip identifies the hovered scenery as FUSE scenery, scene clone, or vanilla — and reports owning package, asset identifier, scene path, and any suppressing packages so authoring conflicts on world buildings can be diagnosed without dumping the runtime graph.
+- Both the scenery and track debug overlays now include a "Progressions impacting" block that lists every map feature and progression section whose unlock effects reference the hovered scenery game object or track group, so progression-gated buildings and track sections can be traced from the cursor.
+- Routed legacy `industries: { id: null }` directives to a dedicated `operations.removals.industries` array in the converter, and added a staged `apply-operations-removals` phase plus `IndustryAPI.TryRemoveIndustry` so the vanilla industry is actually destroyed instead of left ticking with broken component references. Fixes the destroyed-GameObject `NullReferenceException` thrown from `Industry.Tick` and the matching authoring conflicts (e.g. AspenCrazyMap removing `whittier-stenzel` while its mandela disable of `Stenzel Mfg` previously failed to take effect).
 
 ### Converter
 
@@ -29,6 +32,7 @@
 
 ### Schema
 
+- Removed the non-negative floor on monetary fields so packages can express negative-cost (rebate/subsidy/penalty) values: `progression.sections[].deliveryPhases[].cost`, `operations.loads[].payPerQuantity`, `operations.loads[].costPerUnit`, and industry-component `costPerUnit`.
 - Added `schemaVersion` handling and migration notes.
 - Added mixinto metadata support.
 - Added audio definitions for whistles, horns, and bells.

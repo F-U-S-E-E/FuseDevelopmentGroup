@@ -74,6 +74,7 @@ namespace FUSE
                 FuseEditor.OnFuseLoad();
                 FuseHealthUi.Ensure();
                 FuseTrackDebugOverlay.Ensure();
+                FuseSceneryDebugOverlay.Ensure();
                 FuseLegacyAssemblyHost.EnsureStartupHost();
 
                 modEntry.OnUnload = OnUnload;
@@ -190,8 +191,10 @@ namespace FUSE
 
             FuseLegacyAssemblyHost.Shutdown();
             FuseLegacySupportAssemblyShim.Shutdown();
+            FuseRuntimeRebindService.Shutdown();
             FuseHealthUi.Shutdown();
             FuseTrackDebugOverlay.Shutdown();
+            FuseSceneryDebugOverlay.Shutdown();
 
             if (_isLoaded)
             {
