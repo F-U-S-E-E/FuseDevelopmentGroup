@@ -3,6 +3,5 @@ bin/
 obj/
 /.vs
 /_work
-/dist/FUSE-Installer.exe
-/dist/FUSE-Debug*.zip
+/dist
 /tools/__pycache__/fuse_installer*.pyc
