@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 using Newtonsoft.Json;
@@ -15,6 +16,7 @@ namespace FUSE.Data
         public string ModVersion { get; set; } = "1.0.0";
         public string RailroaderVersion { get; set; }
         public string Description { get; set; }
+        public string[] Tags { get; set; } = Array.Empty<string>();
         public string CoordinateSpace { get; set; } = "world";
         public FuseMixintoDefinition Mixinto { get; set; }
         public FuseTrackDefinition Tracks { get; set; } = new FuseTrackDefinition();
@@ -41,8 +43,7 @@ namespace FUSE.Data
         public string SourceFile { get; set; }
 
         /// <summary>
-        /// Optional mod requirements copied from the legacy mod loader and
-        /// legacy custom content framework
+        /// Optional mod requirements copied from RailLoader/Strange Customs
         /// conditional mixintos. If any requirement is not satisfied, FUSE
         /// skips this fragment instead of treating it as a package fault.
         /// </summary>

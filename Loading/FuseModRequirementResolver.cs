@@ -102,9 +102,17 @@ namespace FUSE.Loading
                 return;
             }
 
+            var infoPath = Path.Combine(folder, "Info.json");
+            var definitionPath = Path.Combine(folder, "Definition.json");
+            var hasEnabledManifest = File.Exists(infoPath) || File.Exists(definitionPath);
+            if (!hasEnabledManifest)
+            {
+                return;
+            }
+
             AddInstalled(result, Path.GetFileName(folder), string.Empty, "mod folder");
-            TryReadManifest(Path.Combine(folder, "Info.json"), "Id", "Version", "Info.json", result);
-            TryReadManifest(Path.Combine(folder, "Definition.json"), "id", "version", "Definition.json", result);
+            TryReadManifest(infoPath, "Id", "Version", "Info.json", result);
+            TryReadManifest(definitionPath, "id", "version", "Definition.json", result);
         }
 
         private static void TryReadManifest(
@@ -121,7 +129,7 @@ namespace FUSE.Loading
 
             try
             {
-                var manifest = JObject.Parse(File.ReadAllText(path));
+                var manifest = FuseLegacyDataConverter.ReadLegacyObject(path);
                 var id = ReadString(manifest, idProperty, idProperty.ToLowerInvariant(), idProperty.ToUpperInvariant(), "Id", "id");
                 if (string.IsNullOrWhiteSpace(id))
                 {

@@ -536,13 +536,14 @@ namespace FUSE.Interface
                         : manifest.Faults.Length > 0
                             ? "faulted"
                             : "ready";
+                    var tag = manifest.IsLegacyConverted ? " | legacy-converted" : string.Empty;
                     AddWrappedLabel(
                         builder,
                         InsertBreakHints($"{manifest.Order:00}. {manifest.Id}"),
                         34f);
                     AddWrappedLabel(
                         builder,
-                        InsertBreakHints($"     v{BlankAs(manifest.Version, "?")} | priority {manifest.Priority} | {status} | folder {manifest.FolderName}"),
+                        InsertBreakHints($"     v{BlankAs(manifest.Version, "?")} | priority {manifest.Priority} | {status}{tag} | folder {manifest.FolderName}"),
                         34f);
                     var deps = BuildDependencySummary(manifest);
                     if (!string.IsNullOrWhiteSpace(deps))
@@ -575,7 +576,7 @@ namespace FUSE.Interface
 
             var diagnostics = FuseAssetPackRegistry.GetDiagnostics();
             builder.AddSection("Asset Resolution");
-            AddValueField(builder, "Mode", FuseSettings.MirrorAssetPacksToLocalLow ? "LocalLow mirror fallback" : "Direct stores");
+            AddValueField(builder, "Mode", AssetPackModeText());
             AddValueField(builder, "Stores Scanned", diagnostics.StoreFolders.Length.ToString());
             AddValueField(builder, "Runtime Stores", FusePerformanceMetrics.FormatCount("direct asset pack store count"));
             AddValueField(builder, "Unique Asset Keys", diagnostics.UniqueAssetKeys.ToString());
@@ -760,7 +761,7 @@ namespace FUSE.Interface
 
             var multiplayer = FuseMultiplayerGuard.GetStatus();
             builder.AddSection("Settings");
-            AddValueField(builder, "Asset Packs", FuseSettings.MirrorAssetPacksToLocalLow ? "LocalLow mirror enabled" : "Direct stores");
+            AddValueField(builder, "Asset Packs", AssetPackModeText());
             AddValueField(builder, "Mod Set", FuseModSetService.ActiveSetName);
             AddValueField(builder, "Profile Hash", multiplayer.LocalPackageFingerprint);
             AddSettingToggle(
@@ -1099,7 +1100,7 @@ namespace FUSE.Interface
             var report = new JObject
             {
                 ["exportedUtc"] = DateTime.UtcNow.ToString("O"),
-                ["mode"] = FuseSettings.MirrorAssetPacksToLocalLow ? "LocalLow mirror fallback" : "Direct stores",
+                ["mode"] = AssetPackModeText(),
                 ["storesScanned"] = stores.Count,
                 ["uniqueAssetKeys"] = diagnostics.UniqueAssetKeys,
                 ["duplicateKeyCount"] = duplicates.Count,
@@ -1117,7 +1118,7 @@ namespace FUSE.Interface
         {
             var builder = new StringBuilder();
             builder.AppendLine("FUSE Asset Summary");
-            builder.AppendLine("Mode: " + (FuseSettings.MirrorAssetPacksToLocalLow ? "LocalLow mirror fallback" : "Direct stores"));
+            builder.AppendLine("Mode: " + AssetPackModeText());
             builder.AppendLine("Stores scanned: " + (diagnostics.StoreFolders?.Length ?? 0));
             builder.AppendLine("Unique asset keys: " + diagnostics.UniqueAssetKeys);
             builder.AppendLine("Duplicate keys: " + (diagnostics.DuplicateKeys?.Length ?? 0));
@@ -1140,6 +1141,16 @@ namespace FUSE.Interface
             }
 
             return builder.ToString().TrimEnd();
+        }
+
+        private static string AssetPackModeText()
+        {
+            if (FuseSettings.MirrorAssetPacksToLocalLow)
+            {
+                return "LocalLow mirror fallback";
+            }
+
+            return "Direct stores";
         }
 
         private static string BuildDuplicateAssetPreview(FuseDuplicateAssetKey duplicate)

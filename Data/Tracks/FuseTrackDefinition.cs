@@ -41,6 +41,12 @@ namespace FUSE.Data
         public string GroupId { get; set; }
         public string[] Tags { get; set; }
         public string Gauge { get; set; }
+        public bool Partial { get; set; }
+        public bool PreserveStyle { get; set; }
+        public bool PreserveTrackClass { get; set; }
+        public bool PreserveSpeedLimit { get; set; }
+        public bool PreservePriority { get; set; }
+        public bool PreserveGroupId { get; set; }
     }
 
     public sealed class FuseSpan

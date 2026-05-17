@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -29,8 +30,22 @@ namespace FUSE.API
         private static readonly Dictionary<string, FuseSpan> BaseSpanDefinitions = new Dictionary<string, FuseSpan>(StringComparer.OrdinalIgnoreCase);
         private static readonly MethodInfo GraphAddSpanMethod =
             typeof(Graph).GetMethod("AddSpan", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo GraphNodesField =
+            typeof(Graph).GetField("nodes", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo GraphSegmentsField =
+            typeof(Graph).GetField("segments", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo GraphSpansField =
             typeof(Graph).GetField("spans", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo[] GraphDerivedCacheFields =
+        {
+            typeof(Graph).GetField("_nodeConnectionsCache", BindingFlags.Instance | BindingFlags.NonPublic),
+            typeof(Graph).GetField("_nodeIsDeadEndCache", BindingFlags.Instance | BindingFlags.NonPublic),
+            typeof(Graph).GetField("_cachedReachableSegments", BindingFlags.Instance | BindingFlags.NonPublic),
+            typeof(Graph).GetField("_decodedSwitchCache", BindingFlags.Instance | BindingFlags.NonPublic),
+            typeof(Graph).GetField("_segmentsReachableFromOthers", BindingFlags.Instance | BindingFlags.NonPublic),
+            typeof(Graph).GetField("_cachedTurntableControllers", BindingFlags.Instance | BindingFlags.NonPublic),
+            typeof(Graph).GetField("_curvatureSampleCache", BindingFlags.Instance | BindingFlags.NonPublic)
+        };
         private static bool _warnedMissingGraphAddSpan;
         private static bool _baseGraphSnapshotCaptured;
 
@@ -107,6 +122,7 @@ namespace FUSE.API
                 RemoveSegment(segment.id);
             }
 
+            UnregisterNodeWithGraph(Graph.Shared, id);
             RemoveRuntimeObject(node);
             FuseNodeRuntimeIndex.Instance.Remove(id);
             FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.TrackNode, id);
@@ -244,6 +260,7 @@ namespace FUSE.API
         public static void RemoveSegment(string id)
         {
             var segment = RequireSegment(id);
+            UnregisterSegmentWithGraph(Graph.Shared, id);
             RemoveRuntimeObject(segment);
             FuseSegmentRuntimeIndex.Instance.Remove(id);
             FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.TrackSegment, id);
@@ -389,6 +406,7 @@ namespace FUSE.API
         public static void RemoveSpan(string id)
         {
             var span = RequireSpan(id);
+            UnregisterSpanWithGraph(Graph.Shared, id);
             RemoveRuntimeObject(span);
             FuseSpanRuntimeIndex.Instance.Remove(id);
             FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.TrackSpan, id);
@@ -1243,6 +1261,91 @@ namespace FUSE.API
             catch (Exception ex)
             {
                 FuseLog.Warning($"FUSE could not register track span '{span.id}' with Graph cache: {ex.Message}");
+            }
+        }
+
+        private static void UnregisterNodeWithGraph(Graph graph, string id)
+        {
+            if (graph == null || string.IsNullOrWhiteSpace(id))
+            {
+                return;
+            }
+
+            try
+            {
+                (GraphNodesField?.GetValue(graph) as Dictionary<string, TrackNode>)?.Remove(id);
+                ClearGraphDerivedCaches(graph);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not unregister track node '{id}' from Graph cache: {ex.Message}");
+            }
+        }
+
+        private static void UnregisterSegmentWithGraph(Graph graph, string id)
+        {
+            if (graph == null || string.IsNullOrWhiteSpace(id))
+            {
+                return;
+            }
+
+            try
+            {
+                (GraphSegmentsField?.GetValue(graph) as Dictionary<string, TrackSegment>)?.Remove(id);
+                ClearGraphDerivedCaches(graph);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not unregister track segment '{id}' from Graph cache: {ex.Message}");
+            }
+        }
+
+        private static void UnregisterSpanWithGraph(Graph graph, string id)
+        {
+            if (graph == null || string.IsNullOrWhiteSpace(id))
+            {
+                return;
+            }
+
+            try
+            {
+                (GraphSpansField?.GetValue(graph) as Dictionary<string, TrackSpan>)?.Remove(id);
+                ClearGraphDerivedCaches(graph);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not unregister track span '{id}' from Graph cache: {ex.Message}");
+            }
+        }
+
+        private static void ClearGraphDerivedCaches(Graph graph)
+        {
+            if (graph == null)
+            {
+                return;
+            }
+
+            foreach (var field in GraphDerivedCacheFields)
+            {
+                if (field == null)
+                {
+                    continue;
+                }
+
+                var value = field.GetValue(graph);
+                if (value == null)
+                {
+                    continue;
+                }
+
+                if (value is IDictionary dictionary)
+                {
+                    dictionary.Clear();
+                    continue;
+                }
+
+                var clear = value.GetType().GetMethod("Clear", Type.EmptyTypes);
+                clear?.Invoke(value, null);
             }
         }
 

@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <Import Project="Local.Build.props" Condition="Exists('Local.Build.props')" />
+  <Import Project="Paths.user" Condition="Exists('Paths.user')" />
 
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
@@ -19,6 +19,10 @@
     <ModDeployDir Condition="'$(ModDeployDir)' == ''">$(GameDir)\Mods\FUSE</ModDeployDir>
     <EnableModDeploy Condition="'$(EnableModDeploy)' == ''">false</EnableModDeploy>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="_work\**\*.cs" />
+  </ItemGroup>
 
   <PropertyGroup>
     <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">$(UnityModManagerDir)\UnityModManagerNet.dll</UnityModManagerAssemblyPath>

@@ -53,6 +53,10 @@
         "description": {
             "type": "string"
         },
+        "tags": {
+            "$ref": "#/$defs/stringArray",
+            "description": "Package-level tags. Runtime-converted compatibility packages include legacy-converted so they can be identified and retired later."
+        },
         "coordinateSpace": {
             "type": "string",
             "enum": [
@@ -62,7 +66,7 @@
         },
         "mixinto": {
             "$ref": "#/$defs/mixinto",
-            "description": "Optional legacy conditional mixinto metadata. FUSE applies this fragment only when its requirements are satisfied, matching legacy mod loader and custom content framework conditional mixins."
+            "description": "Optional legacy conditional mixinto metadata. FUSE applies this fragment only when its requirements are satisfied, matching RailLoader/Strange Customs conditional mixins."
         },
         "tracks": {
             "$ref": "#/$defs/tracks"
@@ -618,6 +622,11 @@
                     "type": "boolean",
                     "default": false
                 },
+                "mergeComponents": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, component entries patch existing runtime components and do not remove components omitted from this definition. Intended for compatibility-converted fragments."
+                },
                 "components": {
                     "allOf": [
                         {
@@ -636,11 +645,32 @@
         "industryComponent": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-                "type",
-                "name"
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "partial": {
+                                "const": true
+                            }
+                        },
+                        "required": [
+                            "partial"
+                        ]
+                    },
+                    "else": {
+                        "required": [
+                            "type",
+                            "name"
+                        ]
+                    }
+                }
             ],
             "properties": {
+                "partial": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, this entry patches an existing runtime component and may omit type/name. Partial span arrays are appended to the current component spans unless trackSpanPatch specifies a different list operation."
+                },
                 "type": {
                     "type": "string",
                     "description": "Built-in FUSE component type such as loader, unloader, formulaic, repairTrack, teamTrack, interchange, interchangedLoader, interchangedUnloader, teleportLoading, progression, passengerStop, or a fully-qualified custom IndustryComponent type. Known legacy custom shortcuts such as ConfusingSupplements CaptiveConversionLoader, CaptiveConversionUnloader, Pay4Resource, and Empty are normalized to their fully-qualified component types."
@@ -651,6 +681,10 @@
                 },
                 "trackSpanIds": {
                     "$ref": "#/$defs/idArray"
+                },
+                "trackSpanPatch": {
+                    "$ref": "#/$defs/stringListPatch",
+                    "description": "Compatibility list patch for component track spans. Replaces, prepends, appends/inserts, or removes span ids without flattening operation semantics."
                 },
                 "carTypeFilter": {
                     "type": "string"
@@ -1337,7 +1371,7 @@
                 },
                 "offsetY": {
                     "type": "number",
-                    "description": "Vertical offset passed through to Railroader's RiverPath. Converted legacy custom content FlowyThingBuilder entries should emit -0.1 when the legacy source omits this field.",
+                    "description": "Vertical offset passed through to Railroader's RiverPath. Converted Strange Customs FlowyThingBuilder entries should emit -0.1 when the legacy source omits this field.",
                     "default": 0
                 },
                 "headStyle": {
@@ -2167,6 +2201,30 @@
             },
             "uniqueItems": true,
             "default": []
+        },
+        "stringListPatch": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "add": {
+                    "$ref": "#/$defs/idArray"
+                },
+                "append": {
+                    "$ref": "#/$defs/idArray"
+                },
+                "prepend": {
+                    "$ref": "#/$defs/idArray"
+                },
+                "insert": {
+                    "$ref": "#/$defs/idArray"
+                },
+                "replace": {
+                    "$ref": "#/$defs/idArray"
+                },
+                "remove": {
+                    "$ref": "#/$defs/idArray"
+                }
+            }
         },
         "stringArray": {
             "type": "array",
