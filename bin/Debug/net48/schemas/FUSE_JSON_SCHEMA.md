@@ -3,7 +3,7 @@
 This folder defines the JSON side of the FUSE mod format.
 
 - `fuse-mod.schema.json` is the authoritative JSON Schema for hand-authored and editor-exported `.json` files.
-- `fuse-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, loaders, turntables, roundhouses, stations, scenery, spawn points, span-anchored scenery, splineys, telegraph poles, labels, speed signs, masks, map tiles, scene clones, world removals, progression data, and editor state.
+- `fuse-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, built-in and custom industry components, loaders, turntables, roundhouses, stations, scenery, spawn points, span-anchored scenery, splineys, telegraph poles, labels, speed signs, masks, suppressions, map tiles, scene clones, world removals, progression data, audio definitions, mixinto metadata, and editor state.
 - `umm-info.schema.json` documents the Unity Mod Manager `Info.json` shape FUSE expects for API mods, data packages, and asset-pack packages.
 - `umm-info.example.json` is a data-only map package manifest that depends on `FUSE`.
 
@@ -20,7 +20,7 @@ Top-level object groups:
 - `editor`: optional editor-only state that FUSE can ignore at runtime.
 - `extensions`: optional namespaced third-party data.
 
-`mixinto` is optional metadata for converted legacy mod loader and custom content framework conditional mixin files. The converted file remains a normal FUSE fragment, but FUSE checks `mixinto.requires[]` immediately before runtime apply. If any required mod is missing, older than `notBefore`, or newer than `notAfter`, that fragment is skipped without faulting the rest of the package.
+`mixinto` is optional metadata for converted RailLoader/Strange Customs conditional mixin files. The converted file remains a normal FUSE fragment, but FUSE checks `mixinto.requires[]` immediately before runtime apply. If any required mod is missing, older than `notBefore`, or newer than `notAfter`, that fragment is skipped without faulting the rest of the package.
 
 ```json
 {
@@ -57,6 +57,28 @@ Compatibility aliases are intentional and narrow:
 
 Do not author new public docs or examples with `RAIL` as the mod name.
 
+## Example Coverage
+
+The shipped examples cover the public beta authoring cases:
+
+| Case | Example file | Notes |
+| --- | --- | --- |
+| Route/data package | `fuse-mod.example.json` | Track, areas, spans, operations, world objects, progression, audio, and editor metadata. |
+| UMM package manifest | `umm-info.example.json` | `FuseDataFiles`, load ordering, and `FuseAssetPacks`. |
+| Asset pack package | `umm-info.example.json` | Use `FuseAssetPacks` to point at one or more package-relative asset pack roots. |
+| Map tiles | `fuse-mod.example.json` | `world.mapTiles` overlays `tile_XXX_YYY.data` files for a `MapManager.directoryName`. |
+| Audio pack | `fuse-mod.example.json` | `audio.whistles`, `audio.horns`, and `audio.bells`. |
+| Industry component pack | `fuse-mod.example.json` | Built-in component types plus a fully-qualified custom component type with `fields`. |
+| Load component pack | `fuse-mod.example.json` | `operations.loads.*.fields` can carry reflection-bound custom load data. |
+| Mixinto | `fuse-mod.example.json` | `mixinto.target`, `mixinto.sourceFile`, and conditional `requires`. |
+| Progression section | `fuse-mod.example.json` | Root `progression.sections[]`, delivery phases, unlock features, and interchange transfers. |
+| Map mask | `fuse-mod.example.json` | `world.mapMasks` for terrain/object mask authoring. |
+| Scene clone | `fuse-mod.example.json` | `world.sceneClones` for base-game object cloning/retargeting. |
+| Span-anchored scenery | `fuse-mod.example.json` | `world.scenery.*.anchorSpanIds`. |
+| Signals | Not included | Signals are deferred for beta and should not be treated as supported yet. |
+
+The converter guide at `tools/FUSE_CONVERTER.md` covers drag/drop conversion, batch conversion, output reports, and warning classification.
+
 Areas are defined under `tracks.areas` and can be used to group industries in the company window. `order` is a signed sort key that controls the display order of areas and industries; lower values appear earlier. Legacy conversions preserve source order values, including negative values, when the source file provides them:
 
 ```json
@@ -91,7 +113,7 @@ Vector values are always objects:
 { "x": 0, "y": 0, "z": 0 }
 ```
 
-Track spans use two structured locations rather than legacy custom content style strings. Think of each location as an arrow measured from one segment end into the span. `Start`/`A` points from the segment's start toward its end; `End`/`B` points from the segment's end toward its start. The two endpoint arrows must face each other and the measured distance must stay within that segment.
+Track spans use two structured locations rather than Strange Customs style strings. Think of each location as an arrow measured from one segment end into the span. `Start`/`A` points from the segment's start toward its end; `End`/`B` points from the segment's end toward its start. The two endpoint arrows must face each other and the measured distance must stay within that segment.
 
 ```json
 {
@@ -214,7 +236,7 @@ Asset and prefab references are URI strings:
 - `vanilla://waterTower`
 - `scenery://aspen-corner-drug`
 - `path://scene/World/Large Scenery/Whittier/Coal Conveyor`
-- `asset://HunterR.MurphyBranch/depotSmall`
+- `asset://example.route/depotSmall`
 - `fuse://some-shared-catalog/object-id`
 
 The current runtime directly understands `vanilla://`, `path://`, `scenery://`, and `empty://`. Other schemes may be reserved by tools or future loaders.
@@ -245,8 +267,8 @@ Spliney `type` describes the physical spline family, not its material flavor:
 - `terrainRoad`: terrain-carved road spline. Use `style`/`profile` for dirt versus pavement.
 - `trestle`: auto-generated trestle spline.
 
-Converted legacy custom content `FlowyThingBuilder` data must inspect `style` and `profile`; entries with `style: "River"` or river profiles should be emitted as `type: "river"`, not as roads.
-When converting `FlowyThingBuilder` entries, preserve the legacy default `offsetY: -0.1` if the source omits it; the field keeps road and river surfaces at the same vertical bias the legacy custom content framework used.
+Converted Strange Customs `FlowyThingBuilder` data must inspect `style` and `profile`; entries with `style: "River"` or river profiles should be emitted as `type: "river"`, not as roads.
+When converting `FlowyThingBuilder` entries, preserve the legacy default `offsetY: -0.1` if the source omits it; the field keeps road and river surfaces at the same vertical bias Strange Customs used.
 
 Telegraph pole definitions use the existing Railroader telegraph pole and wire prefabs by default. `profile` selects the first vanilla pole prefab whose name contains that profile string. `polePrefab` and `wirePrefab` can override that with explicit prefab URIs.
 
@@ -270,6 +292,8 @@ FUSE applies pole movements idempotently per package, so snapshot reapply does n
 Industry components currently supported by the runtime include `loader`, `unloader`, `formulaic`, `repairTrack`, `teamTrack`, `interchange`, `interchangedLoader`, `interchangedUnloader`, `teleportLoading`, `progression`, and `passengerStop`. Formulaic components are attached directly to the industry object to match the base game component layout expectations; other component types get child objects. Fully-qualified custom `IndustryComponent` type names are accepted as beta compatibility surface when the owning assembly is loaded; FUSE reflectively binds common fields such as `load`, `convertedLoad`, `carLoadRate`, `carUnloadRate`, `loadRate`, `maxStorage`, `costPerUnit`, working hours, fill percentage, title, and book reasons. Custom components may also use `fields` for additional reflection-bound field/property values, so a separate component mod can expose data without requiring a FUSE code change. Legacy ConfusingSupplements shortcuts (`CaptiveConversionLoader`, `CaptiveConversionUnloader`, `Pay4Resource`, and `Empty`) are normalized to their fully-qualified `ConfusingSupplements.IndustryComponents.*` runtime types.
 
 The converter emits canonical FUSE component type names. Legacy aliases such as `Model.Ops.IndustryLoader`, `Model.OpsNew.InterchangedIndustryUnloader`, and `AlinasMapMod.PaxStationComponent` are normalized at load time for compatibility, but new JSON should use the FUSE names above so it does not depend on external mod assemblies.
+
+Compatibility-converted industry fragments may set `operations.industries.<id>.mergeComponents = true` and component entries may set `partial = true`. In that mode FUSE preserves runtime components omitted from the fragment and patches matching components in place. Partial `trackSpanIds` append to existing spans by default; `trackSpanPatch` can preserve legacy list operations such as `replace`, `prepend`, `append`, `insert`, and `remove`.
 
 Passenger stop components can carry timetable metadata:
 
@@ -368,7 +392,7 @@ MurphyBranch/
 
 FUSE-specific package ordering uses `FuseLoadPriority`, `FuseLoadAfter`, and `FuseLoadBefore`. Lower priority values load earlier; packages with the same priority fall back to dependency order and then package id. Dependency cycles are reported in the log and the involved packages fall back to priority/name order.
 
-If explicit data-file entries are missing, FUSE falls back to the first `.bson` file in the package root, then the first `.json` file other than `Info.json`.
+If explicit data-file entries are missing, FUSE falls back to the first `.bson` file in the package root, then an eligible root `.json` definition file. Files named `Info.json`, `Definition.json`, `Catalog.json`, `Definitions.json`, and `conversion-report.json` are ignored; `.fuse.json` files are preferred before other eligible `.json` files.
 
 Asset-pack-only packages can expose existing Railroader `AssetPack` runtime stores with `FuseAssetPacks`. FUSE registers these folders as direct prefab stores from the mod directory by default; the old LocalLow mirror path is an opt-in compatibility fallback, not the normal load path:
 

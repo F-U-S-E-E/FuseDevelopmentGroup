@@ -99,8 +99,30 @@ namespace FUSE.Validation
             foreach (var segment in tracks.Segments)
             {
                 var path = $"tracks.segments.{segment.Key}";
-                Required(result, $"{path}.startNodeId", segment.Value.StartNodeId);
-                Required(result, $"{path}.endNodeId", segment.Value.EndNodeId);
+                if (segment.Value == null)
+                {
+                    result.AddError(path, "Track segment is required.", "fuse.track.segment.required");
+                    continue;
+                }
+
+                var missingStartNode = string.IsNullOrWhiteSpace(segment.Value.StartNodeId);
+                var missingEndNode = string.IsNullOrWhiteSpace(segment.Value.EndNodeId);
+                if (segment.Value.Partial)
+                {
+                    if (missingStartNode && missingEndNode)
+                    {
+                        result.AddError(path, "Partial track segment patches must provide at least one endpoint.", "fuse.track.segment.partialEndpoint.empty");
+                    }
+                    else if (missingStartNode || missingEndNode)
+                    {
+                        result.AddWarning(path, "Partial track segment patch will hydrate the missing endpoint from the runtime graph.", "fuse.track.segment.partialEndpoint", segment.Key);
+                    }
+                }
+                else
+                {
+                    Required(result, $"{path}.startNodeId", segment.Value.StartNodeId);
+                    Required(result, $"{path}.endNodeId", segment.Value.EndNodeId);
+                }
 
                 if (!string.IsNullOrWhiteSpace(segment.Value.StartNodeId) &&
                     !tracks.Nodes.ContainsKey(segment.Value.StartNodeId) &&
@@ -215,8 +237,7 @@ namespace FUSE.Validation
             var lowerEnd = NormalizeLocationEnd(span.Lower.End) ?? "A";
             if (string.Equals(upperEnd, lowerEnd, StringComparison.OrdinalIgnoreCase))
             {
-                result.AddError(path, "Same-segment span endpoints must face each other. Use Start/A for one endpoint and End/B for the other.", "fuse.track.span.sameSegment.sameDirection", span.Upper.SegmentId);
-                return;
+                result.AddWarning(path, "Same-segment span endpoints face the same direction. Runtime will re-anchor this legacy-compatible span if the physical positions are valid.", "fuse.track.span.sameSegment.sameDirection", span.Upper.SegmentId);
             }
 
             FuseSegment segment;
@@ -395,9 +416,13 @@ namespace FUSE.Validation
                         continue;
                     }
 
-                    Required(result, $"{componentPath}.type", component.Value.Type);
-                    Required(result, $"{componentPath}.name", component.Value.Name);
-                    ValidateIndustryComponent(result, componentPath, component.Value);
+                    if (!component.Value.Partial)
+                    {
+                        Required(result, $"{componentPath}.type", component.Value.Type);
+                        Required(result, $"{componentPath}.name", component.Value.Name);
+                    }
+
+                    ValidateIndustryComponent(result, componentPath, component.Value, component.Value.Partial);
                 }
             }
 
@@ -913,7 +938,7 @@ namespace FUSE.Validation
             }
         }
 
-        private static void ValidateIndustryComponent(ValidationResult result, string path, FuseIndustryComponent component)
+        private static void ValidateIndustryComponent(ValidationResult result, string path, FuseIndustryComponent component, bool partial = false)
         {
             var type = FuseIndustryComponentTypes.Normalize(component.Type);
             if (!string.IsNullOrWhiteSpace(type) && !FuseIndustryComponentTypes.IsKnown(type))
@@ -937,7 +962,8 @@ namespace FUSE.Validation
                 }
             }
 
-            if (FuseIndustryComponentTypes.UsesTrackSpanIds(type) &&
+            if (!partial &&
+                FuseIndustryComponentTypes.UsesTrackSpanIds(type) &&
                 (component.TrackSpanIds == null || component.TrackSpanIds.Length == 0))
             {
                 if (string.Equals(type, FuseIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase))
@@ -953,7 +979,7 @@ namespace FUSE.Validation
                 }
             }
 
-            if (FuseIndustryComponentTypes.UsesLoadId(type))
+            if (!partial && FuseIndustryComponentTypes.UsesLoadId(type))
             {
                 if (string.IsNullOrWhiteSpace(component.LoadId))
                 {
@@ -979,26 +1005,28 @@ namespace FUSE.Validation
                 result.AddError($"{path}.carTransferRate", "Car transfer rate must be greater than or equal to 0.", "fuse.operations.component.carTransferRate", component.CarTransferRate.Value);
             }
 
-            if (string.Equals(type, FuseIndustryComponentTypes.Formulaic, StringComparison.OrdinalIgnoreCase) &&
+            if (!partial &&
+                string.Equals(type, FuseIndustryComponentTypes.Formulaic, StringComparison.OrdinalIgnoreCase) &&
                 (component.InputTermsPerDay == null || component.InputTermsPerDay.Count == 0) &&
                 (component.OutputTermsPerDay == null || component.OutputTermsPerDay.Count == 0))
             {
                 result.AddError($"{path}.inputTermsPerDay", "Formulaic components require inputTermsPerDay and/or outputTermsPerDay.", "fuse.operations.formulaic.terms");
             }
 
-            if (string.Equals(type, FuseIndustryComponentTypes.TeamTrack, StringComparison.OrdinalIgnoreCase) &&
+            if (!partial &&
+                string.Equals(type, FuseIndustryComponentTypes.TeamTrack, StringComparison.OrdinalIgnoreCase) &&
                 (component.TeamProfiles == null || component.TeamProfiles.Count == 0))
             {
                 result.AddError($"{path}.teamProfiles", "Team track components require at least one team profile entry.", "fuse.operations.teamTrack.profile");
             }
 
-            if (string.Equals(type, FuseIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase))
+            if (!partial && string.Equals(type, FuseIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase))
             {
                 Required(result, $"{path}.passengerStopId", component.PassengerStopId);
                 Required(result, $"{path}.timetableCode", component.TimetableCode);
             }
 
-            if (string.Equals(type, FuseIndustryComponentTypes.TeleportLoading, StringComparison.OrdinalIgnoreCase))
+            if (!partial && string.Equals(type, FuseIndustryComponentTypes.TeleportLoading, StringComparison.OrdinalIgnoreCase))
             {
                 if ((component.InputSpanIds == null || component.InputSpanIds.Length == 0) &&
                     (component.OutputSpanIds == null || component.OutputSpanIds.Length == 0))

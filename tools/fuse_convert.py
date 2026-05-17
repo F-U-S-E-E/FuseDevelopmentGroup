@@ -78,6 +78,7 @@ RR_CROSSING_HANDLERS = {
     "cutil.rrcrossing",
     "cutil.railroadcrossing",
 }
+DKW_SPLINEY_HANDLER = "DKW.DKWSpliney"
 
 SUPPORTED_CUSTOM_INDUSTRY_COMPONENT_TYPES = {
     "confusingsupplements.industrycomponents.captiveconversionloader",
@@ -97,6 +98,15 @@ CANONICAL_COMPONENT_TYPES = {
     "interchangedUnloader",
     "teleportLoading",
     "progression",
+    "passengerStop",
+}
+
+LOAD_COMPONENT_TYPES = {
+    "loader",
+    "unloader",
+    "repairTrack",
+    "interchangedLoader",
+    "interchangedUnloader",
     "passengerStop",
 }
 
@@ -196,6 +206,23 @@ def vector(value, default_scale=False):
     }
 
 
+def make_vector(x, y, z):
+    return {
+        "x": round(float(x), 6),
+        "y": round(float(y), 6),
+        "z": round(float(z), 6),
+    }
+
+
+def yaw_offset(origin, yaw_degrees, distance):
+    radians = math.radians(float(yaw_degrees or 0))
+    return make_vector(
+        origin["x"] + math.sin(radians) * distance,
+        origin["y"],
+        origin["z"] + math.cos(radians) * distance,
+    )
+
+
 def optional_vector(value):
     return vector(value) if isinstance(value, (dict, list, tuple)) else None
 
@@ -282,7 +309,11 @@ def meta(mod_folder):
 CORE_LEGACY_REQUIREMENTS = {
     "railroader",
     "railloader",
+    "rail-loader",
     "zamu.strangecustoms",
+    "strangecustoms",
+    "zamu.confusingsupplements",
+    "confusingsupplements",
     "fuse",
 }
 
@@ -328,6 +359,56 @@ def convert_requirements(value):
         if converted:
             result.append(converted)
     return result
+
+
+def fuse_package_id(requirement_id):
+    text = str(requirement_id or "").strip()
+    if not text:
+        return None
+    if text.lower() in CORE_LEGACY_REQUIREMENTS:
+        return None
+    if text.lower().endswith(".fuse"):
+        return text
+    return f"{text}.FUSE"
+
+
+def legacy_load_after(mod_folder):
+    path = mod_folder / "Definition.json"
+    if not path.exists():
+        return []
+
+    definition = load_json(path)
+    result = []
+
+    requirements = (
+        definition.get("requires")
+        or definition.get("Requires")
+        or definition.get("requirements")
+        or definition.get("Requirements")
+        or []
+    )
+    for requirement in convert_requirements(requirements):
+        package_id = fuse_package_id(requirement.get("id"))
+        if package_id:
+            result.append(package_id)
+
+    load_after = definition.get("loadAfter") or definition.get("LoadAfter") or []
+    if isinstance(load_after, str):
+        load_after = [load_after]
+    if isinstance(load_after, list):
+        for item in load_after:
+            package_id = fuse_package_id(item)
+            if package_id:
+                result.append(package_id)
+
+    seen = set()
+    ordered = []
+    for item in result:
+        key = item.lower()
+        if key not in seen:
+            seen.add(key)
+            ordered.append(item)
+    return ordered
 
 
 def mixinto_metadata(mod_folder):
@@ -391,9 +472,13 @@ def convert_segment(item, segment_id=None):
     group_id = item.get("groupId") or item.get("GroupId") or None
     if group_id:
         _GROUP_IDS_REFERENCED.add(str(group_id))
-    return {
-        "startNodeId": item.get("startId") or item.get("startNodeId") or item.get("nodeA") or item.get("a") or "",
-        "endNodeId": item.get("endId") or item.get("endNodeId") or item.get("nodeB") or item.get("b") or "",
+    start_node_id = item.get("startId") or item.get("startNodeId") or item.get("nodeA") or item.get("a")
+    end_node_id = item.get("endId") or item.get("endNodeId") or item.get("nodeB") or item.get("b")
+    if not start_node_id and not end_node_id:
+        return None
+
+    partial = not bool(start_node_id) or not bool(end_node_id)
+    result = {
         "style": item.get("Style") or item.get("style") or "standard",
         "trackClass": item.get("trackClass") or item.get("TrackClass") or "main",
         "speedLimit": int(item.get("speedLimit", item.get("SpeedLimit", 45))),
@@ -401,6 +486,18 @@ def convert_segment(item, segment_id=None):
         "groupId": group_id,
         "gauge": item.get("gauge") or item.get("Gauge"),
     }
+    if start_node_id:
+        result["startNodeId"] = start_node_id
+    if end_node_id:
+        result["endNodeId"] = end_node_id
+    if partial:
+        result["partial"] = True
+        result["preserveStyle"] = "Style" not in item and "style" not in item
+        result["preserveTrackClass"] = "trackClass" not in item and "TrackClass" not in item
+        result["preserveSpeedLimit"] = "speedLimit" not in item and "SpeedLimit" not in item
+        result["preservePriority"] = "priority" not in item
+        result["preserveGroupId"] = "groupId" not in item and "GroupId" not in item
+    return result
 
 
 def normalize_end(value):
@@ -950,8 +1047,9 @@ def _normalize_tag_color(area_id, value):
     return value
 
 
-def convert_component(component_id, item):
-    component_type = normalize_component_type(item.get("type") or component_id)
+def convert_component(component_id, item, inference_context=None):
+    is_partial = should_convert_component_as_partial(item)
+    component_type = None if is_partial else infer_component_type(component_id, item, inference_context)
     is_passenger = component_type == "passengerStop"
     extra = item.get("extraData") or item.get("ExtraData") or {}
 
@@ -964,14 +1062,19 @@ def convert_component(component_id, item):
                 return extra.get(key)
         return None
 
+    load_id = get_field("loadId", "LoadId", "load")
+    if not load_id:
+        load_id = None if is_partial else ("passengers" if is_passenger else infer_load_id_from_component_id(component_id, component_type, item))
+
     result = {
-        "type": component_type,
-        "name": item.get("name") or component_id,
+        "partial": True if is_partial else None,
+        "type": None if is_partial else component_type,
+        "name": item.get("name") if is_partial else (item.get("name") or component_id),
         "trackSpanIds": item.get("trackSpanIds") or item.get("trackSpans") or item.get("spans") or [],
         "carTypeFilter": item.get("carTypeFilter"),
-        "loadId": get_field("loadId", "LoadId", "load") or ("passengers" if is_passenger else None),
+        "loadId": load_id,
         "convertedLoadId": get_field("convertedLoadId", "convertedLoadID", "convertedLoad", "ConvertedLoadId"),
-        "sharedStorage": item.get("sharedStorage", True),
+        "sharedStorage": None if is_partial else item.get("sharedStorage", True),
         "storageChangeRate": get_field("storageChangeRate", "StorageChangeRate"),
         "maxStorage": get_field("maxStorage", "MaxStorage"),
         "carTransferRate": get_field("carTransferRate", "CarTransferRate"),
@@ -1049,6 +1152,7 @@ def normalize_component_type(component_type):
         "team-track": "teamTrack",
         "model.ops.interchange": "interchange",
         "model.opsnew.interchange": "interchange",
+        "interchangereloader.ops.interchangereloader": "interchange",
         "model.ops.interchangedindustryloader": "interchangedLoader",
         "model.opsnew.interchangedindustryloader": "interchangedLoader",
         "interchanged-loader": "interchangedLoader",
@@ -1091,6 +1195,143 @@ def normalize_component_type(component_type):
 def is_supported_custom_component_type(component_type):
     normalized = str(normalize_component_type(component_type) or "").strip().lower()
     return normalized in SUPPORTED_CUSTOM_INDUSTRY_COMPONENT_TYPES
+
+
+def build_component_type_inference_context(components):
+    input_load_ids = set()
+    output_load_ids = set()
+
+    for component in (components or {}).values():
+        if not isinstance(component, dict):
+            continue
+
+        input_terms = component.get("inputTermsPerDay")
+        if isinstance(input_terms, dict):
+            input_load_ids.update(str(load_id).strip() for load_id in input_terms if str(load_id).strip())
+
+        output_terms = component.get("outputTermsPerDay")
+        if isinstance(output_terms, dict):
+            output_load_ids.update(str(load_id).strip() for load_id in output_terms if str(load_id).strip())
+
+    return {
+        "inputs": input_load_ids,
+        "outputs": output_load_ids,
+    }
+
+
+def has_legacy_load_operation_shape(item):
+    if not isinstance(item, dict):
+        return False
+
+    return any(key in item for key in (
+        "loadId",
+        "LoadId",
+        "load",
+        "convertedLoadId",
+        "convertedLoad",
+        "maxStorage",
+        "MaxStorage",
+        "storageChangeRate",
+        "StorageChangeRate",
+        "carTransferRate",
+        "CarTransferRate",
+        "costPerUnit",
+        "notBeforeHour",
+        "notAfterHour",
+        "fillPercentage",
+        "bookReasons",
+        "title",
+        "orderAroundEmpties",
+        "orderAroundLoaded",
+    ))
+
+
+def has_load_component_binding_shape(item):
+    if not isinstance(item, dict):
+        return False
+
+    return any(key in item for key in (
+        "trackSpanIds",
+        "trackSpans",
+        "spans",
+        "loadId",
+        "LoadId",
+        "load",
+    ))
+
+
+def has_standalone_component_shape(item):
+    if not isinstance(item, dict):
+        return False
+
+    return (
+        item.get("inputTermsPerDay") is not None
+        or item.get("outputTermsPerDay") is not None
+        or item.get("teamProfiles") is not None
+        or item.get("passengerStopId") is not None
+        or item.get("passengerStop") is not None
+        or item.get("timetableCode") is not None
+        or item.get("basePopulation") is not None
+        or item.get("canOverhaul") is not None
+        or has_legacy_load_operation_shape(item)
+    )
+
+
+def should_convert_component_as_partial(item):
+    if not isinstance(item, dict):
+        return False
+    if item.get("type") or item.get("Type"):
+        return False
+    if not has_standalone_component_shape(item):
+        return True
+    return has_legacy_load_operation_shape(item) and not has_load_component_binding_shape(item)
+
+
+def infer_component_type(component_id, item, inference_context=None):
+    explicit_type = item.get("type") or item.get("Type")
+    if explicit_type:
+        return normalize_component_type(explicit_type)
+
+    normalized_id_type = normalize_component_type(component_id)
+    if normalized_id_type in CANONICAL_COMPONENT_TYPES or is_supported_custom_component_type(normalized_id_type):
+        return normalized_id_type
+
+    if item.get("inputTermsPerDay") is not None or item.get("outputTermsPerDay") is not None:
+        return "formulaic"
+    if item.get("teamProfiles") is not None:
+        return "teamTrack"
+    if (
+        item.get("passengerStopId") is not None
+        or item.get("passengerStop") is not None
+        or item.get("timetableCode") is not None
+        or item.get("basePopulation") is not None
+    ):
+        return "passengerStop"
+    if item.get("canOverhaul") is not None:
+        return "repairTrack"
+
+    raw_id = str(component_id or "").strip()
+    inputs = (inference_context or {}).get("inputs") or set()
+    outputs = (inference_context or {}).get("outputs") or set()
+    if raw_id in inputs and raw_id not in outputs:
+        return "unloader"
+    if raw_id in outputs and raw_id not in inputs:
+        return "loader"
+
+    return "loader"
+
+
+def infer_load_id_from_component_id(component_id, component_type, item):
+    if not component_id or str(component_id).strip() == "":
+        return None
+
+    if component_type not in LOAD_COMPONENT_TYPES or component_type in ("passengerStop", "repairTrack"):
+        return None
+
+    if not has_legacy_load_operation_shape(item):
+        return None
+
+    return str(component_id).strip()
 
 
 def _flag_spanless_passenger_stop(industry_id, component_id, converted, source_name=None):
@@ -1150,9 +1391,10 @@ def _make_component_sub_id(industry_id, component_id, converted, existing):
 
 def convert_industry(industry_id, item, area_id=None, order=None, source_name=None):
     components = {}
+    inference_context = build_component_type_inference_context(item.get("components") or {})
     for component_id, component in (item.get("components") or {}).items():
         if isinstance(component, dict):
-            converted = convert_component(component_id, component)
+            converted = convert_component(component_id, component, inference_context)
             sub_id = _make_component_sub_id(industry_id, component_id, converted, components)
             _flag_spanless_passenger_stop(industry_id, sub_id, converted, source_name)
             components[sub_id] = converted
@@ -1237,7 +1479,7 @@ def convert_spliney(item):
     spliney_type = infer_spliney_type(item, handler)
     offset_y = item.get("offsetY", item.get("offsety"))
     if offset_y is None and handler == "StrangeCustoms.FlowyThingBuilder":
-        # Legacy custom content FlowyData defaults OffsetY to -0.1. Preserve that
+        # Strange Customs' FlowyData defaults OffsetY to -0.1. Preserve that
         # instead of letting FUSE deserialize the missing float as 0.
         offset_y = -0.1
     points = []
@@ -1266,12 +1508,78 @@ def convert_spliney(item):
     return clean(result)
 
 
+def convert_dkw_spliney(spliney_id, item, rail):
+    try:
+        crossing_angle = float(item.get("crossingAngle", item.get("CrossingAngle", 0)) or 0)
+    except (TypeError, ValueError):
+        return False
+
+    flipped = False
+    position = vector(item.get("position") or item.get("localPosition"))
+    rotation = vector(item.get("rotation") or item.get("localRotation"))
+    if crossing_angle < 0:
+        flipped = True
+        rotation["y"] += crossing_angle
+        crossing_angle = -crossing_angle
+
+    if crossing_angle < 4 or crossing_angle > 15:
+        return False
+
+    gauge_inside = 1.435
+    half_angle = math.radians(crossing_angle) / 2
+    crossing_center = gauge_inside * math.cos(half_angle) / (2 * math.sin(half_angle))
+    inner = crossing_center - 0.5
+    outer = crossing_center + 1.5
+    base_yaw = rotation["y"]
+    crossing_yaw = base_yaw + crossing_angle
+    node_prefix = f"N{spliney_id}DKW_Node"
+    segment_prefix = f"S{spliney_id}DKW_Segment"
+    nodes = rail["tracks"]["nodes"]
+    segments = rail["tracks"]["segments"]
+
+    def add_node(suffix, pos, yaw):
+        nodes[f"{node_prefix}{suffix}"] = clean({
+            "position": pos,
+            "rotation": make_vector(rotation["x"], yaw, rotation["z"]),
+            "flipSwitchStand": False,
+        })
+
+    def add_segment(suffix, start_suffix, end_suffix, priority=0):
+        segments[f"{segment_prefix}{suffix}"] = clean({
+            "startNodeId": f"{node_prefix}{start_suffix}",
+            "endNodeId": f"{node_prefix}{end_suffix}",
+            "style": "standard",
+            "trackClass": "main",
+            "speedLimit": 45,
+            "priority": priority,
+        })
+
+    add_node("P1I", yaw_offset(position, base_yaw, -inner), base_yaw)
+    add_node("P1O", yaw_offset(position, base_yaw, -outer), base_yaw)
+    add_node("P2I", yaw_offset(position, base_yaw, inner), base_yaw)
+    add_node("P2O", yaw_offset(position, base_yaw, outer), base_yaw)
+    add_node("P3I", yaw_offset(position, crossing_yaw, -inner), crossing_yaw)
+    add_node("P3O", yaw_offset(position, crossing_yaw, -outer), crossing_yaw)
+    add_node("P4I", yaw_offset(position, crossing_yaw, inner), crossing_yaw)
+    add_node("P4O", yaw_offset(position, crossing_yaw, outer), crossing_yaw)
+
+    add_segment("1", "P1O", "P1I")
+    add_segment("2", "P2I", "P2O")
+    add_segment("3", "P3O", "P3I")
+    add_segment("4", "P4I", "P4O")
+    add_segment("CR", "P1I", "P4I")
+    add_segment("CL", "P3I", "P2I")
+    add_segment("D1", "P1I", "P2I", -1 if flipped else 1)
+    add_segment("D2", "P3I", "P4I", 1 if flipped else -1)
+    return True
+
+
 def infer_spliney_type(item, handler):
     style = str(item.get("style") or "")
     profile = str(item.get("profile") or "")
     explicit_type = item.get("type")
 
-    # Legacy custom content FlowyThingBuilder is shared by roads and rivers. The
+    # Strange Customs FlowyThingBuilder is shared by roads and rivers. The
     # style/profile tells us which physical spline family the runtime needs.
     if handler == "StrangeCustoms.FlowyThingBuilder" and (
         style.lower() == "river" or "river" in profile.lower()
@@ -1670,7 +1978,9 @@ def convert_source(source, rail, source_name=None, order_state=None):
         if segment is None:
             rail["tracks"]["removals"]["segments"].append(segment_id)
         elif isinstance(segment, dict):
-            rail["tracks"]["segments"][segment_id] = clean(convert_segment(segment))
+            converted_segment = convert_segment(segment)
+            if converted_segment:
+                rail["tracks"]["segments"][segment_id] = clean(converted_segment)
 
     for span_id, span in (tracks.get("spans") or {}).items():
         if span is None:
@@ -1733,6 +2043,8 @@ def convert_source(source, rail, source_name=None, order_state=None):
                 rail["world"]["telegraphPoleMovements"].extend(convert_telegraph_pole_movements(spliney))
             elif (handler or "").lower() in RR_CROSSING_HANDLERS:
                 rail["world"]["scenery"][spliney_id] = convert_scenery(spliney)
+            elif (handler or "").lower() == DKW_SPLINEY_HANDLER.lower() and convert_dkw_spliney(spliney_id, spliney, rail):
+                pass
             elif len(spliney.get("points") or []) < 2:
                 rail["extensions"].setdefault("legacySplineyObjects", {})[spliney_id] = spliney
             else:
@@ -1871,6 +2183,7 @@ def _emit_track_group_coverage_warning(declared_initial_groups: set[str]) -> Non
 
 def convert_mod(mod_folder, out_folder):
     mod_id, mod_name, version, author = meta(mod_folder)
+    load_after = legacy_load_after(mod_folder)
     mixinto_sources, mixinto_order = mixinto_metadata(mod_folder)
     mixinto_order_index = {name: index for index, name in enumerate(mixinto_order)}
     source_files = sorted(
@@ -1946,7 +2259,7 @@ def convert_mod(mod_folder, out_folder):
         "Version": version,
         "ManagerVersion": "0.27.10",
         "Requirements": ["FUSE"],
-        "LoadAfter": ["FUSE"],
+        "LoadAfter": ["FUSE"] + load_after,
         "FuseDataFiles": rail_data_files,
     }
     save_json(out_folder / "Info.json", info)
