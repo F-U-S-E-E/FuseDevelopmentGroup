@@ -120,8 +120,61 @@ namespace FUSE.API
         public static void RemoveIndustry(string id)
         {
             var industry = RequireIndustry(id);
+            DestroyIndustryInternal(id, industry);
+        }
+
+        /// <summary>
+        /// Removes the industry with <paramref name="id"/> if it exists. Returns false when the
+        /// industry is not currently in the scene/cache — used by the legacy-conversion apply
+        /// path so that "industries: { id: null }" directives can be expressed without
+        /// throwing when the industry was already absent.
+        /// </summary>
+        public static bool TryRemoveIndustry(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return false;
+            }
+
+            var industry = GetIndustry(id);
+            if (industry == null)
+            {
+                return false;
+            }
+
+            DestroyIndustryInternal(id, industry);
+            return true;
+        }
+
+        private static void DestroyIndustryInternal(string id, Industry industry)
+        {
+            // Synchronously tear down every IndustryComponent before destroying the Industry
+            // GameObject and use DestroyImmediate throughout so the runtime objects are fully
+            // gone before the post-remove IndustriesDidChange notification fires. Deferred
+            // Destroy leaves the dead Industry alive until end-of-frame; downstream
+            // IndustriesDidChange handlers can then still walk it and re-activate scene clones
+            // by name match, defeating package mandelas that disabled the matching scenery.
             industry.gameObject.SetActive(false);
-            UnityEngine.Object.Destroy(industry.gameObject);
+
+            var components = industry.GetComponentsInChildren<IndustryComponent>(true);
+            for (var index = 0; index < components.Length; index++)
+            {
+                var component = components[index];
+                if (component == null)
+                {
+                    continue;
+                }
+
+                var subIdentifier = component.subIdentifier;
+                if (!string.IsNullOrWhiteSpace(subIdentifier))
+                {
+                    FuseIndustryComponentRuntimeIndex.Instance.Remove(GetComponentIdentifier(industry, component));
+                }
+
+                UnityEngine.Object.DestroyImmediate(component);
+            }
+
+            UnityEngine.Object.DestroyImmediate(industry.gameObject);
             FuseIndustryRuntimeIndex.Instance.Remove(id);
             FuseCreatedIndustryIds.Remove(id);
             FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.Industry, id);

@@ -87,6 +87,116 @@ namespace FUSE.API
             return GetDefinition(GetSceneClone(id));
         }
 
+        /// <summary>
+        /// Re-applies the cached <c>FuseSceneClone.Enabled</c> active state to every scene clone
+        /// in the scene. Called after the game's state snapshot restore so that a saved-state
+        /// reactivation cannot defeat package mandela disables. No-op for clones whose cached
+        /// definition leaves Enabled null.
+        /// </summary>
+        public static int ReapplyEnabledFromCache(string reason)
+        {
+            var reapplied = 0;
+            var enabledForced = 0;
+            var disabledForced = 0;
+            var markers = UnityEngine.Object.FindObjectsOfType<FuseSceneCloneMarker>(true);
+            for (var index = 0; index < markers.Length; index++)
+            {
+                var marker = markers[index];
+                if (marker == null || marker.gameObject == null)
+                {
+                    continue;
+                }
+
+                var id = marker.Id;
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    continue;
+                }
+
+                if (!FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.SceneClone, id, out FuseSceneClone definition) ||
+                    definition?.Enabled == null)
+                {
+                    continue;
+                }
+
+                marker.DesiredEnabled = definition.Enabled;
+                marker.Source = definition.Source;
+                var desired = definition.Enabled.Value;
+                var previous = marker.gameObject.activeSelf;
+                if (previous == desired)
+                {
+                    continue;
+                }
+
+                marker.gameObject.SetActive(desired);
+                LogEnabledReapplyObject(reason, marker, definition, previous, desired);
+                reapplied++;
+                if (desired)
+                {
+                    enabledForced++;
+                }
+                else
+                {
+                    disabledForced++;
+                }
+            }
+
+            if (reapplied > 0)
+            {
+                FuseLog.Info(
+                    $"FUSE scene clone enabled-state reapply for '{reason ?? "snapshot"}' " +
+                    $"reapplied={reapplied} (forcedEnabled={enabledForced}, forcedDisabled={disabledForced}) " +
+                    $"of {markers.Length} marker(s).");
+            }
+
+            return reapplied;
+        }
+
+        private static void LogEnabledReapplyObject(
+            string reason,
+            FuseSceneCloneMarker marker,
+            FuseSceneClone definition,
+            bool previous,
+            bool desired)
+        {
+            var gameObject = marker?.gameObject;
+            var path = gameObject != null ? GetTransformPath(gameObject.transform) : string.Empty;
+            var targetPath = !string.IsNullOrWhiteSpace(marker?.TargetPath)
+                ? marker.TargetPath
+                : (!string.IsNullOrWhiteSpace(definition?.TargetPath) ? definition.TargetPath : path);
+
+            FuseLog.Info(
+                $"FUSE scene clone enabled-state reapply object reason='{reason ?? "snapshot"}' " +
+                $"id='{marker?.Id ?? string.Empty}' target='{targetPath ?? string.Empty}' " +
+                $"path='{path}' source='{definition?.Source ?? string.Empty}' " +
+                $"previousActive='{(previous ? "true" : "false")}' desiredActive='{(desired ? "true" : "false")}'.");
+        }
+
+        /// <summary>
+        /// If <paramref name="gameObject"/> carries a FUSE scene clone marker, returns the FUSE scene clone id
+        /// and the original target path. Used by diagnostics to identify hovered scene clones without
+        /// exposing the private marker component type.
+        /// </summary>
+        public static bool TryGetSceneCloneInfo(GameObject gameObject, out string id, out string targetPath)
+        {
+            id = null;
+            targetPath = null;
+            if (gameObject == null)
+            {
+                return false;
+            }
+
+            var marker = gameObject.GetComponent<FuseSceneCloneMarker>();
+            if (marker == null)
+            {
+                return false;
+            }
+
+            id = marker.Id;
+            targetPath = marker.TargetPath;
+            return true;
+        }
+
         public static FuseSceneClone GetDefinition(GameObject sceneClone)
         {
             if (sceneClone == null)
@@ -166,6 +276,8 @@ namespace FUSE.API
             var marker = targetObject.GetComponent<FuseSceneCloneMarker>() ?? targetObject.AddComponent<FuseSceneCloneMarker>();
             marker.Id = id;
             marker.TargetPath = definition.TargetPath;
+            marker.DesiredEnabled = definition.Enabled;
+            marker.Source = definition.Source;
 
             if (clonedFromSource)
             {
@@ -420,6 +532,31 @@ namespace FUSE.API
         {
             public string Id;
             public string TargetPath;
+            public bool? DesiredEnabled;
+            public string Source;
+            private bool _enforcing;
+
+            private void OnEnable()
+            {
+                if (_enforcing || DesiredEnabled != false || gameObject == null)
+                {
+                    return;
+                }
+
+                _enforcing = true;
+                try
+                {
+                    FuseLog.Info(
+                        $"FUSE scene clone disabled-on-enable guard id='{Id ?? string.Empty}' " +
+                        $"target='{TargetPath ?? string.Empty}' path='{GetTransformPath(transform)}' " +
+                        $"source='{Source ?? string.Empty}' message='object was re-enabled after package disabled it; forcing inactive again'.");
+                    gameObject.SetActive(false);
+                }
+                finally
+                {
+                    _enforcing = false;
+                }
+            }
         }
     }
 }

@@ -109,6 +109,24 @@ namespace FUSE.API
             return UnityEngine.Object.FindObjectsOfType<MapFeature>(true);
         }
 
+        internal static bool TryGetMapFeatureEnabledState(MapFeature feature, out bool enabled)
+        {
+            enabled = false;
+            if (feature == null || string.IsNullOrWhiteSpace(feature.identifier))
+            {
+                return false;
+            }
+
+            var manager = MapFeatureManager.Shared;
+            if (manager == null)
+            {
+                return false;
+            }
+
+            enabled = IsFeatureEnabled(feature, ReadFeatureEnables(manager));
+            return true;
+        }
+
         public static FuseMapFeature GetMapFeatureDefinition(string id)
         {
             return GetDefinition(GetMapFeature(id));

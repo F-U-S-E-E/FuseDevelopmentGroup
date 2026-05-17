@@ -230,6 +230,8 @@ namespace FUSE.Interface
             var builder = new StringBuilder();
             builder.AppendLine("<b>Track Segment</b>");
             builder.Append("id: ").AppendLine(SafeId(segment.id));
+            AppendOwner(builder, segment);
+            AppendSource(builder, segment);
             builder.Append("nodes: ")
                 .Append(SafeId(segment.a != null ? segment.a.id : null))
                 .Append("  ->  ")
@@ -284,6 +286,7 @@ namespace FUSE.Interface
             AppendNodeBlock(builder, "node B", segment.b);
 
             AppendIndustryInfluences(builder, segment);
+            AppendProgressionImpacts(builder, segment);
 
             if (FuseSettings.ShowTrackDebugSpanPaths)
             {
@@ -291,6 +294,48 @@ namespace FUSE.Interface
             }
 
             return builder.ToString().TrimEnd();
+        }
+
+        private static void AppendProgressionImpacts(StringBuilder builder, TrackSegment segment)
+        {
+            if (segment == null || string.IsNullOrWhiteSpace(segment.groupId))
+            {
+                return;
+            }
+
+            List<FuseProgressionImpactLookup.Impact> impacts;
+            try
+            {
+                impacts = FuseProgressionImpactLookup.FindForTrackGroup(segment.groupId);
+            }
+            catch
+            {
+                return;
+            }
+
+            if (impacts == null || impacts.Count == 0)
+            {
+                return;
+            }
+
+            builder.AppendLine();
+            builder.Append("<b>Progressions impacting group '").Append(segment.groupId).Append("'</b> (")
+                .Append(impacts.Count).AppendLine(")");
+            const int MaxToShow = 8;
+            var shown = 0;
+            foreach (var impact in impacts)
+            {
+                if (shown++ >= MaxToShow)
+                {
+                    builder.Append("  + ").Append(impacts.Count - MaxToShow).AppendLine(" more");
+                    break;
+                }
+
+                builder.Append("  - ")
+                    .Append(impact.SourceKind)
+                    .Append(" '").Append(SafeId(impact.SourceId)).Append("'  ")
+                    .AppendLine(impact.Effect);
+            }
         }
 
         private static void AppendNodeBlock(StringBuilder builder, string label, TrackNode node)
@@ -558,6 +603,54 @@ namespace FUSE.Interface
         private static string SafeId(string id)
         {
             return string.IsNullOrWhiteSpace(id) ? "<none>" : id;
+        }
+
+        private static void AppendOwner(StringBuilder builder, TrackSegment segment)
+        {
+            if (segment == null || string.IsNullOrWhiteSpace(segment.id))
+            {
+                return;
+            }
+
+            string owner;
+            try
+            {
+                owner = FUSE.Registry.FuseRegistry.GetExclusiveOwner(FUSE.Registry.FuseClaimKind.Segment, segment.id);
+            }
+            catch
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(owner))
+            {
+                return;
+            }
+
+            builder.Append("owner: ").AppendLine(owner);
+        }
+
+        private static void AppendSource(StringBuilder builder, TrackSegment segment)
+        {
+            if (segment == null || string.IsNullOrWhiteSpace(segment.id))
+            {
+                return;
+            }
+
+            FusePackageSourceLookup.Source source;
+            try
+            {
+                if (!FusePackageSourceLookup.TryGetSource(FusePackageSourceLookup.ItemKind.Segment, segment.id, out source))
+                {
+                    return;
+                }
+            }
+            catch
+            {
+                return;
+            }
+
+            builder.Append("source: ").AppendLine(source.Display);
         }
 
         private void EnsureGuiStyles()
