@@ -5,3 +5,7 @@ obj/
 /_work
 /dist
 /tools/__pycache__/fuse_installer*.pyc
+
+# Release workflow scratch space
+/staging/
+/FUSE-v*.zip
