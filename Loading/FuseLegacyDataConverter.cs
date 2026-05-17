@@ -1372,8 +1372,8 @@ namespace FUSE.Loading
 
             var result = new JObject
             {
-                ["position"] = Vector(item["position"] ?? item["localPosition"], false),
-                ["rotation"] = Vector(item["rotation"] ?? item["localRotation"], false),
+                ["position"] = Vector(item["position"] ?? item["Position"] ?? item["localPosition"] ?? item["LocalPosition"], false),
+                ["rotation"] = Vector(item["rotation"] ?? item["Rotation"] ?? item["localRotation"] ?? item["LocalRotation"], false),
                 ["radius"] = ReadFloat(item["radius"] ?? item["Radius"], 15f),
                 ["subdivisions"] = ReadInt(item["subdivisions"] ?? item["Subdivisions"], 32),
                 ["legacyIdentifier"] = ReadString(item, "legacyIdentifier") ??
