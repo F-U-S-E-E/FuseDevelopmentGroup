@@ -796,6 +796,28 @@ namespace FUSE.Interface
                 });
             AddSettingToggle(
                 builder,
+                "Track Debug Overlay",
+                FuseSettings.ShowTrackDebugOverlay ? "enabled (hover tracks)" : "disabled",
+                FuseSettings.ShowTrackDebugOverlay ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetShowTrackDebugOverlay(!FuseSettings.ShowTrackDebugOverlay);
+                    RebuildWindow();
+                });
+            AddSettingToggle(
+                builder,
+                "Track Span Paths",
+                FuseSettings.ShowTrackDebugSpanPaths
+                    ? (FuseSettings.ShowTrackDebugOverlay ? "shown in overlay" : "shown when overlay on")
+                    : "hidden",
+                FuseSettings.ShowTrackDebugSpanPaths ? "Hide" : "Show",
+                () =>
+                {
+                    FuseSettings.SetShowTrackDebugSpanPaths(!FuseSettings.ShowTrackDebugSpanPaths);
+                    RebuildWindow();
+                });
+            AddSettingToggle(
+                builder,
                 "Early Suppression",
                 FuseSettings.EnableExperimentalEarlyScenePathSuppression ? "enabled" : "disabled",
                 FuseSettings.EnableExperimentalEarlyScenePathSuppression ? "Disable" : "Enable",
