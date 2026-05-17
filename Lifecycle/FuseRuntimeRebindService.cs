@@ -1,6 +1,8 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using FUSE.API;
 using FUSE.Authoring;
 using FUSE.Cache;
 using FUSE.Infrastructure;
@@ -24,12 +26,29 @@ namespace FUSE.Lifecycle
         private static readonly HashSet<string> LoggedUnknownKinds =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object UnknownKindSync = new object();
+        private static FuseRuntimeRebindHost _host;
+        private static bool _deferredSceneCloneReapplyScheduled;
+        private static int _deferredSceneCloneReapplyRequests;
+        private static string _lastDeferredSceneCloneReapplyReason;
 
         public static void ResetUnknownKindLog()
         {
             lock (UnknownKindSync)
             {
                 LoggedUnknownKinds.Clear();
+            }
+        }
+
+        public static void Shutdown()
+        {
+            _deferredSceneCloneReapplyScheduled = false;
+            _deferredSceneCloneReapplyRequests = 0;
+            _lastDeferredSceneCloneReapplyReason = null;
+
+            if (_host != null)
+            {
+                UnityEngine.Object.Destroy(_host.gameObject);
+                _host = null;
             }
         }
 
@@ -77,6 +96,77 @@ namespace FUSE.Lifecycle
                 $"(rebound={rebound}, missing={missing}). No package files reloaded, " +
                 "no world definitions applied, no scenery created or updated, " +
                 "no graph nodes/segments mutated, no SceneryAssetInstance.ReloadComponents calls.");
+
+            ReapplySceneCloneEnabledState(label);
+            ScheduleDeferredSceneCloneEnabledReapply(label);
+        }
+
+        private static void ReapplySceneCloneEnabledState(string label)
+        {
+            try
+            {
+                // FUSE operates at runtime AFTER the base-game managers (OpsController,
+                // MapFeatureManager, ProgressionManager) have already woken and captured
+                // their state. When the game later runs StateManager.PopulateFromRemoteSnapshot
+                // it can re-activate scene clones that a package mandela had disabled,
+                // because the snapshot was captured before FUSE applied. This call
+                // re-asserts each cached FuseSceneClone.Enabled state by toggling only
+                // GameObject.activeSelf; no world objects are created, destroyed, or
+                // otherwise mutated.
+                SceneCloneAPI.ReapplyEnabledFromCache(label);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FUSE snapshot rebind failed to reapply scene clone enabled state for '{label}'.", ex);
+            }
+        }
+
+        private static void ScheduleDeferredSceneCloneEnabledReapply(string reason)
+        {
+            _deferredSceneCloneReapplyRequests++;
+            _lastDeferredSceneCloneReapplyReason = string.IsNullOrWhiteSpace(reason) ? "snapshot" : reason;
+            if (_deferredSceneCloneReapplyScheduled)
+            {
+                return;
+            }
+
+            _deferredSceneCloneReapplyScheduled = true;
+            EnsureHost().StartCoroutine(ReapplySceneCloneEnabledAfterSnapshotFrame());
+        }
+
+        private static IEnumerator ReapplySceneCloneEnabledAfterSnapshotFrame()
+        {
+            yield return null;
+            ReapplySceneCloneEnabledState(BuildDeferredSceneCloneReapplyReason("+1 frame"));
+
+            yield return null;
+            ReapplySceneCloneEnabledState(BuildDeferredSceneCloneReapplyReason("+2 frames"));
+
+            _deferredSceneCloneReapplyScheduled = false;
+            _deferredSceneCloneReapplyRequests = 0;
+            _lastDeferredSceneCloneReapplyReason = null;
+        }
+
+        private static string BuildDeferredSceneCloneReapplyReason(string suffix)
+        {
+            var reason = string.IsNullOrWhiteSpace(_lastDeferredSceneCloneReapplyReason)
+                ? "snapshot restore"
+                : _lastDeferredSceneCloneReapplyReason;
+            return $"{reason} deferred scene-clone reapply {suffix} (requests={_deferredSceneCloneReapplyRequests})";
+        }
+
+        private static FuseRuntimeRebindHost EnsureHost()
+        {
+            if (_host != null)
+            {
+                return _host;
+            }
+
+            var gameObject = new GameObject("FUSE Runtime Rebind");
+            UnityEngine.Object.DontDestroyOnLoad(gameObject);
+            gameObject.hideFlags = HideFlags.HideAndDontSave;
+            _host = gameObject.AddComponent<FuseRuntimeRebindHost>();
+            return _host;
         }
 
         private static bool TryRebindEntityToExistingRuntime(FuseAuthoringEntity entity)
@@ -168,6 +258,10 @@ namespace FUSE.Lifecycle
             }
 
             return false;
+        }
+
+        private sealed class FuseRuntimeRebindHost : MonoBehaviour
+        {
         }
     }
 }
