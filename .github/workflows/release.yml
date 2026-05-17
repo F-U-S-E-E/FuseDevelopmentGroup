@@ -1,0 +1,142 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Parse semantic version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
+            throw "Tag '$tag' must match v<semver>, e.g. v0.10.0 or v1.0.0-rc.1."
+          }
+
+          $version = $Matches.version
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+          # Treat anything in the 0.x series or with a pre-release suffix as a
+          # GitHub pre-release. FUSE is still in beta so 0.10.0 ships as a
+          # pre-release until a 1.0.0 GA tag.
+          if ($version -match '^0\.' -or $version -match '-') {
+            "is_prerelease=true" >> $env:GITHUB_OUTPUT
+          }
+          else {
+            "is_prerelease=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Build FUSE mod (Release)
+        shell: pwsh
+        run: dotnet build FUSE.csproj -c Release -p:ModVersion=${{ steps.version.outputs.version }}
+
+      - name: Package UMM mod zip
+        id: package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $stagingRoot = Join-Path $PWD "staging"
+          $modFolder = Join-Path $stagingRoot "FUSE"
+          $archiveName = "FUSE-v$version.zip"
+          $archivePath = Join-Path $PWD $archiveName
+
+          if (Test-Path $stagingRoot) {
+            Remove-Item $stagingRoot -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Path $modFolder | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $modFolder 'assets') | Out-Null
+
+          # Copy the runtime assembly and its stamped manifest. Source the
+          # manifest from bin so the InjectModVersionIntoInfoJson target's
+          # rewrite is what ships.
+          Copy-Item "bin\Release\net48\FUSE.dll" $modFolder
+          Copy-Item "bin\Release\net48\Info.json" $modFolder
+
+          # Schemas are referenced by FUSE.csproj and copied into bin. We re-copy
+          # from source to avoid picking up any stale files left over in bin
+          # between local dev builds.
+          Copy-Item -Recurse "schemas" $modFolder
+
+          Copy-Item "tools\assets\fuse_converter_icon.png" (Join-Path $modFolder 'assets\fuse_icon.png')
+
+          if (Test-Path $archivePath) {
+            Remove-Item $archivePath -Force
+          }
+
+          Compress-Archive -Path $modFolder -DestinationPath $archivePath -CompressionLevel Optimal
+
+          "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
+          "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
+
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Build FUSE-Converter.exe
+        shell: pwsh
+        run: .\tools\build_converter_exe.ps1
+
+      - name: Build FUSE-Installer.exe
+        shell: pwsh
+        run: .\tools\build_installer_exe.ps1
+
+      - name: Build FUSEConvertFolder.pyz
+        run: python tools/build_folder_converter_pyz.py
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: FUSE v${{ steps.version.outputs.version }}
+          prerelease: ${{ steps.version.outputs.is_prerelease }}
+          generate_release_notes: true
+          files: |
+            ${{ steps.package.outputs.archive_path }}
+            dist/FUSE-Converter.exe
+            dist/FUSE-Installer.exe
+            dist/FUSEConvertFolder.pyz
+
+      # Uploads the same archive to the mod's Nexus Mods page.
+      # Skipped automatically until the repo variable NEXUS_FILE_GROUP_ID is set.
+      # Requires:
+      #   - secret  NEXUSMODS_API_KEY    (https://www.nexusmods.com/settings/api-keys)
+      #   - variable NEXUS_FILE_GROUP_ID (from "API Info" on the mod's Files tab)
+      - name: Upload to Nexus Mods
+        if: ${{ vars.NEXUS_FILE_GROUP_ID != '' }}
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.5
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_group_id: ${{ vars.NEXUS_FILE_GROUP_ID }}
+          filename: ${{ steps.package.outputs.archive_path }}
+          version: ${{ steps.version.outputs.version }}
+          display_name: FUSE v${{ steps.version.outputs.version }}
+          description: |
+            Release v${{ steps.version.outputs.version }}.
+            See the GitHub release for the full changelog: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+          file_category: main
+          archive_existing_file: true

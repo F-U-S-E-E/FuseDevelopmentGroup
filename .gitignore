@@ -8,3 +8,7 @@ Paths.user
 /obj
 obj/project.assets.json
 obj/project.nuget.cache
+
+# Release workflow scratch space
+/staging/
+/FUSE-v*.zip
