@@ -36,14 +36,17 @@ namespace FUSE.Data
         public Vector3 Position { get; set; }
         public Vector3 Rotation { get; set; }
         public bool UsesContract { get; set; }
+        public bool MergeComponents { get; set; }
         public Dictionary<string, FuseIndustryComponent> Components { get; set; } = new Dictionary<string, FuseIndustryComponent>();
     }
 
     public sealed class FuseIndustryComponent
     {
+        public bool Partial { get; set; }
         public string Type { get; set; }
         public string Name { get; set; }
         public string[] TrackSpanIds { get; set; }
+        public FuseStringListPatch TrackSpanPatch { get; set; }
         public string CarTypeFilter { get; set; }
         public string LoadId { get; set; }
         public string ConvertedLoadId { get; set; }
@@ -84,6 +87,16 @@ namespace FUSE.Data
         /// IndustryComponent implementations supplied by separate mods.
         /// </summary>
         public Dictionary<string, object> Fields { get; set; } = new Dictionary<string, object>();
+    }
+
+    public sealed class FuseStringListPatch
+    {
+        public string[] Add { get; set; }
+        public string[] Append { get; set; }
+        public string[] Prepend { get; set; }
+        public string[] Insert { get; set; }
+        public string[] Replace { get; set; }
+        public string[] Remove { get; set; }
     }
 
     public sealed class FuseTeamTrackEntry
