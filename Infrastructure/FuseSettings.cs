@@ -16,6 +16,7 @@ namespace FUSE.Infrastructure
         public const bool DefaultShowAdvancedHealthDetails = false;
         public const bool DefaultShowTrackDebugOverlay = false;
         public const bool DefaultShowTrackDebugSpanPaths = false;
+        public const bool DefaultShowLegacyModsInUmm = true;
         public const float ExperimentalEarlyScenePathSuppressionTimeoutSeconds = 8f;
 
         public static bool EnableExperimentalEarlyScenePathSuppression { get; private set; } =
@@ -36,6 +37,8 @@ namespace FUSE.Infrastructure
 
         public static bool ShowTrackDebugSpanPaths { get; private set; } = DefaultShowTrackDebugSpanPaths;
 
+        public static bool ShowLegacyModsInUmm { get; private set; } = DefaultShowLegacyModsInUmm;
+
         public static void Load(UnityModManager.ModEntry modEntry)
         {
             EnableExperimentalEarlyScenePathSuppression = DefaultEnableExperimentalEarlyScenePathSuppression;
@@ -46,6 +49,7 @@ namespace FUSE.Infrastructure
             ShowAdvancedHealthDetails = DefaultShowAdvancedHealthDetails;
             ShowTrackDebugOverlay = DefaultShowTrackDebugOverlay;
             ShowTrackDebugSpanPaths = DefaultShowTrackDebugSpanPaths;
+            ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
             var infoPath = Path.Combine(modEntry?.Path ?? string.Empty, "Info.json");
@@ -75,6 +79,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "ShowTrackDebugOverlay", DefaultShowTrackDebugOverlay);
                 ShowTrackDebugSpanPaths =
                     ReadBool(settings, "ShowTrackDebugSpanPaths", DefaultShowTrackDebugSpanPaths);
+                ShowLegacyModsInUmm =
+                    ReadBool(settings, "ShowLegacyModsInUmm", DefaultShowLegacyModsInUmm);
                 ApplyUserOverrides();
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -88,6 +94,7 @@ namespace FUSE.Infrastructure
                     $"ShowAdvancedHealthDetails={ShowAdvancedHealthDetails} " +
                     $"ShowTrackDebugOverlay={ShowTrackDebugOverlay} " +
                     $"ShowTrackDebugSpanPaths={ShowTrackDebugSpanPaths} " +
+                    $"ShowLegacyModsInUmm={ShowLegacyModsInUmm} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
             catch (Exception ex)
@@ -100,6 +107,7 @@ namespace FUSE.Infrastructure
                 ShowAdvancedHealthDetails = DefaultShowAdvancedHealthDetails;
                 ShowTrackDebugOverlay = DefaultShowTrackDebugOverlay;
                 ShowTrackDebugSpanPaths = DefaultShowTrackDebugSpanPaths;
+                ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Warning($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled: {ex.Message}");
             }
@@ -199,6 +207,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(ShowTrackDebugOverlay), ShowTrackDebugOverlay);
                 ShowTrackDebugSpanPaths =
                     ReadBool(settings, nameof(ShowTrackDebugSpanPaths), ShowTrackDebugSpanPaths);
+                ShowLegacyModsInUmm =
+                    ReadBool(settings, nameof(ShowLegacyModsInUmm), ShowLegacyModsInUmm);
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
             }
             catch (Exception ex)
