@@ -1,0 +1,17 @@
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)Paths.user" Condition="Exists('$(MSBuildThisFileDirectory)Paths.user')" />
+
+  <PropertyGroup>
+    <RefAssemblyDir Condition="'$(RefAssemblyDir)' == ''">$(MSBuildThisFileDirectory)lib\refs</RefAssemblyDir>
+    <ModVersion Condition="'$(ModVersion)' == ''">0.0.0</ModVersion>
+
+    <!--
+      When neither GameDir nor UnityManagedDir is configured (e.g. CI runners or
+      contributors without Railroader installed), fall back to the checked-in
+      reference assemblies under lib/refs so the build still resolves Unity and
+      Railroader types.
+    -->
+    <UnityManagedDir Condition="'$(UnityManagedDir)' == '' and '$(GameDir)' == '' and Exists('$(RefAssemblyDir)')">$(RefAssemblyDir)</UnityManagedDir>
+    <UnityModManagerDir Condition="'$(UnityModManagerDir)' == '' and '$(GameDir)' == '' and Exists('$(RefAssemblyDir)')">$(RefAssemblyDir)</UnityModManagerDir>
+  </PropertyGroup>
+</Project>
