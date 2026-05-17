@@ -1,13 +1,10 @@
 Paths.user
-/obj
+bin/
+obj/
 /.vs
 /_work
-/dist/FUSE-Installer.exe
-/dist/FUSE-Debug*.zip
+/dist
 /tools/__pycache__/fuse_installer*.pyc
-/obj
-obj/project.assets.json
-obj/project.nuget.cache
 
 # Release workflow scratch space
 /staging/
