@@ -1,0 +1,21 @@
+<Project>
+  <PropertyGroup>
+    <ModVersionCore>$([System.Text.RegularExpressions.Regex]::Match('$(ModVersion)', '^[0-9]+\.[0-9]+\.[0-9]+').Value)</ModVersionCore>
+    <ModVersionCore Condition="'$(ModVersionCore)' == ''">0.0.0</ModVersionCore>
+    <Version>$(ModVersion)</Version>
+    <AssemblyVersion>$(ModVersionCore).0</AssemblyVersion>
+    <FileVersion>$(ModVersionCore).0</FileVersion>
+    <ProductVersion>$(ModVersion)</ProductVersion>
+    <InformationalVersion>$(ModVersion)</InformationalVersion>
+  </PropertyGroup>
+
+  <!--
+    Stamp the build-deployed Info.json with the real ModVersion. The source
+    Info.json keeps a sentinel "0.0.0" placeholder so debug builds without
+    -p:ModVersion=... stay obviously unversioned. The CI/release workflow passes
+    -p:ModVersion=<semver from tag> so the artifact carries the right version.
+  -->
+  <Target Name="InjectModVersionIntoInfoJson" AfterTargets="AfterBuild" Condition="'$(ModVersion)' != '0.0.0'">
+    <Exec Command="powershell -NoProfile -Command &quot;$f = '$(TargetDir)Info.json'; if (Test-Path $f) { (Get-Content $f -Raw) -replace '0\.0\.0', '$(ModVersionCore)' | Set-Content $f -NoNewline }&quot;" />
+  </Target>
+</Project>
