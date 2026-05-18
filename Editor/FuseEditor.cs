@@ -1,6 +1,9 @@
-﻿using GalaSoft.MvvmLight.Messaging;
+﻿using FUSE.Infrastructure;
+using FUSE.Loading;
+using GalaSoft.MvvmLight.Messaging;
 using Game.Events;
-﻿using System;
+using JetBrains.Annotations;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -17,6 +20,11 @@ namespace FUSE.Editor
         static DefinitionEditorModeController _cachedObject;
 
         MainEditorWindow mainEditor;
+
+        [CanBeNull]
+        public FuseLoadedMod ActiveMod { get; private set; } = null;
+
+        public bool ModSelected => ActiveMod != null;
 
         public static FuseEditor Instance
         {
@@ -82,6 +90,18 @@ namespace FUSE.Editor
             }
 
             _cachedObject = null;
+        }
+
+        public void SetActiveMod(FuseLoadedMod mod)
+        {
+            if (FuseModLoader.IsApplied(mod.Definition.Id))
+            {
+                ActiveMod = mod;
+            }
+            else
+            {
+                FuseLog.Info($"Unable to edit mod: {mod.Definition.Id}, mod is not loaded");
+            }
         }
     }
 }
