@@ -165,7 +165,9 @@ namespace FUSE.Loading
             var sourceFiles = EnumerateLegacySourceFiles(folderPath, definition)
                 .Where(LooksLikeLegacyDataSource)
                 .ToArray();
-            if (sourceFiles.Length == 0)
+            var mapTileSources = EnumerateLegacyMapTileSources(folderPath)
+                .ToArray();
+            if (sourceFiles.Length == 0 && mapTileSources.Length == 0)
             {
                 return false;
             }
@@ -186,7 +188,8 @@ namespace FUSE.Loading
                 Version = ReadString(definition, "version", "Version") ?? string.Empty,
                 Author = ReadString(definition, "author", "Author") ?? string.Empty,
                 LoadAfter = ReadLegacyDependencyIds(definition),
-                SourceFiles = sourceFiles
+                SourceFiles = sourceFiles,
+                MapTileSources = mapTileSources
             };
             return true;
         }
@@ -201,6 +204,27 @@ namespace FUSE.Loading
             var mixintos = ReadMixintoMetadata(folderPath);
             var loadedDefinitions = new List<FuseLoadedMod>();
             var usedFragments = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (manifest.MapTileSources != null && manifest.MapTileSources.Length > 0)
+            {
+                var root = CreateSkeleton(manifest, "map-tiles");
+                var mapTiles = (JObject)root["world"]["mapTiles"];
+                foreach (var source in manifest.MapTileSources)
+                {
+                    mapTiles[source.Id] = CleanObject(new JObject
+                    {
+                        ["directory"] = source.Directory,
+                        ["sourceFolder"] = source.SourceFolder,
+                        ["priority"] = source.Priority
+                    });
+                }
+
+                var definition = FuseSerializer.FromJson(root.ToString(Formatting.None));
+                var definitionPath = "legacy://map-tiles";
+                FuseModLoader.LoadDefinition(definition, folderPath, definitionPath);
+                loadedDefinitions.Add(new FuseLoadedMod(folderPath, definitionPath, definition));
+                usedFragments.Add("map-tiles");
+            }
+
             foreach (var sourceFile in SortSourceFiles(manifest.SourceFiles, mixintos, folderPath))
             {
                 var fragment = UniqueFragment(Slug(Path.GetFileNameWithoutExtension(sourceFile)), usedFragments);
@@ -270,6 +294,46 @@ namespace FUSE.Loading
                 if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
                 {
                     yield return path;
+                }
+            }
+        }
+
+        private static IEnumerable<FuseLegacyMapTileSource> EnumerateLegacyMapTileSources(string folderPath)
+        {
+            foreach (var mapsRootName in new[] { "Maps", "MapTiles" })
+            {
+                var mapsRoot = Path.Combine(folderPath, mapsRootName);
+                if (!Directory.Exists(mapsRoot))
+                {
+                    continue;
+                }
+
+                foreach (var directory in Directory.GetDirectories(mapsRoot).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+                {
+                    string[] tileFiles;
+                    try
+                    {
+                        tileFiles = Directory.GetFiles(directory, "tile_*_*.data", SearchOption.TopDirectoryOnly);
+                    }
+                    catch (Exception ex)
+                    {
+                        FuseLog.Warning($"FUSE skipped legacy map tile folder '{directory}' because it could not be enumerated: {ex.Message}");
+                        continue;
+                    }
+
+                    if (tileFiles.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    var directoryName = Path.GetFileName(directory);
+                    yield return new FuseLegacyMapTileSource
+                    {
+                        Id = Slug(mapsRootName + "-" + directoryName),
+                        Directory = directoryName,
+                        SourceFolder = NormalizePackagePath(Path.Combine(mapsRootName, directoryName)),
+                        Priority = 100
+                    };
                 }
             }
         }
@@ -591,6 +655,7 @@ namespace FUSE.Loading
                     ["mapMasks"] = new JObject(),
                     ["mapTiles"] = new JObject(),
                     ["sceneClones"] = new JObject(),
+                    ["suppressBaseScenePaths"] = new JArray(),
                     ["removals"] = new JObject
                     {
                         ["scenery"] = new JArray(),
@@ -679,7 +744,8 @@ namespace FUSE.Loading
             }
             ConvertDictionary(source["scenery"], root["world"]["scenery"] as JObject, root["world"]["removals"]["scenery"] as JArray, ConvertScenery);
             ConvertSplineys(source["splineys"] as JObject, root);
-            ConvertDictionary(source["mandelas"], root["world"]["sceneClones"] as JObject, root["world"]["removals"]["sceneClones"] as JArray, ConvertSceneClone);
+            ConvertMandelas(source["mandelas"] as JObject, root);
+            ApplyAspenCrazyMapWhittierCompatibility(source, root, manifest);
             var texts = source["texts"] as JObject;
             if (texts != null)
             {
@@ -736,6 +802,233 @@ namespace FUSE.Loading
                     target[property.Name] = Clean(converted);
                 }
             }
+        }
+
+        private static void ConvertMandelas(JObject source, JObject root)
+        {
+            if (source == null || root == null)
+            {
+                return;
+            }
+
+            var world = root["world"] as JObject;
+            var sceneClones = world?["sceneClones"] as JObject;
+            var removals = world?["removals"]?["sceneClones"] as JArray;
+            var suppressions = world?["suppressBaseScenePaths"] as JArray;
+            if (world == null || sceneClones == null)
+            {
+                return;
+            }
+
+            foreach (var property in source.Properties())
+            {
+                if (property.Value.Type == JTokenType.Null)
+                {
+                    removals?.Add(property.Name);
+                    continue;
+                }
+
+                var item = property.Value as JObject;
+                if (TryConvertMandelaSuppression(property.Name, item, suppressions))
+                {
+                    continue;
+                }
+
+                var converted = ConvertSceneClone(property.Name, property.Value);
+                if (converted != null)
+                {
+                    sceneClones[property.Name] = Clean(converted);
+                }
+            }
+        }
+
+        private static bool TryConvertMandelaSuppression(string id, JObject item, JArray suppressions)
+        {
+            if (item == null || suppressions == null || !HasAnyProperty(item, "enabled"))
+            {
+                return false;
+            }
+
+            if (ReadBool(item, "enabled", true))
+            {
+                return false;
+            }
+
+            var source = ReadString(item, "source", "instantiateFrom");
+            if (!string.IsNullOrWhiteSpace(source))
+            {
+                return false;
+            }
+
+            var path = ReadString(item, "targetPath") ?? id;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            AddUniqueString(suppressions, path);
+            return true;
+        }
+
+        private static void ApplyAspenCrazyMapWhittierCompatibility(JObject source, JObject root, FuseLegacyPackageManifest manifest)
+        {
+            if (source == null || root == null || manifest == null ||
+                !string.Equals(manifest.LegacyId, "zz_aspenscrazymap", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (!HasSceneryAsset(source, "aspen-whittier-depot") ||
+                !HasTrackSpan(root, "Pygg") ||
+                !HasTrackSpan(root, "Pbfx"))
+            {
+                return;
+            }
+
+            var industries = root["operations"]?["industries"] as JObject;
+            if (industries == null || industries["whittier-passenger-stop"] != null ||
+                HasPassengerStopId(industries, "whittier"))
+            {
+                return;
+            }
+
+            var position = TryGetLocalPositionForScenery(source, root, "aspen-whittier-depot", "whittier") ??
+                           new JObject
+                           {
+                               ["x"] = -42.5,
+                               ["y"] = 1.5,
+                               ["z"] = 52.1
+                           };
+
+            industries["whittier-passenger-stop"] = CleanObject(new JObject
+            {
+                ["name"] = "Whittier",
+                ["areaId"] = "whittier",
+                ["position"] = position,
+                ["usesContract"] = false,
+                ["mergeComponents"] = true,
+                ["components"] = new JObject
+                {
+                    ["passenger"] = new JObject
+                    {
+                        ["type"] = FuseIndustryComponentTypes.PassengerStop,
+                        ["name"] = "Whittier",
+                        ["trackSpanIds"] = new JArray("Pygg", "Pbfx"),
+                        ["loadId"] = "passengers",
+                        ["passengerStopId"] = "whittier",
+                        ["timetableCode"] = "WH",
+                        ["basePopulation"] = 40,
+                        ["neighborIds"] = new JArray("ela"),
+                        ["branch"] = "Main"
+                    }
+                }
+            });
+        }
+
+        private static bool HasTrackSpan(JObject root, string spanId)
+        {
+            return !string.IsNullOrWhiteSpace(spanId) &&
+                   root?["tracks"]?["spans"]?[spanId] is JObject;
+        }
+
+        private static bool HasSceneryAsset(JObject source, string assetIdentifier)
+        {
+            var scenery = source?["scenery"] as JObject;
+            if (scenery == null || string.IsNullOrWhiteSpace(assetIdentifier))
+            {
+                return false;
+            }
+
+            return scenery.Properties().Any(property =>
+                property.Value is JObject item &&
+                string.Equals(ReadString(item, "assetIdentifier", "modelIdentifier", "definitionIdentifier", "model"), assetIdentifier, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool HasPassengerStopId(JObject industries, string passengerStopId)
+        {
+            if (industries == null || string.IsNullOrWhiteSpace(passengerStopId))
+            {
+                return false;
+            }
+
+            foreach (var industry in industries.Properties().Select(property => property.Value as JObject).Where(item => item != null))
+            {
+                var components = industry["components"] as JObject;
+                if (components == null)
+                {
+                    continue;
+                }
+
+                foreach (var component in components.Properties().Select(property => property.Value as JObject).Where(item => item != null))
+                {
+                    if (string.Equals(ReadString(component, "passengerStopId", "passengerStop"), passengerStopId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static JObject TryGetLocalPositionForScenery(JObject source, JObject root, string assetIdentifier, string areaId)
+        {
+            var scenery = source?["scenery"] as JObject;
+            var areas = root?["tracks"]?["areas"] as JObject;
+            var area = areas?[areaId] as JObject;
+            if (scenery == null || area == null)
+            {
+                return null;
+            }
+
+            var areaPosition = area["position"] as JObject;
+            if (!TryReadVector(areaPosition, out var areaX, out var areaY, out var areaZ))
+            {
+                return null;
+            }
+
+            if (Math.Abs(areaX) < 0.001 && Math.Abs(areaY) < 0.001 && Math.Abs(areaZ) < 0.001)
+            {
+                return null;
+            }
+
+            foreach (var item in scenery.Properties().Select(property => property.Value as JObject).Where(item => item != null))
+            {
+                if (!string.Equals(ReadString(item, "assetIdentifier", "modelIdentifier", "definitionIdentifier", "model"), assetIdentifier, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!TryReadVector(item["position"] as JObject, out var x, out var y, out var z))
+                {
+                    continue;
+                }
+
+                return new JObject
+                {
+                    ["x"] = x - areaX,
+                    ["y"] = y - areaY,
+                    ["z"] = z - areaZ
+                };
+            }
+
+            return null;
+        }
+
+        private static bool TryReadVector(JObject item, out double x, out double y, out double z)
+        {
+            x = 0;
+            y = 0;
+            z = 0;
+            if (item == null)
+            {
+                return false;
+            }
+
+            x = ReadFloat(item["x"], float.NaN);
+            y = ReadFloat(item["y"], float.NaN);
+            z = ReadFloat(item["z"], float.NaN);
+            return !double.IsNaN(x) && !double.IsNaN(y) && !double.IsNaN(z);
         }
 
         private static JToken ConvertNode(JToken token)
@@ -1377,7 +1670,7 @@ namespace FUSE.Loading
                 ["radius"] = ReadFloat(item["radius"] ?? item["Radius"], 15f),
                 ["subdivisions"] = ReadInt(item["subdivisions"] ?? item["Subdivisions"], 32),
                 ["legacyIdentifier"] = ReadString(item, "legacyIdentifier") ??
-                                       (IsTurntableHandler(ReadString(item, "handler")) ? id : null)
+                                       (IsTurntableHandler(ReadHandler(item)) ? id : null)
             };
 
             var roundhouse = item["roundhouse"] as JObject;
@@ -1454,7 +1747,7 @@ namespace FUSE.Loading
                     continue;
                 }
 
-                var handler = ReadString(item, "handler") ?? string.Empty;
+                var handler = ReadHandler(item);
                 if (IsTurntableHandler(handler))
                 {
                     ((JObject)root["operations"]["turntables"])[property.Name] = ConvertTurntable(property.Name, item);
@@ -1502,6 +1795,11 @@ namespace FUSE.Loading
         private static bool IsDkwSplineyHandler(string handler)
         {
             return string.Equals(handler, DkwSplineyHandler, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ReadHandler(JObject item)
+        {
+            return ReadString(item, "handler", "Handler") ?? string.Empty;
         }
 
         private static bool ConvertDkwSpliney(string id, JObject item, JObject root)
@@ -1606,7 +1904,7 @@ namespace FUSE.Loading
 
         private static JToken ConvertSpliney(JObject item)
         {
-            var handler = ReadString(item, "handler") ?? string.Empty;
+            var handler = ReadHandler(item);
             var offsetY = item["offsetY"] ?? item["offsety"];
             if (offsetY == null && string.Equals(handler, "StrangeCustoms.FlowyThingBuilder", StringComparison.OrdinalIgnoreCase))
             {
@@ -1659,10 +1957,10 @@ namespace FUSE.Loading
         {
             return CleanObject(new JObject
             {
-                ["position"] = Vector(item["position"] ?? item["localPosition"], false),
-                ["rotation"] = Vector(item["rotation"] ?? item["localRotation"], false),
-                ["prefab"] = ReadString(item, "prefab") ?? "empty://",
-                ["industryId"] = ReadString(item, "industry")
+                ["position"] = Vector(item["position"] ?? item["Position"] ?? item["localPosition"] ?? item["LocalPosition"], false),
+                ["rotation"] = Vector(item["rotation"] ?? item["Rotation"] ?? item["localRotation"] ?? item["LocalRotation"], false),
+                ["prefab"] = ReadString(item, "prefab", "Prefab") ?? "empty://",
+                ["industryId"] = ReadString(item, "industry", "Industry")
             });
         }
 
@@ -1670,10 +1968,10 @@ namespace FUSE.Loading
         {
             return CleanObject(new JObject
             {
-                ["position"] = Vector(item["position"] ?? item["localPosition"], false),
-                ["rotation"] = Vector(item["rotation"] ?? item["localRotation"], false),
-                ["prefab"] = ReadString(item, "prefab") ?? "empty://",
-                ["passengerStopId"] = ReadString(item, "passengerStop")
+                ["position"] = Vector(item["position"] ?? item["Position"] ?? item["localPosition"] ?? item["LocalPosition"], false),
+                ["rotation"] = Vector(item["rotation"] ?? item["Rotation"] ?? item["localRotation"] ?? item["LocalRotation"], false),
+                ["prefab"] = ReadString(item, "prefab", "Prefab") ?? "empty://",
+                ["passengerStopId"] = ReadString(item, "passengerStop", "PassengerStop")
             });
         }
 
@@ -1711,15 +2009,29 @@ namespace FUSE.Loading
                 source = "path://scene/" + source;
             }
 
-            return CleanObject(new JObject
+            var result = new JObject
             {
                 ["targetPath"] = ReadString(item, "targetPath") ?? id,
                 ["source"] = source,
-                ["enabled"] = Clone(item["enabled"]),
-                ["localPosition"] = Vector(item["localPosition"] ?? item["position"], false),
-                ["localRotation"] = Vector(item["localRotation"] ?? item["rotation"], false),
-                ["localScale"] = Vector(item["localScale"] ?? item["scale"], true)
-            });
+                ["enabled"] = Clone(item["enabled"])
+            };
+
+            if (HasAnyProperty(item, "localPosition", "position"))
+            {
+                result["localPosition"] = Vector(item["localPosition"] ?? item["position"], false);
+            }
+
+            if (HasAnyProperty(item, "localRotation", "rotation"))
+            {
+                result["localRotation"] = Vector(item["localRotation"] ?? item["rotation"], false);
+            }
+
+            if (HasAnyProperty(item, "localScale", "scale"))
+            {
+                result["localScale"] = Vector(item["localScale"] ?? item["scale"], true);
+            }
+
+            return CleanObject(result);
         }
 
         private static JToken ConvertLabel(string id, JObject item)
@@ -2510,9 +2822,11 @@ namespace FUSE.Loading
                     return NormalizePackagePath(fullPath.Substring(fullFolder.Length + 1));
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Fall back to the provided path below.
+                FuseLog.Warning(
+                    $"FUSE could not normalize package-relative path '{path ?? string.Empty}' " +
+                    $"against folder '{folderPath ?? string.Empty}'; using the provided path. Reason: {ex.Message}");
             }
 
             return NormalizePackagePath(path);
@@ -2607,6 +2921,21 @@ namespace FUSE.Loading
         private static JToken Clone(JToken value)
         {
             return value == null || value.Type == JTokenType.Null ? null : value.DeepClone();
+        }
+
+        private static void AddUniqueString(JArray array, string value)
+        {
+            if (array == null || string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            if (array.Values<string>().Any(existing => string.Equals(existing, value, StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+
+            array.Add(value);
         }
 
         private static string ReadString(JObject obj, params string[] names)
@@ -2728,6 +3057,15 @@ namespace FUSE.Loading
         public string Author { get; set; }
         public string[] LoadAfter { get; set; } = Array.Empty<string>();
         public string[] SourceFiles { get; set; } = Array.Empty<string>();
+        public FuseLegacyMapTileSource[] MapTileSources { get; set; } = Array.Empty<FuseLegacyMapTileSource>();
+    }
+
+    internal sealed class FuseLegacyMapTileSource
+    {
+        public string Id { get; set; }
+        public string Directory { get; set; }
+        public string SourceFolder { get; set; }
+        public int Priority { get; set; }
     }
 
     internal readonly struct LegacyVector
