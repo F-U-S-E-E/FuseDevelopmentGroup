@@ -168,4 +168,74 @@ namespace StrangeCustoms.Tracks
             GroupId = trackSegment.groupId;
         }
     }
+
+    /// <summary>
+    /// Which end of a TrackSegment a SerializedLocation is anchored at.
+    /// </summary>
+    public enum SerializedSegmentEnd
+    {
+        Start,
+        End
+    }
+
+    /// <summary>
+    /// Pointer into the track graph at a specific distance from a segment end.
+    /// Referenced by SignalsEverywhere's SerializedCTCSignal.Location field.
+    /// </summary>
+    public class SerializedLocation
+    {
+        public string SegmentId { get; set; }
+        public float Distance { get; set; }
+        public SerializedSegmentEnd End { get; set; }
+
+        public SerializedLocation()
+        {
+        }
+    }
+
+    /// <summary>
+    /// A track span defined by Upper and Lower SerializedLocations. Referenced
+    /// from SignalsEverywhere's SerializedCTCBlock.Spans collection.
+    /// </summary>
+    public class SerializedSpan
+    {
+        public SerializedLocation Upper { get; set; }
+        public SerializedLocation Lower { get; set; }
+        public bool Normalize { get; set; }
+
+        public SerializedSpan()
+        {
+        }
+    }
+
+    /// <summary>
+    /// Legacy industry-component definition shape. The original carries many
+    /// more fields and SC-internal apply/validate methods that hook the game's
+    /// IndustryComponent hierarchy; this facade declares only the public
+    /// surface that downstream plugins (InterchangedIndustryUnloader's Harmony
+    /// patches on .ctor and ApplyTo) need to bind against. Apply behavior is
+    /// FUSE's responsibility — see FuseLegacyDataConverter for how component
+    /// definitions are routed through native FUSE types.
+    /// </summary>
+    public class SerializedComponent
+    {
+        public string Type { get; set; }
+        public string Name { get; set; }
+        public string[] TrackSpans { get; set; }
+        public string CarTypeFilter { get; set; }
+        public bool SharedStorage { get; set; } = true;
+        public string LoadId { get; set; }
+        public float? StorageChangeRate { get; set; }
+        public float? MaxStorage { get; set; }
+        public bool? OrderAroundEmpties { get; set; }
+        public float? CarTransferRate { get; set; }
+        public bool? OrderAroundLoaded { get; set; }
+        public float? CarLoadPeriod { get; set; }
+        public float? CarLengthFeet { get; set; }
+        public bool? CanOverhaul { get; set; }
+
+        public SerializedComponent()
+        {
+        }
+    }
 }

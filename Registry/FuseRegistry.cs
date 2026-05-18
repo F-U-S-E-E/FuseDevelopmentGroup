@@ -23,11 +23,6 @@ namespace FUSE.Registry
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, HashSet<string>> SharedOwners =
             new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-        // Mergeable kinds: track every contributor that ever claimed a (kind, id) so we
-        // know when a TryClaim is a secondary merge — even if the primary is later released
-        // or re-claimed. Includes the primary owner.
-        private static readonly Dictionary<string, HashSet<string>> MergeableContributors =
-            new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         private static readonly List<FuseRegistryConflict> ConflictHistory =
             new List<FuseRegistryConflict>();
 
@@ -97,29 +92,6 @@ namespace FUSE.Registry
                     return true;
                 }
 
-                if (FuseClaimKindPolicy.IsMergeable(kind))
-                {
-                    if (!MergeableContributors.TryGetValue(key, out var contributors))
-                    {
-                        contributors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        MergeableContributors[key] = contributors;
-                    }
-
-                    if (ExclusiveOwners.TryGetValue(key, out var primary))
-                    {
-                        contributors.Add(packageId);
-                        if (!string.Equals(primary, packageId, StringComparison.OrdinalIgnoreCase))
-                        {
-                            existingOwner = primary;
-                        }
-                        return true;
-                    }
-
-                    ExclusiveOwners[key] = packageId;
-                    contributors.Add(packageId);
-                    return true;
-                }
-
                 if (ExclusiveOwners.TryGetValue(key, out var owner))
                 {
                     if (string.Equals(owner, packageId, StringComparison.OrdinalIgnoreCase))
@@ -138,26 +110,6 @@ namespace FUSE.Registry
 
                 ExclusiveOwners[key] = packageId;
                 return true;
-            }
-        }
-
-        public static bool IsMergeableSecondary(FuseClaimKind kind, string id, string packageId)
-        {
-            if (string.IsNullOrWhiteSpace(id) ||
-                string.IsNullOrWhiteSpace(packageId) ||
-                !FuseClaimKindPolicy.IsMergeable(kind))
-            {
-                return false;
-            }
-
-            lock (Sync)
-            {
-                if (!ExclusiveOwners.TryGetValue(MakeKey(kind, id), out var primary))
-                {
-                    return false;
-                }
-
-                return !string.Equals(primary, packageId, StringComparison.OrdinalIgnoreCase);
             }
         }
 
@@ -184,36 +136,6 @@ namespace FUSE.Registry
                     }
 
                     return true;
-                }
-
-                if (FuseClaimKindPolicy.IsMergeable(kind))
-                {
-                    var released = false;
-                    if (MergeableContributors.TryGetValue(key, out var contributors) &&
-                        contributors.Remove(packageId))
-                    {
-                        released = true;
-                        if (contributors.Count == 0)
-                        {
-                            MergeableContributors.Remove(key);
-                        }
-                    }
-
-                    if (ExclusiveOwners.TryGetValue(key, out var primary) &&
-                        string.Equals(primary, packageId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        // Hand the primary slot to any remaining contributor so subsequent
-                        // releases or claims keep working coherently.
-                        ExclusiveOwners.Remove(key);
-                        if (contributors != null && contributors.Count > 0)
-                        {
-                            ExclusiveOwners[key] = contributors.First();
-                        }
-
-                        released = true;
-                    }
-
-                    return released;
                 }
 
                 if (!ExclusiveOwners.TryGetValue(key, out var owner) ||
@@ -263,28 +185,6 @@ namespace FUSE.Registry
                 foreach (var key in emptyShared)
                 {
                     SharedOwners.Remove(key);
-                }
-
-                var emptyMergeable = new List<string>();
-                foreach (var kvp in MergeableContributors)
-                {
-                    if (kvp.Value.Remove(packageId))
-                    {
-                        released++;
-                        if (kvp.Value.Count == 0)
-                        {
-                            emptyMergeable.Add(kvp.Key);
-                        }
-                        else if (!ExclusiveOwners.ContainsKey(kvp.Key))
-                        {
-                            ExclusiveOwners[kvp.Key] = kvp.Value.First();
-                        }
-                    }
-                }
-
-                foreach (var key in emptyMergeable)
-                {
-                    MergeableContributors.Remove(key);
                 }
             }
 
@@ -349,24 +249,6 @@ namespace FUSE.Registry
                     }
                 }
 
-                foreach (var kvp in MergeableContributors)
-                {
-                    if (!kvp.Value.Contains(packageId) || !TryParseKey(kvp.Key, out var kind, out var id))
-                    {
-                        continue;
-                    }
-
-                    // Primary owner already covered by ExclusiveOwners loop above; only
-                    // add an entry here if this package is a secondary contributor.
-                    if (ExclusiveOwners.TryGetValue(kvp.Key, out var primary) &&
-                        string.Equals(primary, packageId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    result.Add(new KeyValuePair<FuseClaimKind, string>(kind, id));
-                }
-
                 return result;
             }
         }
@@ -402,7 +284,6 @@ namespace FUSE.Registry
             {
                 ExclusiveOwners.Clear();
                 SharedOwners.Clear();
-                MergeableContributors.Clear();
                 ConflictHistory.Clear();
             }
         }
