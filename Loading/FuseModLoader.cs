@@ -2792,16 +2792,27 @@ namespace FUSE.Loading
                         continue;
                     }
 
+                    var industryDefinition = industry.Value;
+                    if (industryDefinition != null &&
+                        FuseRegistry.IsMergeableSecondary(FuseClaimKind.Industry, industry.Key, definition.Id))
+                    {
+                        // A previous package owns this industry; this is a layered mixinto-style
+                        // patch. Force component merge so we don't wipe the primary's components,
+                        // and skip the position/area/usesContract overwrites that the patch
+                        // generally does not intend to redefine.
+                        industryDefinition.MergeComponents = true;
+                    }
+
                     var exists = IndustryAPI.GetIndustry(industry.Key) != null;
                     if (transaction.TryApply("industry", industry.Key, exists, () =>
                     {
                         if (exists)
                         {
-                            IndustryAPI.UpdateIndustry(industry.Key, industry.Value, false);
+                            IndustryAPI.UpdateIndustry(industry.Key, industryDefinition, false);
                         }
                         else
                         {
-                            IndustryAPI.AddIndustry(industry.Key, industry.Value, false);
+                            IndustryAPI.AddIndustry(industry.Key, industryDefinition, false);
                         }
                     }))
                     {
