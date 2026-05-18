@@ -702,6 +702,10 @@ namespace FUSE.Loading
             {
                 TrackAPI.EndBatch(false);
             }
+
+            TrackAPI.RemoveInvalidTrackSpans("staged graph apply after final spans");
+            TrackAPI.ScrubCtcSignalReferences("staged graph apply after final spans");
+            IndustryAPI.ScrubIndustryComponentCaches("staged graph apply after final spans");
         }
 
         private static string FormatMergedGraphRebuildFailure(FuseApplyReport report)
@@ -816,12 +820,25 @@ namespace FUSE.Loading
             var endNode = TrackAPI.GetNode(segmentValue.EndNodeId);
             if (startNode == null || endNode == null)
             {
+                var missingEndpoints = new List<string>();
+                if (startNode == null)
+                {
+                    missingEndpoints.Add($"start='{segmentValue.StartNodeId ?? string.Empty}'");
+                }
+
+                if (endNode == null)
+                {
+                    missingEndpoints.Add($"end='{segmentValue.EndNodeId ?? string.Empty}'");
+                }
+
                 FuseLog.Warning(
-                    $"FUSE apply pre-check package='{definition.Id}' operation='apply-merged-segments' " +
+                    $"FUSE skipped track segment package='{definition.Id}' operation='apply-merged-segments' " +
                     $"kind='track segment' id='{entry.Id}' " +
                     $"start='{segmentValue.StartNodeId ?? string.Empty}' startExists={startNode != null} " +
                     $"end='{segmentValue.EndNodeId ?? string.Empty}' endExists={endNode != null} " +
-                    "message='node reference not bound in merged final graph; AddSegment may fail per-segment'.");
+                    "message='node reference not bound in merged final graph; segment skipped instead of faulting package'.");
+                transaction.Skipped("track segment", entry.Id, $"missing endpoint(s): {string.Join(", ", missingEndpoints)}");
+                return;
             }
 
             transaction.TryApply("track segment", entry.Id, exists, () =>
@@ -2850,6 +2867,15 @@ namespace FUSE.Loading
                 {
                     if (!SceneryAPI.TryResolveAssetIdentifier(scenery.Key, scenery.Value, out _))
                     {
+                        if (SceneryAPI.IsKnownOptionalLegacyAssetReference(scenery.Value))
+                        {
+                            FuseLog.Info(
+                                $"FUSE skipped optional legacy scenery '{scenery.Key}' in package '{definition.Id}' " +
+                                $"because asset '{scenery.Value?.AssetIdentifier ?? scenery.Value?.Model ?? string.Empty}' is not installed.");
+                            transaction.Skipped("scenery", scenery.Key, "optional legacy asset unavailable");
+                            continue;
+                        }
+
                         FuseLog.Warning(
                             $"FUSE skipping scenery '{scenery.Key}' in package '{definition.Id}': " +
                             $"AssetIdentifier='{scenery.Value?.AssetIdentifier ?? string.Empty}', " +

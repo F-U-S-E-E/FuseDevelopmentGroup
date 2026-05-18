@@ -839,7 +839,7 @@ namespace FUSE.Validation
 
                 if (phase.Cost < 0)
                 {
-                    result.AddError($"{phasePath}.cost", "Delivery phase cost must be greater than or equal to 0.", "fuse.progression.deliveryPhase.cost", phase.Cost);
+                    result.AddWarning($"{phasePath}.cost", "Delivery phase cost is negative; FUSE keeps this legacy value because some route mods use negative costs as progression credits.", "fuse.progression.deliveryPhase.cost.legacyNegative", phase.Cost);
                 }
 
                 var deliveries = phase.Deliveries;

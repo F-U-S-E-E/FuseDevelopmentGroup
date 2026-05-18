@@ -18,6 +18,16 @@ namespace FUSE.Loading
             new Dictionary<string, HostedLegacyPlugin>(StringComparer.OrdinalIgnoreCase);
 
         private static readonly List<IConsoleCommand> PendingConsoleCommands = new List<IConsoleCommand>();
+        private static readonly HashSet<string> FuseReplacedLegacyPackages =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "AlinaNova21.AlinasMapMod",
+                "AlinaNova21.MapEditor",
+                "Railloader",
+                "RailLoader",
+                "Zamu.StrangeCustoms"
+            };
+
         private static GameObject _startupHost;
         private static bool _consoleSurfaceUnavailableLogged;
 
@@ -339,6 +349,7 @@ namespace FUSE.Loading
                 Version = ReadString(definition, "version", "Version") ?? string.Empty,
                 FolderPath = folderPath,
                 Assemblies = ReadStringArray(definition["assemblies"] ?? definition["Assemblies"]).ToArray(),
+                Requires = ReadLegacyRequirementIds(definition["requires"] ?? definition["Requires"]).ToArray(),
                 RawDefinition = definition
             };
             return true;
@@ -356,6 +367,14 @@ namespace FUSE.Loading
                 return false;
             }
 
+            if (FuseReplacedLegacyPackages.Contains(manifest.Id ?? string.Empty))
+            {
+                FuseLog.Info(
+                    $"FUSE legacy support skipped old-loader package '{manifest.Id}' " +
+                    "because native FUSE compatibility replaces it.");
+                return false;
+            }
+
             if (FuseUmmState.TryGetDisabledReason(manifest.FolderPath, manifest.Id, out var disabledReason))
             {
                 FuseLog.Info($"FUSE legacy support skipped UMM-disabled old-loader package '{manifest.Id}' reason='{disabledReason}'.");
@@ -370,7 +389,61 @@ namespace FUSE.Loading
                 return false;
             }
 
+            foreach (var requirementId in manifest.Requires ?? Array.Empty<string>())
+            {
+                if (FuseReplacedLegacyPackages.Contains(requirementId ?? string.Empty))
+                {
+                    continue;
+                }
+
+                if (IsLegacyRequirementPresent(manifest, requirementId))
+                {
+                    continue;
+                }
+
+                FuseLog.Warning(
+                    $"FUSE legacy support skipped old-loader package '{manifest.Id}' " +
+                    $"because required legacy package '{requirementId}' is not installed or enabled.");
+                return false;
+            }
+
             return true;
+        }
+
+        private static bool IsLegacyRequirementPresent(FuseLegacyAssemblyManifest manifest, string requirementId)
+        {
+            if (manifest == null || string.IsNullOrWhiteSpace(requirementId))
+            {
+                return true;
+            }
+
+            var modsRoot = Directory.GetParent(manifest.FolderPath)?.FullName;
+            if (string.IsNullOrWhiteSpace(modsRoot) || !Directory.Exists(modsRoot))
+            {
+                return false;
+            }
+
+            foreach (var packagePath in Directory.GetDirectories(modsRoot))
+            {
+                if (!TryReadLegacyManifest(packagePath, out var candidate))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(candidate.Id, requirementId, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (FuseUmmState.TryGetDisabledReason(candidate.FolderPath, candidate.Id, out _))
+                {
+                    return false;
+                }
+
+                return FuseModSetService.IsPackageEnabledByActiveSet(candidate.Id, candidate.FolderPath);
+            }
+
+            return false;
         }
 
         private static bool TryRegisterConsoleCommand(IConsoleCommand command)
@@ -550,6 +623,49 @@ namespace FUSE.Loading
             }
         }
 
+        private static IEnumerable<string> ReadLegacyRequirementIds(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                yield break;
+            }
+
+            if (token is JArray array)
+            {
+                foreach (var item in array)
+                {
+                    var value = ReadLegacyRequirementId(item);
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        yield return value;
+                    }
+                }
+
+                yield break;
+            }
+
+            var single = ReadLegacyRequirementId(token);
+            if (!string.IsNullOrWhiteSpace(single))
+            {
+                yield return single;
+            }
+        }
+
+        private static string ReadLegacyRequirementId(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return null;
+            }
+
+            if (token.Type == JTokenType.String)
+            {
+                return token.ToString().Trim();
+            }
+
+            return ReadString(token as JObject, "id", "Id");
+        }
+
         private static string ReadString(JObject obj, params string[] names)
         {
             if (obj == null || names == null)
@@ -670,6 +786,7 @@ namespace FUSE.Loading
         public string Version { get; set; }
         public string FolderPath { get; set; }
         public string[] Assemblies { get; set; } = Array.Empty<string>();
+        public string[] Requires { get; set; } = Array.Empty<string>();
         public JObject RawDefinition { get; set; }
     }
 

@@ -14,6 +14,23 @@ namespace FUSE.API
     public static class SceneryAPI
     {
         private static Transform _fallbackRoot;
+        private static readonly Dictionary<string, string> LegacySceneryAssetAliases =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "CabooseHouse", "ALWHouses_CabooseHouse" },
+                { "CitySignDeep", "ALW_Sign_CitySignDeep" },
+                { "CitySignEverett", "ALW_Sign_CitySignEverett" },
+                { "CitySignWalkerWoody", "ALW_Sign_CitySignWalkerWoody" }
+            };
+
+        private static readonly HashSet<string> OptionalLegacySceneryAssets =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "CLB_Block02",
+                "CLB_Truss01_Straight2",
+                "Interlocking_Tower",
+                "rlw Spen"
+            };
 
         public static SceneryAssetInstance AddScenery(string id, FuseScenery definition)
         {
@@ -195,7 +212,23 @@ namespace FUSE.API
             return false;
         }
 
+        public static bool IsKnownOptionalLegacyAssetReference(FuseScenery definition)
+        {
+            if (definition == null)
+            {
+                return false;
+            }
+
+            return IsKnownOptionalLegacyAssetReference(definition.AssetIdentifier) ||
+                   IsKnownOptionalLegacyAssetReference(definition.Model);
+        }
+
         private static bool TryResolveKnownSceneryAssetIdentifier(string candidate, out string resolvedIdentifier)
+        {
+            return TryResolveKnownSceneryAssetIdentifier(candidate, out resolvedIdentifier, true);
+        }
+
+        private static bool TryResolveKnownSceneryAssetIdentifier(string candidate, out string resolvedIdentifier, bool allowLegacyAlias)
         {
             resolvedIdentifier = null;
             if (string.IsNullOrWhiteSpace(candidate))
@@ -223,6 +256,15 @@ namespace FUSE.API
             catch (Exception ex)
             {
                 FuseLog.Warning($"FUSE scenery asset direct lookup failed for '{candidate}': {ex.Message}");
+            }
+
+            if (allowLegacyAlias &&
+                LegacySceneryAssetAliases.TryGetValue(NormalizeLegacyAssetKey(candidate), out var alias) &&
+                !string.Equals(alias, candidate, StringComparison.OrdinalIgnoreCase) &&
+                TryResolveKnownSceneryAssetIdentifier(alias, out resolvedIdentifier, false))
+            {
+                FuseLog.Info($"FUSE resolved legacy scenery asset alias '{candidate}' -> '{resolvedIdentifier}'.");
+                return true;
             }
 
             IEnumerable<string> known;
@@ -257,6 +299,11 @@ namespace FUSE.API
             }
 
             return false;
+        }
+
+        private static bool IsKnownOptionalLegacyAssetReference(string value)
+        {
+            return OptionalLegacySceneryAssets.Contains(NormalizeLegacyAssetKey(value));
         }
 
         private static void ApplyDefinition(SceneryAssetInstance scenery, FuseScenery definition, string assetIdentifier)
@@ -370,6 +417,11 @@ namespace FUSE.API
             }
 
             return model.Substring(marker + 3);
+        }
+
+        private static string NormalizeLegacyAssetKey(string value)
+        {
+            return (NormalizeSceneryIdentifier(value) ?? string.Empty).Trim();
         }
 
         private static SceneryAssetInstance RequireScenery(string id)
