@@ -1,16 +1,19 @@
 ﻿﻿using FUSE.Infrastructure;
+using FUSE.Loading;
+using GalaSoft.MvvmLight.Messaging;
+using Game.Events;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using UnityEngine;
-using UI.Common;
-using UI.Builder;
-using GalaSoft.MvvmLight.Messaging;
-using Game.Events;
 using TMPro;
+using UI.Builder;
+using UI.Common;
+using UI.CompanyWindow;
+using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 
 namespace FUSE.Editor
 {
@@ -20,6 +23,10 @@ namespace FUSE.Editor
         private UIPanel _panel;
         private static MainEditorWindow _instance;
         private bool _isMapLoaded = false;
+
+        private InputAction toggleMenuAction;
+
+        private readonly UIState<string> _selectedTabState = new UIState<string>(null);
 
         public static MainEditorWindow Shared
         {
@@ -35,12 +42,16 @@ namespace FUSE.Editor
 
         public static void Setup()
         {
-
+            
         }
 
         private void Awake()
         {
             _window = GetComponent<Window>();
+
+            toggleMenuAction = new InputAction("ToggleMenu", binding: "<Keyboard>/n");
+            toggleMenuAction.performed += ctx => MainEditorWindow.Toggle();
+            toggleMenuAction.Enable();
         }
 
         private bool IsWindowValid()
@@ -154,7 +165,19 @@ namespace FUSE.Editor
 
             _panel = WindowCreatorHelper.Shared.PopulateWindow(_window, builder =>
             {
-
+                if (FuseEditor.Instance.ModSelected)
+                {
+                    builder.AddTabbedPanels(_selectedTabState, delegate (UITabbedPanelBuilder tabBuilder)
+                    {
+                        tabBuilder.AddTab("Mod Info", "modinfo", BuildModInfoPanel);
+                        tabBuilder.AddTab("Tools", "tools", BuildToolsPanel);
+                        tabBuilder.AddTab("Settings", "settings", BuildEditorSettingsPanel);
+                    });
+                }
+                else
+                {
+                    BuildSelectModPanel(builder);
+                }
             });
         }
 
@@ -173,6 +196,37 @@ namespace FUSE.Editor
             {
                 _window.CloseWindow();
             }
+
+        }
+
+        void BuildSelectModPanel(UIPanelBuilder builder)
+        { 
+            List<string> loadedMods = FuseModLoader.GetLoadedModsInOrder().Select(x => x.Definition.Id).ToList();
+
+            loadedMods.Insert(0, "Select a Mod");
+
+            int currentlySelected = FuseEditor.Instance.ModSelected ? loadedMods.IndexOf(FuseEditor.Instance.ActiveMod.Definition.Id) : 0;
+
+            builder.AddDropdown(loadedMods, currentlySelected, delegate(int selected) {
+                if (selected != 0)
+                {
+                    FuseEditor.Instance.SetActiveMod(FuseModLoader.GetLoadedMod(loadedMods[selected]));
+                }
+            });
+        }
+
+        void BuildModInfoPanel(UIPanelBuilder builder)
+        {
+
+        }
+
+        void BuildToolsPanel(UIPanelBuilder builder)
+        {
+
+        }
+
+        void BuildEditorSettingsPanel(UIPanelBuilder builder)
+        {
 
         }
     }

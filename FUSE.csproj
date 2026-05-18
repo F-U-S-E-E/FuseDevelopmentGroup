@@ -81,6 +81,10 @@
       <HintPath>$(UnityManagedDir)\Unity.TextMeshPro.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Unity.InputSystem" Condition="Exists('$(UnityManagedDir)\Unity.InputSystem.dll')">
+      <HintPath>$(UnityManagedDir)\Unity.InputSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.CoreModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
