@@ -723,7 +723,7 @@ namespace FUSE.Loading
                     {
                         if (industry.Value.Type == JTokenType.Null)
                         {
-                            ((JArray)root["operations"]["removals"]["industries"]).Add(industry.Name);
+                            AddUniqueString(root["operations"]?["removals"]?["industries"] as JArray, industry.Name);
                             continue;
                         }
 
@@ -743,7 +743,7 @@ namespace FUSE.Loading
                 {
                     if (industry.Value.Type == JTokenType.Null)
                     {
-                        ((JArray)root["operations"]["removals"]["industries"]).Add(industry.Name);
+                        AddUniqueString(root["operations"]?["removals"]?["industries"] as JArray, industry.Name);
                         continue;
                     }
 

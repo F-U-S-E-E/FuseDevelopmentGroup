@@ -120,7 +120,7 @@ namespace FUSE.API
         public static void RemoveIndustry(string id)
         {
             var industry = RequireIndustry(id);
-            DestroyIndustryInternal(id, industry);
+            DestroyIndustryInternal(id, industry, true);
         }
 
         /// <summary>
@@ -130,6 +130,11 @@ namespace FUSE.API
         /// throwing when the industry was already absent.
         /// </summary>
         public static bool TryRemoveIndustry(string id)
+        {
+            return TryRemoveIndustry(id, true);
+        }
+
+        internal static bool TryRemoveIndustry(string id, bool notify)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -142,11 +147,11 @@ namespace FUSE.API
                 return false;
             }
 
-            DestroyIndustryInternal(id, industry);
+            DestroyIndustryInternal(id, industry, notify);
             return true;
         }
 
-        private static void DestroyIndustryInternal(string id, Industry industry)
+        private static void DestroyIndustryInternal(string id, Industry industry, bool notify)
         {
             // Synchronously tear down every IndustryComponent before destroying the Industry
             // GameObject and use DestroyImmediate throughout so the runtime objects are fully
@@ -178,8 +183,11 @@ namespace FUSE.API
             FuseIndustryRuntimeIndex.Instance.Remove(id);
             FuseCreatedIndustryIds.Remove(id);
             FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.Industry, id);
-            RefreshIndustriesAfterBatch("RemoveIndustry:" + id);
-            FuseEvents.RaiseIndustryRemoved(id);
+            if (notify)
+            {
+                RefreshIndustriesAfterBatch("RemoveIndustry:" + id);
+                FuseEvents.RaiseIndustryRemoved(id);
+            }
         }
 
         public static Industry GetIndustry(string id)

@@ -23,6 +23,7 @@ namespace FUSE.Loading
         private static readonly List<string> LoadedOrder = new List<string>();
         private static readonly HashSet<string> AppliedDefinitionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly FuseDefinitionValidator Validator = new FuseDefinitionValidator();
+        private static bool _earlyOperationRemovalsApplied;
 
         public static int LoadedDefinitionCount => LoadedMods.Count;
 
@@ -2190,6 +2191,7 @@ namespace FUSE.Loading
 
             LoadedOrder.Clear();
             AppliedDefinitionIds.Clear();
+            _earlyOperationRemovalsApplied = false;
             FuseTrackRemovalSnapshotStore.ClearAll();
             if (restoreTrackSnapshots)
             {
@@ -2214,6 +2216,60 @@ namespace FUSE.Loading
         public static IEnumerable<string> GetLoadedMods()
         {
             return LoadedMods.Keys;
+        }
+
+        internal static int ApplyLoadedOperationRemovalsEarly(string reason)
+        {
+            if (_earlyOperationRemovalsApplied)
+            {
+                return 0;
+            }
+
+            _earlyOperationRemovalsApplied = true;
+            var removed = 0;
+            var operation = string.IsNullOrWhiteSpace(reason) ? "early operation removals" : reason;
+
+            foreach (var loaded in GetLoadedModsInOrder())
+            {
+                var definition = loaded?.Definition;
+                var industryIds = definition?.Operations?.Removals?.Industries;
+                if (industryIds == null || industryIds.Length == 0)
+                {
+                    continue;
+                }
+
+                foreach (var id in industryIds)
+                {
+                    if (string.IsNullOrWhiteSpace(id))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        if (IndustryAPI.TryRemoveIndustry(id, false))
+                        {
+                            removed++;
+                            FuseLog.Info(
+                                $"FUSE early operation removal removed industry '{id}' " +
+                                $"package='{definition.Id ?? string.Empty}' reason='{operation}'.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        FuseLog.Warning(
+                            $"FUSE early operation removal failed industry='{id}' " +
+                            $"package='{definition.Id ?? string.Empty}' reason='{operation}' message='{ex.Message}'.");
+                    }
+                }
+            }
+
+            if (removed > 0)
+            {
+                FuseLog.Info($"FUSE early operation removals completed reason='{operation}' removedIndustries={removed}.");
+            }
+
+            return removed;
         }
 
         public static bool IsApplied(string modId)

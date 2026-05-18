@@ -79,7 +79,7 @@ namespace FUSE.Patches
                 {
                     if (LoggedMissingStops.Add(stopId))
                     {
-                        FuseLog.Warning(
+                        FuseLog.Info(
                             $"FUSE passenger panel skipped missing passenger stop id='{stopId}' " +
                             $"so available stops can still render.");
                     }
