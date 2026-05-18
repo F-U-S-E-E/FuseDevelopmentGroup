@@ -42,8 +42,24 @@ namespace Railloader
         void ModTabDidClose();
     }
 
-    public abstract class LegacyPluginBase
+    // Mirrors the original Railloader.PluginBase shape so legacy plugins compiled
+    // against Railloader (which all inherit this) can be loaded against FUSE.
+    public abstract class PluginBase
     {
+        public bool IsEnabled { get; private set; }
+
+        internal void Enable()
+        {
+            OnEnable();
+            IsEnabled = true;
+        }
+
+        internal void Disable()
+        {
+            OnDisable();
+            IsEnabled = false;
+        }
+
         public virtual void OnEnable()
         {
         }
@@ -53,14 +69,14 @@ namespace Railloader
         }
     }
 
-    public abstract class SingletonPluginBase<T> : LegacyPluginBase where T : class
+    public abstract class SingletonPluginBase<T> : PluginBase where T : SingletonPluginBase<T>
     {
         protected SingletonPluginBase()
         {
-            Shared = this as T;
+            Shared = (T)(object)this;
         }
 
-        public static T Shared { get; protected set; }
+        public static T Shared { get; private set; }
     }
 }
 
@@ -116,8 +132,13 @@ namespace FUSE.Compatibility
 
         private static bool IsLegacyLoaderAssembly(string assemblyName)
         {
-            return !string.IsNullOrWhiteSpace(assemblyName) &&
-                   assemblyName.StartsWith("Railloader", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(assemblyName))
+            {
+                return false;
+            }
+
+            return assemblyName.StartsWith("Railloader", StringComparison.OrdinalIgnoreCase) ||
+                   assemblyName.Equals("StrangeCustoms", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

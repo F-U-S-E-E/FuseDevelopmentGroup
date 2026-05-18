@@ -9,6 +9,10 @@ using Newtonsoft.Json.Linq;
 using Railloader;
 using UI.Console;
 using UnityEngine;
+// FUSE refers to old-loader plugin shapes with Legacy* names; the right-hand
+// sides are the compat declarations that legacy mod DLLs resolve against and
+// are deletable once we stop honoring the old-loader contract.
+using LegacyPluginBase = Railloader.PluginBase;
 
 namespace FUSE.Loading
 {
