@@ -818,6 +818,28 @@ namespace FUSE.Interface
                 });
             AddSettingToggle(
                 builder,
+                "Scenery Debug Overlay",
+                FuseSettings.ShowSceneryDebugOverlay ? "enabled (hover scenery)" : "disabled",
+                FuseSettings.ShowSceneryDebugOverlay ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetShowSceneryDebugOverlay(!FuseSettings.ShowSceneryDebugOverlay);
+                    RebuildWindow();
+                });
+            AddSettingToggle(
+                builder,
+                "Scenery Debug Details",
+                FuseSettings.ShowSceneryDebugAdvanced
+                    ? (FuseSettings.ShowSceneryDebugOverlay ? "shown in overlay" : "shown when overlay on")
+                    : "hidden",
+                FuseSettings.ShowSceneryDebugAdvanced ? "Hide" : "Show",
+                () =>
+                {
+                    FuseSettings.SetShowSceneryDebugAdvanced(!FuseSettings.ShowSceneryDebugAdvanced);
+                    RebuildWindow();
+                });
+            AddSettingToggle(
+                builder,
                 "Early Suppression",
                 FuseSettings.EnableExperimentalEarlyScenePathSuppression ? "enabled" : "disabled",
                 FuseSettings.EnableExperimentalEarlyScenePathSuppression ? "Disable" : "Enable",
