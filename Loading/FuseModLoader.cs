@@ -331,6 +331,7 @@ namespace FUSE.Loading
                         var definition = candidate.Loaded.Definition;
                         var transaction = candidate.Transaction;
                         transaction.RunPhase("staged-apply-world-removals", () => ApplyWorldRemovals(definition, transaction));
+                        transaction.RunPhase("staged-apply-operations-removals", () => ApplyOperationsRemovals(definition, transaction));
                     }
 
                     ApplyMergedTrackGraph(mergedTrackPlan, reason);
@@ -369,6 +370,18 @@ namespace FUSE.Loading
                     ApplyDeferredOperationBindings(
                         active.Select(item => item.Loaded?.Definition?.Id).Where(id => !string.IsNullOrWhiteSpace(id)).ToArray(),
                         reason);
+
+                    // Mandelas (scene clones) run AFTER operations so industries — which can
+                    // share display names with vanilla scene paths — cannot re-activate a
+                    // GameObject the mandela is supposed to disable. This matches the legacy
+                    // patcher's "process mandelas last" ordering.
+                    foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
+                    {
+                        var definition = candidate.Loaded.Definition;
+                        var loaded = candidate.Loaded;
+                        var transaction = candidate.Transaction;
+                        transaction.RunPhase("apply-scene-clones", () => ApplySceneClones(definition, loaded.DefinitionPath, transaction));
+                    }
 
                     foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
                     {
@@ -1410,6 +1423,7 @@ namespace FUSE.Loading
                         {
                             ApplyTrackRemovals(definition, transaction);
                             ApplyWorldRemovals(definition, transaction);
+                            ApplyOperationsRemovals(definition, transaction);
                         });
                         transaction.RunPhase("apply-nodes", () =>
                         {
@@ -1474,6 +1488,7 @@ namespace FUSE.Loading
                         TrackAPI.ApplyAreaOrdering();
                     });
                     ApplyDeferredOperationBindings(new[] { definition.Id }, reason);
+                    transaction.RunPhase("apply-scene-clones", () => ApplySceneClones(definition, loaded.DefinitionPath, transaction));
                     transaction.RunPhase("apply-progression", () => ApplyProgressionDefinition(definition, transaction));
                     transaction.RunPhase("apply-world-suppressions", () => FuseWorldSuppressor.ApplyDefinition(definition, transaction));
                     transaction.RunPhase("post-bind-validation", () => ValidatePostBind(definition, transaction));
@@ -3014,24 +3029,35 @@ namespace FUSE.Loading
                 }
             }
 
-            if (definition.World.SceneClones != null)
+            // Scene clones (mandelas) are applied in their own later phase (apply-scene-clones)
+            // so that industries, areas, and progression have already settled. Applying them
+            // here, before apply-operations, lets an industry whose display name collides with a
+            // disabled scene clone path (e.g. a renamed Stenzel Mfg industry under the matching
+            // scenery branch) re-activate the GameObject the mandela just disabled.
+        }
+
+        private static void ApplySceneClones(FuseModDefinition definition, string definitionPath, FuseApplyTransaction transaction)
+        {
+            if (definition?.World?.SceneClones == null)
             {
-                foreach (var sceneClone in definition.World.SceneClones)
+                return;
+            }
+
+            foreach (var sceneClone in definition.World.SceneClones)
+            {
+                var exists = SceneCloneAPI.GetSceneClone(sceneClone.Key) != null;
+                transaction.TryApply("scene clone", sceneClone.Key, exists, () =>
                 {
-                    var exists = SceneCloneAPI.GetSceneClone(sceneClone.Key) != null;
-                    transaction.TryApply("scene clone", sceneClone.Key, exists, () =>
+                    var entity = FuseAuthoringRegistry.Get(sceneClone.Key) as FuseConfigurableStructureEntity ??
+                                 new FuseConfigurableStructureEntity(sceneClone.Key, definition.Id);
+                    entity.InitializeIdentity(sceneClone.Key, definition.Id);
+                    entity.BindDefinition(definition, definitionPath);
+                    entity.LoadDefinition(sceneClone.Value);
+                    if (!FuseAuthoringPersistenceService.ApplyPackageEntityToRuntime(entity))
                     {
-                        var entity = FuseAuthoringRegistry.Get(sceneClone.Key) as FuseConfigurableStructureEntity ??
-                                     new FuseConfigurableStructureEntity(sceneClone.Key, definition.Id);
-                        entity.InitializeIdentity(sceneClone.Key, definition.Id);
-                        entity.BindDefinition(definition, definitionPath);
-                        entity.LoadDefinition(sceneClone.Value);
-                        if (!FuseAuthoringPersistenceService.ApplyPackageEntityToRuntime(entity))
-                        {
-                            throw new InvalidOperationException($"Configurable structure authoring entity '{sceneClone.Key}' failed validation.");
-                        }
-                    });
-                }
+                        throw new InvalidOperationException($"Configurable structure authoring entity '{sceneClone.Key}' failed validation.");
+                    }
+                });
             }
         }
 
@@ -3070,6 +3096,17 @@ namespace FUSE.Loading
             RemoveWorldItems("telegraph pole set", removals.TelegraphPoles, MapAPI.TryRemoveTelegraphPoles, transaction);
             RemoveWorldItems("map label", removals.MapLabels, MapAPI.TryRemoveMapLabel, transaction);
             RemoveWorldItems("map mask", removals.MapMasks, MapAPI.TryRemoveMapMask, transaction);
+        }
+
+        private static void ApplyOperationsRemovals(FuseModDefinition definition, FuseApplyTransaction transaction)
+        {
+            var removals = definition?.Operations?.Removals;
+            if (removals == null)
+            {
+                return;
+            }
+
+            RemoveWorldItems("industry", removals.Industries, IndustryAPI.TryRemoveIndustry, transaction);
         }
 
         private static void RemoveWorldItems(string kind, IEnumerable<string> ids, Func<string, bool> remover, FuseApplyTransaction transaction)

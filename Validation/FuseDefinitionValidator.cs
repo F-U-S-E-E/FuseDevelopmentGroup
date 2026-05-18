@@ -389,15 +389,6 @@ namespace FUSE.Validation
                         result.AddError($"{path}.unitWeightInPounds", "Load unitWeightInPounds must be greater than or equal to 0.", "fuse.operations.loads.unitWeightInPounds", load.Value.UnitWeightInPounds.Value);
                     }
 
-                    if (load.Value.PayPerQuantity.HasValue && load.Value.PayPerQuantity.Value < 0f)
-                    {
-                        result.AddError($"{path}.payPerQuantity", "Load payPerQuantity must be greater than or equal to 0.", "fuse.operations.loads.payPerQuantity", load.Value.PayPerQuantity.Value);
-                    }
-
-                    if (load.Value.CostPerUnit.HasValue && load.Value.CostPerUnit.Value < 0f)
-                    {
-                        result.AddError($"{path}.costPerUnit", "Load costPerUnit must be greater than or equal to 0.", "fuse.operations.loads.costPerUnit", load.Value.CostPerUnit.Value);
-                    }
                 }
             }
 
@@ -841,6 +832,7 @@ namespace FUSE.Validation
                 {
                     result.AddWarning($"{phasePath}.cost", "Delivery phase cost is negative; FUSE keeps this legacy value because some route mods use negative costs as progression credits.", "fuse.progression.deliveryPhase.cost.legacyNegative", phase.Cost);
                 }
+
 
                 var deliveries = phase.Deliveries;
                 if (deliveries != null && deliveries.Length > 0)

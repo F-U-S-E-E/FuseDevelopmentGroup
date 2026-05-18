@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -10,6 +11,12 @@ namespace FUSE.Data
         public Dictionary<string, FuseLoader> Loaders { get; set; } = new Dictionary<string, FuseLoader>();
         public Dictionary<string, FuseTurntable> Turntables { get; set; } = new Dictionary<string, FuseTurntable>();
         public Dictionary<string, FuseStation> Stations { get; set; } = new Dictionary<string, FuseStation>();
+        public FuseOperationsRemovals Removals { get; set; } = new FuseOperationsRemovals();
+    }
+
+    public sealed class FuseOperationsRemovals
+    {
+        public string[] Industries { get; set; } = Array.Empty<string>();
     }
 
     public sealed class FuseLoad
