@@ -775,6 +775,9 @@ namespace FUSE.Loading
         private IEnumerator Start()
         {
             yield return null;
+            // Run UMM injection here so the modEntries mutation lands after
+            // UnityModManager._Start's foreach has released its enumerator.
+            FUSE.Infrastructure.FuseUmmInjector.FlushPendingInjection();
             FuseLegacyAssemblyHost.LoadAllAvailableAssemblies("legacy support startup");
         }
     }
