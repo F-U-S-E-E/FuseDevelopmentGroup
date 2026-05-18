@@ -3,6 +3,7 @@ using HarmonyLib;
 using Model.Ops;
 using FUSE.Infrastructure;
 using FUSE.API;
+using FUSE.Loading;
 
 namespace FUSE.Patches
 {
@@ -17,6 +18,19 @@ namespace FUSE.Patches
     [HarmonyPatch(typeof(OpsController), "Awake")]
     internal static class FuseOpsControllerAwakeIndustrySnapshotPatch
     {
+        private static void Prefix()
+        {
+            try
+            {
+                FuseDataPackageDiscovery.LoadPackagesFromDisk(false);
+                FuseModLoader.ApplyLoadedOperationRemovalsEarly("OpsController.Awake prefix");
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE early operation removals before OpsController.Awake failed: {ex.Message}");
+            }
+        }
+
         private static void Postfix()
         {
             try

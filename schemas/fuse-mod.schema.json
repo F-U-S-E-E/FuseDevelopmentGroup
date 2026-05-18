@@ -521,6 +521,22 @@
                         }
                     ],
                     "default": {}
+                },
+                "removals": {
+                    "$ref": "#/$defs/operationRemovals",
+                    "default": {
+                        "industries": []
+                    }
+                }
+            }
+        },
+        "operationRemovals": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "FUSE-id removals for operations objects. Use this to carry source JSON null entries through conversion.",
+            "properties": {
+                "industries": {
+                    "$ref": "#/$defs/idArray"
                 }
             }
         },
