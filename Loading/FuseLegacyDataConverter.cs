@@ -783,7 +783,6 @@ namespace FUSE.Loading
             ConvertDictionary(source["scenery"], root["world"]["scenery"] as JObject, root["world"]["removals"]["scenery"] as JArray, ConvertScenery);
             ConvertSplineys(source["splineys"] as JObject, root);
             ConvertMandelas(source["mandelas"] as JObject, root);
-            ApplyAspenCrazyMapWhittierCompatibility(source, root, manifest);
             var texts = source["texts"] as JObject;
             if (texts != null)
             {
@@ -906,61 +905,6 @@ namespace FUSE.Loading
 
             AddUniqueString(suppressions, path);
             return true;
-        }
-
-        private static void ApplyAspenCrazyMapWhittierCompatibility(JObject source, JObject root, FuseLegacyPackageManifest manifest)
-        {
-            if (source == null || root == null || manifest == null ||
-                !string.Equals(manifest.LegacyId, "zz_aspenscrazymap", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            if (!HasSceneryAsset(source, "aspen-whittier-depot") ||
-                !HasTrackSpan(root, "Pygg") ||
-                !HasTrackSpan(root, "Pbfx"))
-            {
-                return;
-            }
-
-            var industries = root["operations"]?["industries"] as JObject;
-            if (industries == null || industries["whittier-passenger-stop"] != null ||
-                HasPassengerStopId(industries, "whittier"))
-            {
-                return;
-            }
-
-            var position = TryGetLocalPositionForScenery(source, root, "aspen-whittier-depot", "whittier") ??
-                           new JObject
-                           {
-                               ["x"] = -42.5,
-                               ["y"] = 1.5,
-                               ["z"] = 52.1
-                           };
-
-            industries["whittier-passenger-stop"] = CleanObject(new JObject
-            {
-                ["name"] = "Whittier",
-                ["areaId"] = "whittier",
-                ["position"] = position,
-                ["usesContract"] = false,
-                ["mergeComponents"] = true,
-                ["components"] = new JObject
-                {
-                    ["passenger"] = new JObject
-                    {
-                        ["type"] = FuseIndustryComponentTypes.PassengerStop,
-                        ["name"] = "Whittier",
-                        ["trackSpanIds"] = new JArray("Pygg", "Pbfx"),
-                        ["loadId"] = "passengers",
-                        ["passengerStopId"] = "whittier",
-                        ["timetableCode"] = "WH",
-                        ["basePopulation"] = 40,
-                        ["neighborIds"] = new JArray("ela"),
-                        ["branch"] = "Main"
-                    }
-                }
-            });
         }
 
         private static bool HasTrackSpan(JObject root, string spanId)
