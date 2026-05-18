@@ -9,3 +9,4 @@ obj/
 # Release workflow scratch space
 /staging/
 /FUSE-v*.zip
+Local.Build.props
