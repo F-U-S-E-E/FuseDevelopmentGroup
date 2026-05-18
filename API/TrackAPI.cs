@@ -261,8 +261,8 @@ namespace FUSE.API
         public static void RemoveSegment(string id)
         {
             var segment = RequireSegment(id);
-            DisableTrackMarkersReferencingSegment(segment, "track segment removal");
-            RemoveSpansReferencingSegment(segment, "track segment removal");
+            //DisableTrackMarkersReferencingSegment(segment, "track segment removal");
+            //RemoveSpansReferencingSegment(segment, "track segment removal");
             UnregisterSegmentWithGraph(Graph.Shared, id);
             RemoveRuntimeObject(segment);
             FuseSegmentRuntimeIndex.Instance.Remove(id);
@@ -363,7 +363,7 @@ namespace FUSE.API
         {
             var span = RequireSpan(id);
             var graph = RequireGraph();
-            EnsureTrackSpanGraphChild(graph, span);
+            //EnsureTrackSpanGraphChild(graph, span);
             var upperLocation = MakeLocation(graph, upper);
             var lowerLocation = MakeLocation(graph, lower);
             ValidateSpanEndpointPair(id, ref upperLocation, ref lowerLocation);
@@ -2100,10 +2100,17 @@ namespace FUSE.API
                 return;
             }
 
-            var gameObject = component.gameObject;
-            PreserveChildTrackSpansBeforeDestroy(component, gameObject);
-            gameObject.SetActive(false);
-            UnityEngine.Object.Destroy(gameObject);
+            if (component is TrackSpan && component.gameObject.GetComponentCount() > 2)
+            {
+                UnityEngine.Object.Destroy(component);
+            }
+            else
+            {
+                var gameObject = component.gameObject;
+                PreserveChildTrackSpansBeforeDestroy(component, gameObject);
+                gameObject.SetActive(false);
+                UnityEngine.Object.Destroy(gameObject);
+            }
         }
 
         private static void PreserveChildTrackSpansBeforeDestroy(Component component, GameObject gameObject)

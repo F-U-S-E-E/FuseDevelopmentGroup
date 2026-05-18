@@ -11,6 +11,7 @@ using FUSE.Events;
 using FUSE.Infrastructure;
 using Track;
 using UnityEngine;
+using KeyValue.Runtime;
 
 namespace FUSE.API
 {
@@ -19,6 +20,7 @@ namespace FUSE.API
         private static readonly FieldInfo AllPassengerStopsField = typeof(PassengerStop).GetField("_allPassengerStops", BindingFlags.Static | BindingFlags.NonPublic);
         private static readonly FieldInfo PassengerStopSpansField = typeof(PassengerStop).GetField("_spans", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo PassengerStopMarkersField = typeof(PassengerStop).GetField("_markers", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo KeyValueObjectField = typeof(PassengerStop).GetField("_keyValueObject", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly HashSet<string> LoggedInvalidSpanWarnings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _subscribedToGraphRefresh;
 
@@ -135,7 +137,17 @@ namespace FUSE.API
                 throw new InvalidOperationException($"Passenger stop component '{Identifier}' is missing a valid passenger load.");
             }
 
-            var stopRoot = transform.Find("PassengerStop");
+            var oldStop = StationAPI.GetPassengerStop(stopIdentifier);
+
+            if (oldStop != null)
+            {
+                KeyValueObject keyValue = (KeyValueObject)KeyValueObjectField.GetValue(oldStop);
+                if (keyValue != null)
+                    DestroyImmediate(keyValue);
+                DestroyImmediate(oldStop);
+            }
+
+            var stopRoot = transform.Find(string.IsNullOrWhiteSpace(name) ? stopIdentifier : name);
             var stopObject = stopRoot != null ? stopRoot.gameObject : new GameObject("PassengerStop");
             stopObject.transform.SetParent(transform, false);
             stopObject.SetActive(false);
