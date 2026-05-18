@@ -76,6 +76,7 @@ namespace FUSE
                 FuseTrackDebugOverlay.Ensure();
                 FuseSceneryDebugOverlay.Ensure();
                 FuseLegacyAssemblyHost.EnsureStartupHost();
+                FuseUmmInjector.InjectLegacyEntries(modEntry.Path, ReadInfoJsonString(Path.Combine(modEntry.Path ?? string.Empty, "Info.json"), "Version"));
 
                 modEntry.OnUnload = OnUnload;
                 _isLoaded = true;
