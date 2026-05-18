@@ -65,6 +65,10 @@ namespace FUSE.Lifecycle
                 if (canMutateWorld)
                 {
                     appliedCount = FuseDataPackageDiscovery.ApplyLoadedPackages("map load");
+                    TrackAPI.RemoveInvalidTrackSpans("map load after FUSE package apply");
+                    TrackAPI.ScrubCtcSignalReferences("map load after FUSE package apply");
+                    IndustryAPI.ScrubIndustryComponentCaches("map load after FUSE package apply");
+                    IndustryAPI.DisableOrphanedBaseGameIndustries("map load after FUSE package apply");
                     TrackAPI.DisableInvalidTrackMarkers("map load after FUSE package apply");
                     var earlyLoaderStopwatch = Stopwatch.StartNew();
                     FuseEarlyLoader.ApplyFallbackAfterMapLoad();
@@ -138,6 +142,7 @@ namespace FUSE.Lifecycle
             {
                 FuseCacheRegistry.RebuildAll();
                 FuseWorldSuppressor.ApplyTrackGroupSuppressionsAfterGraphLoad("graph rebuild");
+                TrackAPI.ScrubCtcSignalReferences("graph rebuild");
                 FuseEvents.RaiseGraphRebuilt();
             }
             catch (Exception ex)

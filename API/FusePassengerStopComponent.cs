@@ -110,11 +110,11 @@ namespace FUSE.API
             stopObject.SetActive(true);
             PassengerStopSpansField?.SetValue(passengerStop, boundSpans);
             PassengerStopMarkersField?.SetValue(passengerStop, RebuildPassengerStopMarkers(passengerStop.transform, boundSpans));
-            RefreshPassengerStopCache();
+            var cacheCount = RefreshPassengerStopCache();
             FuseLog.Info(
                 $"FUSE passenger stop refreshed id='{stopIdentifier}' " +
                 $"component='{Identifier}' spanCount={boundSpans.Length} " +
-                $"loadId='{PassengerLoad.id ?? string.Empty}'.");
+                $"loadId='{PassengerLoad.id ?? string.Empty}' cacheCount={cacheCount}.");
         }
 
         private IEnumerable<TrackSpan> ResolveBoundSpans()
@@ -338,9 +338,14 @@ namespace FUSE.API
             return string.IsNullOrWhiteSpace(PassengerStopId) ? subIdentifier : PassengerStopId;
         }
 
-        private static void RefreshPassengerStopCache()
+        private static int RefreshPassengerStopCache()
         {
-            AllPassengerStopsField?.SetValue(null, UnityEngine.Object.FindObjectsOfType<PassengerStop>());
+            var stops = UnityEngine.Object.FindObjectsOfType<PassengerStop>(true)
+                .Where(stop => stop != null)
+                .ToArray();
+
+            AllPassengerStopsField?.SetValue(null, stops);
+            return stops.Length;
         }
     }
 }

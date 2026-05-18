@@ -107,11 +107,6 @@ namespace FUSE.Loading
 
         public static void ApplyActiveScenePathSuppressions(string reason, FuseApplyTransaction transaction = null)
         {
-            if (!FuseSettings.EnableExperimentalEarlyScenePathSuppression)
-            {
-                return;
-            }
-
             foreach (var path in GetClaimedIds(FuseClaimKind.SuppressedScenePath).ToArray())
             {
                 TrySuppressScenePath(path, reason ?? "apply", transaction);
@@ -122,18 +117,12 @@ namespace FUSE.Loading
         {
             get
             {
-                return FuseSettings.EnableExperimentalEarlyScenePathSuppression &&
-                       GetClaimedIds(FuseClaimKind.SuppressedScenePath).Any();
+                return GetClaimedIds(FuseClaimKind.SuppressedScenePath).Any();
             }
         }
 
         public static IReadOnlyCollection<string> GetActiveScenePathSuppressions()
         {
-            if (!FuseSettings.EnableExperimentalEarlyScenePathSuppression)
-            {
-                return Array.Empty<string>();
-            }
-
             return GetClaimedIds(FuseClaimKind.SuppressedScenePath)
                 .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
@@ -267,18 +256,8 @@ namespace FUSE.Loading
                 return;
             }
 
-            if (!FuseSettings.EnableExperimentalEarlyScenePathSuppression)
-            {
-                Warn(
-                    transaction,
-                    "suppressed scene path",
-                    packageId,
-                    $"package requests {scenePaths.Length} scene-path suppression(s), but experimental early scene-path suppression is disabled in Info.json settings");
-                return;
-            }
-
             ClaimSuppressions(packageId, scenePaths, FuseClaimKind.SuppressedScenePath, "scene path", transaction);
-            FuseLog.Info($"FUSE registered {scenePaths.Length} experimental scene-path suppression request(s) for package '{packageId}' during '{reason ?? "unspecified"}'.");
+            FuseLog.Info($"FUSE registered {scenePaths.Length} scene-path suppression request(s) for package '{packageId}' during '{reason ?? "unspecified"}'.");
         }
 
         private static void ApplyActiveTrackGroupSuppressions(string reason, bool rebuildIfChanged)
