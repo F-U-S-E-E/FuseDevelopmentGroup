@@ -7,6 +7,7 @@ using Model.Ops;
 using Model.Ops.Definition;
 using Model.Ops.Timetable;
 using FUSE.Data;
+using FUSE.Events;
 using FUSE.Infrastructure;
 using Track;
 using UnityEngine;
@@ -18,6 +19,8 @@ namespace FUSE.API
         private static readonly FieldInfo AllPassengerStopsField = typeof(PassengerStop).GetField("_allPassengerStops", BindingFlags.Static | BindingFlags.NonPublic);
         private static readonly FieldInfo PassengerStopSpansField = typeof(PassengerStop).GetField("_spans", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo PassengerStopMarkersField = typeof(PassengerStop).GetField("_markers", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly HashSet<string> LoggedInvalidSpanWarnings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private bool _subscribedToGraphRefresh;
 
         public string PassengerStopId { get; set; }
         public string TimetableCode { get; set; }
@@ -40,14 +43,26 @@ namespace FUSE.API
 
         private void OnEnable()
         {
+            SubscribeToGraphRefresh();
             if (PassengerLoad != null && !string.IsNullOrWhiteSpace(GetStopIdentifier()))
             {
                 TryRefreshPassengerStop("OnEnable");
             }
         }
 
+        private void OnDisable()
+        {
+            UnsubscribeFromGraphRefresh();
+        }
+
+        private void OnDestroy()
+        {
+            UnsubscribeFromGraphRefresh();
+        }
+
         public void OnFuseDefinitionApplied()
         {
+            SubscribeToGraphRefresh();
             if (PassengerLoad != null && !string.IsNullOrWhiteSpace(GetStopIdentifier()))
             {
                 TryRefreshPassengerStop("OnFuseDefinitionApplied");
@@ -60,6 +75,36 @@ namespace FUSE.API
 
         public override void OrderCars(IIndustryContext ctx)
         {
+        }
+
+        private void SubscribeToGraphRefresh()
+        {
+            if (_subscribedToGraphRefresh)
+            {
+                return;
+            }
+
+            FuseEvents.GraphRebuilt += OnGraphRebuilt;
+            _subscribedToGraphRefresh = true;
+        }
+
+        private void UnsubscribeFromGraphRefresh()
+        {
+            if (!_subscribedToGraphRefresh)
+            {
+                return;
+            }
+
+            FuseEvents.GraphRebuilt -= OnGraphRebuilt;
+            _subscribedToGraphRefresh = false;
+        }
+
+        private void OnGraphRebuilt()
+        {
+            if (isActiveAndEnabled && PassengerLoad != null && !string.IsNullOrWhiteSpace(GetStopIdentifier()))
+            {
+                TryRefreshPassengerStop("GraphRebuilt");
+            }
         }
 
         private void TryRefreshPassengerStop(string source)
@@ -119,15 +164,43 @@ namespace FUSE.API
 
         private IEnumerable<TrackSpan> ResolveBoundSpans()
         {
-            return TrackSpans
-                .Where(span => span != null)
-                .Where(span =>
+            var spans = TrackSpans ?? Array.Empty<TrackSpan>();
+            var valid = new List<TrackSpan>();
+            var invalid = new List<string>();
+
+            foreach (var span in spans)
+            {
+                if (span == null)
                 {
-                    var lower = span.lower;
-                    var upper = span.upper;
-                    return lower != null && lower.Value.segment != null &&
-                           upper != null && upper.Value.segment != null;
-                });
+                    invalid.Add("<null>");
+                    continue;
+                }
+
+                var lower = span.lower;
+                var upper = span.upper;
+                if (lower != null && lower.Value.segment != null &&
+                    upper != null && upper.Value.segment != null)
+                {
+                    valid.Add(span);
+                    continue;
+                }
+
+                invalid.Add(string.IsNullOrWhiteSpace(span.id) ? span.name : span.id);
+            }
+
+            if (invalid.Count > 0)
+            {
+                var key = $"{Identifier ?? string.Empty}|{GetStopIdentifier() ?? string.Empty}|{string.Join(",", invalid.ToArray())}";
+                if (LoggedInvalidSpanWarnings.Add(key))
+                {
+                    FuseLog.Warning(
+                        $"FUSE passenger stop id='{GetStopIdentifier() ?? string.Empty}' " +
+                        $"component='{Identifier ?? string.Empty}' ignored invalid span binding(s): {string.Join(", ", invalid.ToArray())}. " +
+                        "The stop will refresh again after graph rebuilds.");
+                }
+            }
+
+            return valid;
         }
 
         private HashSet<TrackMarker> RebuildPassengerStopMarkers(Transform stopTransform, IEnumerable<TrackSpan> boundSpans)

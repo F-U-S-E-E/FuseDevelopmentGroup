@@ -7,17 +7,19 @@ namespace FUSE.Registry
     /// </summary>
     public enum FuseClaimKind
     {
-        // Exclusive
+        // Exclusive graph/control objects
         Node,
         Segment,
         Span,
-        Industry,
         Loader,
         Station,
-        Scenery,
         Turntable,
 
-        // Shared (refcounted)
+        // Shared/cumulative patch objects
+        Industry,
+        Scenery,
+
+        // Shared/refcounted suppressions
         SuppressedScenePath,
         SuppressedTrackGroup,
         SuppressedArea
@@ -29,6 +31,8 @@ namespace FUSE.Registry
         {
             switch (kind)
             {
+                case FuseClaimKind.Industry:
+                case FuseClaimKind.Scenery:
                 case FuseClaimKind.SuppressedScenePath:
                 case FuseClaimKind.SuppressedTrackGroup:
                 case FuseClaimKind.SuppressedArea:
