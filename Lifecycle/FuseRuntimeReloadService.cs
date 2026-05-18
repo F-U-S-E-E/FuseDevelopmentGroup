@@ -30,6 +30,10 @@ namespace FUSE.Lifecycle
 
             FuseCacheRegistry.RebuildAll();
             var applied = FuseDataPackageDiscovery.ReapplyLoadedPackages(operation);
+            TrackAPI.RemoveInvalidTrackSpans(operation);
+            TrackAPI.ScrubCtcSignalReferences(operation);
+            IndustryAPI.ScrubIndustryComponentCaches(operation);
+            IndustryAPI.DisableOrphanedBaseGameIndustries(operation);
             TrackAPI.DisableInvalidTrackMarkers(operation);
             FuseLog.Info($"FUSE runtime track/data reload completed operation='{operation}' applied={applied} elapsedMs={stopwatch.ElapsedMilliseconds}.");
             return applied;
