@@ -13,6 +13,7 @@
     "MirrorAssetPacksToLocalLow": false,
     "VerboseApplyReportDetails": false,
     "BlockNonHostMultiplayerClientWorldApply": false,
-    "ShowAdvancedHealthDetails": false
+    "ShowAdvancedHealthDetails": false,
+    "ShowLegacyModsInUmm": true
   }
 }
