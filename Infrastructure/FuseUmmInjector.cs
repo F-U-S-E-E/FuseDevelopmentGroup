@@ -14,18 +14,44 @@ namespace FUSE.Infrastructure
         public const string LegacySupportId = "FUSE-LegacySupport";
         public const string LegacySupportDisplayName = "FUSE Legacy Support";
         public const string LegacySupportAuthor = "FUSE";
-        // UMM's ModEntry.Toggleable returns `OnToggle != null || !HasAssembly`, and
-        // HasAssembly returns true iff Info.AssemblyName or Info.EntryMethod is non-empty.
-        // Setting both to point at the no-op below makes HasAssembly true; leaving OnToggle null
-        // therefore makes Toggleable false, which hides the enable/disable toggle in UMM's UI.
-        private const string SyntheticAssemblyName = "FUSE.dll";
-        private const string SyntheticEntryMethod = "FUSE.Infrastructure.FuseUmmInjector.SyntheticEntryNoop";
+        // Synthetic rows have no real assembly. Leaving Info.AssemblyName / Info.EntryMethod
+        // empty makes ModEntry.HasAssembly return false; combined with pre-setting mStarted,
+        // ModEntry.Loaded short-circuits to true so UMM's Load() returns at its first line
+        // without trying to resolve a DLL beside the legacy mod folder.
 
         private static readonly FieldInfo ModEntriesField =
             typeof(UnityModManager).GetField("modEntries", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
 
         private static readonly HashSet<string> InjectedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static bool _ranOnce;
+        private static string _pendingFuseModEntryPath;
+        private static string _pendingFuseVersion;
+        private static bool _injectionPending;
+
+        // Defers UMM modEntries mutation until after UnityModManager._Start's foreach
+        // finishes; mutating the list mid-iteration throws InvalidOperationException
+        // from List<T>.Enumerator and aborts the rest of UMM's mod loading.
+        public static void ScheduleInjection(string fuseModEntryPath, string fuseVersion)
+        {
+            _pendingFuseModEntryPath = fuseModEntryPath;
+            _pendingFuseVersion = fuseVersion;
+            _injectionPending = true;
+        }
+
+        public static void FlushPendingInjection()
+        {
+            if (!_injectionPending)
+            {
+                return;
+            }
+
+            _injectionPending = false;
+            var path = _pendingFuseModEntryPath;
+            var version = _pendingFuseVersion;
+            _pendingFuseModEntryPath = null;
+            _pendingFuseVersion = null;
+            InjectLegacyEntries(path, version);
+        }
 
         public static void InjectLegacyEntries(string fuseModEntryPath, string fuseVersion)
         {
@@ -157,8 +183,8 @@ namespace FUSE.Infrastructure
                     GameVersion = string.Empty,
                     Requirements = requirements ?? Array.Empty<string>(),
                     LoadAfter = Array.Empty<string>(),
-                    AssemblyName = SyntheticAssemblyName,
-                    EntryMethod = SyntheticEntryMethod,
+                    AssemblyName = string.Empty,
+                    EntryMethod = string.Empty,
                     HomePage = string.Empty,
                     Repository = string.Empty,
                     ContentType = string.Empty
@@ -247,14 +273,6 @@ namespace FUSE.Infrastructure
             {
                 return path.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             }
-        }
-
-        public static bool SyntheticEntryNoop(UnityModManager.ModEntry modEntry)
-        {
-            FuseLog.Info(
-                $"FUSE synthetic UMM entry no-op invoked for id='{modEntry?.Info?.Id ?? "<unknown>"}'; " +
-                "FUSE manages legacy data packages internally and the synthetic UMM row carries no assembly.");
-            return true;
         }
 
         private static void SetPrivateBool(object instance, string fieldName, bool value)
