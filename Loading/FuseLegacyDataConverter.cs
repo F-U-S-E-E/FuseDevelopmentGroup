@@ -642,7 +642,11 @@ namespace FUSE.Loading
                     ["industries"] = new JObject(),
                     ["loaders"] = new JObject(),
                     ["turntables"] = new JObject(),
-                    ["stations"] = new JObject()
+                    ["stations"] = new JObject(),
+                    ["removals"] = new JObject
+                    {
+                        ["industries"] = new JArray()
+                    }
                 },
                 ["world"] = new JObject
                 {
@@ -715,10 +719,19 @@ namespace FUSE.Loading
                         continue;
                     }
 
-                    foreach (var industry in industries.Properties().Where(p => p.Value is JObject))
+                    foreach (var industry in industries.Properties())
                     {
-                        (root["operations"]["industries"] as JObject)[industry.Name] =
-                            ConvertIndustry(industry.Name, (JObject)industry.Value, area.Name);
+                        if (industry.Value.Type == JTokenType.Null)
+                        {
+                            ((JArray)root["operations"]["removals"]["industries"]).Add(industry.Name);
+                            continue;
+                        }
+
+                        if (industry.Value is JObject industryObject)
+                        {
+                            (root["operations"]["industries"] as JObject)[industry.Name] =
+                                ConvertIndustry(industry.Name, industryObject, area.Name);
+                        }
                     }
                 }
             }
@@ -726,10 +739,19 @@ namespace FUSE.Loading
             var topIndustries = source["industries"] as JObject;
             if (topIndustries != null)
             {
-                foreach (var industry in topIndustries.Properties().Where(p => p.Value is JObject))
+                foreach (var industry in topIndustries.Properties())
                 {
-                    ((JObject)root["operations"]["industries"])[industry.Name] =
-                        ConvertIndustry(industry.Name, (JObject)industry.Value, null);
+                    if (industry.Value.Type == JTokenType.Null)
+                    {
+                        ((JArray)root["operations"]["removals"]["industries"]).Add(industry.Name);
+                        continue;
+                    }
+
+                    if (industry.Value is JObject industryObject)
+                    {
+                        ((JObject)root["operations"]["industries"])[industry.Name] =
+                            ConvertIndustry(industry.Name, industryObject, null);
+                    }
                 }
             }
 

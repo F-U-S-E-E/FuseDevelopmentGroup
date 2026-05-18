@@ -74,6 +74,7 @@ namespace FUSE
                 FuseEditor.OnFuseLoad();
                 FuseHealthUi.Ensure();
                 FuseTrackDebugOverlay.Ensure();
+                FuseSceneryDebugOverlay.Ensure();
                 FuseLegacyAssemblyHost.EnsureStartupHost();
                 FuseUmmInjector.InjectLegacyEntries(modEntry.Path, ReadInfoJsonString(Path.Combine(modEntry.Path ?? string.Empty, "Info.json"), "Version"));
 
@@ -191,8 +192,10 @@ namespace FUSE
 
             FuseLegacyAssemblyHost.Shutdown();
             FuseLegacySupportAssemblyShim.Shutdown();
+            FuseRuntimeRebindService.Shutdown();
             FuseHealthUi.Shutdown();
             FuseTrackDebugOverlay.Shutdown();
+            FuseSceneryDebugOverlay.Shutdown();
 
             if (_isLoaded)
             {
