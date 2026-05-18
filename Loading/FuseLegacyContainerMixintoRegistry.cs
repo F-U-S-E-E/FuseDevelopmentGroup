@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using AssetPack.Runtime;
 using FUSE.Data;
 using FUSE.Infrastructure;
+using HarmonyLib;
 using Model.Definition;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -644,13 +646,49 @@ namespace FUSE.Loading
             return (JObject)((JArray)root["objects"])[0];
         }
 
+        // Cached reflection handle to ContainerSerialization's private settings factory.
+        // We call it directly through Newtonsoft instead of going through the public
+        // ContainerSerialization.Deserialize entry point, because old-loader plugins
+        // (notably LegosLibraryOfStuff) Harmony-Postfix that entry point and mutate
+        // shared, cached Component instances on every invocation — invoking the
+        // entry point during a legacy mixinto patch would re-fire those postfixes
+        // and accumulate the mutations (component names prefixed twice, etc.),
+        // which manifests as the Component Group toggle on cars going dead.
+        // The plugin's first run during the game's primary container load remains
+        // unaffected; we only bypass the entry point on the per-item re-deserialize
+        // FUSE does after applying the patch JObject.
+        private static readonly MethodInfo ContainerSerializerSettingsMethod =
+            AccessTools.Method(typeof(ContainerSerialization), "JsonSerializerSettings");
+
         private static ContainerItem DeserializeItem(JObject item)
         {
             var wrapper = new JObject
             {
                 ["objects"] = new JArray(item)
             };
-            return ContainerSerialization.Deserialize(wrapper.ToString(Formatting.None))?.Objects?.FirstOrDefault();
+
+            var text = wrapper.ToString(Formatting.None);
+
+            if (ContainerSerializerSettingsMethod != null)
+            {
+                try
+                {
+                    var settings = (JsonSerializerSettings)ContainerSerializerSettingsMethod.Invoke(null, null);
+                    var container = JsonConvert.DeserializeObject<Container>(text, settings);
+                    container?.Awake();
+                    return container?.Objects?.FirstOrDefault();
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning(
+                        "FUSE legacy container mixinto fell back to ContainerSerialization.Deserialize " +
+                        $"because the reflection-based bypass failed: {ex.GetBaseException().Message}. " +
+                        "Old-loader Deserialize postfixes will re-fire for this item, which may double-apply " +
+                        "their edits.");
+                }
+            }
+
+            return ContainerSerialization.Deserialize(text)?.Objects?.FirstOrDefault();
         }
 
         private static void NormalizeLegacyAssetPackReferences(JToken token)

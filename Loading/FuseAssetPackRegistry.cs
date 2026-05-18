@@ -479,9 +479,25 @@ namespace FUSE.Loading
             }
 
             var added = 0;
+            var skippedAlreadyAdded = 0;
             foreach (var sourcePath in sourcePaths)
             {
                 var identifier = ToDirectStoreIdentifier(sourcePath);
+                // MountAllAvailableAssetPacks is invoked twice per session (FusePlugin.Load
+                // then FuseDataPackageDiscovery.LoadPackagesFromDisk). Without this check the
+                // second pass re-invokes PrefabStore.AddStore for every identifier we already
+                // mounted, leaving two AssetPackRuntimeStore instances per asset pack — each
+                // with its own _container cache. Anything that iterates stores then triggers
+                // two ContainerSerialization.Deserialize calls per pack, double-firing every
+                // legacy Postfix on Deserialize (notably LegosLibraryOfStuff's, which mutates
+                // shared Component instances on each pass — breaking per-car component-group
+                // toggles like ERIE LOGO.)
+                if (DirectAssetPackStoreIdentifiers.Contains(identifier))
+                {
+                    skippedAlreadyAdded++;
+                    continue;
+                }
+
                 try
                 {
                     addStore.Invoke(prefabStore, new object[]
@@ -498,9 +514,11 @@ namespace FUSE.Loading
                 }
             }
 
-            if (added > 0)
+            if (added > 0 || skippedAlreadyAdded > 0)
             {
-                FuseLog.Info($"FUSE added {added} direct asset pack store(s) to PrefabStore.");
+                FuseLog.Info(
+                    $"FUSE added {added} direct asset pack store(s) to PrefabStore; " +
+                    $"skippedAlreadyAdded={skippedAlreadyAdded}.");
             }
 
             FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);

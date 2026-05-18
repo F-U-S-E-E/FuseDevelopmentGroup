@@ -2793,17 +2793,14 @@ namespace FUSE.Loading
                     }
 
                     var industryDefinition = industry.Value;
-                    if (industryDefinition != null &&
-                        FuseRegistry.IsMergeableSecondary(FuseClaimKind.Industry, industry.Key, definition.Id))
+                    var exists = IndustryAPI.GetIndustry(industry.Key) != null;
+                    if (exists && industryDefinition != null)
                     {
-                        // A previous package owns this industry; this is a layered mixinto-style
-                        // patch. Force component merge so we don't wipe the primary's components,
-                        // and skip the position/area/usesContract overwrites that the patch
-                        // generally does not intend to redefine.
+                        // The industry already exists from a prior package's apply; treat this
+                        // apply as a mixinto-style patch and force MergeComponents so the
+                        // existing components are preserved instead of wiped by Update.
                         industryDefinition.MergeComponents = true;
                     }
-
-                    var exists = IndustryAPI.GetIndustry(industry.Key) != null;
                     if (transaction.TryApply("industry", industry.Key, exists, () =>
                     {
                         if (exists)
