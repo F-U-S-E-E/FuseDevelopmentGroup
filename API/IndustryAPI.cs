@@ -198,6 +198,26 @@ namespace FUSE.API
                     FuseIndustryRuntimeIndex.Instance.Set(sceneMatch.identifier, sceneMatch);
                     return sceneMatch;
                 }
+
+                var legacyAlias = NormalizeLegacyIndustryReference(id);
+                if (!string.Equals(legacyAlias, id, StringComparison.OrdinalIgnoreCase))
+                {
+                    sceneMatch = UnityEngine.Object.FindObjectsOfType<Industry>(true)
+                        .FirstOrDefault(industry => industry != null && string.Equals(industry.identifier, legacyAlias, StringComparison.OrdinalIgnoreCase));
+                    if (sceneMatch != null)
+                    {
+                        FuseIndustryRuntimeIndex.Instance.Set(sceneMatch.identifier, sceneMatch);
+                        return sceneMatch;
+                    }
+                }
+
+                sceneMatch = UnityEngine.Object.FindObjectsOfType<Industry>(true)
+                    .FirstOrDefault(industry => IndustryMatchesLegacyReference(industry, id));
+                if (sceneMatch != null)
+                {
+                    FuseIndustryRuntimeIndex.Instance.Set(sceneMatch.identifier, sceneMatch);
+                    return sceneMatch;
+                }
             }
 
             var controller = OpsController.Shared;
@@ -213,6 +233,48 @@ namespace FUSE.API
             return FuseCacheRegistry.IsReady && !string.IsNullOrWhiteSpace(id)
                 ? UnityEngine.Object.FindObjectsOfType<Industry>(true).FirstOrDefault(industry => industry.identifier == id)
                 : null;
+        }
+
+        private static string NormalizeLegacyIndustryReference(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return id;
+            }
+
+            const string colliePrefix = "collie-";
+            return id.StartsWith(colliePrefix, StringComparison.OrdinalIgnoreCase)
+                ? id.Substring(colliePrefix.Length)
+                : id;
+        }
+
+        private static bool IndustryMatchesLegacyReference(Industry industry, string reference)
+        {
+            if (industry == null || string.IsNullOrWhiteSpace(reference))
+            {
+                return false;
+            }
+
+            return string.Equals(industry.name, reference, StringComparison.OrdinalIgnoreCase) ||
+                   LooseIdEquals(industry.identifier, reference) ||
+                   LooseIdEquals(industry.name, reference);
+        }
+
+        private static bool LooseIdEquals(string left, string right)
+        {
+            var normalizedLeft = NormalizeLooseId(left);
+            return normalizedLeft.Length > 0 &&
+                   string.Equals(normalizedLeft, NormalizeLooseId(right), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeLooseId(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            return new string(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
         }
 
         public static IEnumerable<Industry> GetAllIndustries()
@@ -1810,9 +1872,11 @@ namespace FUSE.API
                 {
                     candidate = assembly.GetType(type, false, true);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Some plugin assemblies can throw while resolving metadata.
+                    FuseLog.Warning(
+                        $"FUSE skipped industry component type probe assembly='{assembly.FullName ?? "<unknown>"}' " +
+                        $"type='{type}' reason='{ex.Message}'.");
                 }
 
                 if (candidate != null && typeof(IndustryComponent).IsAssignableFrom(candidate))
@@ -2819,7 +2883,7 @@ namespace FUSE.API
             var refreshedCount = 0;
             foreach (var component in industry.GetComponentsInChildren<IndustryComponent>(true))
             {
-                if (component == null || string.IsNullOrWhiteSpace(component.subIdentifier))
+                if (!IsLiveIndustryComponent(component) || string.IsNullOrWhiteSpace(component.subIdentifier))
                 {
                     continue;
                 }
@@ -2831,6 +2895,228 @@ namespace FUSE.API
             }
 
             FuseLog.Info($"FUSE invalidated industry component caches for '{industry.identifier}' cachedComponentsCleared={clearedIndustryComponentList} componentIdentityRefreshed={refreshedCount}.");
+        }
+
+        internal static int ScrubIndustryComponentCaches(string source)
+        {
+            var operation = source ?? "unspecified";
+            var prunedSpanReferences = ScrubIndustryComponentTrackSpanReferences(operation);
+            if (IndustryRuntimeComponentsField == null)
+            {
+                return prunedSpanReferences;
+            }
+
+            var scrubbed = 0;
+            foreach (var industry in UnityEngine.Object.FindObjectsOfType<Industry>(true))
+            {
+                scrubbed += ScrubIndustryComponentCache(industry, operation);
+            }
+
+            if (scrubbed > 0)
+            {
+                FuseLog.Warning($"FUSE scrubbed {scrubbed} stale industry component cache(s) after '{operation}'.");
+            }
+
+            return scrubbed + prunedSpanReferences;
+        }
+
+        internal static int DisableOrphanedBaseGameIndustries(string source)
+        {
+            var operation = source ?? "unspecified";
+            ScrubIndustryComponentTrackSpanReferences(operation);
+
+            var disabled = 0;
+            foreach (var industry in UnityEngine.Object.FindObjectsOfType<Industry>(true))
+            {
+                if (!ShouldDisableOrphanedBaseGameIndustry(industry))
+                {
+                    continue;
+                }
+
+                var id = industry.identifier ?? string.Empty;
+                try
+                {
+                    industry.ProgressionDisabled = true;
+                    foreach (var component in industry.GetComponentsInChildren<IndustryComponent>(true))
+                    {
+                        if (component != null)
+                        {
+                            component.ProgressionDisabled = true;
+                        }
+                    }
+
+                    industry.gameObject.SetActive(false);
+                    FuseIndustryRuntimeIndex.Instance.Remove(id);
+                    disabled++;
+                    FuseLog.Info(
+                        $"FUSE disabled orphaned base-game industry '{id}' " +
+                        $"reason='{operation}' detail='all live industry components lost their track spans after FUSE track replacement'.");
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning($"FUSE could not disable orphaned base-game industry '{id}' after '{operation}': {ex.Message}");
+                }
+            }
+
+            if (disabled > 0)
+            {
+                RefreshIndustriesAfterBatch("DisableOrphanedBaseGameIndustries:" + operation);
+                FuseLog.Info($"FUSE disabled {disabled} orphaned base-game industr{(disabled == 1 ? "y" : "ies")} after '{operation}'.");
+            }
+
+            return disabled;
+        }
+
+        internal static int ScrubIndustryComponentCache(Industry industry, string source)
+        {
+            if (industry == null || IndustryRuntimeComponentsField == null)
+            {
+                return 0;
+            }
+
+            var operation = source ?? "unspecified";
+            IndustryComponent[] cachedComponents;
+            try
+            {
+                cachedComponents = IndustryRuntimeComponentsField.GetValue(industry) as IndustryComponent[];
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not inspect cached industry components for '{industry.identifier}' after '{operation}': {ex.Message}");
+                return 0;
+            }
+
+            if (cachedComponents == null || cachedComponents.All(IsLiveIndustryComponent))
+            {
+                return 0;
+            }
+
+            try
+            {
+                IndustryRuntimeComponentsField.SetValue(industry, null);
+                FuseLog.Warning($"FUSE scrubbed stale industry component cache for '{industry.identifier}' after '{operation}'.");
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not clear stale industry component cache for '{industry.identifier}' after '{operation}': {ex.Message}");
+                return 0;
+            }
+        }
+
+        private static int ScrubIndustryComponentTrackSpanReferences(string source)
+        {
+            var pruned = 0;
+            foreach (var component in UnityEngine.Object.FindObjectsOfType<IndustryComponent>(true))
+            {
+                if (!IsLiveIndustryComponent(component) || component.trackSpans == null || component.trackSpans.Length == 0)
+                {
+                    continue;
+                }
+
+                var retained = component.trackSpans.Where(IsLiveTrackSpan).ToArray();
+                if (retained.Length == component.trackSpans.Length)
+                {
+                    continue;
+                }
+
+                var removed = component.trackSpans.Length - retained.Length;
+                pruned += removed;
+                component.trackSpans = retained;
+                FuseLog.Warning(
+                    $"FUSE pruned stale industry component track span reference(s) component='{DescribeComponent(component)}' " +
+                    $"removed={removed} reason='{source ?? "unspecified"}'.");
+            }
+
+            if (pruned > 0)
+            {
+                FuseLog.Warning($"FUSE pruned {pruned} stale industry component track span reference(s) after '{source ?? "unspecified"}'.");
+            }
+
+            return pruned;
+        }
+
+        private static bool ShouldDisableOrphanedBaseGameIndustry(Industry industry)
+        {
+            if (!IsLiveIndustry(industry) || !industry.gameObject.activeSelf)
+            {
+                return false;
+            }
+
+            var id = industry.identifier ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(id) || FuseCreatedIndustryIds.Contains(id))
+            {
+                return false;
+            }
+
+            if (FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Industry, id, out FuseIndustry _))
+            {
+                return false;
+            }
+
+            var components = industry.GetComponentsInChildren<IndustryComponent>(true)
+                .Where(IsLiveIndustryComponent)
+                .ToArray();
+            if (components.Length == 0)
+            {
+                return false;
+            }
+
+            return components.All(component =>
+                component.trackSpans == null ||
+                component.trackSpans.Length == 0 ||
+                component.trackSpans.All(span => !IsLiveTrackSpan(span)));
+        }
+
+        private static bool IsLiveTrackSpan(TrackSpan span)
+        {
+            if (span == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return span.gameObject != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsLiveIndustry(Industry industry)
+        {
+            if (industry == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return industry.gameObject != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsLiveIndustryComponent(IndustryComponent component)
+        {
+            if (component == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return component.gameObject != null;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static string GetComponentIdentifier(Industry industry, IndustryComponent component)
@@ -2888,12 +3174,13 @@ namespace FUSE.API
             }
 
             ApplyIndustryOrdering();
+            var scrubbedCacheCount = ScrubIndustryComponentCaches(source);
             Messenger.Default.Send(default(IndustriesDidChange));
             FuseIndustryRuntimeIndex.Instance.Rebuild();
             FuseIndustryComponentRuntimeIndex.Instance.Rebuild();
             var industryCount = UnityEngine.Object.FindObjectsOfType<Industry>(true).Length;
             var componentCount = UnityEngine.Object.FindObjectsOfType<IndustryComponent>(true).Length;
-            FuseLog.Info($"FUSE refreshed industries after '{source}' sceneIndustryCount={industryCount} sceneIndustryComponentCount={componentCount} cacheIndustryCount={FuseIndustryRuntimeIndex.Instance.Count} cacheIndustryComponentCount={FuseIndustryComponentRuntimeIndex.Instance.Count}.");
+            FuseLog.Info($"FUSE refreshed industries after '{source}' sceneIndustryCount={industryCount} sceneIndustryComponentCount={componentCount} cacheIndustryCount={FuseIndustryRuntimeIndex.Instance.Count} cacheIndustryComponentCount={FuseIndustryComponentRuntimeIndex.Instance.Count} staleCacheScrubs={scrubbedCacheCount}.");
             foreach (var industryId in FuseCreatedIndustryIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray())
             {
                 var industry = GetIndustry(industryId);
