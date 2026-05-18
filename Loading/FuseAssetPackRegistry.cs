@@ -479,16 +479,9 @@ namespace FUSE.Loading
             }
 
             var added = 0;
-            var skipped = 0;
             foreach (var sourcePath in sourcePaths)
             {
                 var identifier = ToDirectStoreIdentifier(sourcePath);
-                if (!DirectAssetPackStoreIdentifiers.Add(identifier))
-                {
-                    skipped++;
-                    continue;
-                }
-
                 try
                 {
                     addStore.Invoke(prefabStore, new object[]
@@ -496,22 +489,18 @@ namespace FUSE.Loading
                         identifier,
                         AssetPackRuntimeStore.StoreLocation.External
                     });
+                    DirectAssetPackStoreIdentifiers.Add(identifier);
                     added++;
                 }
                 catch (Exception ex)
                 {
-                    DirectAssetPackStoreIdentifiers.Remove(identifier);
                     FuseLog.Warning($"FUSE could not add direct asset pack store '{sourcePath}': {ex.Message}");
                 }
             }
 
             if (added > 0)
             {
-                FuseLog.Info($"FUSE added {added} direct asset pack store(s) to PrefabStore; skippedAlreadyAdded={skipped}.");
-            }
-            else if (skipped > 0)
-            {
-                FuseLog.Info($"FUSE skipped {skipped} already-registered direct asset pack store(s).");
+                FuseLog.Info($"FUSE added {added} direct asset pack store(s) to PrefabStore.");
             }
 
             FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
@@ -652,20 +641,57 @@ namespace FUSE.Loading
         private static IEnumerable<string> EnumerateFallbackAssetPackFolders(string packagePath)
         {
             var scAssetPacks = Path.Combine(packagePath, "SCAssetPacks");
-            if (!Directory.Exists(scAssetPacks))
+            if (Directory.Exists(scAssetPacks))
             {
-                yield break;
+                if (IsAssetPackFolder(scAssetPacks))
+                {
+                    yield return scAssetPacks;
+                }
+                else
+                {
+                    foreach (var folder in EnumerateAssetPackFolders(scAssetPacks))
+                    {
+                        yield return folder;
+                    }
+                }
             }
 
-            if (IsAssetPackFolder(scAssetPacks))
-            {
-                yield return scAssetPacks;
-                yield break;
-            }
-
-            foreach (var folder in EnumerateAssetPackFolders(scAssetPacks))
+            foreach (var folder in EnumerateRootAssetPackFolders(packagePath, scAssetPacks))
             {
                 yield return folder;
+            }
+        }
+
+        private static IEnumerable<string> EnumerateRootAssetPackFolders(string packagePath, string scAssetPacksPath)
+        {
+            if (string.IsNullOrWhiteSpace(packagePath) || !Directory.Exists(packagePath))
+            {
+                yield break;
+            }
+
+            var scRoot = Directory.Exists(scAssetPacksPath)
+                ? Path.GetFullPath(scAssetPacksPath)
+                : null;
+
+            foreach (var child in Directory.GetDirectories(packagePath).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                var fullChild = Path.GetFullPath(child);
+                if (!string.IsNullOrWhiteSpace(scRoot) &&
+                    string.Equals(fullChild, scRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (IsAssetPackFolder(fullChild))
+                {
+                    yield return fullChild;
+                    continue;
+                }
+
+                foreach (var folder in EnumerateAssetPackFolders(fullChild))
+                {
+                    yield return folder;
+                }
             }
         }
 

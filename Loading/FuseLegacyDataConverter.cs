@@ -187,6 +187,7 @@ namespace FUSE.Loading
                 DisplayName = string.IsNullOrWhiteSpace(displayName) ? legacyId : displayName,
                 Version = ReadString(definition, "version", "Version") ?? string.Empty,
                 Author = ReadString(definition, "author", "Author") ?? string.Empty,
+                RequiredPackageIds = ReadLegacyRequiredDependencyIds(definition),
                 LoadAfter = ReadLegacyDependencyIds(definition),
                 SourceFiles = sourceFiles,
                 MapTileSources = mapTileSources
@@ -570,19 +571,26 @@ namespace FUSE.Loading
 
         private static string[] ReadLegacyDependencyIds(JObject definition)
         {
-            var result = new List<string>();
-            foreach (var requirement in ConvertRequirements(ReadLegacyRequirements(definition)).OfType<JObject>())
+            var result = new List<string>(ReadLegacyRequiredDependencyIds(definition));
+
+            foreach (var id in ReadStringArray(definition["loadAfter"] ?? definition["LoadAfter"]))
             {
-                var id = ReadString(requirement, "id");
-                if (!string.IsNullOrWhiteSpace(id))
+                if (!IsCoreLegacyRequirement(id))
                 {
                     result.Add(EnsureFusePackageId(id));
                 }
             }
 
-            foreach (var id in ReadStringArray(definition["loadAfter"] ?? definition["LoadAfter"]))
+            return result.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+
+        private static string[] ReadLegacyRequiredDependencyIds(JObject definition)
+        {
+            var result = new List<string>();
+            foreach (var requirement in ConvertRequirements(ReadLegacyRequirements(definition)).OfType<JObject>())
             {
-                if (!IsCoreLegacyRequirement(id))
+                var id = ReadString(requirement, "id");
+                if (!string.IsNullOrWhiteSpace(id))
                 {
                     result.Add(EnsureFusePackageId(id));
                 }
@@ -605,6 +613,14 @@ namespace FUSE.Loading
             return value == "railroader" ||
                    value == "railloader" ||
                    value == "rail-loader" ||
+                   value == "alinanova21.alinasmapmod" ||
+                   value == "alinasmapmod" ||
+                   value == "alinamapmod" ||
+                   value == "alinanova21.mapeditor" ||
+                   value == "mapeditor" ||
+                   value == "mmapeditor" ||
+                   value == "alinanova21.alinasmapexpansion" ||
+                   value == "alinasmapexpansion" ||
                    value == "zamu.strangecustoms" ||
                    value == "strangecustoms" ||
                    value == "zamu.confusingsupplements" ||
@@ -3077,6 +3093,7 @@ namespace FUSE.Loading
         public string DisplayName { get; set; }
         public string Version { get; set; }
         public string Author { get; set; }
+        public string[] RequiredPackageIds { get; set; } = Array.Empty<string>();
         public string[] LoadAfter { get; set; } = Array.Empty<string>();
         public string[] SourceFiles { get; set; } = Array.Empty<string>();
         public FuseLegacyMapTileSource[] MapTileSources { get; set; } = Array.Empty<FuseLegacyMapTileSource>();

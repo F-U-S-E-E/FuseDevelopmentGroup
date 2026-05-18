@@ -67,12 +67,17 @@ namespace FUSE.Patches
         {
             builder.AddField("Passengers", () => car.PassengerCountString(car.GetPassengerMarker()), UIPanelBuilder.Frequency.Fast);
 
-            var stopsById = PassengerStop.FindAll()
+            var allStops = PassengerStop.FindAll()
                 .Where(stop => stop != null && !string.IsNullOrWhiteSpace(stop.identifier))
+                .Where(stop => !stop.ProgressionDisabled)
+                .ToArray();
+
+            var stopsById = allStops
                 .GroupBy(stop => stop.identifier, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 
             var orderedStops = new List<PassengerStop>();
+            var addedStopIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var stopId in DefaultPassengerStopOrder)
             {
                 if (!stopsById.TryGetValue(stopId, out var stop) || stop == null)
@@ -87,10 +92,23 @@ namespace FUSE.Patches
                     continue;
                 }
 
-                if (!stop.ProgressionDisabled)
-                {
-                    orderedStops.Add(stop);
-                }
+                orderedStops.Add(stop);
+                addedStopIds.Add(stop.identifier);
+            }
+
+            var extraStops = allStops
+                .Where(stop => !addedStopIds.Contains(stop.identifier))
+                .GroupBy(stop => stop.identifier, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(GetPassengerStopAreaOrder)
+                .ThenBy(stop => stop.DisplayName ?? stop.name ?? stop.identifier, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(stop => stop.identifier, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            orderedStops.AddRange(extraStops);
+            if (extraStops.Length > 0)
+            {
+                FuseLog.Info($"FUSE passenger panel appended {extraStops.Length} non-vanilla passenger stop(s) after the default route order.");
             }
 
             builder.VScrollView(viewBuilder =>
@@ -148,6 +166,19 @@ namespace FUSE.Patches
 
             var count = marker.Value.CountPassengersForStop(stop.identifier);
             return count != 0 ? $"{stop.name} ({count})" : stop.name;
+        }
+
+        private static int GetPassengerStopAreaOrder(PassengerStop stop)
+        {
+            try
+            {
+                var area = stop?.GetComponentInParent<Area>(true);
+                return area != null ? area.transform.GetSiblingIndex() : int.MaxValue;
+            }
+            catch
+            {
+                return int.MaxValue;
+            }
         }
 
         private static bool IsPassengerStopChecked(Car car, PassengerStop passengerStop)

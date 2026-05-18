@@ -379,6 +379,7 @@ namespace FUSE.Loading
                 Version = ((string)info["Version"] ?? (string)info["version"] ?? string.Empty).Trim(),
                 FolderPath = folderPath,
                 Priority = ReadPriority(info["FuseLoadPriority"]),
+                RequiredPackageIds = ReadDependencyIds(info["FuseRequires"]),
                 LoadAfter = ReadDependencyIds(info["FuseLoadAfter"]),
                 LoadBefore = ReadDependencyIds(info["FuseLoadBefore"]),
                 Disabled = disabled,
@@ -417,6 +418,7 @@ namespace FUSE.Loading
                 Version = legacy.Version ?? string.Empty,
                 FolderPath = folderPath,
                 Priority = ReadPriority(info?["FuseLoadPriority"]),
+                RequiredPackageIds = legacy.RequiredPackageIds ?? Array.Empty<string>(),
                 LoadAfter = legacy.LoadAfter ?? Array.Empty<string>(),
                 LoadBefore = ReadDependencyIds(info?["FuseLoadBefore"]),
                 Disabled = disabled,
@@ -457,6 +459,35 @@ namespace FUSE.Loading
 
             foreach (var package in fallbackOrder)
             {
+                foreach (var dependencyId in package.RequiredPackageIds)
+                {
+                    if (byId.TryGetValue(dependencyId, out var dependency))
+                    {
+                        if (dependency.Disabled)
+                        {
+                            var message = $"Package '{package.Id}' requires '{dependencyId}', but that package is disabled.";
+                            package.Faults.Add(message);
+                            FuseLog.Warning($"FUSE {message}");
+                            continue;
+                        }
+
+                        AddPackageOrderEdge(dependency, package, outgoing, incomingCount);
+                        continue;
+                    }
+
+                    if (IsPackagePresentInModsRoot(dependencyId))
+                    {
+                        FuseLog.Info(
+                            $"FUSE dependency '{dependencyId}' required by '{package.Id}' is present as a non-data or asset-only mod; " +
+                            "no package load-order edge was needed.");
+                        continue;
+                    }
+
+                    var missing = $"Package '{package.Id}' requires '{dependencyId}', but no matching package was discovered.";
+                    package.Faults.Add(missing);
+                    FuseLog.Warning($"FUSE {missing}");
+                }
+
                 foreach (var dependencyId in package.LoadAfter)
                 {
                     if (byId.TryGetValue(dependencyId, out var dependency))
@@ -600,6 +631,95 @@ namespace FUSE.Loading
                     ? idCompare
                     : string.Compare(left.FolderPath, right.FolderPath, StringComparison.OrdinalIgnoreCase);
             });
+        }
+
+        private static bool IsPackagePresentInModsRoot(string dependencyId)
+        {
+            if (string.IsNullOrWhiteSpace(dependencyId))
+            {
+                return false;
+            }
+
+            var modsRoot = GetModsRoot();
+            if (string.IsNullOrWhiteSpace(modsRoot) || !Directory.Exists(modsRoot))
+            {
+                return false;
+            }
+
+            var normalizedDependency = dependencyId.Trim();
+            var legacyNormalizedDependency = FuseLegacyDataConverter.EnsureFusePackageId(normalizedDependency);
+            try
+            {
+                foreach (var packagePath in Directory.GetDirectories(modsRoot))
+                {
+                    var packageId = TryReadPackageId(packagePath);
+                    if (FuseUmmState.TryGetDisabledReason(packagePath, packageId, out _) ||
+                        !FuseModSetService.IsPackageEnabledByActiveSet(packageId, packagePath))
+                    {
+                        continue;
+                    }
+
+                    if (PackageIdMatches(packageId, normalizedDependency, legacyNormalizedDependency) ||
+                        PackageIdMatches(Path.GetFileName(packagePath), normalizedDependency, legacyNormalizedDependency))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not inspect Mods folder for required package '{dependencyId}': {ex.Message}");
+            }
+
+            return false;
+        }
+
+        private static string TryReadPackageId(string packagePath)
+        {
+            try
+            {
+                var infoPath = Path.Combine(packagePath, "Info.json");
+                if (File.Exists(infoPath))
+                {
+                    var info = FuseLegacyDataConverter.ReadLegacyObject(infoPath);
+                    var id = (string)info["Id"];
+                    if (!string.IsNullOrWhiteSpace(id))
+                    {
+                        return id.Trim();
+                    }
+                }
+
+                var definitionPath = Path.Combine(packagePath, "Definition.json");
+                if (File.Exists(definitionPath))
+                {
+                    var definition = FuseLegacyDataConverter.ReadLegacyObject(definitionPath);
+                    var id = (string)definition["id"] ?? (string)definition["Id"];
+                    if (!string.IsNullOrWhiteSpace(id))
+                    {
+                        return id.Trim();
+                    }
+                }
+            }
+            catch
+            {
+                // Dependency checks can still fall back to the folder name.
+            }
+
+            return Path.GetFileName(packagePath);
+        }
+
+        private static bool PackageIdMatches(string candidate, string dependencyId, string legacyDependencyId)
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return false;
+            }
+
+            var trimmed = candidate.Trim();
+            return string.Equals(trimmed, dependencyId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(FuseLegacyDataConverter.EnsureFusePackageId(trimmed), dependencyId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(trimmed, legacyDependencyId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(FuseLegacyDataConverter.EnsureFusePackageId(trimmed), legacyDependencyId, StringComparison.OrdinalIgnoreCase);
         }
 
         private static int ReadPriority(JToken token)
@@ -890,6 +1010,7 @@ namespace FUSE.Loading
             public string Version { get; set; }
             public string FolderPath { get; set; }
             public int Priority { get; set; }
+            public string[] RequiredPackageIds { get; set; } = Array.Empty<string>();
             public string[] LoadAfter { get; set; } = Array.Empty<string>();
             public string[] LoadBefore { get; set; } = Array.Empty<string>();
             public bool Disabled { get; set; }
