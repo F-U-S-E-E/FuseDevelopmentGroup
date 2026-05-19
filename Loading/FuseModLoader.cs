@@ -264,6 +264,43 @@ namespace FUSE.Loading
             }
         }
 
+        /// <summary>
+        /// Cross-package final-state removal plan for non-track operations,
+        /// mirroring how <see cref="FuseMergedTrackPlan"/> resolves track
+        /// node/segment/span deletes. Without this, the per-package
+        /// staged-apply-world-removals and staged-apply-operations-removals
+        /// phases ran in a pass that completed before any package's
+        /// apply-world-objects/apply-operations adds, so "package B removes
+        /// what package A adds" patterns failed silently — B's
+        /// <see cref="SceneryAPI.TryRemoveScenery"/> couldn't find a target.
+        /// This plan defers all such removals to a single end-of-batch pass
+        /// that runs after apply-scene-clones, with later adds of the same id
+        /// canceling earlier removals so the "remove base then add custom"
+        /// pattern still works inside a single package.
+        /// </summary>
+        private sealed class FuseMergedRemovalPlan
+        {
+            public readonly Dictionary<string, FuseMergedTrackRemoval> Scenery =
+                new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackRemoval> SceneClones =
+                new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackRemoval> Splineys =
+                new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackRemoval> MapLabels =
+                new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackRemoval> MapMasks =
+                new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackRemoval> TelegraphPoles =
+                new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackRemoval> Industries =
+                new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
+
+            public bool HasAny =>
+                Scenery.Count > 0 || SceneClones.Count > 0 || Splineys.Count > 0 ||
+                MapLabels.Count > 0 || MapMasks.Count > 0 || TelegraphPoles.Count > 0 ||
+                Industries.Count > 0;
+        }
+
         private sealed class FusePreflightReferenceContext
         {
             public readonly HashSet<string> NodeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -324,16 +361,15 @@ namespace FUSE.Loading
                 if (active.Length > 0)
                 {
                     var mergedTrackPlan = BuildMergedTrackPlan(active);
-
-                    // Non-track removals are still per-definition operations, but graph
-                    // removals are now resolved as final-state deletes in the merged plan.
-                    foreach (var candidate in active)
-                    {
-                        var definition = candidate.Loaded.Definition;
-                        var transaction = candidate.Transaction;
-                        transaction.RunPhase("staged-apply-world-removals", () => ApplyWorldRemovals(definition, transaction));
-                        transaction.RunPhase("staged-apply-operations-removals", () => ApplyOperationsRemovals(definition, transaction));
-                    }
+                    // World/operations removals also resolve to final-state deletes
+                    // across packages, just like the track plan. Per-package
+                    // staged-apply-world-removals/staged-apply-operations-removals
+                    // phases used to run before any apply-world-objects /
+                    // apply-operations adds, so "package B removes what package A
+                    // adds" patterns failed because B's target wasn't in the
+                    // scene yet — see ApplyMergedRemovalPlan call below for the
+                    // matching apply pass.
+                    var mergedRemovalPlan = BuildMergedRemovalPlan(active);
 
                     ApplyMergedTrackGraph(mergedTrackPlan, reason);
 
@@ -383,6 +419,47 @@ namespace FUSE.Loading
                         var transaction = candidate.Transaction;
                         transaction.RunPhase("apply-scene-clones", () => ApplySceneClones(definition, loaded.DefinitionPath, transaction));
                     }
+
+                    // Drive the BuildSpliney pass before apply-progression so
+                    // any scenery items a hosted plugin synthesizes (e.g.
+                    // CLB.ModularScenery's lights/foundations/walkways for the
+                    // East Whittier repair facility) exist as discoverable
+                    // SceneryAssetInstances when ApplyProgressionDefinition
+                    // resolves "scenery://<id>" references for the
+                    // gameObjectsEnableOnUnlock lock list. Without this,
+                    // plugin-built scenery is always visible regardless of
+                    // progression state because the gating ResolveGameObject
+                    // can't find them.
+                    try
+                    {
+                        var builderResult = FuseSplineyPluginHost.InvokeBuilders(null);
+                        if (builderResult.TaskCount > 0 || builderResult.BuiltCount > 0)
+                        {
+                            FuseLog.Info(
+                                "FUSE legacy spliney plugin host invoked builders " +
+                                $"tasks={builderResult.TaskCount} " +
+                                $"builderTypes={builderResult.BuilderTypeCount} " +
+                                $"built={builderResult.BuiltCount} " +
+                                $"unmatched={builderResult.UnmatchedCount} " +
+                                $"failures={builderResult.FailureCount}.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        FuseLog.Exception(
+                            "FUSE legacy spliney plugin host BuildSpliney pass " +
+                            "raised an exception; some legacy splineys may render " +
+                            "without their custom visual meshes",
+                            ex);
+                    }
+
+                    // World/operations removals fire here, after every package has
+                    // had a chance to add its scenery / industries / scene clones
+                    // and after legacy plugins built their own scenery. The plan
+                    // was built with latest-write-wins-per-id, so a later
+                    // package's add already cancelled any earlier package's
+                    // remove of the same id (and vice versa).
+                    ApplyMergedRemovalPlan(mergedRemovalPlan);
 
                     foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
                     {
@@ -624,6 +701,201 @@ namespace FUSE.Loading
                 sequence++;
                 removals.Remove(id);
                 definitions[id] = new FuseMergedTrackEntry<T>(id, pair.Value, owner, sequence);
+            }
+        }
+
+        /// <summary>
+        /// Builds a final-state removal plan across all active candidates, in
+        /// the same package/file order as <see cref="BuildMergedTrackPlan"/>.
+        /// Each kind has its own "remove first, then cancel by adds" pass
+        /// per package so that:
+        ///   1. Within a single package, "remove X then add X" leaves X added
+        ///      (matches the legacy SC pattern for replacing base game items).
+        ///   2. Across packages, a later add of an id cancels an earlier
+        ///      package's removal of that id (latest-write-wins per id).
+        /// The returned plan is applied at end-of-batch by
+        /// <see cref="ApplyMergedRemovalPlan"/>, after all per-package adds.
+        /// </summary>
+        private static FuseMergedRemovalPlan BuildMergedRemovalPlan(IReadOnlyList<FuseStagedApplyCandidate> active)
+        {
+            var plan = new FuseMergedRemovalPlan();
+            if (active == null || active.Count == 0)
+            {
+                return plan;
+            }
+
+            var ordered = active
+                .Select((candidate, index) => new { candidate, index, folder = NormalizePackageFolder(candidate.Loaded?.FolderPath) })
+                .GroupBy(item => item.folder, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(group => group.Min(item => item.index))
+                .SelectMany(group => group.OrderBy(item => item.index))
+                .ToArray();
+
+            var sequence = 0;
+            foreach (var item in ordered)
+            {
+                var candidate = item.candidate;
+                var definition = candidate.Loaded?.Definition;
+                if (definition == null)
+                {
+                    continue;
+                }
+
+                // Removals first so an in-package add of the same id can clear
+                // the removal (mirrors MergeFinalDeletes -> MergeFinalDefinitions
+                // ordering in BuildMergedTrackPlan).
+                var worldRemovals = definition.World?.Removals;
+                if (worldRemovals != null)
+                {
+                    MergeRemovalIds(plan.Scenery, worldRemovals.Scenery, candidate, ref sequence);
+                    MergeRemovalIds(plan.SceneClones, worldRemovals.SceneClones, candidate, ref sequence);
+                    MergeRemovalIds(plan.Splineys, worldRemovals.Splineys, candidate, ref sequence);
+                    MergeRemovalIds(plan.MapLabels, worldRemovals.MapLabels, candidate, ref sequence);
+                    MergeRemovalIds(plan.MapMasks, worldRemovals.MapMasks, candidate, ref sequence);
+                    MergeRemovalIds(plan.TelegraphPoles, worldRemovals.TelegraphPoles, candidate, ref sequence);
+                }
+
+                var opsRemovals = definition.Operations?.Removals;
+                if (opsRemovals != null)
+                {
+                    MergeRemovalIds(plan.Industries, opsRemovals.Industries, candidate, ref sequence);
+                }
+
+                // Adds clear matching removals: a later add of an id cancels
+                // any earlier package's removal of that id, and an in-package
+                // add cancels an in-package remove.
+                var world = definition.World;
+                if (world != null)
+                {
+                    CancelRemovalsByAdds(plan.Scenery, world.Scenery?.Keys, ref sequence);
+                    CancelRemovalsByAdds(plan.SceneClones, world.SceneClones?.Keys, ref sequence);
+                    CancelRemovalsByAdds(plan.Splineys, world.Splineys?.Keys, ref sequence);
+                    CancelRemovalsByAdds(plan.MapLabels, world.MapLabels?.Keys, ref sequence);
+                    CancelRemovalsByAdds(plan.MapMasks, world.MapMasks?.Keys, ref sequence);
+                    CancelRemovalsByAdds(plan.TelegraphPoles, world.TelegraphPoles?.Keys, ref sequence);
+                }
+
+                var ops = definition.Operations;
+                if (ops != null)
+                {
+                    CancelRemovalsByAdds(plan.Industries, ops.Industries?.Keys, ref sequence);
+                }
+            }
+
+            FuseLog.Info(
+                $"FUSE merged removal plan operation='build merged removal plan' " +
+                $"packages={ordered.Select(item => item.folder).Distinct(StringComparer.OrdinalIgnoreCase).Count()} " +
+                $"definitions={ordered.Length} " +
+                $"scenery={plan.Scenery.Count} sceneClones={plan.SceneClones.Count} splineys={plan.Splineys.Count} " +
+                $"mapLabels={plan.MapLabels.Count} mapMasks={plan.MapMasks.Count} telegraphPoles={plan.TelegraphPoles.Count} " +
+                $"industries={plan.Industries.Count}.");
+            return plan;
+        }
+
+        private static void MergeRemovalIds(
+            Dictionary<string, FuseMergedTrackRemoval> removals,
+            IEnumerable<string> ids,
+            FuseStagedApplyCandidate owner,
+            ref int sequence)
+        {
+            if (ids == null)
+            {
+                return;
+            }
+
+            foreach (var rawId in ids)
+            {
+                if (string.IsNullOrWhiteSpace(rawId))
+                {
+                    continue;
+                }
+
+                var id = rawId.Trim();
+                sequence++;
+                removals[id] = new FuseMergedTrackRemoval(id, owner, sequence);
+            }
+        }
+
+        private static void CancelRemovalsByAdds(
+            Dictionary<string, FuseMergedTrackRemoval> removals,
+            IEnumerable<string> addIds,
+            ref int sequence)
+        {
+            if (addIds == null)
+            {
+                return;
+            }
+
+            foreach (var rawId in addIds)
+            {
+                if (string.IsNullOrWhiteSpace(rawId))
+                {
+                    continue;
+                }
+
+                var id = rawId.Trim();
+                sequence++;
+                removals.Remove(id);
+            }
+        }
+
+        /// <summary>
+        /// Applies the cross-package final-state removal plan built by
+        /// <see cref="BuildMergedRemovalPlan"/>. Each kind is drained in
+        /// sequence order; each removal reports back to its owning candidate's
+        /// transaction so the per-package apply report still attributes the
+        /// remove (or its "missing" skip) to the package that asked for it.
+        /// </summary>
+        private static void ApplyMergedRemovalPlan(FuseMergedRemovalPlan plan)
+        {
+            if (plan == null || !plan.HasAny)
+            {
+                return;
+            }
+
+            ApplyMergedRemovalsForKind(plan.Scenery, "scenery", SceneryAPI.TryRemoveScenery);
+            ApplyMergedRemovalsForKind(plan.SceneClones, "scene clone", SceneCloneAPI.TryRemoveSceneClone);
+            ApplyMergedRemovalsForKind(plan.Splineys, "spliney", SplineyAPI.TryRemoveSpliney);
+            ApplyMergedRemovalsForKind(plan.MapLabels, "map label", MapAPI.TryRemoveMapLabel);
+            ApplyMergedRemovalsForKind(plan.MapMasks, "map mask", MapAPI.TryRemoveMapMask);
+            ApplyMergedRemovalsForKind(plan.TelegraphPoles, "telegraph pole set", MapAPI.TryRemoveTelegraphPoles);
+            ApplyMergedRemovalsForKind(plan.Industries, "industry", IndustryAPI.TryRemoveIndustry);
+        }
+
+        private static void ApplyMergedRemovalsForKind(
+            Dictionary<string, FuseMergedTrackRemoval> removals,
+            string kind,
+            Func<string, bool> remover)
+        {
+            if (removals == null || removals.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var removal in removals.Values.OrderBy(item => item.Sequence))
+            {
+                var transaction = removal.Owner?.Transaction;
+                if (transaction == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (remover(removal.Id))
+                    {
+                        transaction.Removed(kind, removal.Id);
+                    }
+                    else
+                    {
+                        transaction.Skipped(kind, removal.Id, "missing");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning($"FUSE failed to remove world {kind} '{removal.Id}': {ex.Message}");
+                    transaction.Error(kind, removal.Id, ex.Message);
+                }
             }
         }
 

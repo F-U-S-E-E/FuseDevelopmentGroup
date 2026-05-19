@@ -162,6 +162,7 @@ namespace FUSE.Lifecycle
                 TrackAPI.ClearBaseGraphSnapshot();
                 FuseCacheRegistry.ClearAll();
                 FuseRuntimeRebindService.ResetUnknownKindLog();
+                FuseSplineyPluginHost.Reset();
                 FuseLog.Info("FUSE cleared runtime state for map unload.");
             }
             catch (Exception ex)

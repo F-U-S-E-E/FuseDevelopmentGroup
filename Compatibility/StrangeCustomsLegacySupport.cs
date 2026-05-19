@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using Model;
+using Model.Ops;
+using Model.Ops.Definition;
 using Newtonsoft.Json.Linq;
 using Track;
 using UnityEngine;
@@ -237,5 +240,113 @@ namespace StrangeCustoms.Tracks
         public SerializedComponent()
         {
         }
+
+        /// <summary>
+        /// Patch target for legacy plugins that Postfix the SC round-trip
+        /// constructor (e.g. InterchangedIndustryUnloaderMod.StrangeCustomsPatchConstructor).
+        /// FUSE never serializes a live IndustryComponent back into a
+        /// SerializedComponent — our pipeline is JSON → game one-way — so this
+        /// constructor body is intentionally a no-op. Its existence lets
+        /// Harmony's PatchAll resolve the target method so adjacent patches on
+        /// the same plugin install successfully.
+        /// </summary>
+        public SerializedComponent(IndustryComponent component)
+        {
+        }
+
+        /// <summary>
+        /// Patch target for legacy plugins that Postfix component application
+        /// (e.g. InterchangedIndustryUnloaderMod.StrangeCustomsPatchApply, which
+        /// would set <c>unloader.load = ctx.GetLoad(LoadId)</c> here). FUSE
+        /// configures these fields natively in
+        /// <see cref="FUSE.API.IndustryAPI"/>.ApplyComponentDefinition, so this
+        /// method is a no-op — but Harmony needs the target to exist so the
+        /// plugin's Harmony.PatchAll doesn't crash before installing its other
+        /// (game-type) patches.
+        /// </summary>
+        public void ApplyTo(IndustryComponent gameComponent, PatchingContext ctx)
+        {
+        }
+    }
+
+    /// <summary>
+    /// SC's runtime patching context — carries a logger, a touched-keys
+    /// dictionary, and a node-id lookup that hosted old-loader plugins use to
+    /// resolve graph nodes by id during patching. FUSE doesn't drive SC's
+    /// patching pipeline itself, but legacy plugins like SignalsEverywhere
+    /// construct their own context subclass (CTCPatchingContext) and call
+    /// <c>NodesById[id]</c>, <c>Logger</c>, and <c>TouchedKeys.Keys</c> when
+    /// applying CTC mixintos. NodesById is populated from the live graph so SE
+    /// can resolve switch/block nodes even when FUSE applied the topology.
+    /// </summary>
+    public class PatchingContext
+    {
+        public Serilog.ILogger Logger { get; }
+
+        public IReadOnlyDictionary<string, string> TouchedKeys { get; }
+
+        public IReadOnlyDictionary<string, TrackNode> NodesById { get; }
+
+        public PatchingContext(Serilog.ILogger logger, IReadOnlyDictionary<string, string> changedEntries)
+        {
+            Logger = logger ?? Serilog.Log.ForContext<PatchingContext>();
+            TouchedKeys = changedEntries ?? new Dictionary<string, string>(0);
+            NodesById = BuildNodeIndex();
+        }
+
+        /// <summary>
+        /// Looks up a <see cref="Load"/> by id via the game's prototype library.
+        /// Hosted plugins (e.g. InterchangedIndustryUnloaderMod) call this from
+        /// their ApplyTo Postfix. The Postfix never fires under FUSE — we
+        /// configure components natively — but the method exists so the
+        /// patch body type-checks at JIT time.
+        /// </summary>
+        public Load GetLoad(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            return CarPrototypeLibrary.instance?.LoadForId(id);
+        }
+
+        private static IReadOnlyDictionary<string, TrackNode> BuildNodeIndex()
+        {
+            var dict = new Dictionary<string, TrackNode>(StringComparer.Ordinal);
+            var graph = Graph.Shared;
+            if (graph == null)
+            {
+                return dict;
+            }
+
+            foreach (var node in graph.Nodes)
+            {
+                if (node != null && !string.IsNullOrEmpty(node.id))
+                {
+                    dict[node.id] = node;
+                }
+            }
+
+            return dict;
+        }
+    }
+
+    /// <summary>
+    /// Exception raised by SC's patch validators (e.g. "No LoadId specified",
+    /// "At least one TrackSpan must be specified"). Hosted plugins reference
+    /// this type from inside their Postfix bodies; even though FUSE never
+    /// invokes the patches, the type must exist for the patch method bodies
+    /// to type-check at JIT time.
+    /// </summary>
+    public class SCPatchingException : Exception
+    {
+        public SCPatchingException(string message, string parameterName)
+            : base(message)
+        {
+            ParameterName = parameterName;
+        }
+
+        public string ParameterName { get; }
     }
 }
