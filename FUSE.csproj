@@ -23,6 +23,12 @@
 
   <ItemGroup>
     <Compile Remove="_work\**\*.cs" />
+    <Compile Remove="FUSE.Tests\**\*.cs" />
+    <None Remove="FUSE.Tests\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FUSE.Tests" />
   </ItemGroup>
 
   <ItemGroup>
