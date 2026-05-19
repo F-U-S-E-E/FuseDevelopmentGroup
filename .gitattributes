@@ -1,2 +1,8 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Local agent instructions are useful in git clones, but they are not needed
+# by CI build archives. Excluding them also avoids a Windows Expand-Archive
+# fallback checkout bug on self-hosted runners.
+.claude export-ignore
+.claude/** export-ignore
