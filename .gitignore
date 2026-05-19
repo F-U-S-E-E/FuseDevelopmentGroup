@@ -6,6 +6,7 @@ lib/refs/
 bin/
 obj/
 /.vs
+/.idea
 /_work
 /dist
 /tools/__pycache__/fuse_installer*.pyc

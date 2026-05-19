@@ -111,4 +111,4 @@ Experimental commands should not be used during normal beta play unless testing 
 
 FUSE repairs many legacy data issues during conversion, but it does not silently hide authoring errors. Unsupported graph shapes, missing hard dependencies, invalid spans, and missing runtime component assemblies should be reported by the converter or runtime instead of being dropped.
 
-See `KNOWN_ISSUES.md` and `TROUBLESHOOTING.md` for the current issue list and debugging workflow.
+See `docs/KNOWN_ISSUES.md` and `docs/TROUBLESHOOTING.md` for the current issue list and debugging workflow.
