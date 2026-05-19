@@ -368,19 +368,92 @@ namespace FUSE.Loading
                     state.Target = target;
                     state.WasActive = target.activeSelf;
                     state.WarnedMissing = false;
+                    state.ClearCapturedComponents();
                 }
 
+                var changes = ForceSuppressSceneObject(state, target);
+                var setInactive = false;
                 if (target.activeSelf)
                 {
                     target.SetActive(false);
-                    FuseLog.Info($"FUSE suppressed base scene path '{path}' for '{reason}' owners={FuseRegistry.GetSharedOwners(FuseClaimKind.SuppressedScenePath, path).Count}.");
-                    transaction?.PostBind("suppressed scene path", path, "set inactive");
+                    setInactive = true;
+                }
+
+                if (setInactive || changes.HasChanges)
+                {
+                    FuseLog.Info($"FUSE suppressed base scene path '{path}' for '{reason}' owners={FuseRegistry.GetSharedOwners(FuseClaimKind.SuppressedScenePath, path).Count} inactive={setInactive} renderers={changes.Renderers} cullers={changes.CullingBehaviours}.");
+                    transaction?.PostBind("suppressed scene path", path, $"set inactive={setInactive} renderers={changes.Renderers} cullers={changes.CullingBehaviours}");
                 }
             }
             catch (Exception ex)
             {
                 Warn(transaction, "suppressed scene path", path, $"suppression failed for '{reason}': {ex.Message}");
             }
+        }
+
+        private static ScenePathSuppressionChanges ForceSuppressSceneObject(ScenePathSuppressionState state, GameObject target)
+        {
+            var changes = new ScenePathSuppressionChanges();
+            if (state == null || target == null)
+            {
+                return changes;
+            }
+
+            foreach (var renderer in target.GetComponentsInChildren<Renderer>(true) ?? Array.Empty<Renderer>())
+            {
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                state.GetOrAddRendererState(renderer);
+                var changed = false;
+                if (renderer.enabled)
+                {
+                    renderer.enabled = false;
+                    changed = true;
+                }
+
+                if (!renderer.forceRenderingOff)
+                {
+                    renderer.forceRenderingOff = true;
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    changes.Renderers++;
+                }
+            }
+
+            foreach (var behaviour in target.GetComponentsInChildren<Behaviour>(true) ?? Array.Empty<Behaviour>())
+            {
+                if (behaviour == null || !IsRendererCuller(behaviour))
+                {
+                    continue;
+                }
+
+                state.GetOrAddCullingBehaviourState(behaviour);
+                if (behaviour.enabled)
+                {
+                    behaviour.enabled = false;
+                    changes.CullingBehaviours++;
+                }
+            }
+
+            return changes;
+        }
+
+        private static bool IsRendererCuller(Behaviour behaviour)
+        {
+            var type = behaviour != null ? behaviour.GetType() : null;
+            if (type == null)
+            {
+                return false;
+            }
+
+            var fullName = type.FullName ?? type.Name ?? string.Empty;
+            return fullName.IndexOf("RendererCuller", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static void RebuildAfterTrackGroupSuppression(Graph graph, string reason)
@@ -523,6 +596,8 @@ namespace FUSE.Loading
                 var target = state.Target ?? FusePrefabResolver.ResolveScenePath(path) ?? GameObject.Find(path);
                 if (target != null)
                 {
+                    state.Target = target;
+                    RestoreSuppressedSceneObject(state);
                     target.SetActive(state.WasActive);
                     FuseLog.Info($"FUSE restored base scene path '{path}' for '{reason}' active={state.WasActive}.");
                 }
@@ -538,6 +613,37 @@ namespace FUSE.Loading
             finally
             {
                 ScenePaths.Remove(path);
+            }
+        }
+
+        private static void RestoreSuppressedSceneObject(ScenePathSuppressionState state)
+        {
+            if (state == null)
+            {
+                return;
+            }
+
+            foreach (var rendererState in state.RendererStates.ToArray())
+            {
+                var renderer = rendererState.Renderer;
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                renderer.enabled = rendererState.Enabled;
+                renderer.forceRenderingOff = rendererState.ForceRenderingOff;
+            }
+
+            foreach (var behaviourState in state.CullingBehaviourStates.ToArray())
+            {
+                var behaviour = behaviourState.Behaviour;
+                if (behaviour == null)
+                {
+                    continue;
+                }
+
+                behaviour.enabled = behaviourState.Enabled;
             }
         }
 
@@ -860,6 +966,14 @@ namespace FUSE.Loading
             return component != null ? component.name : item.ToString();
         }
 
+        private sealed class ScenePathSuppressionChanges
+        {
+            public int Renderers { get; set; }
+            public int CullingBehaviours { get; set; }
+
+            public bool HasChanges => Renderers > 0 || CullingBehaviours > 0;
+        }
+
         private sealed class PackageSuppressions
         {
             public PackageSuppressions(IEnumerable<string> scenePaths, IEnumerable<string> trackGroups, IEnumerable<string> areas)
@@ -885,6 +999,60 @@ namespace FUSE.Loading
             public GameObject Target { get; set; }
             public bool WasActive { get; set; }
             public bool WarnedMissing { get; set; }
+            public List<RendererSuppressionState> RendererStates { get; } = new List<RendererSuppressionState>();
+            public List<BehaviourSuppressionState> CullingBehaviourStates { get; } = new List<BehaviourSuppressionState>();
+
+            public void ClearCapturedComponents()
+            {
+                RendererStates.Clear();
+                CullingBehaviourStates.Clear();
+            }
+
+            public void GetOrAddRendererState(Renderer renderer)
+            {
+                if (renderer == null || RendererStates.Any(state => ReferenceEquals(state.Renderer, renderer)))
+                {
+                    return;
+                }
+
+                RendererStates.Add(new RendererSuppressionState(renderer));
+            }
+
+            public void GetOrAddCullingBehaviourState(Behaviour behaviour)
+            {
+                if (behaviour == null || CullingBehaviourStates.Any(state => ReferenceEquals(state.Behaviour, behaviour)))
+                {
+                    return;
+                }
+
+                CullingBehaviourStates.Add(new BehaviourSuppressionState(behaviour));
+            }
+        }
+
+        private sealed class RendererSuppressionState
+        {
+            public RendererSuppressionState(Renderer renderer)
+            {
+                Renderer = renderer;
+                Enabled = renderer != null && renderer.enabled;
+                ForceRenderingOff = renderer != null && renderer.forceRenderingOff;
+            }
+
+            public Renderer Renderer { get; }
+            public bool Enabled { get; }
+            public bool ForceRenderingOff { get; }
+        }
+
+        private sealed class BehaviourSuppressionState
+        {
+            public BehaviourSuppressionState(Behaviour behaviour)
+            {
+                Behaviour = behaviour;
+                Enabled = behaviour != null && behaviour.enabled;
+            }
+
+            public Behaviour Behaviour { get; }
+            public bool Enabled { get; }
         }
 
         private sealed class TrackGroupSuppressionState

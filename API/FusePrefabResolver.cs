@@ -74,20 +74,7 @@ namespace FUSE.API
                 return null;
             }
 
-            GameObject root = null;
-            for (var sceneIndex = 0; sceneIndex < SceneManager.sceneCount && root == null; sceneIndex++)
-            {
-                var scene = SceneManager.GetSceneAt(sceneIndex);
-                var roots = scene.GetRootGameObjects();
-                for (var rootIndex = 0; rootIndex < roots.Length; rootIndex++)
-                {
-                    if (string.Equals(roots[rootIndex].name, segments[0], StringComparison.Ordinal))
-                    {
-                        root = roots[rootIndex];
-                        break;
-                    }
-                }
-            }
+            var root = FindRootObject(segments[0]);
 
             if (root == null)
             {
@@ -97,7 +84,7 @@ namespace FUSE.API
             var current = root.transform;
             for (var index = 1; index < segments.Length; index++)
             {
-                current = current.Find(segments[index]);
+                current = FindChild(current, segments[index]);
                 if (current == null)
                 {
                     return null;
@@ -105,6 +92,68 @@ namespace FUSE.API
             }
 
             return current.gameObject;
+        }
+
+        private static GameObject FindRootObject(string name)
+        {
+            GameObject caseInsensitiveMatch = null;
+            for (var sceneIndex = 0; sceneIndex < SceneManager.sceneCount; sceneIndex++)
+            {
+                var scene = SceneManager.GetSceneAt(sceneIndex);
+                var roots = scene.GetRootGameObjects();
+                for (var rootIndex = 0; rootIndex < roots.Length; rootIndex++)
+                {
+                    var root = roots[rootIndex];
+                    if (root == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(root.name, name, StringComparison.Ordinal))
+                    {
+                        return root;
+                    }
+
+                    if (caseInsensitiveMatch == null && string.Equals(root.name, name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        caseInsensitiveMatch = root;
+                    }
+                }
+            }
+
+            return caseInsensitiveMatch;
+        }
+
+        private static Transform FindChild(Transform parent, string name)
+        {
+            if (parent == null || string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            var exact = parent.Find(name);
+            if (exact != null)
+            {
+                return exact;
+            }
+
+            Transform caseInsensitiveMatch = null;
+            for (var index = 0; index < parent.childCount; index++)
+            {
+                var child = parent.GetChild(index);
+                if (child == null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(child.name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    caseInsensitiveMatch = child;
+                    break;
+                }
+            }
+
+            return caseInsensitiveMatch;
         }
 
         private static GameObject ResolveVanilla(string key)
