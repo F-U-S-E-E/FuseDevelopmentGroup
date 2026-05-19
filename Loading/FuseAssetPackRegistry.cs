@@ -7,6 +7,7 @@ using AssetPack.Runtime;
 using HarmonyLib;
 using Model.Definition;
 using Model.Database;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using FUSE.Infrastructure;
 using UnityEngine;
@@ -64,6 +65,18 @@ namespace FUSE.Loading
         private static Dictionary<string, string> LegacyAssetPackAliases;
         private static readonly FieldInfo RuntimeStoreContainerField =
             AccessTools.Field(typeof(AssetPackRuntimeStore), "_container");
+
+        // The direct-mount sanitize path used to call ContainerSerialization.Deserialize,
+        // but old-loader plugins (notably LegosLibraryOfStuff) install a Harmony postfix
+        // on that public entry point and mutate shared component instances on every call.
+        // The game already deserializes each pack once via its native path, so re-entering
+        // the public method here re-fires the postfix on the same identifiers and breaks
+        // per-car ComponentGroup toggles (e.g. ERIE LOGO going dead). We deserialize
+        // through Newtonsoft directly using the same settings the public method would have
+        // used. See FuseLegacyContainerMixintoRegistry for the same bypass on the per-item
+        // mixinto re-deserialize.
+        private static readonly MethodInfo ContainerSerializerSettingsMethod =
+            AccessTools.Method(typeof(ContainerSerialization), "JsonSerializerSettings");
 
         public static int MountAllAvailableAssetPacks()
         {
@@ -595,7 +608,7 @@ namespace FUSE.Loading
                 var removedByKind = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 var sourceText = File.ReadAllText(definitionsPath);
                 var sanitizedText = SanitizeDefinitionsJson(sourceText, removedByKind);
-                container = ContainerSerialization.Deserialize(sanitizedText);
+                container = DeserializeContainerBypassingPostfix(sanitizedText, store?.Identifier);
                 RuntimeStoreContainerField?.SetValue(store, container);
 
                 if (removedByKind.Count > 0 && SanitizedDirectContainerWarnings.Add(store.Identifier))
@@ -992,6 +1005,37 @@ namespace FUSE.Loading
             File.WriteAllText(destinationFile, outputText);
             File.SetLastWriteTimeUtc(destinationFile, File.GetLastWriteTimeUtc(sourceFile));
             return 1;
+        }
+
+        private static readonly HashSet<string> DeserializeBypassFallbackWarnings =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        private static Container DeserializeContainerBypassingPostfix(string text, string storeIdentifier)
+        {
+            if (ContainerSerializerSettingsMethod != null)
+            {
+                try
+                {
+                    var settings = (JsonSerializerSettings)ContainerSerializerSettingsMethod.Invoke(null, null);
+                    var container = JsonConvert.DeserializeObject<Container>(text, settings);
+                    container?.Awake();
+                    return container;
+                }
+                catch (Exception ex)
+                {
+                    var key = storeIdentifier ?? "<unknown>";
+                    if (DeserializeBypassFallbackWarnings.Add(key))
+                    {
+                        FuseLog.Warning(
+                            $"FUSE direct asset pack '{key}' fell back to ContainerSerialization.Deserialize " +
+                            $"because the reflection-based bypass failed: {ex.GetBaseException().Message}. " +
+                            "Old-loader Deserialize postfixes will re-fire for this pack, which may double-apply " +
+                            "their edits and break per-car component-group toggles.");
+                    }
+                }
+            }
+
+            return ContainerSerialization.Deserialize(text);
         }
 
         private static string SanitizeDefinitionsJson(string sourceText, IDictionary<string, int> removedByKind)
