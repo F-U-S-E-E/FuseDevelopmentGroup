@@ -7,5 +7,7 @@
     <FuseLogPath>C:\Users\YourName\AppData\LocalLow\Giraffe Lab LLC\Railroader\FUSE.log</FuseLogPath>
     <!-- Full path to the Railroader Player.log on this machine. Sits beside FUSE.log. -->
     <PlayerLogPath>C:\Users\YourName\AppData\LocalLow\Giraffe Lab LLC\Railroader\Player.log</PlayerLogPath>
+	<!-- Whether to deploy the FUSE build to your Railroader\Mods folder -->
+	<EnableModDeploy>true</EnableModDeploy>
   </PropertyGroup>
 </Project>
