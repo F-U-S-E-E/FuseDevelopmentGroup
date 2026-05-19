@@ -3,7 +3,7 @@
 This folder defines the JSON side of the FUSE mod format.
 
 - `fuse-mod.schema.json` is the authoritative JSON Schema for hand-authored and editor-exported `.json` files.
-- `fuse-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, built-in and custom industry components, loaders, turntables, roundhouses, stations, scenery, spawn points, span-anchored scenery, splineys, telegraph poles, labels, speed signs, masks, suppressions, map tiles, scene clones, world removals, progression data, audio definitions, mixinto metadata, and editor state.
+- `fuse-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, built-in and custom industry components, loaders, turntables, roundhouses, stations, scenery, spawn points, span-anchored scenery, splineys, telegraph poles, labels, speed signs, masks, suppressions, map tiles, scene clones, world removals, progression data, audio definitions, mixinto metadata, package settings, and editor state.
 - `umm-info.schema.json` documents the Unity Mod Manager `Info.json` shape FUSE expects for API mods, data packages, and asset-pack packages.
 - `umm-info.example.json` is a data-only map package manifest that depends on `FUSE`.
 
@@ -17,6 +17,7 @@ Top-level object groups:
 - `operations`: loads, industries, loaders, turntables, and passenger stations.
 - `world`: scenery, spawn points, splineys, telegraph poles, map labels, map masks, map tile overlays, scene clones, and optional removals for base scene objects.
 - `progression`: progression trees and map features.
+- `settings`: package-declared UI settings with user, profile, or server scope. Runtime values are stored under LocalLow/FUSE, not written into package folders.
 - `editor`: optional editor-only state that FUSE can ignore at runtime.
 - `extensions`: optional namespaced third-party data.
 
@@ -35,6 +36,29 @@ Top-level object groups:
 ```
 
 A converted FUSE package id ending in `.FUSE` also satisfies the original legacy id, so `CaptainFoxy.NantahalaLime.FUSE` satisfies a requirement for `CaptainFoxy.NantahalaLime`.
+
+Package settings are declared in a top-level `settings` dictionary and rendered automatically in the FUSE Settings page. Supported `type` values are `bool`, `enum`, `number`, `path`, `color`, and `text`. Supported `scope` values are:
+
+- `user`: local player value, shared by all profiles.
+- `profile`: value keyed to the active FUSE mod-set/profile.
+- `server`: value keyed to the active profile fingerprint for server-style shared configuration.
+
+Enum `values` are treated as exact strings. FUSE does not normalize or rename setting values.
+
+```json
+{
+  "settings": {
+    "yardDetailLevel": {
+      "type": "enum",
+      "label": "Yard Detail",
+      "scope": "profile",
+      "values": ["low", "standard", "high"],
+      "default": "standard",
+      "reloadRequired": true
+    }
+  }
+}
+```
 
 All editable game objects are stored in dictionaries keyed by object ID. The ID is not repeated inside the object body. This keeps editor updates simple: replacing `tracks.nodes["murphy:n:001"]` updates exactly one object without array searches or ID duplication.
 
@@ -70,6 +94,7 @@ The shipped examples cover the public beta authoring cases:
 | Audio pack | `fuse-mod.example.json` | `audio.whistles`, `audio.horns`, and `audio.bells`. |
 | Industry component pack | `fuse-mod.example.json` | Built-in component types plus a fully-qualified custom component type with `fields`. |
 | Load component pack | `fuse-mod.example.json` | `operations.loads.*.fields` can carry reflection-bound custom load data. |
+| Package settings | `fuse-mod.example.json` | Top-level `settings` with bool, enum, color, user/profile/server scope, and reload metadata. |
 | Mixinto | `fuse-mod.example.json` | `mixinto.target`, `mixinto.sourceFile`, and conditional `requires`. |
 | Progression section | `fuse-mod.example.json` | Root `progression.sections[]`, delivery phases, unlock features, and interchange transfers. |
 | Map mask | `fuse-mod.example.json` | `world.mapMasks` for terrain/object mask authoring. |

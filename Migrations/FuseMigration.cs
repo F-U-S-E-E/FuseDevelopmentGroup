@@ -69,7 +69,15 @@ namespace FUSE.Migrations
             definition.World = definition.World ?? new FuseWorldDefinition();
             definition.Audio = definition.Audio ?? new FuseAudioRoot();
             definition.Progression = definition.Progression ?? new FuseProgressionRoot();
+            definition.Settings = definition.Settings ?? new Dictionary<string, FuseModSettingDefinition>();
             definition.Extensions = definition.Extensions ?? new Dictionary<string, object>();
+
+            foreach (var setting in definition.Settings.Values.Where(setting => setting != null))
+            {
+                setting.Type = string.IsNullOrWhiteSpace(setting.Type) ? "text" : setting.Type.Trim();
+                setting.Scope = string.IsNullOrWhiteSpace(setting.Scope) ? "user" : setting.Scope.Trim();
+                setting.Values = setting.Values ?? Array.Empty<string>();
+            }
 
             definition.Tracks.Nodes = definition.Tracks.Nodes ?? new Dictionary<string, FuseNode>();
             definition.Tracks.Segments = definition.Tracks.Segments ?? new Dictionary<string, FuseSegment>();

@@ -5,17 +5,24 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using FUSE.API;
+using FUSE.Cache;
+using FUSE.Data;
 using FUSE.Infrastructure;
 using FUSE.Lifecycle;
 using FUSE.Loading;
 using FUSE.Migrations;
+using FUSE.Registry;
+using Model;
+using Model.Ops;
 using Newtonsoft.Json.Linq;
 using TMPro;
+using Track;
 using UI;
 using UI.Builder;
 using UI.Common;
 using UnityEngine;
 using UnityEngine.Profiling;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 namespace FUSE.Interface
@@ -39,6 +46,10 @@ namespace FUSE.Interface
         private long _managedMemoryBytes;
         private long _unityAllocatedBytes;
         private long _unityReservedBytes;
+        private string _advancedSearchTerm = string.Empty;
+        private string _inspectorSearchTerm = string.Empty;
+        private string _inspectorSelectedSignature = string.Empty;
+        private string _selectedPackageId = string.Empty;
 
         public static void Ensure()
         {
@@ -310,13 +321,21 @@ namespace FUSE.Interface
         {
             builder.HStack(row =>
             {
-                row.AddButtonCompact(_activePage == Page.Health ? "[ Overview ]" : "Overview", () => SetPage(Page.Health));
-                row.AddButtonCompact(_activePage == Page.Packages ? "[ Packages ]" : "Packages", () => SetPage(Page.Packages));
+                row.AddButtonCompact(_activePage == Page.Health ? "[ Status ]" : "Status", () => SetPage(Page.Health));
+                row.AddButtonCompact(_activePage == Page.Packages ? "[ Mods ]" : "Mods", () => SetPage(Page.Packages));
                 row.AddButtonCompact(_activePage == Page.Assets ? "[ Assets ]" : "Assets", () => SetPage(Page.Assets));
-                row.AddButtonCompact(_activePage == Page.Runtime ? "[ Runtime ]" : "Runtime", () => SetPage(Page.Runtime));
-                row.AddButtonCompact(_activePage == Page.Logs ? "[ Logs ]" : "Logs", () => SetPage(Page.Logs));
+                row.AddButtonCompact(_activePage == Page.Runtime ? "[ World ]" : "World", () => SetPage(Page.Runtime));
+                row.AddButtonCompact(_activePage == Page.Logs ? "[ Issues ]" : "Issues", () => SetPage(Page.Logs));
+                row.AddButtonCompact(_activePage == Page.ModSets ? "[ Profiles ]" : "Profiles", () => SetPage(Page.ModSets));
+            }, 6f).Height(34f);
+
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact(_activePage == Page.Inspector ? "[ Inspector ]" : "Inspector", () => SetPage(Page.Inspector));
+                row.AddButtonCompact(_activePage == Page.Audits ? "[ Audits ]" : "Audits", () => SetPage(Page.Audits));
+                row.AddButtonCompact(_activePage == Page.Advanced ? "[ Advanced ]" : "Advanced", () => SetPage(Page.Advanced));
                 row.AddButtonCompact(_activePage == Page.Settings ? "[ Settings ]" : "Settings", () => SetPage(Page.Settings));
-                row.AddButtonCompact(_activePage == Page.ModSets ? "[ Mod Sets ]" : "Mod Sets", () => SetPage(Page.ModSets));
+                row.AddButtonCompact("Refresh", RebuildWindow);
             }, 6f).Height(34f);
 
             builder.VScrollView(
@@ -339,6 +358,15 @@ namespace FUSE.Interface
                     return;
                 case Page.Logs:
                     BuildLogsContent(builder);
+                    return;
+                case Page.Inspector:
+                    BuildInspectorContent(builder);
+                    return;
+                case Page.Audits:
+                    BuildAuditsContent(builder);
+                    return;
+                case Page.Advanced:
+                    BuildAdvancedContent(builder);
                     return;
                 case Page.Settings:
                     BuildSettingsContent(builder);
@@ -418,73 +446,65 @@ namespace FUSE.Interface
             var report = LoadReportJson();
             var counts = report["counts"] as JObject ?? new JObject();
             var hasProblems = ReadBool(report["hasProblems"], false);
+            var loadedPackages = ReadInt(counts["loadedPackages"]);
+            var appliedPackages = ReadInt(counts["appliedPackages"]);
+            var faultCount = ReadInt(counts["faultedPackages"]);
+            var conflictCount = ReadInt(counts["conflicts"]);
+            var unknownAssetCount = ReadInt(counts["unknownSceneryAssets"]);
+            var graphIssueCount = ReadInt(counts["graphIssues"]);
+            var transferSkipCount = ReadInt(counts["progressionTransferSkips"]);
+            var noticeCount = CountArray(report["notices"]);
 
             builder.FieldLabelWidth = 160f;
             builder.Spacing = 6f;
 
-            builder.AddSection("Status");
-            AddValueField(builder, "State", hasProblems ? "Needs Attention" : "Healthy");
-            AddWrappedField(builder, "Summary", ReadString(report["summary"], FuseLoadReport.LastSummary), 44f);
+            builder.AddSection("Stream Readiness");
+            AddValueField(builder, "State", hasProblems ? "Needs Attention" : "Ready");
+            AddWrappedField(
+                builder,
+                "Status",
+                hasProblems
+                    ? "FUSE found items that need review before a clean session."
+                    : "Full stack loaded cleanly. No package faults, asset misses, graph issues, or transfer skips are reported.",
+                50f);
             AddValueField(builder, "Version", "FUSE " + ReadVersion() + " | Schema " + FuseMigration.CurrentVersion + " | Converter 0.2.0");
             builder.Spacer(6f);
 
-            builder.AddSection("Summary");
-            AddCountField(builder, "Loaded Packages", counts, "loadedPackages");
-            AddCountField(builder, "Applied Packages", counts, "appliedPackages");
-            AddCountField(builder, "Faults", counts, "faultedPackages");
-            AddCountField(builder, "Conflicts", counts, "conflicts");
-            AddCountField(builder, "Unknown Assets", counts, "unknownSceneryAssets");
-            AddCountField(builder, "Graph Issues", counts, "graphIssues");
-            AddCountField(builder, "Transfer Skips", counts, "progressionTransferSkips");
-            AddCountField(builder, "Suppressions", counts, "suppressions");
+            builder.AddSection("Checklist");
+            AddReadinessRow(builder, "Packages", faultCount == 0, $"{appliedPackages}/{loadedPackages} applied", faultCount + " fault(s)");
+            AddReadinessRow(builder, "Assets", unknownAssetCount == 0, "0 unknown assets", unknownAssetCount + " unknown");
+            AddReadinessRow(builder, "Track Graph", graphIssueCount == 0, "0 graph issues", graphIssueCount + " issue(s)");
+            AddReadinessRow(builder, "Progression", transferSkipCount == 0, "0 transfer skips", transferSkipCount + " skip(s)");
+            AddReadinessRow(builder, "Registry", conflictCount == 0, "0 conflicts", conflictCount + " conflict(s)");
+            AddReadinessRow(builder, "Notices", noticeCount == 0, "0 notices", noticeCount + " notice(s)");
             builder.Spacer(6f);
 
             var multiplayer = FuseMultiplayerGuard.GetStatus();
-            builder.AddSection("Multiplayer Profile");
-            AddValueField(builder, "Game Mode", multiplayer.Mode);
-            AddValueField(builder, "Role", multiplayer.Role);
-            AddValueField(builder, "Policy", multiplayer.MutationPolicy);
-            AddValueField(builder, "Mod Set", FuseModSetService.ActiveSetName);
+            builder.AddSection("Active Profile");
+            AddValueField(builder, "Mode", multiplayer.Mode + " | " + multiplayer.Role);
+            AddValueField(builder, "Mutation Policy", multiplayer.MutationPolicy);
+            AddValueField(builder, "Profile", FuseModSetService.ActiveSetName);
             AddValueField(builder, "Profile Hash", multiplayer.LocalPackageFingerprint);
             AddWrappedField(builder, "Packages", multiplayer.LocalPackageSummary, 38f);
             builder.Spacer(6f);
 
-            builder.AddSection("Performance");
-            builder.AddField("FPS", () => _fpsAverage <= 0f ? "warming up" : _fpsAverage.ToString("0.0"), UIPanelBuilder.Frequency.Fast).Height(26f);
-            builder.AddField("Frame Time", () => _frameMilliseconds <= 0f ? "warming up" : _frameMilliseconds.ToString("0.0") + " ms", UIPanelBuilder.Frequency.Fast).Height(26f);
-            builder.AddField("Managed Memory", () => FormatBytes(_managedMemoryBytes), UIPanelBuilder.Frequency.Fast).Height(26f);
-            builder.AddField("Unity Allocated", () => FormatBytes(_unityAllocatedBytes), UIPanelBuilder.Frequency.Fast).Height(26f);
-            builder.AddField("Unity Reserved", () => FormatBytes(_unityReservedBytes), UIPanelBuilder.Frequency.Fast).Height(26f);
+            builder.AddSection("Load Timing");
             AddValueField(builder, "FUSE Map Load", FusePerformanceMetrics.FormatTiming("map load total"));
             AddValueField(builder, "Runtime Apply", FusePerformanceMetrics.FormatTiming("apply resident definitions"));
-            AddWrappedField(builder, "Slowest Operation", FriendlyTimingText(FusePerformanceMetrics.FormatSlowestApplyPackage()), 42f);
-            AddWrappedField(builder, "Operation Detail", BuildSlowestDetailText(), 56f);
-            AddValueField(builder, "Disk Load", FusePerformanceMetrics.FormatTiming("load packages from disk"));
-            AddValueField(builder, "Asset Mirror", FusePerformanceMetrics.FormatTiming("asset pack registration"));
-            AddValueField(builder, "Direct Asset Stores", FusePerformanceMetrics.FormatTiming("direct asset pack stores"));
-            AddValueField(builder, "Asset Store Count", FusePerformanceMetrics.FormatCount("direct asset pack store count"));
-            AddValueField(builder, "Map Mask Rebuild", FusePerformanceMetrics.FormatTiming("map mask rebuild"));
-            AddValueField(builder, "Console Setup", FusePerformanceMetrics.FormatTiming("console registration"));
+            AddWrappedField(builder, "Slowest", FriendlyTimingText(FusePerformanceMetrics.FormatSlowestApplyPackage()), 42f);
             builder.Spacer(6f);
 
-            builder.AddSection("Runtime Tools");
+            builder.AddSection("Actions");
             builder.HStack(row =>
             {
-                row.AddButtonCompact("Reload Track", () =>
+                row.AddButtonCompact("Copy Readiness", () =>
                 {
-                    RunAction("reload track", () =>
-                    {
-                        var applied = FuseRuntimeReloadService.ReloadTrackAndData("FUSE health page reload track");
-                        return $"Reload Track complete. Applied {applied} resident definition(s).";
-                    });
+                    GUIUtility.systemCopyBuffer = BuildStreamReadinessReport(report);
+                    _lastAction = "Copied FUSE readiness report to clipboard.";
+                    RebuildWindow();
                 });
-                row.AddButtonCompact("Reload Terrain", () =>
-                {
-                    RunAction("reload terrain", () =>
-                        FuseRuntimeReloadService.ReloadTerrain("FUSE health page reload terrain")
-                            ? "Reload Terrain complete."
-                            : "Reload Terrain skipped or failed. See FUSE.log.");
-                });
+                row.AddButtonCompact("Open Issues", () => SetPage(Page.Logs));
+                row.AddButtonCompact("Advanced", () => SetPage(Page.Advanced));
                 row.AddButtonCompact("Refresh", RebuildWindow);
             }, 6f).Height(32f);
             AddWrappedLabel(builder, _lastAction, 34f);
@@ -511,62 +531,284 @@ namespace FUSE.Interface
             builder.Spacing = 6f;
 
             var multiplayer = FuseMultiplayerGuard.GetStatus();
-            builder.AddSection("Load Order");
+            var manifests = FuseDataPackageDiscovery.GetPackageManifestSnapshots();
+            var selected = ResolveSelectedPackage(manifests);
+
+            builder.AddSection("Mod Browser");
             AddValueField(builder, "Profile", FuseModSetService.ActiveSetName);
             AddValueField(builder, "Profile Hash", multiplayer.LocalPackageFingerprint);
-            AddWrappedField(builder, "Package Filter", multiplayer.LocalPackageSummary, 42f);
-            AddWrappedField(
-                builder,
-                "Multiplayer",
-                "FUSE does not negotiate mods over the network yet. Server owners can share this profile hash and package order; every player should match it.",
-                52f);
+            AddWrappedField(builder, "Packages", multiplayer.LocalPackageSummary, 38f);
+            AddWrappedField(builder, "Selected", selected == null ? "No package selected." : PackageDisplayName(selected), 34f);
             builder.Spacer(4f);
 
-            var manifests = FuseDataPackageDiscovery.GetPackageManifestSnapshots();
             if (manifests.Count == 0)
             {
                 AddValueField(builder, "Packages", "No FUSE data packages discovered.");
+                builder.Spacer(8f);
+                return;
             }
-            else
+
+            BuildPackageSelector(builder, manifests, selected);
+            builder.Spacer(6f);
+            BuildSelectedPackagePage(builder, selected);
+
+            if (FuseSettings.ShowAdvancedHealthDetails)
             {
-                foreach (var manifest in manifests)
+                builder.Spacer(4f);
+                builder.AddSection("Dependency Graph");
+                BuildDependencyGraph(builder, manifests);
+            }
+
+            builder.Spacer(8f);
+        }
+
+        private FusePackageManifestSnapshot ResolveSelectedPackage(IReadOnlyList<FusePackageManifestSnapshot> manifests)
+        {
+            if (manifests == null || manifests.Count == 0)
+            {
+                _selectedPackageId = string.Empty;
+                return null;
+            }
+
+            var selected = manifests.FirstOrDefault(manifest =>
+                string.Equals(manifest.Id, _selectedPackageId, StringComparison.OrdinalIgnoreCase));
+            if (selected != null)
+            {
+                return selected;
+            }
+
+            selected = manifests.FirstOrDefault(manifest => manifest.Faults.Length > 0)
+                ?? manifests.FirstOrDefault(HasPackageSettings)
+                ?? manifests.FirstOrDefault(manifest => !manifest.Disabled)
+                ?? manifests[0];
+            _selectedPackageId = selected.Id ?? string.Empty;
+            return selected;
+        }
+
+        private void BuildPackageSelector(
+            UIPanelBuilder builder,
+            IReadOnlyList<FusePackageManifestSnapshot> manifests,
+            FusePackageManifestSnapshot selected)
+        {
+            builder.AddSection("Packages");
+            var rowsShown = 0;
+            foreach (var manifest in manifests)
+            {
+                if (!FuseSettings.ShowAdvancedHealthDetails && rowsShown >= 18)
                 {
-                    var status = manifest.Disabled
-                        ? "disabled"
-                        : manifest.Faults.Length > 0
-                            ? "faulted"
-                            : "ready";
-                    var tag = manifest.IsLegacyConverted ? " | legacy-converted" : string.Empty;
-                    AddWrappedLabel(
-                        builder,
-                        InsertBreakHints($"{manifest.Order:00}. {manifest.Id}"),
-                        34f);
-                    AddWrappedLabel(
-                        builder,
-                        InsertBreakHints($"     v{BlankAs(manifest.Version, "?")} | priority {manifest.Priority} | {status}{tag} | folder {manifest.FolderName}"),
-                        34f);
-                    var deps = BuildDependencySummary(manifest);
-                    if (!string.IsNullOrWhiteSpace(deps))
-                    {
-                        AddWrappedLabel(builder, "     " + InsertBreakHints(deps), 28f);
-                    }
+                    continue;
+                }
 
-                    if (manifest.Disabled && !string.IsNullOrWhiteSpace(manifest.DisabledReason))
+                rowsShown++;
+                var captured = manifest;
+                var isSelected = selected != null && string.Equals(selected.Id, manifest.Id, StringComparison.OrdinalIgnoreCase);
+                builder.HStack(row =>
+                {
+                    row.AddButtonCompact(isSelected ? "[ " + TrimPackageLabel(PackageDisplayName(captured), 34) + " ]" : TrimPackageLabel(PackageDisplayName(captured), 38), () =>
                     {
-                        AddWrappedLabel(builder, "     disabled: " + manifest.DisabledReason, 28f);
-                    }
+                        _selectedPackageId = captured.Id ?? string.Empty;
+                        RebuildWindow();
+                    });
+                    row.AddLabel(PackageStatusText(captured), text =>
+                    {
+                        text.enableWordWrapping = false;
+                        text.overflowMode = TextOverflowModes.Ellipsis;
+                        text.alignment = TextAlignmentOptions.Left;
+                    });
+                }, 6f).Height(30f);
+            }
 
-                    if (manifest.Faults.Length > 0)
-                    {
-                        AddWrappedLabel(builder, "     faults: " + string.Join("; ", manifest.Faults), 42f);
-                    }
+            if (!FuseSettings.ShowAdvancedHealthDetails && manifests.Count > rowsShown)
+            {
+                AddWrappedField(builder, "More", (manifests.Count - rowsShown) + " hidden. Enable Advanced Details to show the full package list.", 38f);
+            }
+        }
+
+        private void BuildSelectedPackagePage(UIPanelBuilder builder, FusePackageManifestSnapshot manifest)
+        {
+            builder.AddSection("Selected Mod");
+            if (manifest == null)
+            {
+                AddValueField(builder, "Status", "No package selected.");
+                return;
+            }
+
+            var definitions = GetLoadedDefinitionsForPackage(manifest);
+            AddWrappedLabel(builder, PackageDisplayName(manifest), 34f);
+            AddValueField(builder, "Status", PackageStatusText(manifest));
+            AddValueField(builder, "Version", BlankAs(manifest.Version, "?"));
+            AddWrappedField(builder, "Id", manifest.Id, 34f);
+            AddWrappedField(builder, "Folder", manifest.FolderName, 34f);
+            AddValueField(builder, "Definitions", definitions.Length.ToString());
+            AddValueField(builder, "Settings", CountPackageSettings(definitions).ToString());
+
+            if (manifest.Faults.Length > 0)
+            {
+                AddWrappedField(builder, "Faults", string.Join("; ", manifest.Faults), 54f);
+            }
+
+            if (manifest.Disabled && !string.IsNullOrWhiteSpace(manifest.DisabledReason))
+            {
+                AddWrappedField(builder, "Disabled", manifest.DisabledReason, 44f);
+            }
+
+            var deps = BuildDependencySummary(manifest);
+            if (!string.IsNullOrWhiteSpace(deps))
+            {
+                AddWrappedField(builder, "Dependencies", deps, 42f);
+            }
+
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Copy Mod Info", () =>
+                {
+                    GUIUtility.systemCopyBuffer = BuildSelectedPackageReport(manifest, definitions);
+                    _lastAction = "Copied selected mod information to clipboard.";
+                    RebuildWindow();
+                });
+                row.AddButtonCompact("Issues", () => SetPage(Page.Logs));
+                row.AddButtonCompact("Refresh", RebuildWindow);
+            }, 6f).Height(32f);
+
+            builder.Spacer(6f);
+            builder.AddSection("Mod Settings");
+            if (definitions.Length == 0)
+            {
+                AddWrappedField(builder, "Settings", "This package is not loaded, so no runtime settings definition is available.", 44f);
+                return;
+            }
+
+            var rendered = 0;
+            foreach (var loaded in definitions)
+            {
+                if (loaded.Definition?.Settings == null || loaded.Definition.Settings.Count == 0)
+                {
+                    continue;
+                }
+
+                if (definitions.Length > 1)
+                {
+                    AddWrappedLabel(builder, loaded.Definition.Id, 30f);
+                }
+
+                foreach (var pair in loaded.Definition.Settings
+                    .Where(pair => pair.Value != null)
+                    .Where(pair => FuseSettings.ShowAdvancedHealthDetails || !pair.Value.Advanced)
+                    .OrderBy(pair => GetSettingLabel(pair.Key, pair.Value), StringComparer.OrdinalIgnoreCase))
+                {
+                    BuildPackageSettingControl(builder, loaded.Definition, pair.Key, pair.Value);
+                    rendered++;
                 }
             }
 
-            builder.Spacer(4f);
-            builder.AddSection("Dependency Graph");
-            BuildDependencyGraph(builder, manifests);
-            builder.Spacer(8f);
+            if (rendered == 0)
+            {
+                AddWrappedField(
+                    builder,
+                    "Settings",
+                    CountPackageSettings(definitions) == 0
+                        ? "This mod does not declare FUSE settings."
+                        : "Only advanced settings are declared. Enable Advanced Details to show them.",
+                    44f);
+            }
+        }
+
+        private static FuseLoadedMod[] GetLoadedDefinitionsForPackage(FusePackageManifestSnapshot manifest)
+        {
+            if (manifest == null)
+            {
+                return Array.Empty<FuseLoadedMod>();
+            }
+
+            return FuseModLoader.GetLoadedModsInOrder()
+                .Where(loaded => loaded?.Definition != null)
+                .Where(loaded =>
+                    string.Equals(NormalizePath(loaded.FolderPath), NormalizePath(manifest.FolderPath), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(loaded.Definition.Id, manifest.Id, StringComparison.OrdinalIgnoreCase) ||
+                    loaded.Definition.Id.StartsWith((manifest.Id ?? string.Empty) + ".", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+        }
+
+        private static int CountPackageSettings(IEnumerable<FuseLoadedMod> definitions)
+        {
+            return (definitions ?? Enumerable.Empty<FuseLoadedMod>())
+                .Where(loaded => loaded?.Definition?.Settings != null)
+                .Sum(loaded => loaded.Definition.Settings.Count);
+        }
+
+        private static bool HasPackageSettings(FusePackageManifestSnapshot manifest)
+        {
+            return CountPackageSettings(GetLoadedDefinitionsForPackage(manifest)) > 0;
+        }
+
+        private static string BuildSelectedPackageReport(FusePackageManifestSnapshot manifest, IReadOnlyList<FuseLoadedMod> definitions)
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine("FUSE selected mod");
+            builder.AppendLine("Name: " + PackageDisplayName(manifest));
+            builder.AppendLine("Id: " + manifest.Id);
+            builder.AppendLine("Version: " + BlankAs(manifest.Version, "?"));
+            builder.AppendLine("Status: " + PackageStatusText(manifest));
+            builder.AppendLine("Folder: " + manifest.FolderPath);
+            builder.AppendLine("Definitions: " + (definitions?.Count ?? 0));
+            builder.AppendLine("Settings: " + CountPackageSettings(definitions));
+            if (manifest.Faults.Length > 0)
+            {
+                builder.AppendLine("Faults: " + string.Join("; ", manifest.Faults));
+            }
+
+            foreach (var loaded in definitions ?? Array.Empty<FuseLoadedMod>())
+            {
+                builder.AppendLine("Definition: " + loaded.Definition.Id);
+            }
+
+            return builder.ToString();
+        }
+
+        private static string PackageDisplayName(FusePackageManifestSnapshot manifest)
+        {
+            if (manifest == null)
+            {
+                return string.Empty;
+            }
+
+            return string.IsNullOrWhiteSpace(manifest.DisplayName) ? manifest.Id : manifest.DisplayName;
+        }
+
+        private static string PackageStatusText(FusePackageManifestSnapshot manifest)
+        {
+            if (manifest == null)
+            {
+                return "unknown";
+            }
+
+            if (manifest.Disabled)
+            {
+                return "disabled";
+            }
+
+            if (manifest.Faults.Length > 0)
+            {
+                return manifest.Faults.Length + " fault(s)";
+            }
+
+            return manifest.IsLegacyConverted ? "ready | legacy" : "ready";
+        }
+
+        private static string TrimPackageLabel(string value, int maxLength)
+        {
+            value = value ?? string.Empty;
+            if (value.Length <= maxLength)
+            {
+                return value;
+            }
+
+            return value.Substring(0, Math.Max(1, maxLength - 3)) + "...";
+        }
+
+        private static string NormalizePath(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
         private void BuildAssetsContent(UIPanelBuilder builder)
@@ -754,15 +996,306 @@ namespace FUSE.Interface
             builder.Spacer(8f);
         }
 
+        private void BuildInspectorContent(UIPanelBuilder builder)
+        {
+            builder.FieldLabelWidth = 170f;
+            builder.Spacing = 6f;
+
+            builder.AddSection("Object Inspector");
+            AddWrappedField(
+                builder,
+                "Scope",
+                "Read-only inspector for FUSE-indexed runtime objects and loaded Unity scene objects. Search by id, name, scene path, or component type.",
+                52f);
+            builder.AddField(
+                "Search",
+                builder.AddInputField(_inspectorSearchTerm ?? string.Empty, value =>
+                {
+                    _inspectorSearchTerm = value ?? string.Empty;
+                })).Height(32f);
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Search", RebuildWindow);
+                row.AddButtonCompact("Clear", () =>
+                {
+                    _inspectorSearchTerm = string.Empty;
+                    _inspectorSelectedSignature = string.Empty;
+                    RebuildWindow();
+                });
+                row.AddButtonCompact("Copy Detail", () =>
+                {
+                    var target = ResolveSelectedInspectorTarget();
+                    GUIUtility.systemCopyBuffer = BuildInspectorReport(target);
+                    _lastAction = target == null
+                        ? "No inspector target selected."
+                        : "Copied inspector detail to clipboard.";
+                    RebuildWindow();
+                });
+            }, 6f).Height(32f);
+
+            var term = (_inspectorSearchTerm ?? string.Empty).Trim();
+            if (term.Length < 2)
+            {
+                AddWrappedField(builder, "Hint", "Enter at least 2 characters, then Search.", 34f);
+                return;
+            }
+
+            var targets = BuildInspectorTargets(term, 120);
+            if (targets.Count == 0)
+            {
+                AddWrappedField(builder, "Results", "No matching runtime or scene objects.", 34f);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_inspectorSelectedSignature) ||
+                targets.All(target => !string.Equals(target.Signature, _inspectorSelectedSignature, StringComparison.OrdinalIgnoreCase)))
+            {
+                _inspectorSelectedSignature = targets[0].Signature;
+            }
+
+            var selectedIndex = Math.Max(0, targets.FindIndex(target =>
+                string.Equals(target.Signature, _inspectorSelectedSignature, StringComparison.OrdinalIgnoreCase)));
+            var labels = targets
+                .Select(target => target.DropdownLabel)
+                .ToList();
+            builder.AddField(
+                "Target",
+                builder.AddDropdown(labels, selectedIndex, index =>
+                {
+                    if (index >= 0 && index < targets.Count)
+                    {
+                        _inspectorSelectedSignature = targets[index].Signature;
+                        RebuildWindow();
+                    }
+                })).Height(32f);
+            AddValueField(builder, "Matches", targets.Count.ToString());
+            builder.Spacer(4f);
+
+            BuildInspectorDetail(builder, targets[selectedIndex]);
+            builder.Spacer(8f);
+        }
+
+        private void BuildAuditsContent(UIPanelBuilder builder)
+        {
+            builder.FieldLabelWidth = 170f;
+            builder.Spacing = 6f;
+
+            var findings = BuildAuditFindings();
+            var blocking = findings.Count(finding => finding.Severity == "Critical" || finding.Severity == "High");
+            var warnings = findings.Count(finding => finding.Severity == "Medium" || finding.Severity == "Low");
+
+            builder.AddSection("Runtime Audits");
+            AddWrappedField(
+                builder,
+                "Scope",
+                "Read-only checks for common Railroader/FUSE failure modes. These do not mutate the world; they produce actionable diagnostics.",
+                52f);
+            AddValueField(builder, "Findings", findings.Count.ToString());
+            AddValueField(builder, "Blocking", blocking.ToString());
+            AddValueField(builder, "Warnings", warnings.ToString());
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Run Audits", RebuildWindow);
+                row.AddButtonCompact("Copy Report", () =>
+                {
+                    GUIUtility.systemCopyBuffer = BuildAuditReport(findings);
+                    _lastAction = "Copied FUSE audit report to clipboard.";
+                    RebuildWindow();
+                });
+                row.AddButtonCompact("Export Report", () =>
+                {
+                    RunAction("export audit report", () => ExportAuditReport(findings));
+                });
+            }, 6f).Height(32f);
+            AddWrappedLabel(builder, _lastAction, 34f);
+            builder.Spacer(4f);
+
+            if (findings.Count == 0)
+            {
+                AddValueField(builder, "Status", "No audit findings.");
+                builder.Spacer(8f);
+                return;
+            }
+
+            builder.AddSection("Findings");
+            foreach (var finding in findings.Take(30))
+            {
+                AddWrappedLabel(
+                    builder,
+                    $"{finding.Severity} | {finding.Title} | {finding.ObjectId} | {finding.Detail}",
+                    58f);
+                AddWrappedField(builder, "Action", finding.Action, 42f);
+            }
+
+            if (findings.Count > 30)
+            {
+                AddWrappedField(builder, "More", (findings.Count - 30) + " hidden. Copy or export the report for all findings.", 34f);
+            }
+
+            builder.Spacer(8f);
+        }
+
+        private void BuildAdvancedContent(UIPanelBuilder builder)
+        {
+            builder.FieldLabelWidth = 170f;
+            builder.Spacing = 6f;
+
+            builder.AddSection("Developer Workbench");
+            AddWrappedField(
+                builder,
+                "Mode",
+                "Advanced tools are for live Unity/Railroader inspection, cache rebuilds, and FUSE compatibility debugging. They are intentionally separated from the stream-ready status pages.",
+                58f);
+            AddSettingToggle(
+                builder,
+                "Advanced Details",
+                FuseSettings.ShowAdvancedHealthDetails ? "enabled" : "disabled",
+                FuseSettings.ShowAdvancedHealthDetails ? "Hide" : "Show",
+                () =>
+                {
+                    FuseSettings.SetShowAdvancedHealthDetails(!FuseSettings.ShowAdvancedHealthDetails);
+                    RebuildWindow();
+                });
+            builder.Spacer(4f);
+
+            builder.AddSection("Unity Runtime");
+            AddUnityRuntimeFields(builder);
+            builder.Spacer(4f);
+
+            builder.AddSection("Railroader Runtime");
+            AddRailroaderRuntimeFields(builder);
+            builder.Spacer(4f);
+
+            builder.AddSection("Object Finder");
+            BuildAdvancedObjectFinder(builder);
+            builder.Spacer(4f);
+
+            builder.AddSection("FUSE Registry");
+            AddValueField(builder, "Exclusive Claims", FUSE.Registry.FuseRegistry.ExclusiveClaimCount.ToString());
+            AddValueField(builder, "Shared Claims", FUSE.Registry.FuseRegistry.SharedClaimCount.ToString());
+            AddValueField(builder, "Conflicts", FUSE.Registry.FuseRegistry.Conflicts.Count.ToString());
+            AddValueField(builder, "Asset Stores", FusePerformanceMetrics.FormatCount("direct asset pack store count"));
+            builder.Spacer(4f);
+
+            builder.AddSection("Runtime Actions");
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Reload Track/Data", () =>
+                {
+                    RunAction("reload track and data", () =>
+                    {
+                        var applied = FuseRuntimeReloadService.ReloadTrackAndData("FUSE advanced page reload track/data");
+                        return $"Reload Track/Data complete. Applied {applied} resident definition(s).";
+                    });
+                });
+                row.AddButtonCompact("Reload Terrain", () =>
+                {
+                    RunAction("reload terrain", () =>
+                        FuseRuntimeReloadService.ReloadTerrain("FUSE advanced page reload terrain")
+                            ? "Reload Terrain complete."
+                            : "Reload Terrain skipped or failed. See FUSE.log.");
+                });
+                row.AddButtonCompact("Rebuild Caches", () =>
+                {
+                    RunAction("rebuild caches", () =>
+                    {
+                        FuseCacheRegistry.RebuildAll();
+                        return "Rebuilt FUSE runtime caches.";
+                    });
+                });
+            }, 6f).Height(32f);
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Copy Runtime Snapshot", () =>
+                {
+                    GUIUtility.systemCopyBuffer = BuildRuntimeSnapshotText();
+                    _lastAction = "Copied FUSE runtime snapshot to clipboard.";
+                    RebuildWindow();
+                });
+                row.AddButtonCompact("Export Debug Bundle", () =>
+                {
+                    RunAction("export debug bundle", ExportDebugBundle);
+                });
+                row.AddButtonCompact("Refresh", RebuildWindow);
+            }, 6f).Height(32f);
+            AddWrappedLabel(builder, _lastAction, 36f);
+            builder.Spacer(4f);
+
+            builder.AddSection("Debug Overlays");
+            AddSettingToggle(
+                builder,
+                "Track Probe",
+                FuseSettings.ShowTrackDebugOverlay ? "enabled on hover" : "disabled",
+                FuseSettings.ShowTrackDebugOverlay ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetShowTrackDebugOverlay(!FuseSettings.ShowTrackDebugOverlay);
+                    RebuildWindow();
+                });
+            AddSettingToggle(
+                builder,
+                "Track Span Paths",
+                FuseSettings.ShowTrackDebugSpanPaths
+                    ? (FuseSettings.ShowTrackDebugOverlay ? "shown in overlay" : "shown when track probe is on")
+                    : "hidden",
+                FuseSettings.ShowTrackDebugSpanPaths ? "Hide" : "Show",
+                () =>
+                {
+                    FuseSettings.SetShowTrackDebugSpanPaths(!FuseSettings.ShowTrackDebugSpanPaths);
+                    RebuildWindow();
+                });
+            AddSettingToggle(
+                builder,
+                "Scenery Probe",
+                FuseSettings.ShowSceneryDebugOverlay ? "enabled on hover" : "disabled",
+                FuseSettings.ShowSceneryDebugOverlay ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetShowSceneryDebugOverlay(!FuseSettings.ShowSceneryDebugOverlay);
+                    RebuildWindow();
+                });
+            AddSettingToggle(
+                builder,
+                "Scenery Details",
+                FuseSettings.ShowSceneryDebugAdvanced
+                    ? (FuseSettings.ShowSceneryDebugOverlay ? "shown in overlay" : "shown when scenery probe is on")
+                    : "hidden",
+                FuseSettings.ShowSceneryDebugAdvanced ? "Hide" : "Show",
+                () =>
+                {
+                    FuseSettings.SetShowSceneryDebugAdvanced(!FuseSettings.ShowSceneryDebugAdvanced);
+                    RebuildWindow();
+                });
+            builder.Spacer(4f);
+
+            builder.AddSection("Experimental");
+            AddSettingToggle(
+                builder,
+                "Early Suppression",
+                FuseSettings.EnableExperimentalEarlyScenePathSuppression ? "enabled next map load" : "disabled",
+                FuseSettings.EnableExperimentalEarlyScenePathSuppression ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetEnableExperimentalEarlyScenePathSuppression(!FuseSettings.EnableExperimentalEarlyScenePathSuppression);
+                    RebuildWindow();
+                });
+            AddWrappedField(
+                builder,
+                "Inspector Roadmap",
+                "Next step: add a safe scene/object inspector inspired by UnityRuntimeEditor, scoped to Railroader objects, FUSE claims, component health, and non-destructive property probes.",
+                58f);
+            builder.Spacer(8f);
+        }
+
         private void BuildSettingsContent(UIPanelBuilder builder)
         {
             builder.FieldLabelWidth = 170f;
             builder.Spacing = 6f;
 
             var multiplayer = FuseMultiplayerGuard.GetStatus();
-            builder.AddSection("Settings");
+            builder.AddSection("General");
             AddValueField(builder, "Asset Packs", AssetPackModeText());
-            AddValueField(builder, "Mod Set", FuseModSetService.ActiveSetName);
+            AddValueField(builder, "Profile", FuseModSetService.ActiveSetName);
             AddValueField(builder, "Profile Hash", multiplayer.LocalPackageFingerprint);
             AddSettingToggle(
                 builder,
@@ -774,6 +1307,9 @@ namespace FUSE.Interface
                     FuseSettings.SetBlockNonHostMultiplayerClientWorldApply(!FuseSettings.BlockNonHostMultiplayerClientWorldApply);
                     RebuildWindow();
                 });
+            builder.Spacer(4f);
+
+            builder.AddSection("Reporting");
             AddSettingToggle(
                 builder,
                 "Verbose Report",
@@ -787,76 +1323,269 @@ namespace FUSE.Interface
             AddSettingToggle(
                 builder,
                 "Advanced Details",
-                FuseSettings.ShowAdvancedHealthDetails ? "enabled" : "disabled",
+                FuseSettings.ShowAdvancedHealthDetails ? "visible in panels" : "hidden by default",
                 FuseSettings.ShowAdvancedHealthDetails ? "Hide" : "Show",
                 () =>
                 {
                     FuseSettings.SetShowAdvancedHealthDetails(!FuseSettings.ShowAdvancedHealthDetails);
                     RebuildWindow();
                 });
-            AddSettingToggle(
-                builder,
-                "Track Debug Overlay",
-                FuseSettings.ShowTrackDebugOverlay ? "enabled (hover tracks)" : "disabled",
-                FuseSettings.ShowTrackDebugOverlay ? "Disable" : "Enable",
-                () =>
-                {
-                    FuseSettings.SetShowTrackDebugOverlay(!FuseSettings.ShowTrackDebugOverlay);
-                    RebuildWindow();
-                });
-            AddSettingToggle(
-                builder,
-                "Track Span Paths",
-                FuseSettings.ShowTrackDebugSpanPaths
-                    ? (FuseSettings.ShowTrackDebugOverlay ? "shown in overlay" : "shown when overlay on")
-                    : "hidden",
-                FuseSettings.ShowTrackDebugSpanPaths ? "Hide" : "Show",
-                () =>
-                {
-                    FuseSettings.SetShowTrackDebugSpanPaths(!FuseSettings.ShowTrackDebugSpanPaths);
-                    RebuildWindow();
-                });
-            AddSettingToggle(
-                builder,
-                "Scenery Debug Overlay",
-                FuseSettings.ShowSceneryDebugOverlay ? "enabled (hover scenery)" : "disabled",
-                FuseSettings.ShowSceneryDebugOverlay ? "Disable" : "Enable",
-                () =>
-                {
-                    FuseSettings.SetShowSceneryDebugOverlay(!FuseSettings.ShowSceneryDebugOverlay);
-                    RebuildWindow();
-                });
-            AddSettingToggle(
-                builder,
-                "Scenery Debug Details",
-                FuseSettings.ShowSceneryDebugAdvanced
-                    ? (FuseSettings.ShowSceneryDebugOverlay ? "shown in overlay" : "shown when overlay on")
-                    : "hidden",
-                FuseSettings.ShowSceneryDebugAdvanced ? "Hide" : "Show",
-                () =>
-                {
-                    FuseSettings.SetShowSceneryDebugAdvanced(!FuseSettings.ShowSceneryDebugAdvanced);
-                    RebuildWindow();
-                });
-            AddSettingToggle(
-                builder,
-                "Early Suppression",
-                FuseSettings.EnableExperimentalEarlyScenePathSuppression ? "enabled" : "disabled",
-                FuseSettings.EnableExperimentalEarlyScenePathSuppression ? "Disable" : "Enable",
-                () =>
-                {
-                    FuseSettings.SetEnableExperimentalEarlyScenePathSuppression(!FuseSettings.EnableExperimentalEarlyScenePathSuppression);
-                    RebuildWindow();
-                });
+            AddWrappedField(builder, "User Config", FuseSettings.GetUserSettingsPath(), 42f);
             builder.Spacer(6f);
 
-            builder.AddSection("Reload Result History");
+            builder.AddSection("Package Settings");
+            AddWrappedField(
+                builder,
+                "Location",
+                "Mod-specific settings now live on each mod page. Open Mods, select a package, and its settings will appear in that package detail view.",
+                52f);
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Open Mods", () => SetPage(Page.Packages));
+            }, 6f).Height(32f);
+            builder.Spacer(6f);
+
+            builder.AddSection("Last Action");
             AddWrappedField(builder, "Last Action", _lastAction, 52f);
+            AddWrappedField(builder, "Mod Settings", FuseModSettingsStore.LastStatus, 42f);
             AddValueField(builder, "FUSE Map Load", FusePerformanceMetrics.FormatTiming("map load total"));
             AddValueField(builder, "Runtime Apply", FusePerformanceMetrics.FormatTiming("apply resident definitions"));
-            AddValueField(builder, "Disk Load", FusePerformanceMetrics.FormatTiming("load packages from disk"));
-            AddValueField(builder, "Direct Asset Stores", FusePerformanceMetrics.FormatTiming("direct asset pack stores"));
             builder.Spacer(8f);
+        }
+
+        private void BuildPackageSettingsContent(UIPanelBuilder builder)
+        {
+            builder.AddSection("Mod Settings");
+            AddWrappedField(
+                builder,
+                "Storage",
+                "Package settings are stored outside mod folders at " + FuseModSettingsStore.GetStorePath(),
+                48f);
+
+            var packages = FuseModLoader.GetLoadedModsInOrder()
+                .Where(loaded => loaded?.Definition?.Settings != null && loaded.Definition.Settings.Count > 0)
+                .OrderBy(loaded => loaded.Definition.Name ?? loaded.Definition.Id, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (packages.Length == 0)
+            {
+                AddWrappedField(
+                    builder,
+                    "Status",
+                    "No loaded package has declared settings yet. Add a top-level settings object to a FUSE definition to make controls appear here.",
+                    52f);
+                AddWrappedField(
+                    builder,
+                    "Schema",
+                    "Supported controls: bool, enum, number, path, color, and text. Supported scopes: user, profile, and server.",
+                    42f);
+                builder.Spacer(6f);
+                return;
+            }
+
+            AddValueField(builder, "Packages", packages.Length.ToString());
+            foreach (var loaded in packages)
+            {
+                var visibleSettings = loaded.Definition.Settings
+                    .Where(pair => pair.Value != null)
+                    .Where(pair => FuseSettings.ShowAdvancedHealthDetails || !pair.Value.Advanced)
+                    .OrderBy(pair => GetSettingLabel(pair.Key, pair.Value), StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                var hiddenAdvanced = loaded.Definition.Settings.Count(pair => pair.Value?.Advanced == true) - visibleSettings.Count(pair => pair.Value?.Advanced == true);
+                if (visibleSettings.Length == 0)
+                {
+                    continue;
+                }
+
+                builder.Spacer(4f);
+                builder.AddSection(PackageSettingsTitle(loaded));
+                if (hiddenAdvanced > 0)
+                {
+                    AddWrappedField(builder, "Hidden", hiddenAdvanced + " advanced setting(s). Enable Advanced Details to show them.", 34f);
+                }
+
+                foreach (var pair in visibleSettings)
+                {
+                    BuildPackageSettingControl(builder, loaded.Definition, pair.Key, pair.Value);
+                }
+            }
+
+            builder.Spacer(6f);
+        }
+
+        private void BuildPackageSettingControl(UIPanelBuilder builder, FuseModDefinition definition, string key, FuseModSettingDefinition setting)
+        {
+            var type = FuseModSettingsStore.NormalizeType(setting?.Type);
+            switch (type)
+            {
+                case "bool":
+                    BuildBoolSettingControl(builder, definition, key, setting);
+                    break;
+                case "enum":
+                    BuildEnumSettingControl(builder, definition, key, setting);
+                    break;
+                case "number":
+                    BuildTextSettingControl(builder, definition, key, setting, isNumber: true);
+                    break;
+                case "path":
+                case "color":
+                case "text":
+                default:
+                    BuildTextSettingControl(builder, definition, key, setting, isNumber: false);
+                    break;
+            }
+
+            if (FuseSettings.ShowAdvancedHealthDetails)
+            {
+                AddWrappedField(builder, " ", DescribePackageSetting(key, setting), 34f);
+            }
+            else if (!string.IsNullOrWhiteSpace(setting?.Description))
+            {
+                AddWrappedField(builder, " ", setting.Description, 34f);
+            }
+        }
+
+        private void BuildBoolSettingControl(UIPanelBuilder builder, FuseModDefinition definition, string key, FuseModSettingDefinition setting)
+        {
+            builder.HStack(row =>
+            {
+                AddSettingRowLabel(row, GetSettingLabel(key, setting));
+                row.AddToggle(
+                    () => FuseModSettingsStore.GetBoolValue(definition, key, setting),
+                    value =>
+                    {
+                        FuseModSettingsStore.SetValue(definition, key, setting, new JValue(value));
+                        RebuildWindow();
+                    });
+                AddResetSettingButton(row, definition, key, setting);
+            }, 8f).Height(30f);
+        }
+
+        private void BuildEnumSettingControl(UIPanelBuilder builder, FuseModDefinition definition, string key, FuseModSettingDefinition setting)
+        {
+            var values = (setting?.Values ?? Array.Empty<string>())
+                .Where(value => value != null)
+                .ToList();
+            if (values.Count == 0)
+            {
+                BuildTextSettingControl(builder, definition, key, setting, isNumber: false);
+                return;
+            }
+
+            var current = FuseModSettingsStore.GetStringValue(definition, key, setting);
+            var selected = Math.Max(0, values.FindIndex(value => string.Equals(value, current, StringComparison.Ordinal)));
+            builder.HStack(row =>
+            {
+                AddSettingRowLabel(row, GetSettingLabel(key, setting));
+                row.AddDropdown(values, selected, index =>
+                {
+                    if (index < 0 || index >= values.Count)
+                    {
+                        return;
+                    }
+
+                    FuseModSettingsStore.SetValue(definition, key, setting, new JValue(values[index]));
+                    RebuildWindow();
+                });
+                AddResetSettingButton(row, definition, key, setting);
+            }, 8f).Height(32f);
+        }
+
+        private void BuildTextSettingControl(UIPanelBuilder builder, FuseModDefinition definition, string key, FuseModSettingDefinition setting, bool isNumber)
+        {
+            var current = isNumber
+                ? FuseModSettingsStore.GetNumberValue(definition, key, setting).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                : FuseModSettingsStore.GetStringValue(definition, key, setting);
+            builder.HStack(row =>
+            {
+                AddSettingRowLabel(row, GetSettingLabel(key, setting));
+                row.AddInputField(current, value =>
+                {
+                    SaveTextSetting(definition, key, setting, value, isNumber);
+                });
+                AddResetSettingButton(row, definition, key, setting);
+            }, 8f).Height(32f);
+        }
+
+        private void SaveTextSetting(FuseModDefinition definition, string key, FuseModSettingDefinition setting, string value, bool isNumber)
+        {
+            if (isNumber)
+            {
+                double parsed;
+                if (!double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out parsed))
+                {
+                    _lastAction = $"Setting '{key}' was not saved because '{value}' is not a number.";
+                    return;
+                }
+
+                FuseModSettingsStore.SetValue(definition, key, setting, new JValue(parsed));
+                return;
+            }
+
+            FuseModSettingsStore.SetValue(definition, key, setting, new JValue(value ?? string.Empty));
+        }
+
+        private static void AddSettingRowLabel(UIPanelBuilder row, string label)
+        {
+            row.AddLabel(label, text =>
+            {
+                text.enableWordWrapping = false;
+                text.overflowMode = TextOverflowModes.Ellipsis;
+                text.alignment = TextAlignmentOptions.Right;
+            });
+        }
+
+        private void AddResetSettingButton(UIPanelBuilder row, FuseModDefinition definition, string key, FuseModSettingDefinition setting)
+        {
+            row.AddButtonCompact("Reset", () =>
+            {
+                FuseModSettingsStore.ResetValue(definition, key, setting);
+                RebuildWindow();
+            });
+        }
+
+        private static string PackageSettingsTitle(FuseLoadedMod loaded)
+        {
+            var definition = loaded?.Definition;
+            if (definition == null)
+            {
+                return "Package Settings";
+            }
+
+            var name = string.IsNullOrWhiteSpace(definition.Name) ? definition.Id : definition.Name;
+            return string.IsNullOrWhiteSpace(name) ? "Package Settings" : name;
+        }
+
+        private static string GetSettingLabel(string key, FuseModSettingDefinition setting)
+        {
+            return string.IsNullOrWhiteSpace(setting?.Label) ? key : setting.Label.Trim();
+        }
+
+        private static string DescribePackageSetting(string key, FuseModSettingDefinition setting)
+        {
+            var parts = new List<string>
+            {
+                "key=" + key,
+                "type=" + FuseModSettingsStore.NormalizeType(setting?.Type),
+                "scope=" + FuseModSettingsStore.DescribeScope(setting)
+            };
+
+            if (FuseModSettingsStore.FormatValue(setting?.Default).Length > 0)
+            {
+                parts.Add("default=" + FuseModSettingsStore.FormatValue(setting.Default));
+            }
+
+            if (setting?.ReloadRequired == true)
+            {
+                parts.Add("reload required");
+            }
+
+            if (!string.IsNullOrWhiteSpace(setting?.Description))
+            {
+                parts.Add(setting.Description);
+            }
+
+            return string.Join(" | ", parts.ToArray());
         }
 
         private void BuildModSetsContent(UIPanelBuilder builder)
@@ -1057,6 +1786,100 @@ namespace FUSE.Interface
                 48f);
         }
 
+        private void AddUnityRuntimeFields(UIPanelBuilder builder)
+        {
+            builder.AddField("FPS", () => _fpsAverage <= 0f ? "warming up" : _fpsAverage.ToString("0.0"), UIPanelBuilder.Frequency.Fast).Height(26f);
+            builder.AddField("Frame Time", () => _frameMilliseconds <= 0f ? "warming up" : _frameMilliseconds.ToString("0.0") + " ms", UIPanelBuilder.Frequency.Fast).Height(26f);
+            builder.AddField("Managed Memory", () => FormatBytes(_managedMemoryBytes), UIPanelBuilder.Frequency.Fast).Height(26f);
+            builder.AddField("Unity Allocated", () => FormatBytes(_unityAllocatedBytes), UIPanelBuilder.Frequency.Fast).Height(26f);
+            builder.AddField("Unity Reserved", () => FormatBytes(_unityReservedBytes), UIPanelBuilder.Frequency.Fast).Height(26f);
+            AddValueField(builder, "Active Scene", ActiveSceneName());
+            AddValueField(builder, "Loaded Scenes", LoadedSceneSummary());
+            AddValueField(builder, "Scene Roots", SafeCount(CountSceneRootObjects).ToString());
+            AddValueField(builder, "GameObjects", SafeCount(() => Resources.FindObjectsOfTypeAll<GameObject>().Length).ToString());
+        }
+
+        private static void AddRailroaderRuntimeFields(UIPanelBuilder builder)
+        {
+            AddValueField(builder, "Track Nodes", SafeCount(() => TrackAPI.GetAllNodes().Count()).ToString());
+            AddValueField(builder, "Track Segments", SafeCount(() => TrackAPI.GetAllSegments().Count()).ToString());
+            AddValueField(builder, "Track Spans", SafeCount(() => TrackAPI.GetAllSpans().Count()).ToString());
+            AddValueField(builder, "Areas", SafeCount(() => TrackAPI.GetAllAreas().Count()).ToString());
+            AddValueField(builder, "Loads", SafeCount(() => LoadAPI.GetAllLoads().Count()).ToString());
+            AddValueField(builder, "Industries", SafeCount(() => IndustryAPI.GetAllIndustries().Count()).ToString());
+            AddValueField(builder, "Loaders", SafeCount(() => LoaderAPI.GetAllLoaders().Count()).ToString());
+            AddValueField(builder, "Stations", SafeCount(() => StationAPI.GetAllStationAgents().Count()).ToString());
+            AddValueField(builder, "Passenger Stops", SafeCount(() => StationAPI.GetAllPassengerStops().Count()).ToString());
+            AddValueField(builder, "Turntables", SafeCount(() => TurntableAPI.GetAllTurntables().Count()).ToString());
+            AddValueField(builder, "Scenery", SafeCount(() => SceneryAPI.GetAllScenery().Count()).ToString());
+            AddValueField(builder, "Scene Clones", SafeCount(() => SceneCloneAPI.GetAllSceneClones().Count()).ToString());
+            AddValueField(builder, "Splineys", SafeCount(() => SplineyAPI.GetAllSplineys().Count()).ToString());
+            AddValueField(builder, "Map Labels", SafeCount(() => MapAPI.GetAllMapLabels().Count()).ToString());
+            AddValueField(builder, "Map Masks", SafeCount(() => MapAPI.GetAllMapMasks().Count()).ToString());
+            AddValueField(builder, "Progressions", SafeCount(() => ProgressionAPI.GetAllProgressions().Count()).ToString());
+            AddValueField(builder, "Map Features", SafeCount(() => ProgressionAPI.GetAllMapFeatures().Count()).ToString());
+        }
+
+        private void BuildAdvancedObjectFinder(UIPanelBuilder builder)
+        {
+            AddWrappedField(
+                builder,
+                "Scope",
+                "Read-only search across FUSE runtime indexes and loaded Unity scene objects. Use ids, names, or scene path fragments.",
+                48f);
+            builder.AddField(
+                "Search",
+                builder.AddInputField(_advancedSearchTerm ?? string.Empty, value =>
+                {
+                    _advancedSearchTerm = value ?? string.Empty;
+                })).Height(32f);
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Run Search", RebuildWindow);
+                row.AddButtonCompact("Clear", () =>
+                {
+                    _advancedSearchTerm = string.Empty;
+                    RebuildWindow();
+                });
+                row.AddButtonCompact("Copy Results", () =>
+                {
+                    GUIUtility.systemCopyBuffer = BuildObjectSearchReport(_advancedSearchTerm);
+                    _lastAction = "Copied FUSE object search results to clipboard.";
+                    RebuildWindow();
+                });
+            }, 6f).Height(32f);
+
+            var term = (_advancedSearchTerm ?? string.Empty).Trim();
+            if (term.Length < 2)
+            {
+                AddWrappedField(builder, "Results", "Enter at least 2 characters, then Run Search.", 34f);
+                return;
+            }
+
+            var results = BuildObjectSearchResults(term, 35);
+            if (results.Count == 0)
+            {
+                AddWrappedField(builder, "Results", "No matching runtime or scene objects.", 34f);
+                return;
+            }
+
+            AddValueField(builder, "Matches", results.Count.ToString());
+            foreach (var result in results.Take(18))
+            {
+                AddWrappedLabel(builder, InsertBreakHints(result), 38f);
+            }
+
+            if (results.Count > 18)
+            {
+                AddWrappedField(builder, "More", (results.Count - 18) + " hidden. Copy Results for a longer report.", 34f);
+            }
+        }
+
+        private static void AddReadinessRow(UIPanelBuilder builder, string label, bool ok, string okText, string problemText)
+        {
+            AddValueField(builder, label, ok ? "OK | " + okText : "Review | " + problemText);
+        }
+
         private static void AddValueField(UIPanelBuilder builder, string label, string value)
         {
             builder.AddField(label, value).Height(26f);
@@ -1095,6 +1918,900 @@ namespace FUSE.Interface
             }
         }
 
+        private static string ActiveSceneName()
+        {
+            try
+            {
+                var scene = SceneManager.GetActiveScene();
+                return scene.IsValid() ? BlankAs(scene.name, "(unnamed)") : "none";
+            }
+            catch
+            {
+                return "unknown";
+            }
+        }
+
+        private static string LoadedSceneSummary()
+        {
+            try
+            {
+                var names = new List<string>();
+                for (var index = 0; index < SceneManager.sceneCount; index++)
+                {
+                    var scene = SceneManager.GetSceneAt(index);
+                    if (scene.IsValid() && scene.isLoaded)
+                    {
+                        names.Add(BlankAs(scene.name, "(unnamed)"));
+                    }
+                }
+
+                return names.Count == 0
+                    ? "0"
+                    : names.Count + " | " + string.Join(", ", names.Take(3).ToArray()) + (names.Count > 3 ? " +" + (names.Count - 3) : string.Empty);
+            }
+            catch
+            {
+                return "unknown";
+            }
+        }
+
+        private static int CountSceneRootObjects()
+        {
+            var total = 0;
+            for (var index = 0; index < SceneManager.sceneCount; index++)
+            {
+                var scene = SceneManager.GetSceneAt(index);
+                if (!scene.IsValid() || !scene.isLoaded)
+                {
+                    continue;
+                }
+
+                var roots = scene.GetRootGameObjects();
+                total += roots == null ? 0 : roots.Length;
+            }
+
+            return total;
+        }
+
+        private static string BuildStreamReadinessReport(JObject report)
+        {
+            var counts = report?["counts"] as JObject ?? new JObject();
+            var builder = new StringBuilder();
+            builder.AppendLine("FUSE Readiness");
+            builder.AppendLine("State: " + (ReadBool(report?["hasProblems"], false) ? "Needs Attention" : "Ready"));
+            builder.AppendLine("Summary: " + ReadString(report?["summary"], FuseLoadReport.LastSummary));
+            builder.AppendLine("Version: FUSE " + ReadVersion() + " | Schema " + FuseMigration.CurrentVersion + " | Converter 0.2.0");
+            builder.AppendLine("Profile: " + FuseModSetService.ActiveSetName);
+            builder.AppendLine("Profile Hash: " + FuseModSetService.GetActiveSetFingerprint());
+            builder.AppendLine("Loaded Packages: " + ReadInt(counts["loadedPackages"]));
+            builder.AppendLine("Applied Packages: " + ReadInt(counts["appliedPackages"]));
+            builder.AppendLine("Faults: " + ReadInt(counts["faultedPackages"]));
+            builder.AppendLine("Conflicts: " + ReadInt(counts["conflicts"]));
+            builder.AppendLine("Unknown Assets: " + ReadInt(counts["unknownSceneryAssets"]));
+            builder.AppendLine("Graph Issues: " + ReadInt(counts["graphIssues"]));
+            builder.AppendLine("Transfer Skips: " + ReadInt(counts["progressionTransferSkips"]));
+            builder.AppendLine("Suppressions: " + ReadInt(counts["suppressions"]));
+            builder.AppendLine("Map Load: " + FusePerformanceMetrics.FormatTiming("map load total"));
+            builder.AppendLine("Runtime Apply: " + FusePerformanceMetrics.FormatTiming("apply resident definitions"));
+            return builder.ToString().TrimEnd();
+        }
+
+        private string BuildRuntimeSnapshotText()
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine("FUSE Runtime Snapshot");
+            builder.AppendLine("Generated: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+            builder.AppendLine("Version: FUSE " + ReadVersion() + " | Schema " + FuseMigration.CurrentVersion);
+            builder.AppendLine();
+            builder.AppendLine("Unity");
+            builder.AppendLine("FPS: " + (_fpsAverage <= 0f ? "warming up" : _fpsAverage.ToString("0.0")));
+            builder.AppendLine("Frame Time: " + (_frameMilliseconds <= 0f ? "warming up" : _frameMilliseconds.ToString("0.0") + " ms"));
+            builder.AppendLine("Managed Memory: " + FormatBytes(_managedMemoryBytes));
+            builder.AppendLine("Unity Allocated: " + FormatBytes(_unityAllocatedBytes));
+            builder.AppendLine("Unity Reserved: " + FormatBytes(_unityReservedBytes));
+            builder.AppendLine("Active Scene: " + ActiveSceneName());
+            builder.AppendLine("Loaded Scenes: " + LoadedSceneSummary());
+            builder.AppendLine("Scene Roots: " + SafeCount(CountSceneRootObjects));
+            builder.AppendLine("GameObjects: " + SafeCount(() => Resources.FindObjectsOfTypeAll<GameObject>().Length));
+            builder.AppendLine();
+            builder.AppendLine("Railroader");
+            builder.AppendLine("Track Nodes: " + SafeCount(() => TrackAPI.GetAllNodes().Count()));
+            builder.AppendLine("Track Segments: " + SafeCount(() => TrackAPI.GetAllSegments().Count()));
+            builder.AppendLine("Track Spans: " + SafeCount(() => TrackAPI.GetAllSpans().Count()));
+            builder.AppendLine("Areas: " + SafeCount(() => TrackAPI.GetAllAreas().Count()));
+            builder.AppendLine("Loads: " + SafeCount(() => LoadAPI.GetAllLoads().Count()));
+            builder.AppendLine("Industries: " + SafeCount(() => IndustryAPI.GetAllIndustries().Count()));
+            builder.AppendLine("Loaders: " + SafeCount(() => LoaderAPI.GetAllLoaders().Count()));
+            builder.AppendLine("Stations: " + SafeCount(() => StationAPI.GetAllStationAgents().Count()));
+            builder.AppendLine("Passenger Stops: " + SafeCount(() => StationAPI.GetAllPassengerStops().Count()));
+            builder.AppendLine("Scenery: " + SafeCount(() => SceneryAPI.GetAllScenery().Count()));
+            builder.AppendLine();
+            builder.AppendLine("FUSE Registry");
+            builder.AppendLine("Exclusive Claims: " + FUSE.Registry.FuseRegistry.ExclusiveClaimCount);
+            builder.AppendLine("Shared Claims: " + FUSE.Registry.FuseRegistry.SharedClaimCount);
+            builder.AppendLine("Conflicts: " + FUSE.Registry.FuseRegistry.Conflicts.Count);
+            return builder.ToString().TrimEnd();
+        }
+
+        private InspectorTarget ResolveSelectedInspectorTarget()
+        {
+            var targets = BuildInspectorTargets(_inspectorSearchTerm, 120);
+            if (targets.Count == 0)
+            {
+                return null;
+            }
+
+            return targets.FirstOrDefault(target =>
+                       string.Equals(target.Signature, _inspectorSelectedSignature, StringComparison.OrdinalIgnoreCase)) ??
+                   targets[0];
+        }
+
+        private static List<InspectorTarget> BuildInspectorTargets(string rawTerm, int limit)
+        {
+            var results = new List<InspectorTarget>();
+            var signatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var term = (rawTerm ?? string.Empty).Trim();
+            if (term.Length < 2)
+            {
+                return results;
+            }
+
+            limit = Math.Max(1, limit);
+            AddInspectorIndexTargets(results, signatures, "Track Node", FuseNodeRuntimeIndex.Instance, FuseClaimKind.Node, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Track Segment", FuseSegmentRuntimeIndex.Instance, FuseClaimKind.Segment, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Track Span", FuseSpanRuntimeIndex.Instance, FuseClaimKind.Span, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Area", FuseAreaRuntimeIndex.Instance, null, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Load", FuseLoadRuntimeIndex.Instance, null, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Industry", FuseIndustryRuntimeIndex.Instance, FuseClaimKind.Industry, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Industry Component", FuseIndustryComponentRuntimeIndex.Instance, null, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Loader", FuseLoaderRuntimeIndex.Instance, FuseClaimKind.Loader, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Station", FuseStationRuntimeIndex.Instance, FuseClaimKind.Station, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Scenery", FuseSceneryRuntimeIndex.Instance, FuseClaimKind.Scenery, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Spliney", FuseSplineyRuntimeIndex.Instance, null, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Map Label", FuseMapLabelRuntimeIndex.Instance, null, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Progression", FuseProgressionRuntimeIndex.Instance, null, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Map Feature", FuseMapFeatureRuntimeIndex.Instance, null, term, limit);
+            AddInspectorSceneTargets(results, signatures, term, limit);
+            return results;
+        }
+
+        private static void AddInspectorIndexTargets<TCache>(
+            List<InspectorTarget> results,
+            HashSet<string> signatures,
+            string kind,
+            FuseRuntimeIndex<TCache> index,
+            FuseClaimKind? claimKind,
+            string term,
+            int limit)
+            where TCache : FuseRuntimeIndex<TCache>
+        {
+            if (results == null || results.Count >= limit || index == null)
+            {
+                return;
+            }
+
+            foreach (var id in index.Ids.OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+            {
+                if (results.Count >= limit)
+                {
+                    return;
+                }
+
+                var runtime = index[id];
+                var gameObject = ResolveGameObject(runtime);
+                var path = gameObject == null ? string.Empty : GetGameObjectPath(gameObject);
+                var detail = FormatRuntimeObject(runtime);
+                if (!MatchesSearch(id, term) &&
+                    !MatchesSearch(path, term) &&
+                    !MatchesSearch(detail, term) &&
+                    !MatchesSearch(FormatComponentList(gameObject), term))
+                {
+                    continue;
+                }
+
+                AddInspectorTarget(
+                    results,
+                    signatures,
+                    new InspectorTarget(kind, id, runtime, gameObject, path, claimKind));
+            }
+        }
+
+        private static void AddInspectorSceneTargets(
+            List<InspectorTarget> results,
+            HashSet<string> signatures,
+            string term,
+            int limit)
+        {
+            if (results == null || results.Count >= limit)
+            {
+                return;
+            }
+
+            GameObject[] objects;
+            try
+            {
+                objects = Resources.FindObjectsOfTypeAll<GameObject>();
+            }
+            catch
+            {
+                return;
+            }
+
+            foreach (var gameObject in objects
+                         .Where(IsLoadedSceneObject)
+                         .OrderBy(GetGameObjectPath, StringComparer.OrdinalIgnoreCase))
+            {
+                if (results.Count >= limit)
+                {
+                    return;
+                }
+
+                var path = GetGameObjectPath(gameObject);
+                var components = FormatComponentList(gameObject);
+                if (!MatchesSearch(gameObject.name, term) &&
+                    !MatchesSearch(path, term) &&
+                    !MatchesSearch(components, term))
+                {
+                    continue;
+                }
+
+                AddInspectorTarget(
+                    results,
+                    signatures,
+                    new InspectorTarget("Scene Object", gameObject.name, gameObject, gameObject, path, null));
+            }
+        }
+
+        private static void AddInspectorTarget(
+            List<InspectorTarget> results,
+            HashSet<string> signatures,
+            InspectorTarget target)
+        {
+            if (results == null || signatures == null || target == null || !signatures.Add(target.Signature))
+            {
+                return;
+            }
+
+            results.Add(target);
+        }
+
+        private static GameObject ResolveGameObject(object runtime)
+        {
+            if (runtime is GameObject gameObject)
+            {
+                return gameObject;
+            }
+
+            if (runtime is Component component)
+            {
+                return component.gameObject;
+            }
+
+            return null;
+        }
+
+        private static void BuildInspectorDetail(UIPanelBuilder builder, InspectorTarget target)
+        {
+            if (target == null)
+            {
+                AddValueField(builder, "Target", "None");
+                return;
+            }
+
+            builder.AddSection("Selected Object");
+            AddValueField(builder, "Kind", target.Kind);
+            AddWrappedField(builder, "Id", target.Id, 36f);
+            AddWrappedField(builder, "Scene Path", BlankAs(target.ScenePath, "not bound to a scene object"), 58f);
+            AddValueField(builder, "Runtime Type", target.RuntimeObject == null ? "<null>" : target.RuntimeObject.GetType().FullName);
+            AddValueField(builder, "Registry Claim", DescribeRegistryClaim(target));
+
+            var gameObject = target.GameObject;
+            if (gameObject == null)
+            {
+                AddWrappedField(builder, "Unity Object", "No GameObject is bound to this runtime entry.", 36f);
+                return;
+            }
+
+            AddValueField(builder, "Active", $"self={gameObject.activeSelf} hierarchy={gameObject.activeInHierarchy}");
+            AddValueField(builder, "Layer/Tag", $"{LayerMask.LayerToName(gameObject.layer)} ({gameObject.layer}) | {gameObject.tag}");
+            AddValueField(builder, "Parent", gameObject.transform.parent == null ? "none" : GetGameObjectPath(gameObject.transform.parent.gameObject));
+            AddValueField(builder, "Children", gameObject.transform.childCount.ToString());
+            AddValueField(builder, "Position", FormatVector3(gameObject.transform.position));
+            AddValueField(builder, "Rotation", FormatVector3(gameObject.transform.rotation.eulerAngles));
+            AddValueField(builder, "Scale", FormatVector3(gameObject.transform.lossyScale));
+            AddWrappedField(builder, "Components", FormatComponentList(gameObject), 54f);
+            AddWrappedField(builder, "Children Preview", FormatChildPreview(gameObject), 54f);
+        }
+
+        private static string BuildInspectorReport(InspectorTarget target)
+        {
+            if (target == null)
+            {
+                return "FUSE Inspector\nNo target selected.";
+            }
+
+            var builder = new StringBuilder();
+            builder.AppendLine("FUSE Inspector");
+            builder.AppendLine("Generated: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+            builder.AppendLine("Kind: " + target.Kind);
+            builder.AppendLine("Id: " + target.Id);
+            builder.AppendLine("Scene Path: " + BlankAs(target.ScenePath, "not bound to a scene object"));
+            builder.AppendLine("Runtime Type: " + (target.RuntimeObject == null ? "<null>" : target.RuntimeObject.GetType().FullName));
+            builder.AppendLine("Registry Claim: " + DescribeRegistryClaim(target));
+
+            var gameObject = target.GameObject;
+            if (gameObject == null)
+            {
+                builder.AppendLine("GameObject: none");
+                return builder.ToString().TrimEnd();
+            }
+
+            builder.AppendLine("Active Self: " + gameObject.activeSelf);
+            builder.AppendLine("Active In Hierarchy: " + gameObject.activeInHierarchy);
+            builder.AppendLine("Layer: " + LayerMask.LayerToName(gameObject.layer) + " (" + gameObject.layer + ")");
+            builder.AppendLine("Tag: " + gameObject.tag);
+            builder.AppendLine("Parent: " + (gameObject.transform.parent == null ? "none" : GetGameObjectPath(gameObject.transform.parent.gameObject)));
+            builder.AppendLine("Children: " + gameObject.transform.childCount);
+            builder.AppendLine("Position: " + FormatVector3(gameObject.transform.position));
+            builder.AppendLine("Rotation: " + FormatVector3(gameObject.transform.rotation.eulerAngles));
+            builder.AppendLine("Scale: " + FormatVector3(gameObject.transform.lossyScale));
+            builder.AppendLine("Components: " + FormatComponentList(gameObject));
+            builder.AppendLine("Children Preview: " + FormatChildPreview(gameObject));
+            return builder.ToString().TrimEnd();
+        }
+
+        private static List<string> BuildObjectSearchResults(string rawTerm, int limit)
+        {
+            var results = new List<string>();
+            var term = (rawTerm ?? string.Empty).Trim();
+            if (term.Length < 2)
+            {
+                return results;
+            }
+
+            limit = Math.Max(1, limit);
+            AddRuntimeIndexMatches(results, "Track Node", FuseNodeRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Track Segment", FuseSegmentRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Track Span", FuseSpanRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Area", FuseAreaRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Load", FuseLoadRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Industry", FuseIndustryRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Industry Component", FuseIndustryComponentRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Loader", FuseLoaderRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Station", FuseStationRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Scenery", FuseSceneryRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Spliney", FuseSplineyRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Map Label", FuseMapLabelRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Progression", FuseProgressionRuntimeIndex.Instance, term, limit);
+            AddRuntimeIndexMatches(results, "Map Feature", FuseMapFeatureRuntimeIndex.Instance, term, limit);
+            AddSceneObjectMatches(results, term, limit);
+            return results;
+        }
+
+        private static void AddRuntimeIndexMatches<TCache>(
+            List<string> results,
+            string kind,
+            FuseRuntimeIndex<TCache> index,
+            string term,
+            int limit)
+            where TCache : FuseRuntimeIndex<TCache>
+        {
+            if (results == null || results.Count >= limit || index == null)
+            {
+                return;
+            }
+
+            foreach (var id in index.Ids.OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+            {
+                if (results.Count >= limit)
+                {
+                    return;
+                }
+
+                var runtime = index[id];
+                var detail = FormatRuntimeObject(runtime);
+                if (!MatchesSearch(id, term) && !MatchesSearch(detail, term))
+                {
+                    continue;
+                }
+
+                results.Add($"{kind} | {id} | {detail}");
+            }
+        }
+
+        private static void AddSceneObjectMatches(List<string> results, string term, int limit)
+        {
+            if (results == null || results.Count >= limit)
+            {
+                return;
+            }
+
+            GameObject[] objects;
+            try
+            {
+                objects = Resources.FindObjectsOfTypeAll<GameObject>();
+            }
+            catch
+            {
+                return;
+            }
+
+            foreach (var gameObject in objects
+                         .Where(IsLoadedSceneObject)
+                         .OrderBy(GetGameObjectPath, StringComparer.OrdinalIgnoreCase))
+            {
+                if (results.Count >= limit)
+                {
+                    return;
+                }
+
+                var path = GetGameObjectPath(gameObject);
+                if (!MatchesSearch(gameObject.name, term) && !MatchesSearch(path, term))
+                {
+                    continue;
+                }
+
+                results.Add($"Scene Object | {path} | active={gameObject.activeInHierarchy} | components={FormatComponentList(gameObject)}");
+            }
+        }
+
+        private static string BuildObjectSearchReport(string rawTerm)
+        {
+            var term = (rawTerm ?? string.Empty).Trim();
+            var builder = new StringBuilder();
+            builder.AppendLine("FUSE Object Search");
+            builder.AppendLine("Search: " + (term.Length == 0 ? "(blank)" : term));
+            builder.AppendLine("Generated: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+            if (term.Length < 2)
+            {
+                builder.AppendLine("Enter at least 2 characters before searching.");
+                return builder.ToString().TrimEnd();
+            }
+
+            var results = BuildObjectSearchResults(term, 200);
+            builder.AppendLine("Matches: " + results.Count);
+            foreach (var result in results)
+            {
+                builder.AppendLine("- " + result);
+            }
+
+            return builder.ToString().TrimEnd();
+        }
+
+        private static List<AuditFinding> BuildAuditFindings()
+        {
+            var findings = new List<AuditFinding>();
+            AddHealthReportAuditFindings(findings);
+            AddTrackSpanAuditFindings(findings);
+            AddIndustryAuditFindings(findings);
+            AddLoaderAuditFindings(findings);
+            AddPassengerAuditFindings(findings);
+            AddSuppressionAuditFindings(findings);
+            return findings
+                .OrderBy(finding => SeverityRank(finding.Severity))
+                .ThenBy(finding => finding.Title, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(finding => finding.ObjectId, StringComparer.OrdinalIgnoreCase)
+                .Take(300)
+                .ToList();
+        }
+
+        private static void AddHealthReportAuditFindings(List<AuditFinding> findings)
+        {
+            var report = LoadReportJson();
+
+            foreach (var fault in report["packages"]?["faults"] as JArray ?? new JArray())
+            {
+                AddFinding(
+                    findings,
+                    "Critical",
+                    "Package fault",
+                    ReadString(fault["packageId"], "(unknown package)"),
+                    ReadString(fault["message"], "Package failed during load/apply."),
+                    "Open Issues, inspect the package fault stage, then fix the source package or compatibility layer.");
+            }
+
+            foreach (var asset in report["unknownSceneryAssets"] as JArray ?? new JArray())
+            {
+                AddFinding(
+                    findings,
+                    "High",
+                    "Unknown scenery asset",
+                    ReadString(asset["sceneryId"], "(unknown scenery)"),
+                    $"{ReadString(asset["packageId"], "(unknown package)")} references {ReadString(asset["assetIdentifier"], "(blank asset)")}",
+                    "Check asset pack discovery and exact model identifier spelling before changing converter output.");
+            }
+
+            foreach (var issue in report["graphPostBindIssues"] as JArray ?? new JArray())
+            {
+                AddFinding(
+                    findings,
+                    "High",
+                    "Graph post-bind issue",
+                    "track graph",
+                    issue.ToString(),
+                    "Inspect the owning track package and verify deleted/replaced node, segment, and span ids.");
+            }
+
+            foreach (var skip in report["progressionTransferSkips"] as JArray ?? new JArray())
+            {
+                AddFinding(
+                    findings,
+                    "Medium",
+                    "Progression transfer skip",
+                    "progression",
+                    skip.ToString(),
+                    "Verify the referenced industry, load, scene object, or map feature exists after FUSE apply.");
+            }
+
+            foreach (var conflict in report["conflicts"] as JArray ?? new JArray())
+            {
+                AddFinding(
+                    findings,
+                    "Medium",
+                    "Registry conflict",
+                    ReadString(conflict["objectId"], "(unknown id)"),
+                    $"{ReadString(conflict["ownerPackageId"], "(unknown owner)")} kept over {ReadString(conflict["attemptedPackageId"], "(unknown package)")}",
+                    "Confirm whether both packages should layer shared data or whether one needs load-order/removal handling.");
+            }
+        }
+
+        private static void AddTrackSpanAuditFindings(List<AuditFinding> findings)
+        {
+            try
+            {
+                foreach (var span in TrackAPI.GetAllSpans() ?? Enumerable.Empty<TrackSpan>())
+                {
+                    var id = span?.id ?? "(blank span)";
+                    var definition = TrackAPI.GetDefinition(span);
+                    if (definition?.Upper == null || definition.Lower == null)
+                    {
+                        AddFinding(findings, "High", "Invalid track span", id, "Span definition has missing upper/lower location.", "Inspect the source span and repair or remove invalid endpoints.");
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(definition.Upper.SegmentId) ||
+                        string.IsNullOrWhiteSpace(definition.Lower.SegmentId))
+                    {
+                        AddFinding(findings, "High", "Invalid track span", id, "Span endpoint is missing a segment id.", "Repair the span endpoint segment references in the source package.");
+                        continue;
+                    }
+
+                    if (TrackAPI.GetSegment(definition.Upper.SegmentId) == null ||
+                        TrackAPI.GetSegment(definition.Lower.SegmentId) == null)
+                    {
+                        AddFinding(findings, "High", "Orphaned track span", id, $"References {definition.Upper.SegmentId} / {definition.Lower.SegmentId}.", "Make sure the referenced segments survive final graph merge, or remove this span.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddFinding(findings, "Low", "Track span audit failed", "audit", ex.GetBaseException().Message, "Check FUSE.log for the exception and rerun audits after reload.");
+            }
+        }
+
+        private static void AddIndustryAuditFindings(List<AuditFinding> findings)
+        {
+            try
+            {
+                foreach (var industry in IndustryAPI.GetAllIndustries() ?? Enumerable.Empty<Industry>())
+                {
+                    if (industry == null)
+                    {
+                        continue;
+                    }
+
+                    var id = BlankAs(industry.identifier, industry.name);
+                    if (string.IsNullOrWhiteSpace(industry.identifier))
+                    {
+                        AddFinding(findings, "Medium", "Industry missing identifier", id, GetGameObjectPath(industry.gameObject), "Assign a stable industry identifier or remove the orphan scene object.");
+                    }
+
+                    var definition = IndustryAPI.GetDefinition(industry);
+                    if (definition == null || definition.Components == null || definition.Components.Count == 0)
+                    {
+                        AddFinding(findings, "Low", "Industry has no components", id, GetGameObjectPath(industry.gameObject), "Verify whether this is scenery-only, a disabled vanilla industry, or a broken industry component binding.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddFinding(findings, "Low", "Industry audit failed", "audit", ex.GetBaseException().Message, "Check FUSE.log for the exception and rerun audits after reload.");
+            }
+        }
+
+        private static void AddLoaderAuditFindings(List<AuditFinding> findings)
+        {
+            try
+            {
+                foreach (var loader in LoaderAPI.GetAllLoaders() ?? Enumerable.Empty<GameObject>())
+                {
+                    if (loader == null)
+                    {
+                        continue;
+                    }
+
+                    var definition = LoaderAPI.GetDefinition(loader);
+                    if (definition == null)
+                    {
+                        AddFinding(findings, "Medium", "Loader missing FUSE definition", loader.name, GetGameObjectPath(loader), "Check whether the loader came from a legacy plugin path that FUSE cannot rehydrate.");
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(definition.IndustryId) && IndustryAPI.GetIndustry(definition.IndustryId) == null)
+                    {
+                        AddFinding(findings, "High", "Loader industry missing", loader.name, $"industryId={definition.IndustryId}", "Create/restore the referenced industry before loader apply, or update the loader industry id.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddFinding(findings, "Low", "Loader audit failed", "audit", ex.GetBaseException().Message, "Check FUSE.log for the exception and rerun audits after reload.");
+            }
+        }
+
+        private static void AddPassengerAuditFindings(List<AuditFinding> findings)
+        {
+            try
+            {
+                var stationCount = SafeCount(() => StationAPI.GetAllStationAgents().Count());
+                var stopCount = SafeCount(() => StationAPI.GetAllPassengerStops().Count());
+                if (stationCount > 0 && stopCount == 0)
+                {
+                    AddFinding(findings, "Critical", "No passenger stops", "passenger system", $"{stationCount} station(s), 0 passenger stop(s).", "Passenger cars need PassengerStop bindings. Check station apply and passenger stop creation.");
+                }
+
+                foreach (var station in StationAPI.GetAllStationAgents() ?? Enumerable.Empty<StationAgent>())
+                {
+                    if (station == null)
+                    {
+                        continue;
+                    }
+
+                    var definition = StationAPI.GetDefinition(station);
+                    if (!string.IsNullOrWhiteSpace(definition?.PassengerStopId) &&
+                        StationAPI.GetPassengerStop(definition.PassengerStopId) == null)
+                    {
+                        AddFinding(findings, "High", "Station passenger stop missing", station.name, $"passengerStopId={definition.PassengerStopId}", "Create/restore the passenger stop or update the station passengerStopId.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddFinding(findings, "Low", "Passenger audit failed", "audit", ex.GetBaseException().Message, "Check FUSE.log for the exception and rerun audits after reload.");
+            }
+        }
+
+        private static void AddSuppressionAuditFindings(List<AuditFinding> findings)
+        {
+            try
+            {
+                foreach (var path in FuseRegistry.GetClaimedIds(FuseClaimKind.SuppressedScenePath))
+                {
+                    var target = FusePrefabResolver.ResolveScenePath(path) ?? GameObject.Find(path);
+                    if (target == null)
+                    {
+                        continue;
+                    }
+
+                    var visibleRenderers = target
+                        .GetComponentsInChildren<Renderer>(true)
+                        .Count(renderer => renderer != null && renderer.enabled && !renderer.forceRenderingOff);
+                    if (target.activeInHierarchy && visibleRenderers > 0)
+                    {
+                        AddFinding(findings, "Medium", "Suppressed scene object still visible", path, $"activeInHierarchy=true visibleRenderers={visibleRenderers}", "Run Advanced > Reload Track/Data or inspect the object; suppression may be missing a child renderer/culler path.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddFinding(findings, "Low", "Suppression audit failed", "audit", ex.GetBaseException().Message, "Check FUSE.log for the exception and rerun audits after reload.");
+            }
+        }
+
+        private static void AddFinding(List<AuditFinding> findings, string severity, string title, string objectId, string detail, string action)
+        {
+            findings?.Add(new AuditFinding(severity, title, objectId, detail, action));
+        }
+
+        private static int SeverityRank(string severity)
+        {
+            switch (severity)
+            {
+                case "Critical":
+                    return 0;
+                case "High":
+                    return 1;
+                case "Medium":
+                    return 2;
+                case "Low":
+                    return 3;
+                default:
+                    return 4;
+            }
+        }
+
+        private static string BuildAuditReport(IReadOnlyList<AuditFinding> findings)
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine("FUSE Audit Report");
+            builder.AppendLine("Generated: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+            builder.AppendLine("Findings: " + (findings?.Count ?? 0));
+            foreach (var finding in findings ?? Array.Empty<AuditFinding>())
+            {
+                builder.AppendLine();
+                builder.AppendLine(finding.Severity + " | " + finding.Title);
+                builder.AppendLine("Object: " + finding.ObjectId);
+                builder.AppendLine("Detail: " + finding.Detail);
+                builder.AppendLine("Action: " + finding.Action);
+            }
+
+            return builder.ToString().TrimEnd();
+        }
+
+        private static string ExportAuditReport(IReadOnlyList<AuditFinding> findings)
+        {
+            var root = Path.Combine(Application.persistentDataPath, "FUSE");
+            Directory.CreateDirectory(root);
+            var path = Path.Combine(root, "fuse-audit-report.json");
+            var items = new JArray();
+            foreach (var finding in findings ?? Array.Empty<AuditFinding>())
+            {
+                items.Add(new JObject
+                {
+                    ["severity"] = finding.Severity,
+                    ["title"] = finding.Title,
+                    ["objectId"] = finding.ObjectId,
+                    ["detail"] = finding.Detail,
+                    ["action"] = finding.Action
+                });
+            }
+
+            File.WriteAllText(path, new JObject
+            {
+                ["exportedUtc"] = DateTime.UtcNow.ToString("O"),
+                ["count"] = items.Count,
+                ["findings"] = items
+            }.ToString(Newtonsoft.Json.Formatting.Indented));
+            return "Exported FUSE audit report: " + path;
+        }
+
+        private static string FormatRuntimeObject(object runtime)
+        {
+            if (runtime == null)
+            {
+                return "<null>";
+            }
+
+            if (runtime is GameObject gameObject)
+            {
+                return "GameObject " + GetGameObjectPath(gameObject);
+            }
+
+            if (runtime is Component component)
+            {
+                return component.GetType().Name + " " + GetGameObjectPath(component.gameObject);
+            }
+
+            return runtime.GetType().Name;
+        }
+
+        private static bool IsLoadedSceneObject(GameObject gameObject)
+        {
+            return gameObject != null && gameObject.scene.IsValid() && gameObject.scene.isLoaded;
+        }
+
+        private static string GetGameObjectPath(GameObject gameObject)
+        {
+            if (gameObject == null)
+            {
+                return "<null>";
+            }
+
+            try
+            {
+                var names = new Stack<string>();
+                var current = gameObject.transform;
+                while (current != null)
+                {
+                    names.Push(BlankAs(current.name, "(unnamed)"));
+                    current = current.parent;
+                }
+
+                var sceneName = gameObject.scene.IsValid() ? BlankAs(gameObject.scene.name, "(scene)") : "(no scene)";
+                return sceneName + "/" + string.Join("/", names.ToArray());
+            }
+            catch
+            {
+                return gameObject.name ?? "<unnamed>";
+            }
+        }
+
+        private static string FormatComponentList(GameObject gameObject)
+        {
+            try
+            {
+                if (gameObject == null)
+                {
+                    return "none";
+                }
+
+                var names = gameObject.GetComponents<Component>()
+                    .Where(component => component != null)
+                    .Select(component => component.GetType().Name)
+                    .Take(6)
+                    .ToArray();
+                return names.Length == 0 ? "none" : string.Join(",", names);
+            }
+            catch
+            {
+                return "unavailable";
+            }
+        }
+
+        private static string FormatChildPreview(GameObject gameObject)
+        {
+            try
+            {
+                if (gameObject == null || gameObject.transform.childCount == 0)
+                {
+                    return "none";
+                }
+
+                var names = new List<string>();
+                for (var index = 0; index < gameObject.transform.childCount && names.Count < 8; index++)
+                {
+                    var child = gameObject.transform.GetChild(index);
+                    if (child != null)
+                    {
+                        names.Add(child.name);
+                    }
+                }
+
+                var suffix = gameObject.transform.childCount > names.Count
+                    ? " +" + (gameObject.transform.childCount - names.Count)
+                    : string.Empty;
+                return names.Count == 0 ? "none" : string.Join(", ", names.ToArray()) + suffix;
+            }
+            catch
+            {
+                return "unavailable";
+            }
+        }
+
+        private static string FormatVector3(Vector3 value)
+        {
+            return value.x.ToString("0.###") + ", " + value.y.ToString("0.###") + ", " + value.z.ToString("0.###");
+        }
+
+        private static string DescribeRegistryClaim(InspectorTarget target)
+        {
+            if (target == null || !target.ClaimKind.HasValue || string.IsNullOrWhiteSpace(target.Id))
+            {
+                return "not claim-tracked";
+            }
+
+            var kind = target.ClaimKind.Value;
+            if (kind == FuseClaimKind.Industry ||
+                kind == FuseClaimKind.Scenery ||
+                kind == FuseClaimKind.SuppressedArea ||
+                kind == FuseClaimKind.SuppressedScenePath ||
+                kind == FuseClaimKind.SuppressedTrackGroup)
+            {
+                var owners = FuseRegistry.GetSharedOwners(kind, target.Id).ToArray();
+                return owners.Length == 0 ? "shared | unclaimed" : "shared | " + string.Join(", ", owners);
+            }
+
+            var owner = FuseRegistry.GetExclusiveOwner(kind, target.Id);
+            return string.IsNullOrWhiteSpace(owner) ? "exclusive | unclaimed" : "exclusive | " + owner;
+        }
+
+        private static bool MatchesSearch(string value, string term)
+        {
+            return !string.IsNullOrWhiteSpace(value) &&
+                   !string.IsNullOrWhiteSpace(term) &&
+                   value.IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static string ExportHealthReportJson()
         {
             var root = Path.Combine(Application.persistentDataPath, "FUSE");
@@ -1102,6 +2819,87 @@ namespace FUSE.Interface
             var path = Path.Combine(root, "fuse-health-report.json");
             File.WriteAllText(path, FuseLoadReport.GetLastJsonReport());
             return "Exported FUSE health JSON report: " + path;
+        }
+
+        private string ExportDebugBundle()
+        {
+            var root = Path.Combine(Application.persistentDataPath, "FUSE");
+            Directory.CreateDirectory(root);
+            var path = Path.Combine(root, "fuse-debug-bundle.json");
+            var diagnostics = FuseAssetPackRegistry.GetDiagnostics();
+            var loadedScenes = new JArray();
+            for (var index = 0; index < SceneManager.sceneCount; index++)
+            {
+                var scene = SceneManager.GetSceneAt(index);
+                if (scene.IsValid() && scene.isLoaded)
+                {
+                    loadedScenes.Add(new JObject
+                    {
+                        ["name"] = scene.name ?? string.Empty,
+                        ["rootObjects"] = SafeCount(() => scene.GetRootGameObjects().Length)
+                    });
+                }
+            }
+
+            var bundle = new JObject
+            {
+                ["exportedUtc"] = DateTime.UtcNow.ToString("O"),
+                ["version"] = ReadVersion(),
+                ["schema"] = FuseMigration.CurrentVersion.ToString(),
+                ["profile"] = FuseModSetService.ActiveSetName,
+                ["profileHash"] = FuseModSetService.GetActiveSetFingerprint(),
+                ["health"] = JObject.Parse(FuseLoadReport.GetLastJsonReport()),
+                ["unity"] = new JObject
+                {
+                    ["fps"] = _fpsAverage,
+                    ["frameMilliseconds"] = _frameMilliseconds,
+                    ["managedMemoryBytes"] = _managedMemoryBytes,
+                    ["unityAllocatedBytes"] = _unityAllocatedBytes,
+                    ["unityReservedBytes"] = _unityReservedBytes,
+                    ["activeScene"] = ActiveSceneName(),
+                    ["loadedScenes"] = loadedScenes,
+                    ["sceneRootObjects"] = SafeCount(CountSceneRootObjects),
+                    ["gameObjects"] = SafeCount(() => Resources.FindObjectsOfTypeAll<GameObject>().Length)
+                },
+                ["railroader"] = new JObject
+                {
+                    ["trackNodes"] = SafeCount(() => TrackAPI.GetAllNodes().Count()),
+                    ["trackSegments"] = SafeCount(() => TrackAPI.GetAllSegments().Count()),
+                    ["trackSpans"] = SafeCount(() => TrackAPI.GetAllSpans().Count()),
+                    ["areas"] = SafeCount(() => TrackAPI.GetAllAreas().Count()),
+                    ["loads"] = SafeCount(() => LoadAPI.GetAllLoads().Count()),
+                    ["industries"] = SafeCount(() => IndustryAPI.GetAllIndustries().Count()),
+                    ["loaders"] = SafeCount(() => LoaderAPI.GetAllLoaders().Count()),
+                    ["stations"] = SafeCount(() => StationAPI.GetAllStationAgents().Count()),
+                    ["passengerStops"] = SafeCount(() => StationAPI.GetAllPassengerStops().Count()),
+                    ["turntables"] = SafeCount(() => TurntableAPI.GetAllTurntables().Count()),
+                    ["scenery"] = SafeCount(() => SceneryAPI.GetAllScenery().Count()),
+                    ["sceneClones"] = SafeCount(() => SceneCloneAPI.GetAllSceneClones().Count()),
+                    ["splineys"] = SafeCount(() => SplineyAPI.GetAllSplineys().Count()),
+                    ["mapLabels"] = SafeCount(() => MapAPI.GetAllMapLabels().Count()),
+                    ["mapMasks"] = SafeCount(() => MapAPI.GetAllMapMasks().Count()),
+                    ["progressions"] = SafeCount(() => ProgressionAPI.GetAllProgressions().Count()),
+                    ["mapFeatures"] = SafeCount(() => ProgressionAPI.GetAllMapFeatures().Count())
+                },
+                ["registry"] = new JObject
+                {
+                    ["exclusiveClaims"] = FUSE.Registry.FuseRegistry.ExclusiveClaimCount,
+                    ["sharedClaims"] = FUSE.Registry.FuseRegistry.SharedClaimCount,
+                    ["conflicts"] = FUSE.Registry.FuseRegistry.Conflicts.Count
+                },
+                ["assets"] = new JObject
+                {
+                    ["mode"] = AssetPackModeText(),
+                    ["storesScanned"] = diagnostics.StoreFolders?.Length ?? 0,
+                    ["uniqueAssetKeys"] = diagnostics.UniqueAssetKeys,
+                    ["duplicateKeys"] = diagnostics.DuplicateKeys?.Length ?? 0,
+                    ["failedDefinitions"] = diagnostics.FailedDefinitionLoads?.Length ?? 0
+                },
+                ["lastFuseLogLines"] = new JArray(ReadLastLogLines(80))
+            };
+
+            File.WriteAllText(path, bundle.ToString(Newtonsoft.Json.Formatting.Indented));
+            return "Exported FUSE debug bundle: " + path;
         }
 
         private static string ExportAssetDiagnostics(FuseAssetPackDiagnostics diagnostics)
@@ -1509,7 +3307,67 @@ namespace FUSE.Interface
 
         private string GetWindowTitle()
         {
-            return _activePage == Page.ModSets ? "FUSE Mod Sets" : "FUSE Health";
+            switch (_activePage)
+            {
+                case Page.ModSets:
+                    return "FUSE Profiles";
+                case Page.Inspector:
+                    return "FUSE Inspector";
+                case Page.Audits:
+                    return "FUSE Audits";
+                case Page.Advanced:
+                    return "FUSE Advanced";
+                default:
+                    return "FUSE Health";
+            }
+        }
+
+        private sealed class InspectorTarget
+        {
+            public InspectorTarget(
+                string kind,
+                string id,
+                object runtimeObject,
+                GameObject gameObject,
+                string scenePath,
+                FuseClaimKind? claimKind)
+            {
+                Kind = kind ?? "Object";
+                Id = id ?? string.Empty;
+                RuntimeObject = runtimeObject;
+                GameObject = gameObject;
+                ScenePath = scenePath ?? string.Empty;
+                ClaimKind = claimKind;
+                Signature = Kind + "|" + Id + "|" + ScenePath + "|" + (runtimeObject == null ? "<null>" : runtimeObject.GetHashCode().ToString());
+                DropdownLabel = Kind + " | " + BlankAs(Id, "(blank)") + " | " + BlankAs(ScenePath, "no scene path");
+            }
+
+            public string Kind { get; }
+            public string Id { get; }
+            public object RuntimeObject { get; }
+            public GameObject GameObject { get; }
+            public string ScenePath { get; }
+            public FuseClaimKind? ClaimKind { get; }
+            public string Signature { get; }
+            public string DropdownLabel { get; }
+        }
+
+        private sealed class AuditFinding
+        {
+            public AuditFinding(string severity, string title, string objectId, string detail, string action)
+            {
+                Severity = string.IsNullOrWhiteSpace(severity) ? "Low" : severity;
+                Title = title ?? string.Empty;
+                ObjectId = objectId ?? string.Empty;
+                Detail = detail ?? string.Empty;
+                Action = action ?? string.Empty;
+            }
+
+            public string Severity { get; }
+            public string Title { get; }
+            public string ObjectId { get; }
+            public string Detail { get; }
+            public string Action { get; }
         }
 
         private enum Page
@@ -1519,6 +3377,9 @@ namespace FUSE.Interface
             Assets,
             Runtime,
             Logs,
+            Inspector,
+            Audits,
+            Advanced,
             Settings,
             ModSets
         }

@@ -83,6 +83,10 @@
         "progression": {
             "$ref": "#/$defs/progression"
         },
+        "settings": {
+            "$ref": "#/$defs/settings",
+            "description": "Package-declared FUSE settings. Runtime values are stored outside the mod folder and scoped by user, profile, or server profile."
+        },
         "editor": {
             "$ref": "#/$defs/editor"
         },
@@ -173,6 +177,90 @@
                 "notAfter": {
                     "type": "string",
                     "description": "Maximum compatible version, inclusive."
+                }
+            }
+        },
+        "settings": {
+            "type": "object",
+            "description": "Dictionary of package setting definitions keyed by stable setting id.",
+            "propertyNames": {
+                "$ref": "#/$defs/id"
+            },
+            "additionalProperties": {
+                "$ref": "#/$defs/settingDefinition"
+            }
+        },
+        "settingDefinition": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "bool",
+                        "boolean",
+                        "enum",
+                        "choice",
+                        "select",
+                        "number",
+                        "float",
+                        "double",
+                        "int",
+                        "integer",
+                        "path",
+                        "file",
+                        "folder",
+                        "color",
+                        "colour",
+                        "text",
+                        "string"
+                    ],
+                    "default": "text"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "local",
+                        "client",
+                        "profile",
+                        "modset",
+                        "mod-set",
+                        "server",
+                        "shared",
+                        "multiplayer"
+                    ],
+                    "default": "user"
+                },
+                "default": {
+                    "description": "Default value used when no persisted value exists. Its JSON type should match the setting type."
+                },
+                "values": {
+                    "$ref": "#/$defs/stringArray",
+                    "description": "Exact enum values. FUSE preserves these strings and does not normalize identifiers."
+                },
+                "min": {
+                    "type": "number"
+                },
+                "max": {
+                    "type": "number"
+                },
+                "step": {
+                    "type": "number"
+                },
+                "advanced": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "reloadRequired": {
+                    "type": "boolean",
+                    "default": false
                 }
             }
         },

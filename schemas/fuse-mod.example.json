@@ -18,6 +18,35 @@
       }
     ]
   },
+  "settings": {
+    "enableDepotProps": {
+      "type": "bool",
+      "label": "Depot Props",
+      "description": "Show optional detail props around the depot.",
+      "scope": "user",
+      "default": true
+    },
+    "yardDetailLevel": {
+      "type": "enum",
+      "label": "Yard Detail",
+      "description": "Controls optional scenery density for the yard.",
+      "scope": "profile",
+      "values": [
+        "low",
+        "standard",
+        "high"
+      ],
+      "default": "standard",
+      "reloadRequired": true
+    },
+    "dispatcherColor": {
+      "type": "color",
+      "label": "Dispatcher Color",
+      "scope": "server",
+      "default": "#D6C89A",
+      "advanced": true
+    }
+  },
   "tracks": {
     "nodes": {
       "murphy:n:001": {

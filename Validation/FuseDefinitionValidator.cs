@@ -4,6 +4,7 @@ using System.Linq;
 using FUSE.API;
 using FUSE.Data;
 using FUSE.Data.Common;
+using FUSE.Infrastructure;
 using FUSE.Migrations;
 using UnityEngine;
 
@@ -46,6 +47,7 @@ namespace FUSE.Validation
             ValidateWorld(result, value.World);
             ValidateAudio(result, value.Audio);
             ValidateProgression(result, value.Progression);
+            ValidateSettings(result, value.Settings);
             return result;
         }
 
@@ -80,6 +82,53 @@ namespace FUSE.Validation
                 if (string.IsNullOrWhiteSpace(requirement.Id))
                 {
                     result.AddWarning($"{path}.id", "Mixinto requirement id is blank and will be ignored.", "fuse.mixinto.requirement.id.blank");
+                }
+            }
+        }
+
+        private static void ValidateSettings(ValidationResult result, IDictionary<string, FuseModSettingDefinition> settings)
+        {
+            if (settings == null)
+            {
+                return;
+            }
+
+            foreach (var pair in settings)
+            {
+                var path = $"settings.{pair.Key}";
+                if (string.IsNullOrWhiteSpace(pair.Key))
+                {
+                    result.AddError("settings", "Setting IDs must not be blank.", "fuse.settings.id.blank");
+                    continue;
+                }
+
+                var setting = pair.Value;
+                if (setting == null)
+                {
+                    result.AddWarning(path, "Null setting definition will be ignored by the Settings UI.", "fuse.settings.null");
+                    continue;
+                }
+
+                var type = FuseModSettingsStore.NormalizeType(setting.Type);
+                var scope = FuseModSettingsStore.NormalizeScope(setting.Scope);
+                if (type == "enum" && (setting.Values == null || setting.Values.Length == 0))
+                {
+                    result.AddWarning($"{path}.values", "Enum setting has no values; FUSE will render it as text.", "fuse.settings.enum.values.empty");
+                }
+
+                if (type == "number" && setting.Min.HasValue && setting.Max.HasValue && setting.Min.Value > setting.Max.Value)
+                {
+                    result.AddError(path, "Number setting min must be less than or equal to max.", "fuse.settings.number.range", pair.Key);
+                }
+
+                if (type == "number" && setting.Step.HasValue && setting.Step.Value <= 0d)
+                {
+                    result.AddWarning($"{path}.step", "Number setting step should be greater than zero.", "fuse.settings.number.step", pair.Key);
+                }
+
+                if (scope == FuseModSettingsStore.ScopeServer && setting.ReloadRequired)
+                {
+                    result.AddWarning(path, "Server-scoped reload-required settings should be documented for multiplayer profile sharing.", "fuse.settings.server.reloadRequired", pair.Key);
                 }
             }
         }
