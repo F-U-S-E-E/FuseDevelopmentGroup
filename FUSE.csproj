@@ -45,10 +45,6 @@
       <HintPath>$(UnityModManagerAssemblyPath)</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="dnlib" Condition="Exists('$(UnityModManagerDir)\dnlib.dll')">
-      <HintPath>$(UnityModManagerDir)\dnlib.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
     <Reference Include="Newtonsoft.Json" Condition="Exists('$(UnityManagedDir)\Newtonsoft.Json.dll')">
       <HintPath>$(UnityManagedDir)\Newtonsoft.Json.dll</HintPath>
       <Private>false</Private>
@@ -150,7 +146,6 @@
   <Target Name="ValidateUnityReferences" BeforeTargets="ResolveReferences">
     <Error Condition="!Exists('$(UnityModManagerAssemblyPath)')" Text="UnityModManagerNet.dll or UnityModManager.dll was not found. Set UnityModManagerDir or GameDir to your installed Railroader + UMM location." />
     <Error Condition="!Exists('$(UnityModManagerDir)\0Harmony.dll') and !Exists('$(UnityManagedDir)\0Harmony.dll')" Text="0Harmony.dll was not found. Set UnityModManagerDir or GameDir to your installed Railroader + UMM location." />
-    <Error Condition="!Exists('$(UnityModManagerDir)\dnlib.dll')" Text="dnlib.dll was not found in the UnityModManager folder. It ships with UMM and is required for FUSE's legacy-assembly IL rewriter." />
     <Error Condition="!Exists('$(UnityManagedDir)\Newtonsoft.Json.dll')" Text="Newtonsoft.Json.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Assembly-CSharp.dll')" Text="Assembly-CSharp.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Core.dll')" Text="Core.dll was not found in the Railroader Managed folder." />
