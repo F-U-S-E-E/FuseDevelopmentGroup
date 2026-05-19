@@ -45,3 +45,17 @@ jobs:
           $info = Get-Content 'bin\Release\net48\Info.json' -Raw | ConvertFrom-Json
           if ($info.Version -ne '0.0.1') { throw "Info.json Version is '$($info.Version)', expected '0.0.1' (core only)" }
           Write-Host "Manifest stamped correctly: Info.Version=$($info.Version)"
+
+      # Run the xUnit suite. The test project references game-shipped DLLs via
+      # the same HintPath pattern as FUSE.csproj, so this runs on the same
+      # self-hosted runner that already resolves Unity/UMM references.
+      - name: Run tests
+        run: dotnet test FUSE.Tests/FUSE.Tests.csproj -c Debug --verbosity minimal --logger "trx;LogFileName=test-results.trx" --results-directory FUSE.Tests/TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: FUSE.Tests/TestResults/test-results.trx
+          retention-days: 7
