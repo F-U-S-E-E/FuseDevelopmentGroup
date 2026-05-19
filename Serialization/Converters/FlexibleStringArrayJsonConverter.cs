@@ -76,7 +76,13 @@ namespace FUSE.Serialization.Converters
 
         public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
         {
-            serializer.Serialize(writer, value ?? Array.Empty<string>());
+            var array = value as string[] ?? Array.Empty<string>();
+            writer.WriteStartArray();
+            foreach (var entry in array)
+            {
+                writer.WriteValue(entry);
+            }
+            writer.WriteEndArray();
         }
     }
 }
