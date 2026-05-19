@@ -216,7 +216,7 @@ namespace FUSE.Loading
                    installedMods.TryGetValue(id.Trim(), out installed);
         }
 
-        private static bool VersionSatisfies(
+        internal static bool VersionSatisfies(
             string packageId,
             FuseModRequirement requirement,
             InstalledMod installed,
@@ -285,7 +285,7 @@ namespace FUSE.Loading
             return true;
         }
 
-        private static bool TryParseVersion(string value, out Version version)
+        internal static bool TryParseVersion(string value, out Version version)
         {
             version = null;
             if (string.IsNullOrWhiteSpace(value))
@@ -331,7 +331,7 @@ namespace FUSE.Loading
             FuseLog.Warning(message);
         }
 
-        private sealed class InstalledMod
+        internal sealed class InstalledMod
         {
             public string Id { get; set; }
             public string Version { get; set; }

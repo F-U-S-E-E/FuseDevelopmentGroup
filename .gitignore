@@ -5,7 +5,9 @@ lib/refs/
 .nuget-packages/
 bin/
 obj/
+TestResults/
 /.vs
+/.idea
 /_work
 /dist
 /tools/__pycache__/fuse_installer*.pyc

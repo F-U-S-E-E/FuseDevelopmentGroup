@@ -36,7 +36,22 @@ Packages and tooling:
 
 Quality gates:
 - After substantial new or LLM-authored code: `slopwatch`
-- If a real test project lands: `crap-analysis`, `crap-score`, `coverage-analysis`, `test-anti-patterns`
+- Coverage and risk analysis: `coverage-analysis`, `crap-analysis`, `crap-score`
+- Test smells and assertion quality: `test-anti-patterns`, `exp-assertion-quality`,
+  `exp-test-smell-detection`, `exp-test-maintainability`, `exp-mock-usage-analysis`,
+  `exp-test-gap-analysis`
+
+Testing:
+- Test project lives at `FUSE.Tests/FUSE.Tests.csproj`, targeting net48 and using xUnit 2.x.
+  Do not migrate to xUnit v3 — its runner requires .NET 8+ and cannot host net48 test
+  assemblies that reference FUSE.dll and the Unity managed types.
+- Running and filtering tests: `run-tests`, `filter-syntax`, `platform-detection`,
+  `dotnet-test-frameworks`
+- Generating new tests: `code-testing-agent` (routes through `code-testing-*` sub-agents)
+- xUnit coverage is limited to code with no `UnityEngine` dependency: `Validation/`,
+  `Serialization/`, dependency resolution, registry conflict logic, pure data conversion.
+  Anything that touches game/Unity types belongs in the in-game golden-master harness
+  (separate workstream — does not run under `dotnet test`).
 
 Specialist sub-agents (via the `Agent` tool's `subagent_type`):
 - MSBuild expert (configs, targets, evaluation): `msbuild`
@@ -51,10 +66,9 @@ Skipped categories (do not consult unless explicitly invoked):
   `Microsoft.Extensions.*` DI/Config, OpenTelemetry, email / MJML, DocFX, Roslyn generators
 - All `migrate-*` skills (locked to net48 for Unity), `dotnet-aot-compat`,
   `thread-abort-migration`, `system-text-json-net11`
-- Test-framework runners and migrations until a real test project exists: `run-tests`,
-  `filter-syntax`, `platform-detection`, `dotnet-test-frameworks`, all `exp-*` skills,
-  all `code-testing-*` agents, `migrate-mstest-*`, `migrate-vstest-to-mtp`,
-  `migrate-xunit-to-xunit-v3`, `mtp-hot-reload`, `writing-mstest-tests`
+- Test-framework migrations that do not apply to our xUnit 2.x + net48 setup:
+  `migrate-mstest-*`, `migrate-vstest-to-mtp`, `migrate-xunit-to-xunit-v3`,
+  `mtp-hot-reload`, `writing-mstest-tests`
 - Unused sub-agents: `akka-net-specialist`, `docfx-specialist`,
   `roslyn-incremental-generator-specialist`, `template-engine`, `testability-migration`,
   `test-migration`, `test-quality-auditor`, `dotnet-benchmark-designer`

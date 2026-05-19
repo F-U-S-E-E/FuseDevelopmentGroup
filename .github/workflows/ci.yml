@@ -13,6 +13,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: write    # needed by the sticky comment step on PR builds
 
 jobs:
   build:
@@ -45,3 +46,95 @@ jobs:
           $info = Get-Content 'bin\Release\net48\Info.json' -Raw | ConvertFrom-Json
           if ($info.Version -ne '0.0.1') { throw "Info.json Version is '$($info.Version)', expected '0.0.1' (core only)" }
           Write-Host "Manifest stamped correctly: Info.Version=$($info.Version)"
+
+      # Run the xUnit suite. The test project references game-shipped DLLs via
+      # the same HintPath pattern as FUSE.csproj, so this runs on the same
+      # self-hosted runner that already resolves Unity/UMM references.
+      - name: Run tests
+        run: dotnet test FUSE.Tests/FUSE.Tests.csproj -c Debug --verbosity minimal --logger "trx;LogFileName=test-results.trx" --results-directory FUSE.Tests/TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: FUSE.Tests/TestResults/test-results.trx
+          retention-days: 7
+
+      # --- PR-only: build a PR-stamped Release zip + sticky-comment with download link ---
+
+      - name: Compute PR build identity
+        if: github.event_name == 'pull_request'
+        id: pr_version
+        shell: powershell
+        run: |
+          $sha = "${{ github.event.pull_request.head.sha }}".Substring(0, 7)
+          $prNumber = "${{ github.event.pull_request.number }}"
+          $version = "0.0.0-pr$prNumber.$sha"
+          $archive = "FUSE-pr$prNumber-$sha.zip"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "archive=$archive" >> $env:GITHUB_OUTPUT
+          "short_sha=$sha" >> $env:GITHUB_OUTPUT
+
+      - name: Rebuild Release with PR-stamped version
+        if: github.event_name == 'pull_request'
+        run: dotnet build FUSE.csproj -c Release -p:ModVersion=${{ steps.pr_version.outputs.version }}
+
+      - name: Package PR mod zip
+        if: github.event_name == 'pull_request'
+        shell: powershell
+        run: |
+          $stagingRoot = Join-Path $PWD "staging-pr"
+          $modFolder = Join-Path $stagingRoot "FUSE"
+          $archivePath = Join-Path $PWD "${{ steps.pr_version.outputs.archive }}"
+
+          if (Test-Path $stagingRoot) { Remove-Item $stagingRoot -Recurse -Force }
+          if (Test-Path $archivePath) { Remove-Item $archivePath -Force }
+
+          New-Item -ItemType Directory -Path $modFolder | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $modFolder 'assets') | Out-Null
+
+          Copy-Item "bin\Release\net48\FUSE.dll" $modFolder
+          Copy-Item "bin\Release\net48\Info.json" $modFolder
+          Copy-Item -Recurse "schemas" $modFolder
+          Copy-Item "tools\assets\fuse_converter_icon.png" (Join-Path $modFolder 'assets\fuse_icon.png')
+
+          Compress-Archive -Path $modFolder -DestinationPath $archivePath -CompressionLevel Optimal
+
+      - name: Upload PR build artifact
+        if: github.event_name == 'pull_request'
+        id: pr_upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pr_version.outputs.archive }}
+          path: ${{ steps.pr_version.outputs.archive }}
+          retention-days: 30
+          if-no-files-found: error
+
+      # Posts (or updates, on re-runs) a single PR comment with the download link.
+      # The `header` field is the dedup key — subsequent runs replace the same comment
+      # in place rather than spamming the conversation.
+      - name: Post / update PR comment with download link
+        if: github.event_name == 'pull_request' && success()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: pr-build-artifact
+          message: |
+            ## PR build artifact
+
+            | Field | Value |
+            |-------|-------|
+            | Version | `${{ steps.pr_version.outputs.version }}` |
+            | Commit | `${{ github.event.pull_request.head.sha }}` |
+            | Archive | `${{ steps.pr_version.outputs.archive }}` |
+            | Run | [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+
+            **[⬇ Download from this workflow run](${{ steps.pr_upload.outputs.artifact-url }})**
+
+            ### Install
+
+            1. Download and extract the archive (GitHub login required)
+            2. Replace `Railroader/Mods/FUSE/` with the extracted `FUSE/` folder
+            3. Launch Railroader; verify with `/fuse.report`
+
+            > Artifact retention: 30 days. This comment refreshes automatically on each push to the PR.
