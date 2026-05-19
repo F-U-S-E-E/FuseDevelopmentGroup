@@ -24,6 +24,7 @@ namespace FUSE.Data
         public FuseWorldDefinition World { get; set; } = new FuseWorldDefinition();
         public FuseAudioRoot Audio { get; set; } = new FuseAudioRoot();
         public FuseProgressionRoot Progression { get; set; } = new FuseProgressionRoot();
+        public Dictionary<string, FuseModSettingDefinition> Settings { get; set; } = new Dictionary<string, FuseModSettingDefinition>();
         public FuseEditorState Editor { get; set; }
         public Dictionary<string, object> Extensions { get; set; } = new Dictionary<string, object>();
     }
