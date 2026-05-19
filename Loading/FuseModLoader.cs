@@ -2412,7 +2412,7 @@ namespace FUSE.Loading
 
                 for (var index = 1; index <= roundhouse.Stalls; index++)
                 {
-                    result.Add(TurntableAPI.GetRoundhouseSegmentId(turntable.Key, index, turntable.Value));
+                    result.Add(FuseTurntableIds.GetRoundhouseSegmentId(turntable.Key, index, turntable.Value));
                 }
             }
 
@@ -2434,7 +2434,7 @@ namespace FUSE.Loading
                 var subdivisions = value.Subdivisions > 0 ? value.Subdivisions : 16;
                 for (var index = 0; index < subdivisions; index++)
                 {
-                    result.Add(TurntableAPI.GetPitNodeId(turntable.Key, index, value));
+                    result.Add(FuseTurntableIds.GetPitNodeId(turntable.Key, index, value));
                 }
 
                 // Roundhouse stalls add their own roundhouse nodes (1-based).
@@ -2443,7 +2443,7 @@ namespace FUSE.Loading
                 {
                     for (var index = 1; index <= roundhouse.Stalls; index++)
                     {
-                        result.Add(TurntableAPI.GetRoundhouseNodeId(turntable.Key, index, value));
+                        result.Add(FuseTurntableIds.GetRoundhouseNodeId(turntable.Key, index, value));
                     }
                 }
             }
