@@ -45,5 +45,4 @@
 ### Breaking / Compatibility Notes
 
 - `RAIL` naming has been superseded by `FUSE`. Reconvert packages for clean public beta testing.
-- Signals are not part of the beta support promise yet.
 - Converter output should be regenerated with the matching converter version when schema/runtime behavior changes.

@@ -27,6 +27,7 @@ namespace FUSE.Loading
             {
                 "AlinaNova21.AlinasMapMod",
                 "AlinaNova21.MapEditor",
+                "railroader",
                 "Railloader",
                 "RailLoader",
                 "Zamu.StrangeCustoms"

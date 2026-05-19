@@ -2,7 +2,6 @@
 
 ## Deferred Systems
 
-- Signals are intentionally deferred until the rest of the legacy route surface is stable.
 - The public in-game editor workflow is not a beta blocker yet.
 - Rolling stock and locomotive/car mods are out of beta scope unless they are audio-only horn, whistle, or bell packs.
 
