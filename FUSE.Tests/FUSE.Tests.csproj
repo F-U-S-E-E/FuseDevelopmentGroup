@@ -22,6 +22,12 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <!-- Newtonsoft.Json from NuGet rather than the game-shipped DLL: the game's
+         copy is Unity-style delay-signed, which fails strong-name verification
+         in a clean .NET Framework process (CI runners). The NuGet copy carries
+         the same AssemblyVersion (13.0.0.0) and PublicKeyToken so FUSE.dll's
+         reference resolves to it at test time. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,10 +49,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Reference Include="Newtonsoft.Json" Condition="Exists('$(UnityManagedDir)\Newtonsoft.Json.dll')">
-      <HintPath>$(UnityManagedDir)\Newtonsoft.Json.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
     <Reference Include="$(UnityModManagerReferenceName)" Condition="Exists('$(UnityModManagerAssemblyPath)')">
       <HintPath>$(UnityModManagerAssemblyPath)</HintPath>
       <Private>true</Private>
