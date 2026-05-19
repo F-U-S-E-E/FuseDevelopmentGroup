@@ -211,6 +211,9 @@ namespace FUSE.Loading
             public readonly Dictionary<string, FuseMergedTrackRemoval> RemovedSegments = new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
             public readonly Dictionary<string, FuseMergedTrackRemoval> RemovedSpans = new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
             public readonly List<FuseStagedApplyCandidate> OrderedCandidates = new List<FuseStagedApplyCandidate>();
+            public readonly List<string> ProtectedRemovedSegmentSamples = new List<string>();
+
+            public int ProtectedRemovedSegments { get; set; }
 
             public bool HasStructuralChanges =>
                 Nodes.Count > 0 || Segments.Count > 0 || Turntables.Count > 0 || RemovedNodes.Count > 0 || RemovedSegments.Count > 0 || RemovedSpans.Count > 0;
@@ -574,6 +577,7 @@ namespace FUSE.Loading
                 .ToArray();
 
             var sequence = 0;
+            var baseGraphSnapshot = TrackAPI.GetBaseGraphSnapshotDefinition();
             foreach (var item in ordered)
             {
                 var candidate = item.candidate;
@@ -597,7 +601,7 @@ namespace FUSE.Loading
                 MergeFinalDeletes(plan.RemovedNodes, plan.Nodes, tracks.Removals?.Nodes, candidate, ref sequence);
 
                 MergeFinalDefinitions(plan.Nodes, plan.RemovedNodes, tracks.Nodes, candidate, ref sequence);
-                MergeFinalDefinitions(plan.Segments, plan.RemovedSegments, tracks.Segments, candidate, ref sequence);
+                MergeFinalSegmentDefinitions(plan, tracks.Segments, candidate, baseGraphSnapshot, ref sequence);
                 MergeFinalDefinitions(plan.Spans, plan.RemovedSpans, tracks.Spans, candidate, ref sequence);
             }
 
@@ -605,7 +609,14 @@ namespace FUSE.Loading
                 $"FUSE merged graph plan operation='build staged graph state' " +
                 $"packages={ordered.Select(item => item.folder).Distinct(StringComparer.OrdinalIgnoreCase).Count()} " +
                 $"definitions={ordered.Length} nodes={plan.Nodes.Count} segments={plan.Segments.Count} spans={plan.Spans.Count} turntables={plan.Turntables.Count} " +
-                $"removedNodes={plan.RemovedNodes.Count} removedSegments={plan.RemovedSegments.Count} removedSpans={plan.RemovedSpans.Count}.");
+                $"removedNodes={plan.RemovedNodes.Count} removedSegments={plan.RemovedSegments.Count} removedSpans={plan.RemovedSpans.Count} " +
+                $"protectedRemovedSegments={plan.ProtectedRemovedSegments}.");
+            if (plan.ProtectedRemovedSegments > 0)
+            {
+                FuseLog.Info(
+                    "FUSE preserved explicit legacy track segment removals over later base-segment restatements " +
+                    $"count={plan.ProtectedRemovedSegments} samples='{string.Join(", ", plan.ProtectedRemovedSegmentSamples.ToArray())}'.");
+            }
             return plan;
         }
 
@@ -702,6 +713,117 @@ namespace FUSE.Loading
                 removals.Remove(id);
                 definitions[id] = new FuseMergedTrackEntry<T>(id, pair.Value, owner, sequence);
             }
+        }
+
+        private static void MergeFinalSegmentDefinitions(
+            FuseMergedTrackPlan plan,
+            IDictionary<string, FuseSegment> values,
+            FuseStagedApplyCandidate owner,
+            FuseTrackDefinition baseGraphSnapshot,
+            ref int sequence)
+        {
+            if (plan == null || values == null)
+            {
+                return;
+            }
+
+            foreach (var pair in values)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value == null)
+                {
+                    continue;
+                }
+
+                var id = pair.Key.Trim();
+                sequence++;
+                if (plan.RemovedSegments.TryGetValue(id, out var removal) &&
+                    ShouldKeepPriorSegmentRemoval(id, removal, pair.Value, owner, baseGraphSnapshot))
+                {
+                    plan.ProtectedRemovedSegments++;
+                    if (plan.ProtectedRemovedSegmentSamples.Count < 12)
+                    {
+                        var ownerId = owner?.Loaded?.Definition?.Id ?? "<unknown>";
+                        plan.ProtectedRemovedSegmentSamples.Add($"{id}<-{ownerId}");
+                    }
+
+                    continue;
+                }
+
+                plan.RemovedSegments.Remove(id);
+                plan.Segments[id] = new FuseMergedTrackEntry<FuseSegment>(id, pair.Value, owner, sequence);
+            }
+        }
+
+        private static bool ShouldKeepPriorSegmentRemoval(
+            string id,
+            FuseMergedTrackRemoval removal,
+            FuseSegment laterSegment,
+            FuseStagedApplyCandidate laterOwner,
+            FuseTrackDefinition baseGraphSnapshot)
+        {
+            if (string.IsNullOrWhiteSpace(id) || removal == null || laterSegment == null)
+            {
+                return false;
+            }
+
+            if (!IsLegacyGameGraphDefinition(removal.Owner?.Loaded?.Definition) ||
+                !IsLegacyGameGraphDefinition(laterOwner?.Loaded?.Definition))
+            {
+                return false;
+            }
+
+            if (baseGraphSnapshot?.Segments == null ||
+                !baseGraphSnapshot.Segments.TryGetValue(id, out var baseSegment) ||
+                baseSegment == null)
+            {
+                return false;
+            }
+
+            return SegmentTopologyMatches(baseSegment, laterSegment);
+        }
+
+        private static bool IsLegacyGameGraphDefinition(FuseModDefinition definition)
+        {
+            if (definition == null)
+            {
+                return false;
+            }
+
+            var isLegacyConverted =
+                definition.Tags?.Any(tag => string.Equals(tag, "legacy-converted", StringComparison.OrdinalIgnoreCase)) == true;
+            if (!isLegacyConverted)
+            {
+                return false;
+            }
+
+            var target = definition.Mixinto?.Target;
+            return string.IsNullOrWhiteSpace(target) ||
+                   string.Equals(target, "game-graph", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool SegmentTopologyMatches(FuseSegment left, FuseSegment right)
+        {
+            var leftStart = NormalizeTrackId(left?.StartNodeId);
+            var leftEnd = NormalizeTrackId(left?.EndNodeId);
+            var rightStart = NormalizeTrackId(right?.StartNodeId);
+            var rightEnd = NormalizeTrackId(right?.EndNodeId);
+            if (string.IsNullOrWhiteSpace(leftStart) ||
+                string.IsNullOrWhiteSpace(leftEnd) ||
+                string.IsNullOrWhiteSpace(rightStart) ||
+                string.IsNullOrWhiteSpace(rightEnd))
+            {
+                return false;
+            }
+
+            return (string.Equals(leftStart, rightStart, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(leftEnd, rightEnd, StringComparison.OrdinalIgnoreCase)) ||
+                   (string.Equals(leftStart, rightEnd, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(leftEnd, rightStart, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static string NormalizeTrackId(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
         }
 
         /// <summary>
