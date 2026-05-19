@@ -239,7 +239,7 @@ namespace FUSE.API
 
         public static string GetPitNodeId(string turntableId, int index)
         {
-            return $"{turntableId}.pit.{index:D2}";
+            return FuseTurntableIds.GetPitNodeId(turntableId, index);
         }
 
         private static List<TrackNode> CreateOrUpdatePitNodes(Turntable turntable, FuseTurntable definition)
@@ -1513,35 +1513,17 @@ namespace FUSE.API
 
         internal static string GetPitNodeId(string turntableId, int index, FuseTurntable definition)
         {
-            var legacyIdentifier = definition?.LegacyIdentifier;
-            if (!string.IsNullOrWhiteSpace(legacyIdentifier))
-            {
-                return $"N{legacyIdentifier}TurntableNode{index}";
-            }
-
-            return GetPitNodeId(turntableId, index);
+            return FuseTurntableIds.GetPitNodeId(turntableId, index, definition);
         }
 
         internal static string GetRoundhouseNodeId(string turntableId, int index, FuseTurntable definition)
         {
-            var legacyIdentifier = definition?.LegacyIdentifier;
-            if (!string.IsNullOrWhiteSpace(legacyIdentifier))
-            {
-                return $"N{legacyIdentifier}RoundhouseNode{index}";
-            }
-
-            return $"{turntableId}.roundhouse.node.{index:D2}";
+            return FuseTurntableIds.GetRoundhouseNodeId(turntableId, index, definition);
         }
 
         internal static string GetRoundhouseSegmentId(string turntableId, int index, FuseTurntable definition)
         {
-            var legacyIdentifier = definition?.LegacyIdentifier;
-            if (!string.IsNullOrWhiteSpace(legacyIdentifier))
-            {
-                return $"S{legacyIdentifier}RoundhouseSegment{index}";
-            }
-
-            return $"{turntableId}.roundhouse.segment.{index:D2}";
+            return FuseTurntableIds.GetRoundhouseSegmentId(turntableId, index, definition);
         }
     }
 }
