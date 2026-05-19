@@ -153,6 +153,7 @@
     <Error Condition="!Exists('$(UnityManagedDir)\KeyValue.Runtime.dll')" Text="KeyValue.Runtime.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Map.Runtime.dll')" Text="Map.Runtime.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\SimpleGraph.Runtime.dll')" Text="SimpleGraph.Runtime.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Serilog.dll')" Text="Serilog.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Unity.TextMeshPro.dll')" Text="Unity.TextMeshPro.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')" Text="UnityEngine.IMGUIModule.dll was not found in the Railroader Managed folder." />
