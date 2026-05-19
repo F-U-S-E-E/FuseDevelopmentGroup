@@ -1098,6 +1098,10 @@ namespace FUSE.Loading
                     "no final structural track mutations in active definitions.");
             }
 
+            // Apply spans and the post-span cleanup inside one batch so the
+            // rebuild RemoveInvalidTrackSpans requests folds into a single
+            // post-cleanup rebuild rather than firing separately after the
+            // merged-graph-rebuild phase above.
             TrackAPI.BeginBatch();
             try
             {
@@ -1105,15 +1109,15 @@ namespace FUSE.Loading
                 {
                     ApplyMergedSpan(entry);
                 }
+
+                TrackAPI.RemoveInvalidTrackSpans("staged graph apply after final spans");
+                TrackAPI.ScrubCtcSignalReferences("staged graph apply after final spans");
+                IndustryAPI.ScrubIndustryComponentCaches("staged graph apply after final spans");
             }
             finally
             {
-                TrackAPI.EndBatch(false);
+                TrackAPI.EndBatch(true);
             }
-
-            TrackAPI.RemoveInvalidTrackSpans("staged graph apply after final spans");
-            TrackAPI.ScrubCtcSignalReferences("staged graph apply after final spans");
-            IndustryAPI.ScrubIndustryComponentCaches("staged graph apply after final spans");
         }
 
         private static string FormatMergedGraphRebuildFailure(FuseApplyReport report)

@@ -65,11 +65,24 @@ namespace FUSE.Lifecycle
                 if (canMutateWorld)
                 {
                     appliedCount = FuseDataPackageDiscovery.ApplyLoadedPackages("map load");
-                    TrackAPI.RemoveInvalidTrackSpans("map load after FUSE package apply");
-                    TrackAPI.ScrubCtcSignalReferences("map load after FUSE package apply");
-                    IndustryAPI.ScrubIndustryComponentCaches("map load after FUSE package apply");
-                    IndustryAPI.DisableOrphanedBaseGameIndustries("map load after FUSE package apply");
-                    TrackAPI.DisableInvalidTrackMarkers("map load after FUSE package apply");
+                    // Run the cleanup cluster inside one batch so the rebuild
+                    // RemoveInvalidTrackSpans requests folds together with any
+                    // rebuild industry/marker cleanup may also request. Without
+                    // this, RemoveInvalidTrackSpans fires its own full rebuild
+                    // while the rest of the cleanup is still running.
+                    TrackAPI.BeginBatch();
+                    try
+                    {
+                        TrackAPI.RemoveInvalidTrackSpans("map load after FUSE package apply");
+                        TrackAPI.ScrubCtcSignalReferences("map load after FUSE package apply");
+                        IndustryAPI.ScrubIndustryComponentCaches("map load after FUSE package apply");
+                        IndustryAPI.DisableOrphanedBaseGameIndustries("map load after FUSE package apply");
+                        TrackAPI.DisableInvalidTrackMarkers("map load after FUSE package apply");
+                    }
+                    finally
+                    {
+                        TrackAPI.EndBatch(true);
+                    }
                     var earlyLoaderStopwatch = Stopwatch.StartNew();
                     FuseEarlyLoader.ApplyFallbackAfterMapLoad();
                     FusePerformanceMetrics.RecordTiming("early-loader fallback after map load", earlyLoaderStopwatch.ElapsedMilliseconds);

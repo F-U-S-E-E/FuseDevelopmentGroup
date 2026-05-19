@@ -1123,7 +1123,7 @@ namespace FUSE.API
             if (removed > 0)
             {
                 FuseLog.Warning($"FUSE removed {removed} invalid TrackSpan object(s) reason='{reason ?? "unspecified"}'.");
-                RebuildGraph();
+                RequestRebuild();
             }
 
             return removed;
@@ -1143,7 +1143,16 @@ namespace FUSE.API
             return scrubbed;
         }
 
-        private static void RequestRebuild()
+        /// <summary>
+        /// Request a graph rebuild — runs immediately if no batch is active, or
+        /// folds into the outermost <see cref="EndBatch(bool)"/> when callers
+        /// have opened one. Cleanup paths that need a rebuild "if the caller
+        /// hasn't already arranged one" should use this in preference to
+        /// calling <see cref="RebuildGraph"/> directly, otherwise they force a
+        /// second full rebuild on top of whatever the caller's batch already
+        /// scheduled.
+        /// </summary>
+        public static void RequestRebuild()
         {
             _rebuildRequested = true;
             if (!IsBatching)

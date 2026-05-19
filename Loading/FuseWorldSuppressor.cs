@@ -479,7 +479,10 @@ namespace FUSE.Loading
                 }
                 else
                 {
-                    TrackAPI.RebuildGraph();
+                    // Defer to any outer batch the caller may have opened so a
+                    // sequence of group-suppression operations folds into one
+                    // rebuild instead of one rebuild per group.
+                    TrackAPI.RequestRebuild();
                 }
 
                 FuseLog.Info($"FUSE rebuilt track graph after group suppression for '{reason ?? "unspecified"}'.");
@@ -580,7 +583,10 @@ namespace FUSE.Loading
                 TrackGroups.Remove(groupId);
                 if (changed)
                 {
-                    TrackAPI.RebuildGraph();
+                    // Restoring multiple groups in a row used to rebuild after
+                    // each one; routing through RequestRebuild lets callers
+                    // wrap the loop in a single batch.
+                    TrackAPI.RequestRebuild();
                 }
 
                 FuseLog.Info($"FUSE restored base track group '{groupId}' for '{reason}' enabled={state.WasEnabled} available={state.WasAvailable}.");

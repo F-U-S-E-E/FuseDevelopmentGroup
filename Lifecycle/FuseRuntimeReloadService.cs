@@ -30,11 +30,22 @@ namespace FUSE.Lifecycle
 
             FuseCacheRegistry.RebuildAll();
             var applied = FuseDataPackageDiscovery.ReapplyLoadedPackages(operation);
-            TrackAPI.RemoveInvalidTrackSpans(operation);
-            TrackAPI.ScrubCtcSignalReferences(operation);
-            IndustryAPI.ScrubIndustryComponentCaches(operation);
-            IndustryAPI.DisableOrphanedBaseGameIndustries(operation);
-            TrackAPI.DisableInvalidTrackMarkers(operation);
+            // Batch the cleanup cluster so RemoveInvalidTrackSpans's rebuild
+            // request folds into one final rebuild instead of firing while the
+            // rest of the cleanup is still in progress.
+            TrackAPI.BeginBatch();
+            try
+            {
+                TrackAPI.RemoveInvalidTrackSpans(operation);
+                TrackAPI.ScrubCtcSignalReferences(operation);
+                IndustryAPI.ScrubIndustryComponentCaches(operation);
+                IndustryAPI.DisableOrphanedBaseGameIndustries(operation);
+                TrackAPI.DisableInvalidTrackMarkers(operation);
+            }
+            finally
+            {
+                TrackAPI.EndBatch(true);
+            }
             FuseLog.Info($"FUSE runtime track/data reload completed operation='{operation}' applied={applied} elapsedMs={stopwatch.ElapsedMilliseconds}.");
             return applied;
         }

@@ -152,51 +152,63 @@ namespace FUSE.Loading
             var restoredSpans = 0;
             var skipped = new List<string>();
 
+            // Outer batch folds the previously-separate nodes/segments and spans
+            // rebuilds into a single graph rebuild at the end. The two phases
+            // each used to call TrackAPI.RebuildGraph() directly, which doubled
+            // the cost of every package snapshot restore.
             TrackAPI.BeginBatch();
             try
             {
-                DropInvalidRuntimeTrackBeforeRestore(packageId);
-
-                foreach (var snapshot in package.Nodes.Values)
+                TrackAPI.BeginBatch();
+                try
                 {
-                    if (TryRestoreNode(snapshot, skipped))
+                    DropInvalidRuntimeTrackBeforeRestore(packageId);
+
+                    foreach (var snapshot in package.Nodes.Values)
                     {
-                        restoredNodes++;
+                        if (TryRestoreNode(snapshot, skipped))
+                        {
+                            restoredNodes++;
+                        }
+                    }
+
+                    foreach (var snapshot in package.Segments.Values)
+                    {
+                        if (TryRestoreSegment(snapshot, skipped))
+                        {
+                            restoredSegments++;
+                        }
                     }
                 }
-
-                foreach (var snapshot in package.Segments.Values)
+                finally
                 {
-                    if (TryRestoreSegment(snapshot, skipped))
+                    TrackAPI.EndBatch(false);
+                }
+
+                TryRebuildGraphAfterRestore(packageId, "nodes and segments");
+
+                TrackAPI.BeginBatch();
+                try
+                {
+                    foreach (var snapshot in package.Spans.Values)
                     {
-                        restoredSegments++;
+                        if (TryRestoreSpan(snapshot, skipped))
+                        {
+                            restoredSpans++;
+                        }
                     }
                 }
+                finally
+                {
+                    TrackAPI.EndBatch(false);
+                }
+
+                TryRebuildGraphAfterRestore(packageId, "spans");
             }
             finally
             {
-                TrackAPI.EndBatch(false);
+                TrackAPI.EndBatch(true);
             }
-
-            TryRebuildGraphAfterRestore(packageId, "nodes and segments");
-
-            TrackAPI.BeginBatch();
-            try
-            {
-                foreach (var snapshot in package.Spans.Values)
-                {
-                    if (TryRestoreSpan(snapshot, skipped))
-                    {
-                        restoredSpans++;
-                    }
-                }
-            }
-            finally
-            {
-                TrackAPI.EndBatch(false);
-            }
-
-            TryRebuildGraphAfterRestore(packageId, "spans");
 
             foreach (var item in skipped.Take(40))
             {
@@ -222,7 +234,9 @@ namespace FUSE.Loading
         {
             try
             {
-                TrackAPI.RebuildGraph();
+                // RequestRebuild defers when the caller has an outer batch open,
+                // so two sequential restore phases now share a single rebuild.
+                TrackAPI.RequestRebuild();
             }
             catch (Exception ex)
             {
