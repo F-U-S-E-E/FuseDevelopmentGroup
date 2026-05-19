@@ -111,3 +111,19 @@ Experimental commands should not be used during normal beta play unless testing 
 FUSE repairs many legacy data issues during conversion, but it does not silently hide authoring errors. Unsupported graph shapes, missing hard dependencies, invalid spans, and missing runtime component assemblies should be reported by the converter or runtime instead of being dropped.
 
 See `docs/KNOWN_ISSUES.md` and `docs/TROUBLESHOOTING.md` for the current issue list and debugging workflow.
+
+## Local Development
+
+Requirements
+
+- Visual Studio (in the installer, make sure you have SDKs for .NET Framework 4.8 and C# Support)
+
+To start developing FUSE locally, follow these steps:
+
+1. Clone this repo locally
+2. Copy `Paths.user.example` and save it as `Paths.user`
+3. Open this `Paths.user` file
+4. Update the path entries for your local Railroader installation
+5. Open the project in Visual Studio
+6. Build the project
+    - `EnableModDeploy` is set to true by default which will automatically build to your Railroader/Mods directory. This setting can be configured inside `Paths.user`
