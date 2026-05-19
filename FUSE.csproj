@@ -77,6 +77,10 @@
       <HintPath>$(UnityManagedDir)\SimpleGraph.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Serilog" Condition="Exists('$(UnityManagedDir)\Serilog.dll')">
+      <HintPath>$(UnityManagedDir)\Serilog.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Unity.Mathematics" Condition="Exists('$(UnityManagedDir)\Unity.Mathematics.dll')">
       <HintPath>$(UnityManagedDir)\Unity.Mathematics.dll</HintPath>
       <Private>false</Private>

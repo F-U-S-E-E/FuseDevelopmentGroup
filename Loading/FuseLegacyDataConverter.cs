@@ -68,8 +68,6 @@ namespace FUSE.Loading
                 "alinasmapmod.rrcrossingbuilder"
             };
 
-        private const string DkwSplineyHandler = "DKW.DKWSpliney";
-
         private static readonly Dictionary<string, string> SplineyHandlerMap =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -1757,8 +1755,17 @@ namespace FUSE.Loading
                 {
                     ((JObject)root["world"]["scenery"])[property.Name] = ConvertScenery(item);
                 }
-                else if (IsDkwSplineyHandler(handler) && ConvertDkwSpliney(property.Name, item, root))
+                else if (!string.IsNullOrWhiteSpace(handler) &&
+                         !SplineyHandlerMap.ContainsKey(handler) &&
+                         (item["points"] as JArray) == null)
                 {
+                    // FUSE doesn't recognize this handler natively and the
+                    // spliney has no curve geometry of its own; defer to
+                    // whichever hosted old-loader plugin claims it via the
+                    // GraphWillChangeEvent dispatched in Flush() below. FUSE
+                    // intentionally does not know which plugin owns which
+                    // handler — plugins self-select inside their event handler.
+                    FuseSplineyPluginHost.Register(property.Name, item);
                     continue;
                 }
                 else if ((item["points"] as JArray)?.Count >= 2)
@@ -1772,116 +1779,24 @@ namespace FUSE.Loading
                     ((JObject)root["extensions"])["legacySplineyObjects"] = legacyObjects;
                 }
             }
-        }
 
-        private static bool IsDkwSplineyHandler(string handler)
-        {
-            return string.Equals(handler, DkwSplineyHandler, StringComparison.OrdinalIgnoreCase);
+            // Fire GraphWillChangeEvent so any hosted old-loader plugin
+            // subscribed via Messenger.Default can synthesize its own topology
+            // from the deferred splineys. We then merge anything new the
+            // plugins wrote into state.Tracks back into the converter root.
+            var flush = FuseSplineyPluginHost.Flush(root);
+            if (flush.PendingSplineyCount > 0)
+            {
+                FuseLog.Info(
+                    "FUSE legacy spliney plugin host dispatched GraphWillChangeEvent " +
+                    $"pendingSplineys={flush.PendingSplineyCount} " +
+                    $"nodesAdded={flush.NodesAdded} segmentsAdded={flush.SegmentsAdded}.");
+            }
         }
 
         private static string ReadHandler(JObject item)
         {
             return ReadString(item, "handler", "Handler") ?? string.Empty;
-        }
-
-        private static bool ConvertDkwSpliney(string id, JObject item, JObject root)
-        {
-            if (string.IsNullOrWhiteSpace(id) || item == null || root == null)
-            {
-                return false;
-            }
-
-            var crossingAngle = ReadFloat(item["crossingAngle"] ?? item["CrossingAngle"], 0f);
-            var flipped = false;
-            var position = ReadVector(item["position"] ?? item["localPosition"], false);
-            var rotation = ReadVector(item["rotation"] ?? item["localRotation"], false);
-
-            if (crossingAngle < 0f)
-            {
-                flipped = true;
-                rotation = WithYaw(rotation, rotation.Y + crossingAngle);
-                crossingAngle = -crossingAngle;
-            }
-
-            if (crossingAngle < 4f || crossingAngle > 15f)
-            {
-                return false;
-            }
-
-            const float gaugeInside = 1.435f;
-            const float innerOffset = 0.5f;
-            const float outerOffset = 1.5f;
-            var halfAngle = crossingAngle * Math.PI / 180d / 2d;
-            var crossingCenter = (float)(gaugeInside * Math.Cos(halfAngle) / (2d * Math.Sin(halfAngle)));
-            var inner = crossingCenter - innerOffset;
-            var outer = crossingCenter + outerOffset;
-            var baseYaw = rotation.Y;
-            var crossingYaw = baseYaw + crossingAngle;
-
-            var nodes = root["tracks"]?["nodes"] as JObject;
-            var segments = root["tracks"]?["segments"] as JObject;
-            if (nodes == null || segments == null)
-            {
-                return false;
-            }
-
-            var nodePrefix = "N" + id + "DKW_Node";
-            AddDkwNode(nodes, nodePrefix + "P1I", OffsetYaw(position, baseYaw, -inner), rotation);
-            AddDkwNode(nodes, nodePrefix + "P1O", OffsetYaw(position, baseYaw, -outer), rotation);
-            AddDkwNode(nodes, nodePrefix + "P2I", OffsetYaw(position, baseYaw, inner), rotation);
-            AddDkwNode(nodes, nodePrefix + "P2O", OffsetYaw(position, baseYaw, outer), rotation);
-            AddDkwNode(nodes, nodePrefix + "P3I", OffsetYaw(position, crossingYaw, -inner), WithYaw(rotation, crossingYaw));
-            AddDkwNode(nodes, nodePrefix + "P3O", OffsetYaw(position, crossingYaw, -outer), WithYaw(rotation, crossingYaw));
-            AddDkwNode(nodes, nodePrefix + "P4I", OffsetYaw(position, crossingYaw, inner), WithYaw(rotation, crossingYaw));
-            AddDkwNode(nodes, nodePrefix + "P4O", OffsetYaw(position, crossingYaw, outer), WithYaw(rotation, crossingYaw));
-
-            var segmentPrefix = "S" + id + "DKW_Segment";
-            AddDkwSegment(segments, segmentPrefix + "1", nodePrefix + "P1O", nodePrefix + "P1I", 0);
-            AddDkwSegment(segments, segmentPrefix + "2", nodePrefix + "P2I", nodePrefix + "P2O", 0);
-            AddDkwSegment(segments, segmentPrefix + "3", nodePrefix + "P3O", nodePrefix + "P3I", 0);
-            AddDkwSegment(segments, segmentPrefix + "4", nodePrefix + "P4I", nodePrefix + "P4O", 0);
-            AddDkwSegment(segments, segmentPrefix + "CR", nodePrefix + "P1I", nodePrefix + "P4I", 0);
-            AddDkwSegment(segments, segmentPrefix + "CL", nodePrefix + "P3I", nodePrefix + "P2I", 0);
-            AddDkwSegment(segments, segmentPrefix + "D1", nodePrefix + "P1I", nodePrefix + "P2I", flipped ? -1 : 1);
-            AddDkwSegment(segments, segmentPrefix + "D2", nodePrefix + "P3I", nodePrefix + "P4I", flipped ? 1 : -1);
-            return true;
-        }
-
-        private static void AddDkwNode(JObject nodes, string id, LegacyVector position, LegacyVector rotation)
-        {
-            nodes[id] = CleanObject(new JObject
-            {
-                ["position"] = Vector(position),
-                ["rotation"] = Vector(rotation),
-                ["flipSwitchStand"] = false
-            });
-        }
-
-        private static void AddDkwSegment(JObject segments, string id, string startNodeId, string endNodeId, int priority)
-        {
-            segments[id] = CleanObject(new JObject
-            {
-                ["startNodeId"] = startNodeId,
-                ["endNodeId"] = endNodeId,
-                ["style"] = "standard",
-                ["trackClass"] = "main",
-                ["speedLimit"] = 45,
-                ["priority"] = priority
-            });
-        }
-
-        private static LegacyVector OffsetYaw(LegacyVector origin, float yawDegrees, float distance)
-        {
-            var radians = yawDegrees * Math.PI / 180d;
-            return new LegacyVector(
-                origin.X + (float)(Math.Sin(radians) * distance),
-                origin.Y,
-                origin.Z + (float)(Math.Cos(radians) * distance));
-        }
-
-        private static LegacyVector WithYaw(LegacyVector rotation, float yaw)
-        {
-            return new LegacyVector(rotation.X, yaw, rotation.Z);
         }
 
         private static JToken ConvertSpliney(JObject item)
