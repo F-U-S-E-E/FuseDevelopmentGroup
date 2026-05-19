@@ -1113,7 +1113,7 @@ namespace FUSE.Validation
 
                 for (var index = 0; index < definition.Subdivisions; index++)
                 {
-                    result.Add(TurntableAPI.GetPitNodeId(turntable.Key, index, definition));
+                    result.Add(FuseTurntableIds.GetPitNodeId(turntable.Key, index, definition));
                 }
 
                 if (definition.Roundhouse == null || definition.Roundhouse.Stalls <= 0)
@@ -1123,7 +1123,7 @@ namespace FUSE.Validation
 
                 for (var index = 1; index <= definition.Roundhouse.Stalls; index++)
                 {
-                    result.Add(TurntableAPI.GetRoundhouseNodeId(turntable.Key, index, definition));
+                    result.Add(FuseTurntableIds.GetRoundhouseNodeId(turntable.Key, index, definition));
                 }
             }
 
@@ -1142,7 +1142,7 @@ namespace FUSE.Validation
             {
                 for (var index = 1; index <= turntable.Value.Roundhouse.Stalls; index++)
                 {
-                    result.Add(TurntableAPI.GetRoundhouseSegmentId(turntable.Key, index, turntable.Value));
+                    result.Add(FuseTurntableIds.GetRoundhouseSegmentId(turntable.Key, index, turntable.Value));
                 }
             }
 

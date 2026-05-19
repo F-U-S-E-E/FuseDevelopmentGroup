@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>FUSE.Tests</AssemblyName>
+    <RootNamespace>FUSE.Tests</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector" Version="6.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <!-- Newtonsoft.Json from NuGet rather than the game-shipped DLL: the game's
+         copy is Unity-style delay-signed, which fails strong-name verification
+         in a clean .NET Framework process (CI runners). The NuGet copy carries
+         the same AssemblyVersion (13.0.0.0) and PublicKeyToken so FUSE.dll's
+         reference resolves to it at test time. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FUSE.csproj" />
+  </ItemGroup>
+
+  <!-- The main FUSE project references game-shipped assemblies with <Private>false</Private>
+       so they do not flow transitively. The test project re-declares the few it needs to
+       compile test code against, with Private=true so they land beside FUSE.Tests.dll and
+       the JIT can resolve them when test code invokes FUSE methods that touch these types. -->
+  <PropertyGroup>
+    <GameDir Condition="'$(GameDir)' == ''">C:\Steam\steamapps\common\Railroader</GameDir>
+    <UnityManagedDir Condition="'$(UnityManagedDir)' == ''">$(GameDir)\Railroader_Data\Managed</UnityManagedDir>
+    <UnityModManagerDir Condition="'$(UnityModManagerDir)' == ''">$(UnityManagedDir)\UnityModManager</UnityModManagerDir>
+    <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">$(UnityModManagerDir)\UnityModManagerNet.dll</UnityModManagerAssemblyPath>
+    <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManager.dll')">$(UnityModManagerDir)\UnityModManager.dll</UnityModManagerAssemblyPath>
+    <UnityModManagerReferenceName Condition="'$(UnityModManagerReferenceName)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">UnityModManagerNet</UnityModManagerReferenceName>
+    <UnityModManagerReferenceName Condition="'$(UnityModManagerReferenceName)' == '' and Exists('$(UnityModManagerDir)\UnityModManager.dll')">UnityModManager</UnityModManagerReferenceName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="$(UnityModManagerReferenceName)" Condition="Exists('$(UnityModManagerAssemblyPath)')">
+      <HintPath>$(UnityModManagerAssemblyPath)</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
