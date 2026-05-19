@@ -152,7 +152,7 @@ namespace FUSE.Loading
                         var mixintoPath = ResolvePackageFile(manifest.FolderPath, fileReference);
                         if (!string.IsNullOrWhiteSpace(mixintoPath))
                         {
-                            yield return new ModMixinto(mixintoPath, new FuseLegacyModDefinition(manifest));
+                            yield return new ModMixinto(new FuseLegacyModDefinition(manifest), mixintoPath);
                         }
                     }
                 }
@@ -798,7 +798,7 @@ namespace FUSE.Loading
         public JObject RawDefinition { get; set; }
     }
 
-    internal sealed class FuseLegacyModDefinition : IModDefinition
+    internal sealed class FuseLegacyModDefinition : IMod
     {
         public FuseLegacyModDefinition(FuseLegacyAssemblyManifest manifest)
         {
@@ -806,31 +806,159 @@ namespace FUSE.Loading
             Name = manifest?.Name ?? Id;
             Version = manifest?.Version ?? string.Empty;
             Directory = manifest?.FolderPath ?? string.Empty;
+            Requires = (manifest?.Requires ?? Array.Empty<string>())
+                .Select(static r => (ModReference)r)
+                .ToArray();
         }
 
         public string Id { get; }
         public string Name { get; }
         public string Version { get; }
         public string Directory { get; }
+
+        public string[] LoadBefore => Array.Empty<string>();
+        public ModReference[] LoadAfter => Array.Empty<ModReference>();
+        public ModReference[] Requires { get; }
+        public ModReference[] ConflictsWith => Array.Empty<ModReference>();
+
+        // We host the assembly so by definition it loaded and enabled. We do not
+        // track per-plugin fault state from the IMod shim; callers that need it
+        // can inspect FUSE's loader logs.
+        public bool IsEnabled => true;
+        public bool IsLoaded => true;
+        public bool IsFaulted => false;
+        public PluginBase[] Plugins => Array.Empty<PluginBase>();
     }
 
     internal sealed class FuseLegacyModdingContext : IModdingContext
     {
+        // Reported as IModdingContext.RailloaderVersion to legacy plugins. The
+        // value is held high enough to satisfy version-min compatibility gates
+        // that plugins may check against the legacy loader's contract.
+        private static readonly System.Version LegacyRailloaderVersion = new System.Version(1, 11, 1, 2);
+
         public FuseLegacyModdingContext(string modsBaseDirectory)
         {
             ModsBaseDirectory = modsBaseDirectory ?? string.Empty;
         }
 
+        public System.Version RailloaderVersion => LegacyRailloaderVersion;
         public string ModsBaseDirectory { get; }
-
-        public IEnumerable<ModMixinto> GetMixintos(string identifier)
-        {
-            return FuseLegacyAssemblyHost.EnumerateMixintos(identifier);
-        }
+        public IReadOnlyCollection<IMod> Mods => Array.Empty<IMod>();
 
         public void RegisterConsoleCommand(IConsoleCommand command)
         {
             FuseLegacyAssemblyHost.RegisterConsoleCommand(command);
+        }
+
+        public T LoadSettingsData<T>(string settingsIdentifier) where T : class
+        {
+            FuseLog.Warning($"FUSE legacy IModdingContext.LoadSettingsData<{typeof(T).Name}>('{settingsIdentifier}') is not wired; returning null. Migrate to FUSE settings API.");
+            return null;
+        }
+
+        public void SaveSettingsData<T>(string settingsIdentifier, T settings) where T : class
+        {
+            FuseLog.Warning($"FUSE legacy IModdingContext.SaveSettingsData<{typeof(T).Name}>('{settingsIdentifier}') is not wired; no-op. Migrate to FUSE settings API.");
+        }
+
+        public IEnumerable<ModMixinto> GetMixintos(string target)
+        {
+            return FuseLegacyAssemblyHost.EnumerateMixintos(target);
+        }
+
+        public IEnumerable<ModMixinto> GetMixintos(string target, bool allowNonFileEntries)
+        {
+            return GetMixintos(target);
+        }
+
+        public IEnumerable<ModMixinto> GetMixintos(string[] targets)
+        {
+            if (targets == null)
+            {
+                yield break;
+            }
+
+            foreach (var target in targets)
+            {
+                foreach (var mixinto in GetMixintos(target))
+                {
+                    yield return mixinto;
+                }
+            }
+        }
+
+        public IEnumerable<ModMixinto> GetMixintos(string[] targets, bool allowNonFileEntries)
+        {
+            return GetMixintos(targets);
+        }
+
+        public bool TryResolveFilePath(string baseDirectory, string value, bool allowNonFileEntries, out string result)
+        {
+            return TryResolveFilePath(baseDirectory, baseDirectory, value, allowNonFileEntries, out result);
+        }
+
+        public bool TryResolveFilePath(string baseDirectory, string rootDirectory, string value, bool allowNonFileEntries, out string result)
+        {
+            result = null;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            // Mirror the minimum behavior plugins depend on: resolve a relative
+            // path against baseDirectory; if missing, fall through to rootDirectory.
+            try
+            {
+                if (System.IO.Path.IsPathRooted(value) && System.IO.File.Exists(value))
+                {
+                    result = value;
+                    return true;
+                }
+
+                if (!string.IsNullOrWhiteSpace(baseDirectory))
+                {
+                    var candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(baseDirectory, value));
+                    if (System.IO.File.Exists(candidate))
+                    {
+                        result = candidate;
+                        return true;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(rootDirectory) && !string.Equals(rootDirectory, baseDirectory, StringComparison.OrdinalIgnoreCase))
+                {
+                    var candidate = System.IO.Path.GetFullPath(System.IO.Path.Combine(rootDirectory, value));
+                    if (System.IO.File.Exists(candidate))
+                    {
+                        result = candidate;
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE legacy IModdingContext.TryResolveFilePath threw resolving '{value}': {ex.Message}");
+            }
+
+            return false;
+        }
+
+        public void RegisterSubTypeOverload<TBaseClass, TImplementation>(string identifier)
+        {
+            FuseLog.Warning($"FUSE legacy IModdingContext.RegisterSubTypeOverload<{typeof(TBaseClass).Name}, {typeof(TImplementation).Name}>('{identifier}') is not wired; no-op. Migrate to FUSE registration API.");
+        }
+
+        public void RegisterSubTypeOverload(System.Type baseClass, string identifier, System.Type implementation)
+        {
+            FuseLog.Warning($"FUSE legacy IModdingContext.RegisterSubTypeOverload('{baseClass?.Name}', '{identifier}', '{implementation?.Name}') is not wired; no-op. Migrate to FUSE registration API.");
+        }
+
+        public void RegisterComponent<TComponent, TComponentBuilder>(string kind)
+            where TComponent : Component
+            where TComponentBuilder : IComponentBuilder
+        {
+            FuseLog.Warning($"FUSE legacy IModdingContext.RegisterComponent<{typeof(TComponent).Name}, {typeof(TComponentBuilder).Name}>('{kind}') is not wired; no-op. Migrate to FUSE component registration API.");
         }
     }
 }
