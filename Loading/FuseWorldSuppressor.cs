@@ -12,6 +12,7 @@ using FUSE.Infrastructure;
 using FUSE.Registry;
 using Track;
 using UnityEngine;
+using Helpers;
 
 namespace FUSE.Loading
 {
@@ -370,12 +371,18 @@ namespace FUSE.Loading
                     state.WarnedMissing = false;
                 }
 
+                if (target.TryGetComponent<SimpleCuller>(out SimpleCuller culler))
+                {
+                    UnityEngine.Object.Destroy(culler);
+                }
+
                 if (target.activeSelf)
                 {
                     target.SetActive(false);
                     FuseLog.Info($"FUSE suppressed base scene path '{path}' for '{reason}' owners={FuseRegistry.GetSharedOwners(FuseClaimKind.SuppressedScenePath, path).Count}.");
                     transaction?.PostBind("suppressed scene path", path, "set inactive");
                 }
+
             }
             catch (Exception ex)
             {
@@ -879,6 +886,7 @@ namespace FUSE.Loading
             public ScenePathSuppressionState(string path)
             {
                 Path = path ?? string.Empty;
+                WarnedMissing = false;
             }
 
             public string Path { get; }
