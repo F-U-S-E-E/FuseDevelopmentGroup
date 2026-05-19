@@ -6,3 +6,21 @@
 # fallback checkout bug on self-hosted runners.
 .claude export-ignore
 .claude/** export-ignore
+.dotnet export-ignore
+.dotnet/** export-ignore
+.dotnet-home export-ignore
+.dotnet-home/** export-ignore
+.nuget-packages export-ignore
+.nuget-packages/** export-ignore
+.vs export-ignore
+.vs/** export-ignore
+bin export-ignore
+bin/** export-ignore
+obj export-ignore
+obj/** export-ignore
+dist export-ignore
+dist/** export-ignore
+staging export-ignore
+staging/** export-ignore
+_work export-ignore
+_work/** export-ignore
