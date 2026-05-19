@@ -25,6 +25,14 @@
     <Compile Remove="_work\**\*.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Serilog: compile-time only. The game ships its own copy (AssemblyVersion 2.0.0.0,
+         PublicKeyToken 24c2f752a8e58a10); ExcludeAssets="runtime" keeps us from shipping a
+         second DLL while still letting our PatchingContext shim type-check against the same
+         identity legacy SC plugins were compiled with. -->
+    <PackageReference Include="Serilog" Version="2.10.0" ExcludeAssets="runtime" />
+  </ItemGroup>
+
   <PropertyGroup>
     <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">$(UnityModManagerDir)\UnityModManagerNet.dll</UnityModManagerAssemblyPath>
     <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManager.dll')">$(UnityModManagerDir)\UnityModManager.dll</UnityModManagerAssemblyPath>
@@ -71,10 +79,6 @@
     </Reference>
     <Reference Include="SimpleGraph.Runtime" Condition="Exists('$(UnityManagedDir)\SimpleGraph.Runtime.dll')">
       <HintPath>$(UnityManagedDir)\SimpleGraph.Runtime.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="Serilog" Condition="Exists('$(UnityManagedDir)\Serilog.dll')">
-      <HintPath>$(UnityManagedDir)\Serilog.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Unity.Mathematics" Condition="Exists('$(UnityManagedDir)\Unity.Mathematics.dll')">
@@ -153,7 +157,6 @@
     <Error Condition="!Exists('$(UnityManagedDir)\KeyValue.Runtime.dll')" Text="KeyValue.Runtime.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Map.Runtime.dll')" Text="Map.Runtime.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\SimpleGraph.Runtime.dll')" Text="SimpleGraph.Runtime.dll was not found in the Railroader Managed folder." />
-    <Error Condition="!Exists('$(UnityManagedDir)\Serilog.dll')" Text="Serilog.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Unity.TextMeshPro.dll')" Text="Unity.TextMeshPro.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')" Text="UnityEngine.IMGUIModule.dll was not found in the Railroader Managed folder." />
