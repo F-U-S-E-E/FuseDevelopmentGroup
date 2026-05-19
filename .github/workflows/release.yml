@@ -31,7 +31,7 @@ jobs:
 
       - name: Parse semantic version from tag
         id: version
-        shell: powershell
+        shell: pwsh
         run: |
           $tag = "${{ github.ref_name }}"
           if ($tag -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
@@ -52,12 +52,12 @@ jobs:
           }
 
       - name: Build FUSE mod (Release)
-        shell: powershell
+        shell: pwsh
         run: dotnet build FUSE.csproj -c Release -p:ModVersion=${{ steps.version.outputs.version }}
 
       - name: Package UMM mod zip
         id: package
-        shell: powershell
+        shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.version }}"
           $stagingRoot = Join-Path $PWD "staging"
@@ -98,11 +98,11 @@ jobs:
         run: python -m pip install --upgrade pip pyinstaller
 
       - name: Build FUSE-Converter.exe
-        shell: powershell
+        shell: pwsh
         run: .\tools\build_converter_exe.ps1
 
       - name: Build FUSE-Installer.exe
-        shell: powershell
+        shell: pwsh
         run: .\tools\build_installer_exe.ps1
 
       - name: Build FUSEConvertFolder.pyz

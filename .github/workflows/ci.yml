@@ -40,7 +40,7 @@ jobs:
         run: dotnet build FUSE.csproj -c Release -p:ModVersion=0.0.1-ci
 
       - name: Verify Info.json stamped with version
-        shell: powershell
+        shell: pwsh
         run: |
           $info = Get-Content 'bin\Release\net48\Info.json' -Raw | ConvertFrom-Json
           if ($info.Version -ne '0.0.1') { throw "Info.json Version is '$($info.Version)', expected '0.0.1' (core only)" }
