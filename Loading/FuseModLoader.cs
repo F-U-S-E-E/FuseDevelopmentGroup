@@ -1484,6 +1484,17 @@ namespace FUSE.Loading
                     if (graph.SetGroupEnabled(groupId, true))
                     {
                         changedCount++;
+                        // Remember this group as "transiently enabled by FUSE solely
+                        // to satisfy graph-rebuild segment binding". If, after
+                        // progression apply + refresh, no MapFeature claims the
+                        // group via tracksEnable / tracksAvail, the progression
+                        // refresh will revoke this transient enable so segments
+                        // sitting in an orphan group (e.g. the s3a base-map
+                        // siding tracks the MaconCounty mod adds with no feature
+                        // controlling them) don't render permanently. Without
+                        // this, the Alarka branch / Alarka Jct wye tracks stayed
+                        // visible because their groupIds were segment-only.
+                        FUSE.API.ProgressionAPI.RecordTransientlyPreEnabledTrackGroup(groupId);
                     }
                     enabledCount++;
                 }

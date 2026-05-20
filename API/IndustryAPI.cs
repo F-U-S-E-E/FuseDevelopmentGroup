@@ -239,7 +239,8 @@ namespace FUSE.API
             }
 
             return FuseCacheRegistry.IsReady && !string.IsNullOrWhiteSpace(id)
-                ? UnityEngine.Object.FindObjectsOfType<Industry>(true).FirstOrDefault(industry => industry.identifier == id)
+                ? UnityEngine.Object.FindObjectsOfType<Industry>(true).FirstOrDefault(industry =>
+                    string.Equals(industry.identifier, id, StringComparison.OrdinalIgnoreCase))
                 : null;
         }
 

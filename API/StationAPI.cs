@@ -93,7 +93,8 @@ namespace FUSE.API
         public static PassengerStop GetPassengerStop(string id)
         {
             return !string.IsNullOrWhiteSpace(id)
-                ? PassengerStop.FindAll().FirstOrDefault(stop => stop.identifier == id)
+                ? PassengerStop.FindAll().FirstOrDefault(stop =>
+                    string.Equals(stop.identifier, id, StringComparison.OrdinalIgnoreCase))
                 : null;
         }
 

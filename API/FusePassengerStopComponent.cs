@@ -415,7 +415,8 @@ namespace FUSE.API
             }
 
             var manager = MapFeatureManager.Shared;
-            return manager?.AvailableFeatures?.FirstOrDefault(feature => feature.identifier == identifier);
+            return manager?.AvailableFeatures?.FirstOrDefault(feature =>
+                string.Equals(feature.identifier, identifier, StringComparison.OrdinalIgnoreCase));
         }
 
         private string GetStopIdentifier()

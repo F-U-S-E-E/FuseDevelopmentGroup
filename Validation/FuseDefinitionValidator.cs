@@ -388,8 +388,8 @@ namespace FUSE.Validation
                 return;
             }
 
-            var definedIds = new HashSet<string>(definitions ?? Enumerable.Empty<string>());
-            var seen = new HashSet<string>();
+            var definedIds = new HashSet<string>(definitions ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var index = 0;
             foreach (var id in removals)
             {
@@ -1097,7 +1097,7 @@ namespace FUSE.Validation
 
         private static HashSet<string> CollectGeneratedNodeIds(FuseOperationsDefinition operations)
         {
-            var result = new HashSet<string>();
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (operations?.Turntables == null)
             {
                 return result;
@@ -1132,7 +1132,7 @@ namespace FUSE.Validation
 
         private static HashSet<string> CollectGeneratedSegmentIds(FuseOperationsDefinition operations)
         {
-            var result = new HashSet<string>();
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (operations?.Turntables == null)
             {
                 return result;

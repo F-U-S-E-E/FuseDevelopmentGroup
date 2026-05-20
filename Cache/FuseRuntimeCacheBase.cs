@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace FUSE.Cache
@@ -6,7 +7,14 @@ namespace FUSE.Cache
         where TCache : FuseRuntimeCacheBase<TCache, TValue>
         where TValue : class
     {
-        protected readonly Dictionary<string, TValue> Items = new Dictionary<string, TValue>();
+        // Case-insensitive keys so legacy mod data that references identifiers
+        // in lowercase ('s2', 'sctc', 'alarka-branch') still resolves to the
+        // game's canonical capitalized identifiers ('S2', 'SCTC', etc.). Every
+        // other identifier lookup across FUSE uses StringComparer.OrdinalIgnoreCase;
+        // the cache default used to be the only outlier and caused phantom
+        // placeholder map features that broke prerequisite chains.
+        protected readonly Dictionary<string, TValue> Items =
+            new Dictionary<string, TValue>(StringComparer.OrdinalIgnoreCase);
 
         protected FuseRuntimeCacheBase()
         {

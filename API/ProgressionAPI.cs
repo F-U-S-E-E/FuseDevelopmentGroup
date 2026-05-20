@@ -100,7 +100,8 @@ namespace FUSE.API
             }
 
             return !string.IsNullOrWhiteSpace(id)
-                ? UnityEngine.Object.FindObjectsOfType<MapFeature>(true).FirstOrDefault(feature => feature.identifier == id)
+                ? UnityEngine.Object.FindObjectsOfType<MapFeature>(true).FirstOrDefault(feature =>
+                    string.Equals(feature.identifier, id, StringComparison.OrdinalIgnoreCase))
                 : null;
         }
 
@@ -225,7 +226,8 @@ namespace FUSE.API
             }
 
             return !string.IsNullOrWhiteSpace(id)
-                ? UnityEngine.Object.FindObjectsOfType<Progression>(true).FirstOrDefault(progression => progression.identifier == id)
+                ? UnityEngine.Object.FindObjectsOfType<Progression>(true).FirstOrDefault(progression =>
+                    string.Equals(progression.identifier, id, StringComparison.OrdinalIgnoreCase))
                 : null;
         }
 
@@ -291,8 +293,139 @@ namespace FUSE.API
             manager.SetFeatureEnabled(id, enabled);
         }
 
+        // Track whether the game's Progression.Configure has run at least once.
+        // Set by the Harmony postfix in FuseProgressionConfigureHookPatch. Until
+        // this is true, StateManager.IsSandbox is unreliable (the save's GameMode
+        // hasn't been deserialized; it returns its default Sandbox=true). Any
+        // FUSE code that depends on IsSandbox — and the game internals we invoke
+        // via reflection that depend on it — must be deferred.
+        private static volatile bool _gameProgressionConfigured;
+
+        // Track-group ids that FuseModLoader.PreEnableInitialTrackGroups had to
+        // transiently flip into Graph.enabledGroupIds so the merged graph
+        // rebuild would not cull mod-added segments before their spans bind.
+        // After the post-Configure refresh has run all the game's normal
+        // per-feature SetGroupEnabled passes, any of these groups that no
+        // MapFeature has claimed (via tracksEnable / tracksAvail) is an orphan
+        // and must be disabled — otherwise mod-added segments in that group
+        // (e.g. the MaconCounty mod's s3a base-map siding tracks at Alarka
+        // Jct) render permanently regardless of progression state.
+        private static readonly HashSet<string> _transientlyPreEnabledTrackGroups =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object _transientlyPreEnabledLock = new object();
+
+        internal static void RecordTransientlyPreEnabledTrackGroup(string groupId)
+        {
+            if (string.IsNullOrWhiteSpace(groupId))
+            {
+                return;
+            }
+            lock (_transientlyPreEnabledLock)
+            {
+                _transientlyPreEnabledTrackGroups.Add(groupId);
+            }
+        }
+
+        // If RefreshRuntimeStateAfterApply is called before Configure has fired,
+        // we record the reason here and re-fire after Configure runs. Only the
+        // latest pending reason is kept; we coalesce repeated pre-Configure
+        // refresh requests into a single deferred run.
+        private static string _pendingRefreshReason;
+        private static readonly object _pendingRefreshLock = new object();
+
+        /// <summary>
+        /// Called by the Harmony postfix on <c>Game.Progression.Progression.Configure</c>.
+        /// At that point the save's GameMode has been deserialized into StateManager
+        /// and IsSandbox returns the real value. If a refresh was deferred, run it
+        /// now.
+        /// </summary>
+        internal static void NotifyGameProgressionConfigured()
+        {
+            string pendingReason;
+            lock (_pendingRefreshLock)
+            {
+                _gameProgressionConfigured = true;
+                pendingReason = _pendingRefreshReason;
+                _pendingRefreshReason = null;
+            }
+
+            var sandbox = StateManager.IsSandbox;
+            var gameMode = StateManager.Shared?.GameMode.ToString() ?? "<null>";
+            FuseLog.Info(
+                $"FUSE progression Configure observed (game progression initialized) " +
+                $"IsSandbox={sandbox} GameMode={gameMode} hadPendingRefresh={(pendingReason != null)}.");
+
+            if (pendingReason != null)
+            {
+                RefreshRuntimeStateAfterApply($"deferred from pre-Configure: {pendingReason}");
+            }
+        }
+
+        /// <summary>
+        /// Called by the Harmony postfix on <c>Game.Progression.Progression.Unconfigure</c>.
+        /// Resets the configured-flag so the next save load can correctly detect
+        /// its own pre-Configure racy window. Without this reset, reloading a
+        /// save would leave the flag set from the previous load, and FUSE's
+        /// refresh would run immediately with stale IsSandbox + empty KVO
+        /// (because the new save's snapshot hasn't been applied yet), polluting
+        /// the graph with feature defaults derived from sandbox-true.
+        /// </summary>
+        internal static void NotifyGameProgressionUnconfigured()
+        {
+            lock (_pendingRefreshLock)
+            {
+                _gameProgressionConfigured = false;
+                // Drop any deferred reason — its requester is gone with the
+                // previous load. The next load will produce its own refresh
+                // request via FuseModLoader.
+                _pendingRefreshReason = null;
+            }
+
+            FuseLog.Info(
+                "FUSE progression Unconfigure observed (game progression torn down); " +
+                "configured-flag cleared so the next load's pre-Configure window is detected fresh.");
+        }
+
         public static void RefreshRuntimeStateAfterApply(string reason)
         {
+            // Game-mode checkpoint. If IsSandbox is true here AND the player is in a
+            // company-mode save, the save's GameMode hasn't been deserialized yet
+            // and any feature-default writes / graph mutations will use the wrong
+            // assumption. We track this with _gameProgressionConfigured (set in a
+            // Harmony postfix on Game.Progression.Progression.Configure).
+            var sandboxAtEntry = StateManager.IsSandbox;
+            var gameModeAtEntry = StateManager.Shared?.GameMode.ToString() ?? "<null>";
+            var configured = _gameProgressionConfigured;
+            FuseLog.Info(
+                $"FUSE progression refresh entry reason='{reason ?? "unspecified"}' " +
+                $"IsSandbox={sandboxAtEntry} GameMode={gameModeAtEntry} configured={configured}.");
+
+            if (!configured)
+            {
+                // The game's Progression.Configure hasn't run yet, so IsSandbox is
+                // not trustworthy. If we proceed to ForceApplyCurrentMapFeatureState
+                // we'd invoke the game's HandleFeatureEnablesChanged with stale
+                // IsSandbox=true; that pass calls graph.SetGroupEnabled(<group>, true)
+                // for every feature whose defaultEnableInSandbox is true, persisting
+                // an enabled state in the graph. The game's late Configure-driven
+                // dict update then can't undo it: HandleFeatureEnablesChanged with
+                // initial=false skips features whose oldDefault equals their new
+                // value (both evaluate to false once IsSandbox flips), so no
+                // SetGroupEnabled(false) is emitted. The visible regression was
+                // Alarka's Ela bridge appearing in a company-mode save.
+                //
+                // Park the request and let the Configure postfix re-fire it once
+                // GameMode is reliable.
+                lock (_pendingRefreshLock)
+                {
+                    _pendingRefreshReason = reason;
+                }
+                FuseLog.Info(
+                    $"FUSE progression refresh deferred until Progression.Configure " +
+                    $"(reason='{reason ?? "unspecified"}', stale IsSandbox would corrupt graph state).");
+                return;
+            }
+
             var manager = MapFeatureManager.Shared;
             if (manager == null)
             {
@@ -325,30 +458,272 @@ namespace FUSE.API
                     $"kind='progression' id='<current>' reason='{reason ?? "unspecified"}' message='{ex.Message}'.");
             }
 
+            // NOTE: InitializeMissingMapFeatureStates now intentionally returns 0
+            // and writes nothing — it remains only as a diagnostic logger. Writing
+            // pre-fill defaults to KVO was the Alarka Branch / Ela bridge
+            // regression: the early-load run saw IsSandbox=true (GameMode not yet
+            // deserialized) and persisted defaultEnableInSandbox=true entries
+            // that survived the game's later save-driven dict merge. The game's
+            // own HandleSnapshotProperties computes the same defaults at read
+            // time using the (then-reliable) IsSandbox, so no pre-fill is
+            // required for correctness.
             var initialized = InitializeMissingMapFeatureStates(manager);
             var forcedFeatureState = ForceApplyCurrentMapFeatureState(manager, reason);
             var restoredTrackGroups = RestoreDisabledTrackGroups(manager, reason);
+            var revokedOrphans = RevokeTransientlyPreEnabledOrphanGroups(manager, reason);
             FuseLog.Info(
                 $"FUSE refreshed progression runtime state package='<all>' operation='refresh progression state' " +
                 $"kind='map features' id='<all>' reason='{reason ?? "unspecified"}' " +
                 $"currentProgressionRefreshed={invokedCurrentProgression} initializedFeatureStates={initialized} " +
-                $"forcedFeatureState={forcedFeatureState} restoredDisabledTrackGroups={restoredTrackGroups}.");
+                $"forcedFeatureState={forcedFeatureState} restoredDisabledTrackGroups={restoredTrackGroups} " +
+                $"revokedTransientOrphanGroups={revokedOrphans}.");
+
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                DumpProgressionStateForDiagnostics(manager, reason);
+            }
+        }
+
+        /// <summary>
+        /// Verbose dump of every MapFeature, Section, and track-group state after
+        /// a progression refresh. Gated behind <see cref="FuseSettings.VerboseApplyReportDetails"/>
+        /// because in a busy mod set this can run into thousands of lines; useful when
+        /// diagnosing "feature unlocked when it shouldn't be" or "track group visible
+        /// when its controlling feature is locked" reports.
+        /// </summary>
+        private static void DumpProgressionStateForDiagnostics(MapFeatureManager manager, string reason)
+        {
+            try
+            {
+                var states = ReadFeatureEnables(manager);
+                var features = (manager.AvailableFeatures ?? Enumerable.Empty<MapFeature>())
+                    .Where(feature => feature != null && !string.IsNullOrWhiteSpace(feature.identifier))
+                    .ToArray();
+
+                FuseLog.Info(
+                    $"FUSE progression dump begin reason='{reason ?? "unspecified"}' features={features.Length} " +
+                    $"featureStateEntries={states?.Count ?? 0}.");
+
+                // Per-feature line: identifier, defaultSandbox, current unlock from KVO,
+                // and the track-group / area / industry references the feature gates.
+                foreach (var feature in features)
+                {
+                    var enabledInKvo = states != null && states.TryGetValue(feature.identifier, out var kv)
+                        ? kv.ToString()
+                        : "<unset>";
+                    var defaultedTo = feature.defaultEnableInSandbox && StateManager.IsSandbox ? "true" : "false";
+                    FuseLog.Info(
+                        "  feature " +
+                        $"id='{feature.identifier}' display='{feature.displayName}' " +
+                        $"defaultSandbox={feature.defaultEnableInSandbox} kvoUnlocked={enabledInKvo} " +
+                        $"defaultedTo={defaultedTo} " +
+                        $"tracksEnable=[{FormatIdList(feature.trackGroupsEnableOnUnlock)}] " +
+                        $"tracksAvail=[{FormatIdList(feature.trackGroupsAvailableOnUnlock)}] " +
+                        $"areas=[{FormatComponentIds(feature.areasEnableOnUnlock)}] " +
+                        $"industriesInclude=[{FormatComponentIds(feature.unlockIncludeIndustries)}] " +
+                        $"prereqIds=[{FormatFeatureIds(feature.prerequisites)}].");
+                }
+
+                // Per-section line: identifier, name, current Unlocked/Available, prereq sections.
+                var sections = UnityEngine.Object.FindObjectsOfType<Section>(true);
+                FuseLog.Info($"FUSE progression dump sections count={sections?.Length ?? 0}.");
+                if (sections != null)
+                {
+                    foreach (var section in sections)
+                    {
+                        if (section == null) continue;
+                        FuseLog.Info(
+                            "  section " +
+                            $"id='{section.identifier ?? string.Empty}' name='{section.name ?? string.Empty}' " +
+                            $"display='{section.displayName ?? string.Empty}' " +
+                            $"unlocked={section.Unlocked} available={section.Available} " +
+                            $"paid={section.PaidCount} fulfilled={section.FulfilledCount} " +
+                            $"prereqSections=[{FormatSectionIds(section.prerequisiteSections)}] " +
+                            $"enableFeaturesOnUnlock=[{FormatFeatureIds(section.enableFeaturesOnUnlock)}] " +
+                            $"deliveryPhases={section.deliveryPhases?.Length ?? 0}.");
+                    }
+                }
+
+                // Per-track-group line: id, current enabled/available, feature owners that
+                // would set it enabled, feature owners that would set it disabled, what
+                // its computed final state should be. Surfaces the "feature X has group Y
+                // in trackGroupsEnableOnUnlock but Y is enabled despite X being locked"
+                // pattern that took most of a debugging session to trace manually.
+                var graph = Graph.Shared;
+                if (graph != null)
+                {
+                    var enabledOwners = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                    var disabledOwners = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var feature in features)
+                    {
+                        var groups = FeatureTrackGroups(feature).ToArray();
+                        if (groups.Length == 0) continue;
+                        var enabled = IsFeatureEnabled(feature, states);
+                        var owners = enabled ? enabledOwners : disabledOwners;
+                        foreach (var groupId in groups)
+                        {
+                            if (!owners.TryGetValue(groupId, out var list))
+                            {
+                                list = new List<string>();
+                                owners[groupId] = list;
+                            }
+                            list.Add(feature.identifier);
+                        }
+                    }
+
+                    var allGroups = new HashSet<string>(enabledOwners.Keys, StringComparer.OrdinalIgnoreCase);
+                    allGroups.UnionWith(disabledOwners.Keys);
+                    FuseLog.Info($"FUSE progression dump trackGroups count={allGroups.Count}.");
+                    foreach (var groupId in allGroups.OrderBy(g => g, StringComparer.OrdinalIgnoreCase))
+                    {
+                        var isEnabledNow = graph.enabledGroupIds != null && graph.enabledGroupIds.Contains(groupId);
+                        var isAvailableNow = graph.availableGroupIds != null && graph.availableGroupIds.Contains(groupId);
+                        enabledOwners.TryGetValue(groupId, out var enabledBy);
+                        disabledOwners.TryGetValue(groupId, out var disabledBy);
+                        FuseLog.Info(
+                            "  trackGroup " +
+                            $"id='{groupId}' graphEnabled={isEnabledNow} graphAvailable={isAvailableNow} " +
+                            $"enabledBy=[{(enabledBy != null ? string.Join(",", enabledBy) : string.Empty)}] " +
+                            $"disabledBy=[{(disabledBy != null ? string.Join(",", disabledBy) : string.Empty)}].");
+                    }
+                }
+
+                FuseLog.Info("FUSE progression dump end.");
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE progression diagnostic dump failed reason='{reason ?? "unspecified"}': {ex.Message}");
+            }
         }
 
         private static void ApplyMapFeatureDefinition(MapFeature feature, FuseMapFeature definition)
         {
-            feature.displayName = string.IsNullOrWhiteSpace(definition.DisplayName) ? feature.identifier : definition.DisplayName;
-            feature.description = definition.Description ?? string.Empty;
+            // PATCH SEMANTICS: this method is invoked both when a mod creates a
+            // brand-new MapFeature AND when a mod's progression definition patches
+            // a feature that already exists in the scene (base-game features the
+            // mod selectively overrides). For the patch case we must NOT clobber
+            // fields the mod's JSON doesn't mention — the base game's existing
+            // values (e.g. gameObjectsEnableOnUnlock pointing at the actual
+            // Alarka wye / Alarka-branch track scenery) need to survive.
+            //
+            // Rule: if `definition.X == null`, preserve the live feature's X.
+            // If `definition.X` is non-null (including an explicit empty array
+            // like `"gameObjectsEnableOnUnlock": []`), apply it. This mirrors
+            // the legacy Railloader/StrangeCustoms mixinto behaviour where keys
+            // omitted from a JSON patch are left alone, and an explicit empty
+            // collection means "clear this".
+            //
+            // The Alarka regression was the trigger for this: MaconCounty's
+            // MC_Progressions.json declares a `mapFeatures` entry for
+            // alarka-jct-wye that only specifies displayName, description,
+            // defaultEnableInSandbox, prerequisites, and the track-group fields.
+            // Pre-fix, FUSE then wrote gameObjectsEnableOnUnlock = [] over the
+            // base game's wye-scenery list, leaving the wye permanently
+            // visible regardless of feature unlock state.
+            if (!string.IsNullOrWhiteSpace(definition.DisplayName))
+            {
+                feature.displayName = definition.DisplayName;
+            }
+            else if (string.IsNullOrWhiteSpace(feature.displayName))
+            {
+                feature.displayName = feature.identifier;
+            }
+            if (definition.Description != null)
+            {
+                feature.description = definition.Description;
+            }
             feature.defaultEnableInSandbox = definition.InitiallyEnabled;
-            feature.trackGroupsEnableOnUnlock = PreferExplicit(definition.TrackGroupsEnableOnUnlock, definition.GroupIds);
-            feature.trackGroupsAvailableOnUnlock = PreferExplicit(definition.TrackGroupsAvailableOnUnlock, definition.GroupIds);
-            feature.prerequisites = ResolveMapFeatures(definition.PrerequisiteFeatureIds);
-            feature.gameObjectsEnableOnUnlock = ResolveGameObjects(definition.GameObjectsEnableOnUnlock);
-            feature.areasEnableOnUnlock = ResolveAreas(definition.AreasEnableOnUnlock);
-            feature.unlockExcludeIndustries = ResolveIndustries(definition.UnlockExcludeIndustries);
-            feature.unlockIncludeIndustries = ResolveIndustries(definition.UnlockIncludeIndustries);
-            feature.unlockIncludeIndustryComponents = ResolveIndustryComponents(definition.UnlockIncludeIndustryComponents);
+            if (definition.TrackGroupsEnableOnUnlock != null || definition.GroupIds != null)
+            {
+                feature.trackGroupsEnableOnUnlock = PreferExplicit(definition.TrackGroupsEnableOnUnlock, definition.GroupIds);
+            }
+            if (definition.TrackGroupsAvailableOnUnlock != null || definition.GroupIds != null)
+            {
+                feature.trackGroupsAvailableOnUnlock = PreferExplicit(definition.TrackGroupsAvailableOnUnlock, definition.GroupIds);
+            }
+            if (definition.PrerequisiteFeatureIds != null)
+            {
+                feature.prerequisites = ResolveMapFeatures(definition.PrerequisiteFeatureIds);
+            }
+            if (definition.GameObjectsEnableOnUnlock != null)
+            {
+                feature.gameObjectsEnableOnUnlock = ResolveGameObjects(definition.GameObjectsEnableOnUnlock);
+            }
+            if (definition.AreasEnableOnUnlock != null)
+            {
+                feature.areasEnableOnUnlock = ResolveAreas(definition.AreasEnableOnUnlock);
+            }
+            if (definition.UnlockExcludeIndustries != null)
+            {
+                feature.unlockExcludeIndustries = ResolveIndustries(definition.UnlockExcludeIndustries);
+            }
+            if (definition.UnlockIncludeIndustries != null)
+            {
+                feature.unlockIncludeIndustries = ResolveIndustries(definition.UnlockIncludeIndustries);
+            }
+            if (definition.UnlockIncludeIndustryComponents != null)
+            {
+                feature.unlockIncludeIndustryComponents = ResolveIndustryComponents(definition.UnlockIncludeIndustryComponents);
+            }
             SanitizeMapFeature(feature);
+
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                FuseLog.Info(
+                    "FUSE progression map feature applied " +
+                    $"id='{feature.identifier}' display='{feature.displayName}' defaultSandbox={feature.defaultEnableInSandbox} " +
+                    $"prereqIds=[{FormatIdList(definition.PrerequisiteFeatureIds)}] " +
+                    $"prereqResolvedCount={feature.prerequisites?.Length ?? 0} " +
+                    $"tracksEnable=[{FormatIdList(feature.trackGroupsEnableOnUnlock)}] " +
+                    $"tracksAvail=[{FormatIdList(feature.trackGroupsAvailableOnUnlock)}] " +
+                    $"areas=[{FormatComponentIds(feature.areasEnableOnUnlock)}] " +
+                    $"industriesInclude=[{FormatComponentIds(feature.unlockIncludeIndustries)}] " +
+                    $"industriesExclude=[{FormatComponentIds(feature.unlockExcludeIndustries)}] " +
+                    $"gameObjects={feature.gameObjectsEnableOnUnlock?.Length ?? 0}.");
+            }
+        }
+
+        private static string FormatIdList(string[] ids)
+        {
+            return ids == null || ids.Length == 0 ? string.Empty : string.Join(",", ids);
+        }
+
+        private static string FormatComponentIds<T>(T[] components) where T : UnityEngine.Component
+        {
+            if (components == null || components.Length == 0) return string.Empty;
+            var parts = new List<string>(components.Length);
+            foreach (var component in components)
+            {
+                if (component == null) continue;
+                var idProp = component.GetType().GetProperty("identifier")?.GetValue(component) as string
+                    ?? component.GetType().GetField("identifier")?.GetValue(component) as string
+                    ?? component.name;
+                parts.Add(idProp ?? "<null>");
+            }
+            return string.Join(",", parts);
+        }
+
+        private static string FormatFeatureIds(MapFeature[] features)
+        {
+            if (features == null || features.Length == 0) return string.Empty;
+            var parts = new List<string>(features.Length);
+            foreach (var feature in features)
+            {
+                parts.Add(feature?.identifier ?? "<null>");
+            }
+            return string.Join(",", parts);
+        }
+
+        private static string FormatSectionIds(Section[] sections)
+        {
+            if (sections == null || sections.Length == 0) return string.Empty;
+            var parts = new List<string>(sections.Length);
+            foreach (var section in sections)
+            {
+                parts.Add(section?.identifier ?? "<null>");
+            }
+            return string.Join(",", parts);
         }
 
         private static void ApplyProgressionDefinition(Progression progression, FuseProgression definition, string packageId)
@@ -409,6 +784,21 @@ namespace FUSE.API
             section.disableFeaturesOnUnlock = ResolveMapFeatures(definition.DisableFeaturesOnUnlock);
             section.deliveryPhases = (definition.DeliveryPhases ?? Array.Empty<FuseDeliveryPhase>()).Select(CreateDeliveryPhase).ToArray();
             ApplyInterchangeTransfers(section, definition.InterchangeTransfers, packageId);
+
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                FuseLog.Info(
+                    "FUSE progression section applied " +
+                    $"id='{section.identifier}' display='{section.displayName}' package='{packageId ?? string.Empty}' " +
+                    $"prereqSectionIds=[{FormatIdList(definition.PrerequisiteSectionIds)}] " +
+                    $"prereqSectionsResolvedCount={section.prerequisiteSections?.Length ?? 0} " +
+                    $"prereqSectionsResolved=[{FormatSectionIds(section.prerequisiteSections)}] " +
+                    $"enableFeaturesOnUnlock=[{FormatFeatureIds(section.enableFeaturesOnUnlock)}] " +
+                    $"enableFeaturesOnAvailable=[{FormatFeatureIds(section.enableFeaturesOnAvailable)}] " +
+                    $"disableFeaturesOnUnlock=[{FormatFeatureIds(section.disableFeaturesOnUnlock)}] " +
+                    $"deliveryPhases={section.deliveryPhases?.Length ?? 0} " +
+                    $"hasSectionUnlockFeature={(sectionUnlockFeature != null)}.");
+            }
         }
 
         private static void ApplyInterchangeTransfers(Section section, IDictionary<string, string> transfers, string packageId)
@@ -1235,7 +1625,8 @@ namespace FUSE.API
             }
 
             return !string.IsNullOrWhiteSpace(id)
-                ? UnityEngine.Object.FindObjectsOfType<Section>(true).FirstOrDefault(section => section.identifier == id)
+                ? UnityEngine.Object.FindObjectsOfType<Section>(true).FirstOrDefault(section =>
+                    string.Equals(section.identifier, id, StringComparison.OrdinalIgnoreCase))
                 : null;
         }
 
@@ -1397,6 +1788,27 @@ namespace FUSE.API
             ManagerFeaturesField?.SetValue(manager, features);
         }
 
+        // Originally this method pre-filled the MapFeatureManager's "features" KVO
+        // entry with one bool per feature, using `defaultEnableInSandbox && IsSandbox`.
+        // That turns out to be a hard data-corruption bug: FUSE's post-apply refresh
+        // runs BEFORE the save's GameMode has been deserialized, so IsSandbox returns
+        // its default value of true even when the save is a Company-mode game. Every
+        // feature with `defaultEnableInSandbox=true` was being written into KVO as
+        // unlocked, and because MapFeatureManager.SetFeatureEnables is a MERGE (not a
+        // replace), those incorrect-true entries survived the later save-driven dict
+        // write whenever the save dict didn't explicitly include that feature. The
+        // visible symptom was Alarka Branch / Ela bridge etc. appearing in a save
+        // where the player hadn't unlocked them.
+        //
+        // The game itself does NOT require any pre-fill. Look at
+        // MapFeatureManager.HandleFeatureEnablesChanged: when iterating _features it
+        // falls back to `defaultEnableInSandbox && IsSandbox` at read time for any
+        // identifier missing from the dict. That computation uses the THEN-current
+        // IsSandbox, which is reliable by the time HandleSnapshotProperties runs.
+        //
+        // So this method now writes nothing. We keep the diagnostic logging because
+        // it remains useful for spotting future regressions, but the actual KVO
+        // mutation has been removed.
         private static int InitializeMissingMapFeatureStates(MapFeatureManager manager)
         {
             if (manager == null)
@@ -1429,19 +1841,36 @@ namespace FUSE.API
                 return 0;
             }
 
-            try
+            // Diagnostic-only: log what the old pre-fill WOULD have written, so we
+            // can still spot the GameMode race in logs without persisting bad state.
+            var sandbox = StateManager.IsSandbox;
+            var gameMode = StateManager.Shared?.GameMode.ToString() ?? "<null>";
+            var wouldBeUnlocked = defaults.Count(kvp => kvp.Value);
+            FuseLog.Info(
+                $"FUSE progression pre-fill skipped (write disabled; game handles defaults at read time) " +
+                $"count={defaults.Count} existingEntries={existing?.Count ?? 0} " +
+                $"totalFeatures={features.Length} wouldHaveUnlocked={wouldBeUnlocked} " +
+                $"wouldHaveLocked={defaults.Count - wouldBeUnlocked} " +
+                $"StateManager.IsSandbox={sandbox} StateManager.GameMode={gameMode}.");
+
+            if (FuseSettings.VerboseApplyReportDetails)
             {
-                manager.SetFeatureEnables(defaults);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Warning(
-                    $"FUSE progression refresh package='<all>' operation='initialize map feature state' " +
-                    $"kind='map features' id='<all>' message='{ex.Message}'.");
-                return 0;
+                FuseLog.Info("FUSE progression pre-fill (skipped) entries that would have been written:");
+                foreach (var kvp in defaults.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    var feature = features.FirstOrDefault(f =>
+                        string.Equals(f.identifier, kvp.Key, StringComparison.OrdinalIgnoreCase));
+                    var defaultSandbox = feature != null ? feature.defaultEnableInSandbox.ToString() : "<unknown>";
+                    FuseLog.Info(
+                        $"  pre-fill (skipped) id='{kvp.Key}' wouldHaveWritten={kvp.Value} " +
+                        $"feature.defaultEnableInSandbox={defaultSandbox} IsSandbox={sandbox}.");
+                }
             }
 
-            return defaults.Count;
+            // Intentionally do NOT call manager.SetFeatureEnables(defaults). The game
+            // computes missing-key defaults at read time using the current IsSandbox,
+            // which is reliable by the time graph/industry consumers read it.
+            return 0;
         }
 
         private static bool ForceApplyCurrentMapFeatureState(MapFeatureManager manager, string reason)
@@ -1484,7 +1913,20 @@ namespace FUSE.API
             var states = ReadFeatureEnables(manager);
             var enabledGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var disabledGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // Diagnostic: which features each group's enable-state attribute belongs to.
+            var enabledGroupOwners = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            var disabledGroupOwners = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
+            // IMPORTANT: only consider trackGroupsEnableOnUnlock here. The game's
+            // own MapFeatureManager.UpdateFeatureGraphGroups calls SetGroupEnabled
+            // only for those, and uses SetGroupAvailable (a separate attribute)
+            // for trackGroupsAvailableOnUnlock. If we conflate them and call
+            // SetGroupEnabled(false) on availability-only groups, we permanently
+            // remove track from the graph's enabled set — manifested as deleted
+            // base-map track once the locked feature's tracksAvail entries got
+            // disabled (Alarka regression: el-br locked → s2 + walker yanked from
+            // enabledGroupIds even though they're base map track that should only
+            // be marked unavailable).
             foreach (var feature in manager.AvailableFeatures ?? Enumerable.Empty<MapFeature>())
             {
                 if (feature == null || string.IsNullOrWhiteSpace(feature.identifier))
@@ -1492,18 +1934,47 @@ namespace FUSE.API
                     continue;
                 }
 
-                var groups = FeatureTrackGroups(feature).ToArray();
-                if (groups.Length == 0)
+                var enableGroups = (feature.trackGroupsEnableOnUnlock ?? Array.Empty<string>())
+                    .Where(g => !string.IsNullOrWhiteSpace(g))
+                    .ToArray();
+                if (enableGroups.Length == 0)
                 {
                     continue;
                 }
 
                 var enabled = IsFeatureEnabled(feature, states);
                 var target = enabled ? enabledGroups : disabledGroups;
-                foreach (var group in groups)
+                var owners = enabled ? enabledGroupOwners : disabledGroupOwners;
+                foreach (var group in enableGroups)
                 {
                     target.Add(group);
+                    if (!owners.TryGetValue(group, out var list))
+                    {
+                        list = new List<string>();
+                        owners[group] = list;
+                    }
+                    list.Add(feature.identifier);
                 }
+            }
+
+            // Conflict diagnostic: a track group with both enabled and disabled feature
+            // owners gets stripped from disabledGroups by ExceptWith below, so the group
+            // stays visible even though one or more of its owning features is locked.
+            // Always log this — it's strong evidence of a misconfigured or unintended
+            // feature unlock and was the breadcrumb we needed during the Alarka Branch
+            // investigation.
+            foreach (var conflict in disabledGroups.Intersect(enabledGroups))
+            {
+                var enabledBy = enabledGroupOwners.TryGetValue(conflict, out var en)
+                    ? string.Join(",", en)
+                    : "<none>";
+                var disabledBy = disabledGroupOwners.TryGetValue(conflict, out var di)
+                    ? string.Join(",", di)
+                    : "<none>";
+                FuseLog.Warning(
+                    $"FUSE progression refresh track-group conflict group='{conflict}' " +
+                    $"enabledBy=[{enabledBy}] disabledBy=[{disabledBy}] reason='{reason ?? "unspecified"}' " +
+                    $"effect='group stays enabled because at least one owner is unlocked'.");
             }
 
             disabledGroups.ExceptWith(enabledGroups);
@@ -1527,6 +1998,94 @@ namespace FUSE.API
             }
 
             return changed;
+        }
+
+        /// <summary>
+        /// Disables track groups that <see cref="FUSE.Loading.FuseModLoader.PreEnableInitialTrackGroups"/>
+        /// flipped into <c>Graph.enabledGroupIds</c> purely so segment binding
+        /// would not cull mod-added segments. If no <see cref="MapFeature"/>
+        /// claims the group via <c>trackGroupsEnableOnUnlock</c> or
+        /// <c>trackGroupsAvailableOnUnlock</c>, it is an orphan — keeping it
+        /// enabled would let mod-added segments in that group render
+        /// permanently with no progression control. Run as the last step of
+        /// <see cref="RefreshRuntimeStateAfterApply"/>, AFTER the game's
+        /// HandleFeatureEnablesChanged has set per-feature enabled/disabled
+        /// state for groups that DO have an owner.
+        /// </summary>
+        private static int RevokeTransientlyPreEnabledOrphanGroups(MapFeatureManager manager, string reason)
+        {
+            var graph = Graph.Shared;
+            if (manager == null || graph == null)
+            {
+                return 0;
+            }
+
+            string[] candidates;
+            lock (_transientlyPreEnabledLock)
+            {
+                if (_transientlyPreEnabledTrackGroups.Count == 0)
+                {
+                    return 0;
+                }
+                candidates = new string[_transientlyPreEnabledTrackGroups.Count];
+                _transientlyPreEnabledTrackGroups.CopyTo(candidates);
+                _transientlyPreEnabledTrackGroups.Clear();
+            }
+
+            var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var feature in manager.AvailableFeatures ?? Enumerable.Empty<MapFeature>())
+            {
+                if (feature == null)
+                {
+                    continue;
+                }
+                foreach (var group in feature.trackGroupsEnableOnUnlock ?? Array.Empty<string>())
+                {
+                    if (!string.IsNullOrWhiteSpace(group))
+                    {
+                        claimed.Add(group);
+                    }
+                }
+                foreach (var group in feature.trackGroupsAvailableOnUnlock ?? Array.Empty<string>())
+                {
+                    if (!string.IsNullOrWhiteSpace(group))
+                    {
+                        claimed.Add(group);
+                    }
+                }
+            }
+
+            var revoked = 0;
+            foreach (var groupId in candidates)
+            {
+                if (claimed.Contains(groupId))
+                {
+                    // A feature owns this group; the game's HandleFeatureEnablesChanged
+                    // is in charge of toggling its enabled state per progression.
+                    continue;
+                }
+
+                try
+                {
+                    if (graph.SetGroupEnabled(groupId, false))
+                    {
+                        revoked++;
+                        FuseLog.Info(
+                            $"FUSE revoked transient pre-enable for orphan track group '{groupId}' " +
+                            $"reason='{reason ?? "unspecified"}' " +
+                            "(no MapFeature claims this group via tracksEnable/tracksAvail; " +
+                            "segment-only group is now correctly hidden).");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning(
+                        $"FUSE progression refresh package='<all>' operation='revoke transient orphan track group' " +
+                        $"kind='track group' id='{groupId}' reason='{reason ?? "unspecified"}' message='{ex.Message}'.");
+                }
+            }
+
+            return revoked;
         }
 
         private static bool IsFeatureEnabled(MapFeature feature, IDictionary<string, bool> states)
