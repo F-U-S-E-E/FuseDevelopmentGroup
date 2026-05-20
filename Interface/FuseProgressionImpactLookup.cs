@@ -255,17 +255,23 @@ namespace FUSE.Interface
             string sourceKind,
             string sourceId,
             string effect,
-            string[] targets,
+            FuseStringPatch targets,
             string state = null)
         {
-            if (targets == null || targets.Length == 0 || candidates.Count == 0)
+            // Use EffectiveAdditions — the impact lookup is asking
+            // "does this patch source advertise any of the candidate
+            // ids in its add-list?" The patch dict's false (removal)
+            // entries aren't an "impact" in this sense, so they're
+            // intentionally excluded.
+            var ids = targets?.EffectiveAdditions;
+            if (ids == null || ids.Length == 0 || candidates.Count == 0)
             {
                 return;
             }
 
-            for (var index = 0; index < targets.Length; index++)
+            for (var index = 0; index < ids.Length; index++)
             {
-                var target = targets[index];
+                var target = ids[index];
                 if (string.IsNullOrWhiteSpace(target))
                 {
                     continue;

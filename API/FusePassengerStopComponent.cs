@@ -157,7 +157,37 @@ namespace FUSE.API
             passengerStop.passengerLoad = PassengerLoad;
             passengerStop.basePopulation = BasePopulation;
             passengerStop.timetableCode = string.IsNullOrWhiteSpace(TimetableCode) ? stopIdentifier : TimetableCode;
-            passengerStop.ProgressionDisabled = ProgressionDisabled;
+
+            // ProgressionDisabled inheritance: when MapFeatureManager.UpdateFeatureForUnlocked
+            // walks a feature's areasEnableOnUnlock, it iterates `a.Industries`
+            // and `a.GetComponentsInChildren<PassengerStop>()` and sets
+            // ProgressionDisabled on each — but it never touches the
+            // intermediate IndustryComponent layer (us). If FUSE refreshes the
+            // PassengerStop AFTER that pass, sourcing the flag from our own
+            // (untouched, default-false) `ProgressionDisabled` would clear the
+            // game's correct decision. Prefer the parent Industry's flag,
+            // which IS managed by the game's feature progression pass —
+            // falling back to our own field only when the industry lookup
+            // fails.
+            //
+            // VERIFY-NOT-GUESS: this is a hypothesis. The verbose log below
+            // captures the actual values so the hypothesis can be confirmed
+            // (or refuted) from the log, not from reading code.
+            var parentIndustry = GetComponentInParent<Industry>();
+            var componentDisabled = ProgressionDisabled;
+            var industryDisabled = parentIndustry != null ? parentIndustry.ProgressionDisabled : false;
+            var chosenDisabled = parentIndustry != null ? industryDisabled : componentDisabled;
+            passengerStop.ProgressionDisabled = chosenDisabled;
+
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                FuseLog.Info(
+                    $"FUSE diag TryRefreshPassengerStop ProgressionDisabled decision id='{stopIdentifier}' " +
+                    $"componentId='{Identifier ?? "<none>"}' componentDisabled={componentDisabled} " +
+                    $"parentIndustry='{(parentIndustry != null ? parentIndustry.identifier : "<none>")}' " +
+                    $"industryDisabled={industryDisabled} " +
+                    $"wrote passengerStop.ProgressionDisabled={chosenDisabled}.");
+            }
 
             var boundSpans = ResolveBoundSpans().ToArray();
             stopObject.name = string.IsNullOrWhiteSpace(name) ? stopIdentifier : name;
@@ -430,7 +460,26 @@ namespace FUSE.API
                 .Where(stop => stop != null)
                 .ToArray();
 
+            var previousValue = AllPassengerStopsField?.GetValue(null) as PassengerStop[];
             AllPassengerStopsField?.SetValue(null, stops);
+
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                try
+                {
+                    var disabledCount = stops.Count(s => s != null && s.ProgressionDisabled);
+                    var enabledCount = stops.Length - disabledCount;
+                    FuseLog.Info(
+                        $"FUSE diag PassengerStop._allPassengerStops cache refreshed " +
+                        $"previousCount={previousValue?.Length ?? 0} newCount={stops.Length} " +
+                        $"newEnabled={enabledCount} newDisabled={disabledCount}.");
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning($"FUSE diag cache refresh log failed: {ex.Message}");
+                }
+            }
+
             return stops.Length;
         }
     }

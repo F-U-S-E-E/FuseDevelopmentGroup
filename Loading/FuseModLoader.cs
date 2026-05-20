@@ -1484,17 +1484,6 @@ namespace FUSE.Loading
                     if (graph.SetGroupEnabled(groupId, true))
                     {
                         changedCount++;
-                        // Remember this group as "transiently enabled by FUSE solely
-                        // to satisfy graph-rebuild segment binding". If, after
-                        // progression apply + refresh, no MapFeature claims the
-                        // group via tracksEnable / tracksAvail, the progression
-                        // refresh will revoke this transient enable so segments
-                        // sitting in an orphan group (e.g. the s3a base-map
-                        // siding tracks the MaconCounty mod adds with no feature
-                        // controlling them) don't render permanently. Without
-                        // this, the Alarka branch / Alarka Jct wye tracks stayed
-                        // visible because their groupIds were segment-only.
-                        FUSE.API.ProgressionAPI.RecordTransientlyPreEnabledTrackGroup(groupId);
                     }
                     enabledCount++;
                 }
@@ -1504,6 +1493,22 @@ namespace FUSE.Loading
                         $"FUSE pre-enable track group failed groupId='{groupId}' " +
                         $"message='{ex.Message}'.");
                 }
+            }
+
+            // Hand the segment-referenced groups to ProgressionAPI so the
+            // refresh tail can revoke any of them that no MapFeature ends up
+            // claiming. We deliberately record EVERY segment-derived groupId,
+            // not just the ones whose SetGroupEnabled flipped — base-scene
+            // pre-baked enabledGroupIds entries (e.g. the MaconCounty mod's
+            // s3a base-map siding tracks at Alarka Jct, which the base scene
+            // already has in enabledGroupIds so PreEnable returns changed=
+            // false) would otherwise stay enabled with no progression
+            // control and render permanently. Groups also referenced by a
+            // MapFeature's tracksEnable / tracksAvail are NOT revoked; the
+            // game's HandleFeatureEnablesChanged still owns those.
+            foreach (var groupId in groupsFromSegments)
+            {
+                FUSE.API.ProgressionAPI.RecordTransientlyPreEnabledTrackGroup(groupId);
             }
 
             FuseLog.Info(
@@ -1543,8 +1548,8 @@ namespace FUSE.Loading
                     {
                         continue;
                     }
-                    AddNonEmpty(sink, feature.TrackGroupsEnableOnUnlock);
-                    AddNonEmpty(sink, feature.GroupIds);
+                    AddNonEmpty(sink, feature.TrackGroupsEnableOnUnlock?.EffectiveAdditions);
+                    AddNonEmpty(sink, feature.GroupIds?.EffectiveAdditions);
                 }
             }
 
@@ -1558,7 +1563,7 @@ namespace FUSE.Loading
                     }
                     if (HasNoPrerequisites(section))
                     {
-                        AddNonEmpty(sink, section.TrackGroupsEnableOnUnlock);
+                        AddNonEmpty(sink, section.TrackGroupsEnableOnUnlock?.EffectiveAdditions);
                     }
                 }
             }
@@ -1579,7 +1584,7 @@ namespace FUSE.Loading
                         }
                         if (HasNoPrerequisites(section))
                         {
-                            AddNonEmpty(sink, section.TrackGroupsEnableOnUnlock);
+                            AddNonEmpty(sink, section.TrackGroupsEnableOnUnlock?.EffectiveAdditions);
                         }
                     }
                 }
@@ -1588,8 +1593,20 @@ namespace FUSE.Loading
 
         private static bool HasNoPrerequisites(FuseSection section)
         {
-            return (section.PrerequisiteSections == null || section.PrerequisiteSections.Length == 0)
-                && (section.PrerequisiteSectionIds == null || section.PrerequisiteSectionIds.Length == 0);
+            // "Has no prerequisites" here means "the authored patch does not
+            // add any prereq ids." If the patch removes ids (false-valued
+            // entries) we still count it as "no prereqs added" — the goal
+            // is to decide whether this section's TrackGroupsEnableOnUnlock
+            // should be considered an initially-enabled track group.
+            return PatchHasNoAdditions(section.PrerequisiteSections)
+                && PatchHasNoAdditions(section.PrerequisiteSectionIds);
+        }
+
+        private static bool PatchHasNoAdditions(FuseStringPatch patch)
+        {
+            if (patch == null || !patch.HasValue) return true;
+            var additions = patch.EffectiveAdditions;
+            return additions == null || additions.Length == 0;
         }
 
         private static void AddNonEmpty(HashSet<string> sink, string[] values)

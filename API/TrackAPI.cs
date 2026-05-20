@@ -1065,16 +1065,33 @@ namespace FUSE.API
                 }
 
                 marker.enabled = false;
-                if (marker.gameObject != null && marker.gameObject.activeSelf)
-                {
-                    marker.gameObject.SetActive(false);
-                }
+
+                // Don't deactivate the GameObject — that kills every other
+                // component on it. TrackMarker is frequently attached to
+                // scenery (water columns, diesel fueling stands, coaling
+                // towers) whose KeyValueBoolAnimator pipeline relies on the
+                // GameObject staying active in the hierarchy. The original
+                // implementation called SetActive(false) here as a "tidy up"
+                // step, but it had the side effect of breaking every loader
+                // animation whose track marker happened to be invalid after
+                // a mod's track edits — e.g. 'Water Column Bryson West
+                // Siding', 'East Whittier Diesel Fueling Stand'. The
+                // KeyValueBoolAnimator inside the same GameObject can't
+                // observe its parent KVO if the GameObject is inactive in
+                // hierarchy, so the loader never rotates / opens.
+                //
+                // If a mod genuinely wants to hide a piece of scenery the
+                // FuseWorldSuppressor pipeline handles that explicitly
+                // (e.g. ALWRoundhouseReplacement suppressing the Bryson
+                // turntable roundhouse, Katers.BrysonRepairTrack
+                // suppressing the Bryson Water Tower). Marker invalidity
+                // alone is not a suppression signal.
 
                 disabled++;
                 FuseLog.Info(
                     $"FUSE disabled invalid TrackMarker operation='track marker cleanup' " +
                     $"id='{marker.id ?? string.Empty}' name='{marker.name ?? string.Empty}' " +
-                    $"reason='{reason ?? "unspecified"}'.");
+                    $"reason='{reason ?? "unspecified"}' (marker behaviour disabled; GameObject kept active so attached scenery animators still work).");
             }
 
             if (disabled > 0)

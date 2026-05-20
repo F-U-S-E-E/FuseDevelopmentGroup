@@ -67,8 +67,40 @@ namespace FUSE.Patches
         {
             builder.AddField("Passengers", () => car.PassengerCountString(car.GetPassengerMarker()), UIPanelBuilder.Frequency.Fast);
 
-            var allStops = PassengerStop.FindAll()
+            // Snapshot every PassengerStop the FindAll cache sees and what
+            // the filter does with it. Verbose-only — this fires every time
+            // the player opens or refreshes a passenger car panel, so it
+            // would be noisy at INFO without the gate.
+            var allStopsRaw = PassengerStop.FindAll()
                 .Where(stop => stop != null && !string.IsNullOrWhiteSpace(stop.identifier))
+                .ToArray();
+
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                try
+                {
+                    var passed = allStopsRaw.Count(s => !s.ProgressionDisabled);
+                    var filtered = allStopsRaw.Length - passed;
+                    FuseLog.Info(
+                        $"FUSE diag passenger panel populate car='{car?.id ?? "<null>"}' " +
+                        $"cacheTotal={allStopsRaw.Length} passedFilter={passed} filteredOut={filtered}.");
+                    foreach (var s in allStopsRaw.OrderBy(x => x.identifier, StringComparer.OrdinalIgnoreCase))
+                    {
+                        var industry = s.GetComponentInParent<Model.Ops.Industry>(true);
+                        FuseLog.Info(
+                            $"  panel diag id='{s.identifier}' progressionDisabled={s.ProgressionDisabled} " +
+                            $"industry='{(industry != null ? industry.identifier : "<none>")}' " +
+                            $"industryProgDisabled={(industry != null && industry.ProgressionDisabled)} " +
+                            $"willShow={!s.ProgressionDisabled}.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning($"FUSE diag passenger panel snapshot failed: {ex.Message}");
+                }
+            }
+
+            var allStops = allStopsRaw
                 .Where(stop => !stop.ProgressionDisabled)
                 .ToArray();
 

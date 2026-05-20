@@ -277,15 +277,17 @@ namespace FUSE.Migrations
                     continue;
                 }
 
-                feature.GroupIds = feature.GroupIds ?? Array.Empty<string>();
-                feature.PrerequisiteFeatureIds = feature.PrerequisiteFeatureIds ?? Array.Empty<string>();
-                feature.TrackGroupsEnableOnUnlock = feature.TrackGroupsEnableOnUnlock ?? Array.Empty<string>();
-                feature.TrackGroupsAvailableOnUnlock = feature.TrackGroupsAvailableOnUnlock ?? Array.Empty<string>();
-                feature.AreasEnableOnUnlock = feature.AreasEnableOnUnlock ?? Array.Empty<string>();
-                feature.GameObjectsEnableOnUnlock = feature.GameObjectsEnableOnUnlock ?? Array.Empty<string>();
-                feature.UnlockIncludeIndustries = feature.UnlockIncludeIndustries ?? Array.Empty<string>();
-                feature.UnlockExcludeIndustries = feature.UnlockExcludeIndustries ?? Array.Empty<string>();
-                feature.UnlockIncludeIndustryComponents = feature.UnlockIncludeIndustryComponents ?? Array.Empty<string>();
+                // Intentionally do NOT coerce null patches to "empty set"
+                // here. Under the new FuseStringPatch contract, null means
+                // "field omitted from the authored JSON → keep the live
+                // runtime value untouched at apply time," while an empty
+                // set ([]) means "explicit replace with empty." The
+                // previous migration normalization that mapped null to
+                // Array.Empty<string>() collapsed both shapes into the
+                // latter — silently destroying authorial intent for mod
+                // patches that only wanted to change one or two fields.
+                // Downstream consumers (ApplyMapFeatureDefinition,
+                // validation, impact lookup) are already null-safe.
             }
         }
 
@@ -321,16 +323,8 @@ namespace FUSE.Migrations
 
             section.PrerequisiteSectionIds = MergeAliasArray(section.PrerequisiteSectionIds, section.PrerequisiteSections);
             section.PrerequisiteSections = null;
-            section.EnableFeaturesOnUnlock = section.EnableFeaturesOnUnlock ?? Array.Empty<string>();
-            section.DisableFeaturesOnUnlock = section.DisableFeaturesOnUnlock ?? Array.Empty<string>();
-            section.EnableFeaturesOnAvailable = section.EnableFeaturesOnAvailable ?? Array.Empty<string>();
-            section.UnlockIncludeIndustries = section.UnlockIncludeIndustries ?? Array.Empty<string>();
-            section.UnlockExcludeIndustries = section.UnlockExcludeIndustries ?? Array.Empty<string>();
-            section.UnlockIncludeIndustryComponents = section.UnlockIncludeIndustryComponents ?? Array.Empty<string>();
-            section.AreasEnableOnUnlock = section.AreasEnableOnUnlock ?? Array.Empty<string>();
-            section.GameObjectsEnableOnUnlock = section.GameObjectsEnableOnUnlock ?? Array.Empty<string>();
-            section.TrackGroupsEnableOnUnlock = section.TrackGroupsEnableOnUnlock ?? Array.Empty<string>();
-            section.TrackGroupsAvailableOnUnlock = section.TrackGroupsAvailableOnUnlock ?? Array.Empty<string>();
+            // Patch fields intentionally left null when omitted — see
+            // matching note in NormalizeMapFeature above.
             section.InterchangeTransfers = NormalizeInterchangeTransfers(section.InterchangeTransfers);
             section.DeliveryPhases = section.DeliveryPhases ?? Array.Empty<FuseDeliveryPhase>();
 
@@ -591,6 +585,25 @@ namespace FUSE.Migrations
                 .Concat(alias ?? Array.Empty<string>())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
+        }
+
+        /// <summary>
+        /// Patch-aware alias merge: when a section / map-feature ships the
+        /// same data under two property names (e.g. legacy
+        /// <c>PrerequisiteSections</c> alongside the canonical
+        /// <c>PrerequisiteSectionIds</c>) and exactly one of them is
+        /// populated, surface that one. If both are populated, the explicit
+        /// preferred wins — we don't attempt a structural merge across two
+        /// patches because that would conflate "this is the value" with
+        /// "this is a per-id adjustment to whatever the value was."
+        /// </summary>
+        private static FuseStringPatch MergeAliasArray(FuseStringPatch preferred, FuseStringPatch alias)
+        {
+            if (preferred != null && preferred.HasValue)
+            {
+                return preferred;
+            }
+            return alias;
         }
 
         private static void NormalizeTrackLocation(FuseTrackLocation location)

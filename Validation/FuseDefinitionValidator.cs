@@ -932,6 +932,15 @@ namespace FUSE.Validation
             }
         }
 
+        private static void ValidateNoBlank(ValidationResult result, string path, FuseStringPatch values, string code)
+        {
+            // Validate against the additions-only view — the patch dict's
+            // false-valued removal entries are not "blank values that ended
+            // up in the resulting list", they're explicit removals that
+            // should be allowed.
+            ValidateNoBlank(result, path, (IEnumerable<string>)values?.EffectiveAdditions, code);
+        }
+
         private static void ValidateNoBlank(ValidationResult result, string path, IEnumerable<string> values, string code)
         {
             if (values == null)

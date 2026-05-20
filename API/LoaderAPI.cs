@@ -119,36 +119,76 @@ namespace FUSE.API
                 throw new InvalidOperationException($"Loader prefab '{definition.Prefab}' was not found.");
             }
 
-            var instance = UnityEngine.Object.Instantiate(prefab, loader.transform);
-            instance.SetActive(false);
-            instance.name = "prefab";
-            instance.transform.localPosition = Vector3.zero;
-            instance.transform.localEulerAngles = Vector3.zero;
-
-            var marker = instance.GetComponent<TrackMarker>();
-            if (marker != null)
+            // CRITICAL: deactivate the loader parent before Instantiate so the
+            // clone's GlobalKeyValueObject.OnEnable does NOT fire while we
+            // still have the prefab's original globalObjectId. The vanilla
+            // base-scene loader prefabs (water columns, fueling stands,
+            // coaling towers) ship with globalObjectId values like
+            // `wh-e-water`, `whittier-coaling-tower`, etc. If we instantiate
+            // under an active parent, OnEnable runs immediately and registers
+            // the clone under that same globalObjectId — OVERWRITING the
+            // original scene loader's registration in StateManager — and the
+            // subsequent SetActive(false) here unregisters it. The original
+            // never re-registers, so clicks on the player-visible water
+            // column produce "HandlePropertyChange: Unknown object
+            // wh-e-water" in Player.log and the loader animation never
+            // plays. The fix: keep the parent inactive while we rewrite the
+            // globalObjectId, only then re-activate so OnEnable runs with
+            // the unique id.
+            var wasLoaderActive = loader.activeSelf;
+            if (wasLoaderActive)
             {
-                marker.enabled = false;
+                loader.SetActive(false);
             }
 
-            var global = instance.GetComponent<GlobalKeyValueObject>();
-            if (global != null)
+            try
             {
-                global.globalObjectId = id + ".loader";
-            }
+                var instance = UnityEngine.Object.Instantiate(prefab, loader.transform);
+                // Belt-and-suspenders — even though the parent is inactive,
+                // mark the clone inactive too in case any of our follow-up
+                // mutations would otherwise trigger OnEnable.
+                instance.SetActive(false);
+                instance.name = "prefab";
+                instance.transform.localPosition = Vector3.zero;
+                instance.transform.localEulerAngles = Vector3.zero;
 
-            foreach (var renderer in instance.GetComponentsInChildren<Renderer>(true))
+                var marker = instance.GetComponent<TrackMarker>();
+                if (marker != null)
+                {
+                    marker.enabled = false;
+                }
+
+                var global = instance.GetComponent<GlobalKeyValueObject>();
+                if (global != null)
+                {
+                    global.globalObjectId = id + ".loader";
+                }
+
+                foreach (var renderer in instance.GetComponentsInChildren<Renderer>(true))
+                {
+                    renderer.enabled = true;
+                }
+
+                var requiresIndustry = !string.IsNullOrWhiteSpace(definition.IndustryId);
+                var industry = AttachIndustry(instance, definition.IndustryId);
+                FusePrefabSanitizer.SanitizeLoader(instance, id, industry, requiresIndustry).Log($"FUSE loader '{id}'");
+                instance.SetActive(true);
+                FuseLoaderRuntimeIndex.Instance.Set(id, loader);
+                MapAPI.RefreshAttachedMapMasks(loader, $"loader '{id}' apply");
+                FusePrefabSanitizer.ValidateLoaderPostBind(loader, id, industry, requiresIndustry).Log($"FUSE loader '{id}' post-bind");
+            }
+            finally
             {
-                renderer.enabled = true;
+                if (wasLoaderActive)
+                {
+                    // Reactivating the parent here is what finally fires
+                    // GlobalKeyValueObject.OnEnable on the clone — with the
+                    // correct unique `<id>.loader` globalObjectId — so the
+                    // clone registers cleanly without disturbing whichever
+                    // scene loader owns the same vanilla prefab's id.
+                    loader.SetActive(true);
+                }
             }
-
-            var requiresIndustry = !string.IsNullOrWhiteSpace(definition.IndustryId);
-            var industry = AttachIndustry(instance, definition.IndustryId);
-            FusePrefabSanitizer.SanitizeLoader(instance, id, industry, requiresIndustry).Log($"FUSE loader '{id}'");
-            instance.SetActive(true);
-            FuseLoaderRuntimeIndex.Instance.Set(id, loader);
-            MapAPI.RefreshAttachedMapMasks(loader, $"loader '{id}' apply");
-            FusePrefabSanitizer.ValidateLoaderPostBind(loader, id, industry, requiresIndustry).Log($"FUSE loader '{id}' post-bind");
         }
 
         private static Industry AttachIndustry(GameObject instance, string industryId)
