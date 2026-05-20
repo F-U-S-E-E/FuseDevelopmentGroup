@@ -61,32 +61,38 @@ jobs:
           path: FUSE.Tests/TestResults/test-results.trx
           retention-days: 7
 
-      # --- PR-only: build a PR-stamped Release zip + sticky-comment with download link ---
+      # --- Build a stamped Release zip and attach it as a workflow artifact.
+      # Runs on both PR and push events; PR runs additionally get a sticky comment.
 
-      - name: Compute PR build identity
-        if: github.event_name == 'pull_request'
-        id: pr_version
+      - name: Compute build identity
+        id: build_id
         shell: powershell
         run: |
-          $sha = "${{ github.event.pull_request.head.sha }}".Substring(0, 7)
-          $prNumber = "${{ github.event.pull_request.number }}"
-          $version = "0.0.0-pr$prNumber.$sha"
-          $archive = "FUSE-pr$prNumber-$sha.zip"
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            $sha = "${{ github.event.pull_request.head.sha }}".Substring(0, 7)
+            $prNumber = "${{ github.event.pull_request.number }}"
+            $version = "0.0.0-pr$prNumber.$sha"
+            $archive = "FUSE-pr$prNumber-$sha.zip"
+          }
+          else {
+            $sha = "${{ github.sha }}".Substring(0, 7)
+            $branch = "${{ github.ref_name }}" -replace '[^A-Za-z0-9.-]', '-'
+            $version = "0.0.0-$branch.$sha"
+            $archive = "FUSE-$branch-$sha.zip"
+          }
           "version=$version" >> $env:GITHUB_OUTPUT
           "archive=$archive" >> $env:GITHUB_OUTPUT
           "short_sha=$sha" >> $env:GITHUB_OUTPUT
 
-      - name: Rebuild Release with PR-stamped version
-        if: github.event_name == 'pull_request'
-        run: dotnet build FUSE.csproj -c Release -p:ModVersion=${{ steps.pr_version.outputs.version }}
+      - name: Rebuild Release with stamped version
+        run: dotnet build FUSE.csproj -c Release -p:ModVersion=${{ steps.build_id.outputs.version }}
 
-      - name: Package PR mod zip
-        if: github.event_name == 'pull_request'
+      - name: Package mod zip
         shell: powershell
         run: |
-          $stagingRoot = Join-Path $PWD "staging-pr"
+          $stagingRoot = Join-Path $PWD "staging-ci"
           $modFolder = Join-Path $stagingRoot "FUSE"
-          $archivePath = Join-Path $PWD "${{ steps.pr_version.outputs.archive }}"
+          $archivePath = Join-Path $PWD "${{ steps.build_id.outputs.archive }}"
 
           if (Test-Path $stagingRoot) { Remove-Item $stagingRoot -Recurse -Force }
           if (Test-Path $archivePath) { Remove-Item $archivePath -Force }
@@ -101,13 +107,12 @@ jobs:
 
           Compress-Archive -Path $modFolder -DestinationPath $archivePath -CompressionLevel Optimal
 
-      - name: Upload PR build artifact
-        if: github.event_name == 'pull_request'
-        id: pr_upload
+      - name: Upload build artifact
+        id: build_upload
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.pr_version.outputs.archive }}
-          path: ${{ steps.pr_version.outputs.archive }}
+          name: ${{ steps.build_id.outputs.archive }}
+          path: ${{ steps.build_id.outputs.archive }}
           retention-days: 30
           if-no-files-found: error
 
@@ -124,12 +129,12 @@ jobs:
 
             | Field | Value |
             |-------|-------|
-            | Version | `${{ steps.pr_version.outputs.version }}` |
+            | Version | `${{ steps.build_id.outputs.version }}` |
             | Commit | `${{ github.event.pull_request.head.sha }}` |
-            | Archive | `${{ steps.pr_version.outputs.archive }}` |
+            | Archive | `${{ steps.build_id.outputs.archive }}` |
             | Run | [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
 
-            **[⬇ Download from this workflow run](${{ steps.pr_upload.outputs.artifact-url }})**
+            **[⬇ Download from this workflow run](${{ steps.build_upload.outputs.artifact-url }})**
 
             ### Install
 
