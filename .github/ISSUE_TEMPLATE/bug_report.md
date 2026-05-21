@@ -1,7 +1,11 @@
-﻿---
+---
 name: Bug report
 about: Create a report to help us improve
+title: "[BUG]"
 labels: bug
+assignees: ''
+type: Bug
+
 ---
 
 > ⚠️ **Please ensure you have followed the official [troubleshooting guide](https://github.com/F-U-S-E-E/FuseDevelopmentGroup/blob/main/docs/TROUBLESHOOTING.md) before submitting this report.**
