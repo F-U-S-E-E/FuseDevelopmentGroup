@@ -395,7 +395,17 @@ namespace FUSE.Loading
                     "progressions",
                     "mapFeatures",
                     "simpleGraphs",
-                    "spawnPoint"
+                    "spawnPoint",
+                    // game-migrations payload. Legacy mods (e.g. mods that
+                    // renamed an industry id between versions) ship a
+                    // separate migrations.json referenced from
+                    // <c>mixintos["game-migrations"]</c>. The file's only
+                    // top-level keys are <c>waybillDestinations</c> and
+                    // <c>properties</c>, so without these in the recognized
+                    // set the file gets dropped silently and the mod can't
+                    // forward-port older saves.
+                    "waybillDestinations",
+                    "WaybillDestinations"
                 };
 
                 return dataKeys.Any(key => source[key] != null);
@@ -809,6 +819,93 @@ namespace FUSE.Loading
             }
 
             ConvertProgression(source, root);
+            ConvertGameMigrations(source, root);
+        }
+
+        // Carry the legacy "game-migrations" mixinto payload through to
+        // <c>extensions.gameMigrations</c>. The legacy file format has two
+        // top-level dictionaries:
+        //   waybillDestinations: "<oldIndustry>.<oldLoadOrSlot>" ->
+        //                        "<newIndustry>.<newLoadOrSlot>"
+        //       — rewrite old waybill targets that no longer exist (the
+        //         author renamed an industry or its slot).
+        //   properties:          "<oldIndustry>" -> "<newIndustry>"
+        //       — rewrite saved property-bag keys keyed by industry id.
+        // The actual application of these renames to a loaded save runs in
+        // <c>FuseGameMigrationApplier</c>; this method just captures the
+        // data so the runtime can find it.
+        private static void ConvertGameMigrations(JObject source, JObject root)
+        {
+            if (source == null || root == null)
+            {
+                return;
+            }
+
+            var waybillSource = source["waybillDestinations"] as JObject ??
+                                source["WaybillDestinations"] as JObject;
+            var propertiesSource = source["properties"] as JObject ??
+                                   source["Properties"] as JObject;
+            if (waybillSource == null && propertiesSource == null)
+            {
+                return;
+            }
+
+            var extensions = root["extensions"] as JObject;
+            if (extensions == null)
+            {
+                extensions = new JObject();
+                root["extensions"] = extensions;
+            }
+
+            if (!(extensions["gameMigrations"] is JObject migrations))
+            {
+                migrations = new JObject();
+                extensions["gameMigrations"] = migrations;
+            }
+
+            if (waybillSource != null)
+            {
+                var waybillTarget = migrations["waybillDestinations"] as JObject ?? new JObject();
+                foreach (var property in waybillSource.Properties())
+                {
+                    if (property.Value == null || property.Value.Type == JTokenType.Null)
+                    {
+                        continue;
+                    }
+
+                    var value = property.Value.ToString();
+                    if (string.IsNullOrWhiteSpace(value))
+                    {
+                        continue;
+                    }
+
+                    waybillTarget[property.Name] = value.Trim();
+                }
+
+                migrations["waybillDestinations"] = waybillTarget;
+            }
+
+            if (propertiesSource != null)
+            {
+                var propertiesTarget = migrations["properties"] as JObject ?? new JObject();
+                foreach (var property in propertiesSource.Properties())
+                {
+                    if (property.Value == null || property.Value.Type == JTokenType.Null)
+                    {
+                        continue;
+                    }
+
+                    var value = property.Value.ToString();
+                    if (string.IsNullOrWhiteSpace(value))
+                    {
+                        continue;
+                    }
+
+                    propertiesTarget[property.Name] = value.Trim();
+                }
+
+                migrations["properties"] = propertiesTarget;
+            }
         }
 
         private static void ConvertDictionary(JToken source, JObject target, JArray removals, Func<JToken, JToken> converter)
@@ -2550,11 +2647,98 @@ namespace FUSE.Loading
         internal static JObject ReadLegacyObject(string path)
         {
             var text = File.ReadAllText(path);
+            text = StripJsonControlCharacters(text, path);
             text = StripJsonComments(text);
             text = RemoveTrailingCommas(text);
             text = CloseUnbalancedJson(text);
             text = RemoveTrailingCommas(text);
             return JObject.Parse(text);
+        }
+
+        // Drop bare ASCII control characters (other than tab/LF/CR) that
+        // occasionally slip into hand-edited legacy mod manifests — e.g. a
+        // paste from a terminal that included an embedded SYN, or a
+        // Ctrl+V Ctrl+V verbatim-insert slip in vim. Newtonsoft rejects
+        // those when they show up inside a string, which would otherwise
+        // sink the entire legacy mod.
+        //
+        // This leniency is INTENTIONALLY scoped to the legacy pipeline.
+        // Native FUSE definitions (*.fuse.json) load through
+        // <see cref="FUSE.Serialization.FuseSerializer.FromJson"/>, which
+        // hands the text straight to a strict JsonConvert and surfaces
+        // Newtonsoft's parser error with line/column. Authors of new
+        // FUSE addons are expected to format their JSON correctly; we
+        // only smooth over breakage in the legacy ecosystem so that
+        // years-old packages keep loading.
+        //
+        // When we do strip anything, log a loud warning that names the
+        // file, the count, and the first offending byte+offset so the
+        // author can find and fix it. Silently swallowing the byte
+        // would let the authoring bug propagate forever.
+        private static string StripJsonControlCharacters(string text, string path)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return text;
+            }
+
+            System.Text.StringBuilder builder = null;
+            var stripped = 0;
+            var firstOffset = -1;
+            var firstByte = (char)0;
+            for (var index = 0; index < text.Length; index++)
+            {
+                var current = text[index];
+                if (current >= 0x20 || current == '\t' || current == '\n' || current == '\r')
+                {
+                    builder?.Append(current);
+                    continue;
+                }
+
+                if (builder == null)
+                {
+                    builder = new System.Text.StringBuilder(text.Length);
+                    builder.Append(text, 0, index);
+                }
+
+                if (stripped == 0)
+                {
+                    firstOffset = index;
+                    firstByte = current;
+                }
+
+                stripped++;
+            }
+
+            if (stripped > 0)
+            {
+                // Convert the offset into a 1-based line:column so the
+                // author can find it in their editor without counting
+                // bytes.
+                var line = 1;
+                var column = 1;
+                for (var i = 0; i < firstOffset && i < text.Length; i++)
+                {
+                    if (text[i] == '\n')
+                    {
+                        line++;
+                        column = 1;
+                    }
+                    else if (text[i] != '\r')
+                    {
+                        column++;
+                    }
+                }
+
+                FuseLog.Warning(
+                    $"FUSE stripped {stripped} stray control byte(s) from legacy file '{path}' " +
+                    $"before parsing (first occurrence: 0x{(int)firstByte:X2} at line {line}, column {column}). " +
+                    "This is almost always an editor accident (e.g. a Ctrl+V verbatim insert) and the " +
+                    "mod author should fix the source file. FUSE only tolerates this on the legacy " +
+                    "pipeline; native FUSE addons (*.fuse.json) must be valid JSON.");
+            }
+
+            return builder == null ? text : builder.ToString();
         }
 
         private static string StripJsonComments(string text)

@@ -24,6 +24,40 @@ namespace FUSE.API
         private static readonly FieldInfo IndustryRuntimeComponentsField = typeof(Industry).GetField("_cachedComponents", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo CachedIndustryField = typeof(IndustryComponent).GetField("_cachedIndustry", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ComponentIdentifierField = typeof(IndustryComponent).GetField("_identifier", BindingFlags.Instance | BindingFlags.NonPublic);
+        // FormulaicIndustryComponent privately memoizes its sibling
+        // IndustryComponents in <c>_otherComponents</c> on first
+        // <c>Service</c> tick and uses that cache to look up max storage for
+        // each output term. If FUSE later replaces a sibling component
+        // outright (e.g. Foxy's Kirkland Coal Patch changes
+        // <c>kirkland-mine.coal</c> from IndustryLoader to
+        // TeleportLoadingIndustry, which goes through Remove+Add), the
+        // formula still holds a reference to the destroyed instance. Its
+        // MaxStorageForLoad walk then misses the live replacement and
+        // returns 0 — causing the formula to set "Production Stopped:
+        // &lt;outputLoad&gt;" even though the real loader has plenty of
+        // headroom. Resetting this field after every component
+        // invalidation forces the next Service tick to rebuild the cache
+        // from the current child set.
+        private static readonly FieldInfo FormulaicOtherComponentsField = typeof(FormulaicIndustryComponent).GetField("_otherComponents", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        // InterchangedIndustryLoader (vanilla) and FuseInterchangedIndustryUnloader
+        // (our shim) both lazy-cache the sibling Interchange MonoBehaviour on
+        // first <c>Interchange</c> property access via the
+        // <c>_interchange</c> / <c>_hasInterchange</c> pair. The exact
+        // same staleness hazard as FormulaicIndustryComponent._otherComponents
+        // applies: if a pack type-changes the Interchange sibling and FUSE
+        // does Remove+Add, the cached reference points at a destroyed
+        // MonoBehaviour and DisplayName / ServeInterchange / OrderCars
+        // silently fall back to no-op behaviour. We collect both field
+        // pairs by their declared name so we can clear them generically
+        // for any IndustryComponent that has them — without taking a hard
+        // compile-time dependency on InterchangedIndustryLoader's
+        // existence (the game can ship without it in old/forked builds).
+        private static readonly string[] InterchangedComponentCacheFieldNames =
+        {
+            "_interchange",
+            "_hasInterchange"
+        };
         private static readonly FieldInfo RepairPartsLoadField = typeof(RepairTrack).GetField("repairPartsLoad", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly Dictionary<string, int> IndustryOrders = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> FuseCreatedIndustryIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -783,6 +817,13 @@ namespace FUSE.API
             {
                 InvalidateIndustryComponents(industry);
                 industry.gameObject.SetActive(wasActive);
+                // Map Enhancer caches an industry's industrial-track segments
+                // off IndustryComponent.Start, which only fires once per
+                // component. Anything we added/extended above (especially
+                // TrackSpan patches that bring in mod-added segments after
+                // scene Start) won't get picked up by Map Enhancer's
+                // segment-color cache unless we refresh it explicitly.
+                FUSE.Interface.FuseMapEnhancerCompat.RefreshIndustry(industry, "industry component add/update");
             }
         }
 
@@ -1842,6 +1883,16 @@ namespace FUSE.API
                 return typeof(FuseLegacyPlaceholderIndustryComponent);
             }
 
+            // Route the legacy "Pay4Resource" type name to FUSE's native
+            // implementation. The behaviour and configuration surface are
+            // reconstructed independently from the public JSON contract
+            // documented by packs like Foxy's Kirkland Purchasable Coal
+            // Patch — no third-party assembly is required at runtime.
+            if (string.Equals(normalized, "ConfusingSupplements.IndustryComponents.Pay4Resource", StringComparison.OrdinalIgnoreCase))
+            {
+                return typeof(FusePay4ResourceIndustryComponent);
+            }
+
             var reflected = TryResolveIndustryComponentType(normalized);
             if (reflected == null && !string.Equals(normalized, type, StringComparison.OrdinalIgnoreCase))
             {
@@ -2020,6 +2071,8 @@ namespace FUSE.API
                 type.GetField("carLengthFeet", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?
                     .SetValue(component, definition.CarLengthFeet.Value);
             }
+
+            ApplyIndustryLoaderBaseSharedFields(component, definition);
         }
 
         private static void ApplyPartialTeleportLoadingFields(IndustryComponent component, FuseIndustryComponent definition)
@@ -2049,6 +2102,56 @@ namespace FUSE.API
             {
                 type.GetField("carLengthFeet", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?
                     .SetValue(component, definition.CarLengthFeet.Value);
+            }
+
+            ApplyIndustryLoaderBaseSharedFields(component, definition);
+        }
+
+        /// <summary>
+        /// Applies the fields that <see cref="IndustryLoader"/> and
+        /// <see cref="Model.Ops.TeleportLoadingIndustry"/> both inherit
+        /// from <c>IndustryLoaderBase</c> — <c>productionRate</c>,
+        /// <c>maxStorage</c>, <c>orderEmpties</c> — from the FUSE
+        /// definition's <c>StorageChangeRate</c>, <c>MaxStorage</c>, and
+        /// <c>OrderAroundEmpties</c>. The IndustryLoader path in
+        /// <see cref="ApplyComponentDefinition"/> sets these directly,
+        /// but the TeleportLoadingIndustry path goes through
+        /// <see cref="TryApplyOptionalType"/> and previously only set
+        /// the subclass-specific fields (inputSpans, outputSpans,
+        /// carLoadPeriod, carLengthFeet) and the reflective <c>load</c>.
+        /// That left <c>maxStorage</c> at its compile-time default of
+        /// <c>1f</c>, which silently caps the shared output buffer at
+        /// one unit and makes the upstream <see
+        /// cref="FormulaicIndustryComponent"/> emit
+        /// "Production Stopped: &lt;output load&gt;" the moment storage
+        /// fills past the per-tick production amount. Symptomatic
+        /// pack: Foxy's Kirkland Coal Patch, which switches
+        /// <c>kirkland-mine.coal</c> from <c>IndustryLoader</c> to
+        /// <c>TeleportLoadingIndustry</c> and declares
+        /// <c>maxStorage: 27000000</c>; without this method the runtime
+        /// cap stays at 1.
+        /// </summary>
+        private static void ApplyIndustryLoaderBaseSharedFields(IndustryComponent component, FuseIndustryComponent definition)
+        {
+            var loaderBase = component as IndustryLoaderBase;
+            if (loaderBase == null)
+            {
+                return;
+            }
+
+            if (definition.MaxStorage != null)
+            {
+                loaderBase.maxStorage = definition.MaxStorage.Value;
+            }
+
+            if (definition.StorageChangeRate != null)
+            {
+                loaderBase.productionRate = definition.StorageChangeRate.Value;
+            }
+
+            if (definition.OrderAroundEmpties != null)
+            {
+                loaderBase.orderEmpties = definition.OrderAroundEmpties.Value;
             }
         }
 
@@ -2903,7 +3006,132 @@ namespace FUSE.API
                 refreshedCount++;
             }
 
-            FuseLog.Info($"FUSE invalidated industry component caches for '{industry.identifier}' cachedComponentsCleared={clearedIndustryComponentList} componentIdentityRefreshed={refreshedCount}.");
+            var formulaCacheCleared = ClearFormulaicSiblingCaches(industry);
+            var interchangeCacheCleared = ClearInterchangedSiblingCaches(industry);
+
+            FuseLog.Info($"FUSE invalidated industry component caches for '{industry.identifier}' cachedComponentsCleared={clearedIndustryComponentList} componentIdentityRefreshed={refreshedCount} formulaSiblingCachesCleared={formulaCacheCleared} interchangedSiblingCachesCleared={interchangeCacheCleared}.");
+        }
+
+        /// <summary>
+        /// Forces every <see cref="FormulaicIndustryComponent"/> on the
+        /// industry to drop its private <c>_otherComponents</c> sibling
+        /// cache. The cache is lazy-initialized on first <c>Service</c>
+        /// call and never refreshed by the game; if FUSE has just
+        /// destroyed and re-created a sibling component (e.g. an
+        /// IndustryLoader being replaced by a TeleportLoadingIndustry
+        /// because a Foxy patch changed its <c>type</c>), the cache still
+        /// holds the destroyed instance and
+        /// <see cref="FormulaicIndustryComponent.MaxStorageForLoad"/>
+        /// returns 0, which makes the formula spuriously report
+        /// "Production Stopped: &lt;output load&gt;" even when storage has
+        /// abundant headroom. Resetting the field to <c>null</c> here
+        /// makes the next Service tick walk
+        /// <see cref="UnityEngine.Component.GetComponentsInChildren{T}()"/>
+        /// fresh and pick up the live replacement.
+        /// </summary>
+        private static int ClearFormulaicSiblingCaches(Industry industry)
+        {
+            if (FormulaicOtherComponentsField == null)
+            {
+                return 0;
+            }
+
+            var cleared = 0;
+            foreach (var formulaic in industry.GetComponentsInChildren<FormulaicIndustryComponent>(true))
+            {
+                if (formulaic == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    FormulaicOtherComponentsField.SetValue(formulaic, null);
+                    cleared++;
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning(
+                        $"FUSE could not clear FormulaicIndustryComponent._otherComponents on " +
+                        $"'{formulaic.Identifier ?? formulaic.name ?? "<unknown>"}' message='{ex.Message}'.");
+                }
+            }
+
+            return cleared;
+        }
+
+        /// <summary>
+        /// Resets the sibling-Interchange cache that
+        /// <see cref="InterchangedIndustryLoader"/> (vanilla) and
+        /// <see cref="FuseInterchangedIndustryUnloader"/> both maintain via
+        /// the private pair <c>_interchange</c> / <c>_hasInterchange</c>.
+        /// First access to the <c>Interchange</c> property memoizes the
+        /// sibling <see cref="Interchange"/> MonoBehaviour for the
+        /// lifetime of the component instance; if FUSE later type-changes
+        /// the Interchange sibling (Remove+Add), the cached pointer is to
+        /// a destroyed object. Subsequent reads return null-equivalent
+        /// values silently: <c>DisplayName</c> collapses to <c>base.name</c>,
+        /// <c>ServeInterchange</c> short-circuits on
+        /// <c>interchange == null</c>, and the bardo-return loop stops.
+        /// Clearing both fields makes the next access re-evaluate
+        /// <c>Industry.GetComponentInChildren&lt;Interchange&gt;()</c>
+        /// against the live component graph.
+        /// </summary>
+        private static int ClearInterchangedSiblingCaches(Industry industry)
+        {
+            var cleared = 0;
+            foreach (var component in industry.GetComponentsInChildren<IndustryComponent>(true))
+            {
+                if (component == null)
+                {
+                    continue;
+                }
+
+                var componentType = component.GetType();
+                var clearedAny = false;
+                foreach (var fieldName in InterchangedComponentCacheFieldNames)
+                {
+                    var field = componentType.GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+                    if (field == null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        // Both fields are nullable reference / nullable value
+                        // shapes — setting to null is the canonical reset.
+                        // Use the declared field type's default so a
+                        // nullable-bool gets a default(bool?) rather than
+                        // throwing on a value-type null assignment.
+                        field.SetValue(component, GetDefaultFieldValue(field.FieldType));
+                        clearedAny = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        FuseLog.Warning(
+                            $"FUSE could not clear {componentType.Name}.{fieldName} on " +
+                            $"'{component.Identifier ?? component.name ?? "<unknown>"}' message='{ex.Message}'.");
+                    }
+                }
+
+                if (clearedAny)
+                {
+                    cleared++;
+                }
+            }
+
+            return cleared;
+        }
+
+        private static object GetDefaultFieldValue(Type fieldType)
+        {
+            if (fieldType == null)
+            {
+                return null;
+            }
+
+            return fieldType.IsValueType ? Activator.CreateInstance(fieldType) : null;
         }
 
         internal static int ScrubIndustryComponentCaches(string source)

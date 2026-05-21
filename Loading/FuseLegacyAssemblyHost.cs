@@ -22,6 +22,21 @@ namespace FUSE.Loading
             new Dictionary<string, HostedLegacyPlugin>(StringComparer.OrdinalIgnoreCase);
 
         private static readonly List<IConsoleCommand> PendingConsoleCommands = new List<IConsoleCommand>();
+        // Package IDs that FUSE supersedes natively. When a legacy package
+        // declares itself (e.g. an old loader plugin we no longer host) or
+        // declares one of these as a dependency, the legacy-assembly host
+        // either skips the package itself or — for the dependency case at
+        // line ~399 — considers the dependency satisfied because FUSE
+        // provides the equivalent surface. Per the project's compat
+        // contract, FUSE shims the full public API of Railloader,
+        // StrangeCustoms, ConfusingSupplements, For Your Convenience, and
+        // Alina's Map Mod, so any of those package IDs appearing in a
+        // mod's "requires" must be treated as satisfied without needing
+        // the host binary on disk. Earlier revisions of this set omitted
+        // Zamu.ConfusingSupplements and Zamu.ForYourConvenience, which
+        // caused FUSE to skip every Foxy coal-patch package and any pack
+        // that built on the old For Your Convenience helpers — all of
+        // them must work day-1 of FUSE.
         private static readonly HashSet<string> FuseReplacedLegacyPackages =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -30,7 +45,14 @@ namespace FUSE.Loading
                 "railroader",
                 "Railloader",
                 "RailLoader",
-                "Zamu.StrangeCustoms"
+                "Zamu.StrangeCustoms",
+                "Zamu.ConfusingSupplements",
+                "Zamu.ForYourConvenience",
+                // Defensive coverage for short-form / capitalization
+                // variants we have seen referenced in mod manifests.
+                "StrangeCustoms",
+                "ConfusingSupplements",
+                "ForYourConvenience"
             };
 
         private static GameObject _startupHost;
