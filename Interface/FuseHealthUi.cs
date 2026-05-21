@@ -1266,6 +1266,69 @@ namespace FUSE.Interface
                     FuseSettings.SetShowSceneryDebugAdvanced(!FuseSettings.ShowSceneryDebugAdvanced);
                     RebuildWindow();
                 });
+            AddSettingToggle(
+                builder,
+                "World Labels",
+                FuseSettings.ShowWorldLabelsOverlay ? "color-coded labels on every visible entity" : "disabled",
+                FuseSettings.ShowWorldLabelsOverlay ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetShowWorldLabelsOverlay(!FuseSettings.ShowWorldLabelsOverlay);
+                    RebuildWindow();
+                });
+            if (FuseSettings.ShowWorldLabelsOverlay)
+            {
+                AddSettingToggle(
+                    builder,
+                    "  Labels: Scenery",
+                    FuseSettings.WorldLabelsShowScenery ? "shown (orange=FUSE, gray=vanilla)" : "hidden",
+                    FuseSettings.WorldLabelsShowScenery ? "Hide" : "Show",
+                    () =>
+                    {
+                        FuseSettings.SetWorldLabelsShowScenery(!FuseSettings.WorldLabelsShowScenery);
+                        RebuildWindow();
+                    });
+                AddSettingToggle(
+                    builder,
+                    "  Labels: Scene Clones",
+                    FuseSettings.WorldLabelsShowSceneClones ? "shown (cyan)" : "hidden",
+                    FuseSettings.WorldLabelsShowSceneClones ? "Hide" : "Show",
+                    () =>
+                    {
+                        FuseSettings.SetWorldLabelsShowSceneClones(!FuseSettings.WorldLabelsShowSceneClones);
+                        RebuildWindow();
+                    });
+                AddSettingToggle(
+                    builder,
+                    "  Labels: Industries",
+                    FuseSettings.WorldLabelsShowIndustries ? "shown (pink)" : "hidden",
+                    FuseSettings.WorldLabelsShowIndustries ? "Hide" : "Show",
+                    () =>
+                    {
+                        FuseSettings.SetWorldLabelsShowIndustries(!FuseSettings.WorldLabelsShowIndustries);
+                        RebuildWindow();
+                    });
+                AddSettingToggle(
+                    builder,
+                    "  Labels: Track Nodes",
+                    FuseSettings.WorldLabelsShowTrackNodes ? "shown (green) — dense" : "hidden",
+                    FuseSettings.WorldLabelsShowTrackNodes ? "Hide" : "Show",
+                    () =>
+                    {
+                        FuseSettings.SetWorldLabelsShowTrackNodes(!FuseSettings.WorldLabelsShowTrackNodes);
+                        RebuildWindow();
+                    });
+                AddSettingToggle(
+                    builder,
+                    "  Labels: Track Segments",
+                    FuseSettings.WorldLabelsShowTrackSegments ? "shown (yellow) — dense" : "hidden",
+                    FuseSettings.WorldLabelsShowTrackSegments ? "Hide" : "Show",
+                    () =>
+                    {
+                        FuseSettings.SetWorldLabelsShowTrackSegments(!FuseSettings.WorldLabelsShowTrackSegments);
+                        RebuildWindow();
+                    });
+            }
             builder.Spacer(4f);
 
             builder.AddSection("Experimental");

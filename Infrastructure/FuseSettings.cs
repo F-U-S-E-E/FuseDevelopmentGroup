@@ -18,6 +18,17 @@ namespace FUSE.Infrastructure
         public const bool DefaultShowTrackDebugSpanPaths = false;
         public const bool DefaultShowSceneryDebugOverlay = false;
         public const bool DefaultShowSceneryDebugAdvanced = false;
+        // World-Labels overlay defaults. The master toggle is opt-in; per-kind
+        // toggles default to a sensible "show the things most authors care
+        // about" subset so flipping the master switch shows something useful
+        // without paving the screen in track-node labels (~1000+ on a typical
+        // map). Authors can opt into the dense kinds individually.
+        public const bool DefaultShowWorldLabelsOverlay = false;
+        public const bool DefaultWorldLabelsShowScenery = true;
+        public const bool DefaultWorldLabelsShowSceneClones = true;
+        public const bool DefaultWorldLabelsShowIndustries = true;
+        public const bool DefaultWorldLabelsShowTrackNodes = false;
+        public const bool DefaultWorldLabelsShowTrackSegments = false;
         public const bool DefaultShowLegacyModsInUmm = true;
         public const float ExperimentalEarlyScenePathSuppressionTimeoutSeconds = 8f;
 
@@ -43,6 +54,18 @@ namespace FUSE.Infrastructure
 
         public static bool ShowSceneryDebugAdvanced { get; private set; } = DefaultShowSceneryDebugAdvanced;
 
+        public static bool ShowWorldLabelsOverlay { get; private set; } = DefaultShowWorldLabelsOverlay;
+
+        public static bool WorldLabelsShowScenery { get; private set; } = DefaultWorldLabelsShowScenery;
+
+        public static bool WorldLabelsShowSceneClones { get; private set; } = DefaultWorldLabelsShowSceneClones;
+
+        public static bool WorldLabelsShowIndustries { get; private set; } = DefaultWorldLabelsShowIndustries;
+
+        public static bool WorldLabelsShowTrackNodes { get; private set; } = DefaultWorldLabelsShowTrackNodes;
+
+        public static bool WorldLabelsShowTrackSegments { get; private set; } = DefaultWorldLabelsShowTrackSegments;
+
         public static bool ShowLegacyModsInUmm { get; private set; } = DefaultShowLegacyModsInUmm;
 
         public static void Load(UnityModManager.ModEntry modEntry)
@@ -57,6 +80,12 @@ namespace FUSE.Infrastructure
             ShowTrackDebugSpanPaths = DefaultShowTrackDebugSpanPaths;
             ShowSceneryDebugOverlay = DefaultShowSceneryDebugOverlay;
             ShowSceneryDebugAdvanced = DefaultShowSceneryDebugAdvanced;
+            ShowWorldLabelsOverlay = DefaultShowWorldLabelsOverlay;
+            WorldLabelsShowScenery = DefaultWorldLabelsShowScenery;
+            WorldLabelsShowSceneClones = DefaultWorldLabelsShowSceneClones;
+            WorldLabelsShowIndustries = DefaultWorldLabelsShowIndustries;
+            WorldLabelsShowTrackNodes = DefaultWorldLabelsShowTrackNodes;
+            WorldLabelsShowTrackSegments = DefaultWorldLabelsShowTrackSegments;
             ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -91,6 +120,18 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "ShowSceneryDebugOverlay", DefaultShowSceneryDebugOverlay);
                 ShowSceneryDebugAdvanced =
                     ReadBool(settings, "ShowSceneryDebugAdvanced", DefaultShowSceneryDebugAdvanced);
+                ShowWorldLabelsOverlay =
+                    ReadBool(settings, "ShowWorldLabelsOverlay", DefaultShowWorldLabelsOverlay);
+                WorldLabelsShowScenery =
+                    ReadBool(settings, "WorldLabelsShowScenery", DefaultWorldLabelsShowScenery);
+                WorldLabelsShowSceneClones =
+                    ReadBool(settings, "WorldLabelsShowSceneClones", DefaultWorldLabelsShowSceneClones);
+                WorldLabelsShowIndustries =
+                    ReadBool(settings, "WorldLabelsShowIndustries", DefaultWorldLabelsShowIndustries);
+                WorldLabelsShowTrackNodes =
+                    ReadBool(settings, "WorldLabelsShowTrackNodes", DefaultWorldLabelsShowTrackNodes);
+                WorldLabelsShowTrackSegments =
+                    ReadBool(settings, "WorldLabelsShowTrackSegments", DefaultWorldLabelsShowTrackSegments);
                 ShowLegacyModsInUmm =
                     ReadBool(settings, "ShowLegacyModsInUmm", DefaultShowLegacyModsInUmm);
                 ApplyUserOverrides();
@@ -108,6 +149,12 @@ namespace FUSE.Infrastructure
                     $"ShowTrackDebugSpanPaths={ShowTrackDebugSpanPaths} " +
                     $"ShowSceneryDebugOverlay={ShowSceneryDebugOverlay} " +
                     $"ShowSceneryDebugAdvanced={ShowSceneryDebugAdvanced} " +
+                    $"ShowWorldLabelsOverlay={ShowWorldLabelsOverlay} " +
+                    $"WorldLabelsShowScenery={WorldLabelsShowScenery} " +
+                    $"WorldLabelsShowSceneClones={WorldLabelsShowSceneClones} " +
+                    $"WorldLabelsShowIndustries={WorldLabelsShowIndustries} " +
+                    $"WorldLabelsShowTrackNodes={WorldLabelsShowTrackNodes} " +
+                    $"WorldLabelsShowTrackSegments={WorldLabelsShowTrackSegments} " +
                     $"ShowLegacyModsInUmm={ShowLegacyModsInUmm} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
@@ -123,6 +170,12 @@ namespace FUSE.Infrastructure
                 ShowTrackDebugSpanPaths = DefaultShowTrackDebugSpanPaths;
                 ShowSceneryDebugOverlay = DefaultShowSceneryDebugOverlay;
                 ShowSceneryDebugAdvanced = DefaultShowSceneryDebugAdvanced;
+                ShowWorldLabelsOverlay = DefaultShowWorldLabelsOverlay;
+                WorldLabelsShowScenery = DefaultWorldLabelsShowScenery;
+                WorldLabelsShowSceneClones = DefaultWorldLabelsShowSceneClones;
+                WorldLabelsShowIndustries = DefaultWorldLabelsShowIndustries;
+                WorldLabelsShowTrackNodes = DefaultWorldLabelsShowTrackNodes;
+                WorldLabelsShowTrackSegments = DefaultWorldLabelsShowTrackSegments;
                 ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Warning($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled: {ex.Message}");
@@ -187,6 +240,48 @@ namespace FUSE.Infrastructure
             FuseLog.Info($"FUSE setting changed: {nameof(ShowSceneryDebugAdvanced)}={enabled}.");
         }
 
+        public static void SetShowWorldLabelsOverlay(bool enabled)
+        {
+            ShowWorldLabelsOverlay = enabled;
+            SaveUserOverride(nameof(ShowWorldLabelsOverlay), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(ShowWorldLabelsOverlay)}={enabled}.");
+        }
+
+        public static void SetWorldLabelsShowScenery(bool enabled)
+        {
+            WorldLabelsShowScenery = enabled;
+            SaveUserOverride(nameof(WorldLabelsShowScenery), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(WorldLabelsShowScenery)}={enabled}.");
+        }
+
+        public static void SetWorldLabelsShowSceneClones(bool enabled)
+        {
+            WorldLabelsShowSceneClones = enabled;
+            SaveUserOverride(nameof(WorldLabelsShowSceneClones), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(WorldLabelsShowSceneClones)}={enabled}.");
+        }
+
+        public static void SetWorldLabelsShowIndustries(bool enabled)
+        {
+            WorldLabelsShowIndustries = enabled;
+            SaveUserOverride(nameof(WorldLabelsShowIndustries), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(WorldLabelsShowIndustries)}={enabled}.");
+        }
+
+        public static void SetWorldLabelsShowTrackNodes(bool enabled)
+        {
+            WorldLabelsShowTrackNodes = enabled;
+            SaveUserOverride(nameof(WorldLabelsShowTrackNodes), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(WorldLabelsShowTrackNodes)}={enabled}.");
+        }
+
+        public static void SetWorldLabelsShowTrackSegments(bool enabled)
+        {
+            WorldLabelsShowTrackSegments = enabled;
+            SaveUserOverride(nameof(WorldLabelsShowTrackSegments), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(WorldLabelsShowTrackSegments)}={enabled}.");
+        }
+
         public static string GetUserSettingsPath()
         {
             return Path.Combine(Application.persistentDataPath, "FUSE", "settings.json");
@@ -241,6 +336,18 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(ShowSceneryDebugOverlay), ShowSceneryDebugOverlay);
                 ShowSceneryDebugAdvanced =
                     ReadBool(settings, nameof(ShowSceneryDebugAdvanced), ShowSceneryDebugAdvanced);
+                ShowWorldLabelsOverlay =
+                    ReadBool(settings, nameof(ShowWorldLabelsOverlay), ShowWorldLabelsOverlay);
+                WorldLabelsShowScenery =
+                    ReadBool(settings, nameof(WorldLabelsShowScenery), WorldLabelsShowScenery);
+                WorldLabelsShowSceneClones =
+                    ReadBool(settings, nameof(WorldLabelsShowSceneClones), WorldLabelsShowSceneClones);
+                WorldLabelsShowIndustries =
+                    ReadBool(settings, nameof(WorldLabelsShowIndustries), WorldLabelsShowIndustries);
+                WorldLabelsShowTrackNodes =
+                    ReadBool(settings, nameof(WorldLabelsShowTrackNodes), WorldLabelsShowTrackNodes);
+                WorldLabelsShowTrackSegments =
+                    ReadBool(settings, nameof(WorldLabelsShowTrackSegments), WorldLabelsShowTrackSegments);
                 ShowLegacyModsInUmm =
                     ReadBool(settings, nameof(ShowLegacyModsInUmm), ShowLegacyModsInUmm);
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
