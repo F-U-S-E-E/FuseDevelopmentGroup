@@ -36,7 +36,6 @@ namespace FUSE.API
         private static readonly FieldInfo InterchangeTransferFromField = typeof(InterchangeTransfer).GetField("from", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo InterchangeTransferToField = typeof(InterchangeTransfer).GetField("to", BindingFlags.Instance | BindingFlags.NonPublic);
         private const string FuseInterchangeTransferPrefix = "FUSE Interchange Transfer ";
-        private static readonly HashSet<string> PlaceholderMapFeatureIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public static MapFeature AddMapFeature(string id, FuseMapFeature definition)
         {
@@ -76,7 +75,6 @@ namespace FUSE.API
                 throw new ArgumentNullException(nameof(definition));
             }
 
-            PlaceholderMapFeatureIds.Remove(id);
             ApplyMapFeatureDefinition(feature, definition);
             FuseMapFeatureRuntimeIndex.Instance.Set(id, feature);
             if (MapFeatureManager.Shared != null)
@@ -1397,13 +1395,6 @@ namespace FUSE.API
                     .Select(f => f.identifier);
                 section.enableFeaturesOnUnlock = ResolveMapFeatures(definition.EnableFeaturesOnUnlock.ApplyTo(existingIds));
             }
-            // Always append the section-unlock-feature and a placeholder MapFeature
-            // (if either was created for this section) so they stay reachable from
-            // the section's resolved enableFeaturesOnUnlock array even when a mod
-            // patch didn't author them.
-            section.enableFeaturesOnUnlock = AppendFeature(
-                AppendFeature(section.enableFeaturesOnUnlock, sectionUnlockFeature),
-                GetPlaceholderMapFeature(section.identifier));
 
             if (definition.EnableFeaturesOnAvailable != null && definition.EnableFeaturesOnAvailable.HasValue)
             {
@@ -1768,7 +1759,7 @@ namespace FUSE.API
             var resolved = new List<MapFeature>();
             foreach (var id in ids.Where(id => !string.IsNullOrWhiteSpace(id)))
             {
-                var feature = GetMapFeature(id) ?? EnsurePlaceholderMapFeature(id);
+                var feature = GetMapFeature(id);
                 if (feature == null)
                 {
                     FuseLog.Warning($"FUSE progression skipped unresolved map feature reference '{id}'.");
@@ -1782,49 +1773,6 @@ namespace FUSE.API
                 .GroupBy(feature => feature.identifier ?? feature.name, StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First())
                 .ToArray();
-        }
-
-        private static MapFeature GetPlaceholderMapFeature(string id)
-        {
-            if (string.IsNullOrWhiteSpace(id) || !PlaceholderMapFeatureIds.Contains(id))
-            {
-                return null;
-            }
-
-            return GetMapFeature(id);
-        }
-
-        private static MapFeature EnsurePlaceholderMapFeature(string id)
-        {
-            if (string.IsNullOrWhiteSpace(id))
-            {
-                return null;
-            }
-
-            var existing = GetMapFeature(id);
-            if (existing != null)
-            {
-                return existing;
-            }
-
-            try
-            {
-                var feature = AddMapFeature(id, new FuseMapFeature
-                {
-                    DisplayName = id,
-                    Description = "FUSE placeholder for a legacy forward reference. A later package or progression section may replace or enable this feature.",
-                    InitiallyEnabled = false
-                });
-
-                PlaceholderMapFeatureIds.Add(id);
-                FuseLog.Info($"FUSE created placeholder map feature '{id}' for a legacy forward reference. If a later definition or matching progression section exists, it will bind normally.");
-                return feature;
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Warning($"FUSE could not create placeholder map feature '{id}' for a legacy forward reference: {ex.Message}");
-                return null;
-            }
         }
 
         private static Area[] ResolveAreas(string[] ids)
