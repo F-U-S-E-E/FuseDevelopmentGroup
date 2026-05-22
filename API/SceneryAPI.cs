@@ -59,6 +59,22 @@ namespace FUSE.API
             gameObject.transform.SetParent(GetSceneryRoot(), false);
 
             var scenery = gameObject.AddComponent<SceneryAssetInstance>();
+            // Tag the GameObject as FUSE-owned so the runtime index can
+            // tell our scenery apart from vanilla. Without this marker,
+            // FuseSceneryRuntimeIndex.Rebuild had to scan every
+            // SceneryAssetInstance in the scene and key by .name, which
+            // silently collapsed vanilla siblings sharing a leaf name
+            // (the four vanilla "Freight House" instances in Bryson /
+            // Sylva / Dillsboro / Ela) into a single slot and let an
+            // authoring entity with an ambiguous id like "freight house"
+            // hijack one of them via UpdateScenery — turning a legacy
+            // "add a copy" intent into a "move the vanilla original"
+            // outcome. With the marker, vanilla scenery never enters
+            // the index, GetScenery can only resolve ids FUSE itself
+            // has previously claimed, and the ApplyToRuntime path
+            // correctly falls into AddScenery for a brand-new entity.
+            var marker = gameObject.AddComponent<FuseSceneryMarker>();
+            marker.Id = id;
             ApplyDefinition(scenery, definition, assetIdentifier);
 
             gameObject.SetActive(true);
@@ -66,6 +82,19 @@ namespace FUSE.API
             FuseSceneryRuntimeIndex.Instance.Set(id, scenery);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Scenery, id, definition);
             return scenery;
+        }
+
+        /// <summary>
+        /// Internal marker MonoBehaviour attached to every scenery
+        /// GameObject FUSE creates via <see cref="AddScenery"/>. The
+        /// runtime index uses these (not raw SceneryAssetInstance scans)
+        /// to decide which scenery is FUSE-tracked, so vanilla scenery
+        /// with the same leaf name as a mod's authoring id can never be
+        /// accidentally claimed.
+        /// </summary>
+        internal sealed class FuseSceneryMarker : MonoBehaviour
+        {
+            public string Id;
         }
 
         public static void UpdateScenery(string id, FuseScenery definition)

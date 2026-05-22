@@ -780,6 +780,31 @@ namespace FUSE.Loading
 
         private static JObject CopyComponentDictionary(JObject stateComponents, JObject patchComponents)
         {
+            // Wholesale-replace semantics first. When the mod's source patch
+            // declares <c>"components": { "$replace": { ... } }</c> the mod
+            // author wants the component dict fully overwritten — that's
+            // exactly the directive Foxy's East Whittier RepairIndustry.json
+            // uses to drop vanilla's rip / rip-parts repair components when
+            // renaming wh-e-engine to "East Whittier Fuel Service". The
+            // legacy data converter detects this directive at apply time and
+            // emits <c>replaceComponents=true</c> so the loader runs
+            // RemoveStaleComponents. Without preserving the directive here,
+            // the per-name copy loop below (with its <c>!IsDirective</c>
+            // filter) would silently throw the whole $replace block away,
+            // leaving the slice with an empty components dict that the
+            // re-conversion pass turns into a no-op merge — the very
+            // breakage where "East Whittier Fuel Service" was still showing
+            // a repair track despite the $replace.
+            if (patchComponents != null &&
+                patchComponents.TryGetValue("$replace", StringComparison.OrdinalIgnoreCase, out var replaceToken) &&
+                replaceToken is JObject replaceChildren)
+            {
+                return new JObject
+                {
+                    ["$replace"] = replaceChildren.DeepClone()
+                };
+            }
+
             var result = new JObject();
             foreach (var property in patchComponents.Properties().Where(property => !FuseLegacyJsonPatch.IsDirective(property.Name)))
             {

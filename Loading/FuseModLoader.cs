@@ -3220,11 +3220,33 @@ namespace FUSE.Loading
 
                     var industryDefinition = industry.Value;
                     var exists = IndustryAPI.GetIndustry(industry.Key) != null;
-                    if (exists && industryDefinition != null)
+                    // Diagnostic: surface the actual deserialized flag values so we
+                    // can match converter intent against what the apply path sees.
+                    // Logged unconditionally for any industry the converter touched
+                    // so we can correlate $replace + replaceComponents in the log.
+                    if (industryDefinition != null)
+                    {
+                        FuseLog.Info(
+                            $"FUSE industry apply-time flags id='{industry.Key}' package='{definition.Id}' exists={exists} " +
+                            $"mergeComponents={industryDefinition.MergeComponents} " +
+                            $"replaceComponents={industryDefinition.ReplaceComponents} " +
+                            $"componentDictCount={(industryDefinition.Components?.Count ?? 0)} " +
+                            $"componentKeys=[{(industryDefinition.Components == null ? "" : string.Join(",", industryDefinition.Components.Keys))}].");
+                    }
+
+                    if (exists && industryDefinition != null && !industryDefinition.ReplaceComponents)
                     {
                         // The industry already exists from a prior package's apply; treat this
                         // apply as a mixinto-style patch and force MergeComponents so the
                         // existing components are preserved instead of wiped by Update.
+                        //
+                        // Skipped when the definition was authored with the legacy
+                        // <c>"components": { "$replace": { ... } }</c> directive — in that
+                        // case the mod explicitly opted out of merge semantics and wants
+                        // <see cref="IndustryAPI.AddOrUpdateComponents"/> to run
+                        // <c>RemoveStaleComponents</c> so anything not in the new dictionary
+                        // (e.g. the vanilla repair track on Foxy's wh-e-engine after the
+                        // mod renames it to "East Whittier Fuel Service") is dropped.
                         industryDefinition.MergeComponents = true;
                     }
                     if (transaction.TryApply("industry", industry.Key, exists, () =>

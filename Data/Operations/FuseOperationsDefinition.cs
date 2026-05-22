@@ -44,6 +44,23 @@ namespace FUSE.Data
         public Vector3 Rotation { get; set; }
         public bool UsesContract { get; set; }
         public bool MergeComponents { get; set; }
+
+        /// <summary>
+        /// When true, the <see cref="Components"/> dictionary is the
+        /// complete intended set for this industry and any pre-existing
+        /// runtime sub-components not present here must be removed. This
+        /// is set by the legacy converter whenever a mod uses the
+        /// <c>"$replace"</c> directive at the top of its source
+        /// <c>components</c> dictionary (e.g. Foxy's East Whittier
+        /// RepairIndustry.json). Without this signal, the loader's
+        /// "industry already exists → force MergeComponents=true"
+        /// safety net would keep vanilla components alive on top of a
+        /// mod that explicitly asked for a wholesale replacement,
+        /// producing the "East Whittier Fuel Service still has a
+        /// repair track" duplication the user reported.
+        /// </summary>
+        public bool ReplaceComponents { get; set; }
+
         public Dictionary<string, FuseIndustryComponent> Components { get; set; } = new Dictionary<string, FuseIndustryComponent>();
     }
 

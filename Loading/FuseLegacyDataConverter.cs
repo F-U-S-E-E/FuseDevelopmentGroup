@@ -1283,6 +1283,33 @@ namespace FUSE.Loading
 
             var sourceComponents = item["components"] as JObject;
             var components = ConvertComponents(sourceComponents);
+            // A top-level <c>$replace</c> directive on the source
+            // <c>components</c> dictionary means the mod author wants the
+            // converted set to FULLY supersede any existing component
+            // dictionary at apply time. Without this signal, the loader's
+            // "industry already exists → force MergeComponents=true"
+            // safety net leaves vanilla components alive (see Foxy's
+            // CF.EWhittier.Yard RepairIndustry.json — wh-e-engine kept
+            // its vanilla rip+rip-parts repair components after Foxy's
+            // $replace, so "East Whittier Fuel Service" still showed a
+            // repair track despite the mod intending to remove it).
+            // Emit BOTH flags: replaceComponents tells the loader to
+            // skip the force-merge override, and mergeComponents=false
+            // is the resulting behaviour the apply path actually reads.
+            var isReplace = HasTopLevelReplaceDirective(sourceComponents);
+            if (isReplace)
+            {
+                // Single-line breadcrumb for FUSE.log so package-author
+                // problem reports can be diagnosed at a glance — "did the
+                // converter actually pick up $replace for industry X?"
+                // The corresponding apply-time flags log in FuseModLoader
+                // is the matched receipt that proves the directive
+                // survived all the way to the loader.
+                FuseLog.Info(
+                    $"FUSE legacy converter detected $replace on components for industry '{id}'; " +
+                    "emitting replaceComponents=true / mergeComponents=false so the apply phase " +
+                    "trims any vanilla components not in the converted set.");
+            }
 
             return CleanObject(new JObject
             {
@@ -1292,9 +1319,35 @@ namespace FUSE.Loading
                 ["position"] = Vector(item["localPosition"] ?? item["position"], false),
                 ["rotation"] = Vector(item["localRotation"] ?? item["rotation"], false),
                 ["usesContract"] = ReadBool(item, "usesContract", false),
-                ["mergeComponents"] = true,
+                ["mergeComponents"] = !isReplace,
+                ["replaceComponents"] = isReplace,
                 ["components"] = components
             });
+        }
+
+        // Looks for a top-level <c>$replace</c> entry whose value is the
+        // new component dictionary. We accept any directive-key spelling
+        // accepted elsewhere by the converter (case-insensitive) so a
+        // hand-edited <c>"$REPLACE"</c> still works. Nested $replace
+        // inside an individual component is intentionally NOT counted
+        // here — that's a sub-object replacement, not a wholesale
+        // component-list rewrite.
+        private static bool HasTopLevelReplaceDirective(JObject sourceComponents)
+        {
+            if (sourceComponents == null)
+            {
+                return false;
+            }
+
+            foreach (var property in sourceComponents.Properties())
+            {
+                if (string.Equals(property.Name, "$replace", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static JObject ConvertComponent(string id, JObject item, ComponentTypeInferenceContext inferenceContext)

@@ -199,9 +199,34 @@ namespace FUSE.Cache
         public override void Rebuild()
         {
             Clear();
-            foreach (var scenery in Object.FindObjectsOfType<SceneryAssetInstance>(true).Where(scenery => scenery != null && !string.IsNullOrWhiteSpace(scenery.name)))
+
+            // Index only FUSE-owned scenery via the marker MonoBehaviour
+            // that SceneryAPI.AddScenery attaches. The previous design
+            // walked every SceneryAssetInstance in the scene and keyed by
+            // <c>scenery.name</c> with a case-insensitive dictionary; that
+            // silently collapsed multiple vanilla scenery sharing a leaf
+            // name (e.g. the four vanilla "Freight House" instances in
+            // Bryson / Sylva / Dillsboro / Ela) into a single index slot,
+            // then served whichever survived back to any mod that asked
+            // for that id — turning a legacy "scenery: {\"freight house\":
+            // {...}}" add-a-new-entity declaration into a silent
+            // teleport+repaint of one of the vanilla originals (the bug
+            // that left the Ela freight house missing). Vanilla scenery
+            // is intentionally absent from this index now: the apply
+            // path's <see cref="FUSE.API.SceneryAPI.GetScenery"/> will
+            // therefore return null for ids that FUSE has never claimed,
+            // which lets the FuseSceneryEntity.ApplyToRuntime fall into
+            // AddScenery and create a brand-new entity — matching the
+            // legacy "scenery dict is an add list, not an update list"
+            // contract that authoring mods are written against.
+            foreach (var marker in Object.FindObjectsOfType<FUSE.API.SceneryAPI.FuseSceneryMarker>(true)
+                         .Where(marker => marker != null && !string.IsNullOrWhiteSpace(marker.Id)))
             {
-                Set(scenery.name, scenery);
+                var scenery = marker.GetComponent<SceneryAssetInstance>();
+                if (scenery != null)
+                {
+                    Set(marker.Id, scenery);
+                }
             }
         }
     }
