@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <!-- Paths.user is imported by Directory.Build.props so that $(GameDir) is
        available to the property defaults below. -->
 
@@ -177,7 +177,8 @@
     <MakeDir Directories="$(ModDeployDir)\schemas" />
     <MakeDir Directories="$(ModDeployDir)\assets" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="Info.json" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" />
+	<Copy SourceFiles="Info.json" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" />
+	<Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" Condition="Exists('$(TargetDir)$(TargetName).pdb') and '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' "/>
     <Copy SourceFiles="@(SchemaFiles)" DestinationFiles="@(SchemaFiles->'$(ModDeployDir)\schemas\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(FuseAssets)" DestinationFiles="@(FuseAssets->'$(ModDeployDir)\assets\fuse_icon.png')" SkipUnchangedFiles="true" />
   </Target>
