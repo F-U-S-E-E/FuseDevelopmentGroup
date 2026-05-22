@@ -2178,8 +2178,9 @@ namespace FUSE.Loading
             switch (lower)
             {
                 case "displayname":
-                case "name":
                     return "displayName";
+                case "name":
+                    return "name";
                 case "defaultenableinsandbox":
                     return "initiallyEnabled";
                 case "prerequisites":
