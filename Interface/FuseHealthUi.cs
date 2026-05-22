@@ -51,6 +51,11 @@ namespace FUSE.Interface
         private string _inspectorSelectedSignature = string.Empty;
         private string _selectedPackageId = string.Empty;
 
+        private Vector2Int DefaultSize => new Vector2Int(740, 660);
+        private Vector2Int MaxSize => new Vector2Int(Screen.width, Screen.height);
+        private Window.Sizing DefaultSizing => Window.Sizing.Resizable(DefaultSize, MaxSize);
+        private Window.Position DefaultPosition => Window.Position.LowerRight;
+
         public static void Ensure()
         {
             if (_host != null)
@@ -309,6 +314,8 @@ namespace FUSE.Interface
             _window.Title = GetWindowTitle();
             _panel = WindowCreatorHelper.Shared.PopulateWindow(_window, BuildHealthPage);
             _lastBuiltPage = _activePage;
+
+            WindowPersistence.SetInitialPositionSize(_window, WindowIdentifier, DefaultSize, DefaultPosition, DefaultSizing);
 
             if (restoreScroll)
             {
