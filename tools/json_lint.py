@@ -27,6 +27,7 @@ locally (``python tools/json_lint.py`` from the repository root).
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -59,8 +60,23 @@ def tracked_json_files(root: Path) -> list[Path]:
     # ls-files is the right primitive here: it ignores build artifacts in
     # bin/obj, leftover files under .git/worktrees, and anything in
     # .gitignore. Avoids accidentally linting machine-generated files.
+    #
+    # subprocess.run on Windows uses CreateProcess directly and does NOT
+    # walk PATH the way a shell would, so a bare "git" argv0 fails on the
+    # CI runner with "The system cannot find the file specified" even
+    # though git is plainly on the runner's PATH. shutil.which resolves
+    # the executable's full path against PATH/PATHEXT first; passing the
+    # absolute path then succeeds on Windows, macOS, and Linux without
+    # falling back to shell=True (which would re-introduce quoting risk
+    # on the glob argument).
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        raise RuntimeError(
+            "git executable not found on PATH; install git or run this "
+            "script from an environment where git is available."
+        )
     result = subprocess.run(
-        ["git", "ls-files", "*.json"],
+        [git_executable, "ls-files", "*.json"],
         cwd=root,
         check=True,
         capture_output=True,
