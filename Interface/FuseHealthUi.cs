@@ -54,7 +54,7 @@ namespace FUSE.Interface
         private Vector2Int DefaultSize => new Vector2Int(740, 660);
         private Vector2Int MaxSize => new Vector2Int(Screen.width, Screen.height);
         private Window.Sizing DefaultSizing => Window.Sizing.Resizable(DefaultSize, MaxSize);
-        private Window.Position DefaultPosition => Window.Position.LowerRight;
+        private Window.Position DefaultPosition => Window.Position.UpperLeft;
 
         public static void Ensure()
         {
@@ -284,7 +284,7 @@ namespace FUSE.Interface
                 return false;
             }
 
-            _window = WindowCreatorHelper.Shared.CreateWindow(WindowIdentifier, 740, 660, Window.Position.UpperLeft);
+            _window = WindowCreatorHelper.Shared.CreateWindow(WindowIdentifier, DefaultSize.x, DefaultSize.y, DefaultPosition);
             if (_window == null)
             {
                 FuseLog.Warning("FUSE health window could not be created from the base-game window prefab.");
