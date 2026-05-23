@@ -31,6 +31,22 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # JSON lint runs before the .NET build so syntax/schema regressions in
+      # the manifest or in-tree schemas fail fast (~2s) rather than after a
+      # multi-minute build. The script parses every tracked .json file
+      # strictly (no comments / trailing commas) and validates Info.json
+      # and schemas/fuse-mod.example.json against their JSON Schemas.
+      - name: Install JSON lint dependency
+        run: python -m pip install --quiet jsonschema
+
+      - name: Lint tracked JSON files
+        run: python tools/json_lint.py
+
       # Pass a non-default ModVersion so the InjectModVersionIntoInfoJson
       # target runs (it is gated on '$(ModVersion)' != '0.0.0'). This catches
       # regressions in the post-build PowerShell that stamps Info.json.
