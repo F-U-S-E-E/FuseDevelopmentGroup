@@ -586,16 +586,40 @@ namespace FUSE.Loading
                 var displayName = nameToken?.Type == JTokenType.String
                     ? nameToken.Value<string>()
                     : null;
-                // Always fall back to a fileStem-based id so unnamed
-                // entries still register (with a clear "legacy author
-                // didn't name this" tell in the id) instead of being
-                // silently lost.
-                var idBase = !string.IsNullOrWhiteSpace(displayName)
-                    ? Slug(displayName)
-                    : Slug($"{fileStem}-{index + 1}");
-                if (string.IsNullOrWhiteSpace(idBase))
+
+                // CRITICAL: legacy whistle/horn/bell ids MUST match the
+                // identifier shape that Strange-Customs (the old loader)
+                // registers under, because existing save files store
+                // <c>whistle.custom = "sc.&lt;name&gt;"</c> or
+                // <c>horn.custom = "&lt;name&gt;"</c> as the per-loco
+                // selection and the game does an exact-key lookup against
+                // FuseAudioAPI.Whistles / .Horns / .Bells at configure
+                // time. Slugifying the name (the previous behaviour here)
+                // would make every legacy loco fall back to its default
+                // whistle/horn on first load — the user-visible symptom
+                // that prompted this change. The SC conventions, derived
+                // from observing the save data, are:
+                //   * whistles -> "sc." + raw name
+                //   * horns    -> raw name (no prefix)
+                //   * bells    -> raw name (no prefix); bells were
+                //                 historically per-loco add-on dlls, but
+                //                 we preserve the raw-name convention so
+                //                 any save that does carry a bell id
+                //                 keeps resolving.
+                // Unnamed entries still need *some* id, so for those we
+                // fall back to a "<fileStem>-<index>" placeholder.
+                string idBase;
+                if (string.IsNullOrWhiteSpace(displayName))
                 {
-                    idBase = $"entry-{index + 1}";
+                    idBase = $"{fileStem}-{index + 1}";
+                }
+                else if (kind == LegacyAudioKind.Whistles)
+                {
+                    idBase = "sc." + displayName;
+                }
+                else
+                {
+                    idBase = displayName;
                 }
 
                 var entryId = UniqueFragment(idBase, used);

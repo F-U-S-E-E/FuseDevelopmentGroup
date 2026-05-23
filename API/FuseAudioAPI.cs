@@ -25,6 +25,17 @@ namespace FUSE.API
         public const string HornCustomKey = "fuse.horn.custom";
         public const string BellCustomKey = "fuse.bell.custom";
 
+        // Strange-Customs era saves persist per-loco horn/bell selections
+        // under these unprefixed keys (matching what SC's own observer
+        // wrote at the time). FUSE's customize UI writes the new prefixed
+        // form to avoid name collisions inside the FUSE config namespace,
+        // but we MUST also read the legacy keys when restoring from an
+        // existing save — otherwise every loco that had a custom horn
+        // saved under SC silently falls back to default because nothing
+        // is observing the SC key.
+        public const string LegacyHornCustomKey = "horn.custom";
+        public const string LegacyBellCustomKey = "bell.custom";
+
         private static readonly Dictionary<string, RegisteredWhistle> Whistles = new Dictionary<string, RegisteredWhistle>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, RegisteredHorn> Horns = new Dictionary<string, RegisteredHorn>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, RegisteredBell> Bells = new Dictionary<string, RegisteredBell>(StringComparer.OrdinalIgnoreCase);
@@ -107,24 +118,65 @@ namespace FUSE.API
                 yield return new TypedContainerItem<WhistleDefinition>
                 {
                     Identifier = whistle.Id,
-                    Metadata = new ObjectMetadata
-                    {
-                        Name = string.IsNullOrWhiteSpace(whistle.Name) ? whistle.Id : whistle.Name,
-                        Description = "FUSE loose-file whistle"
-                    },
-                    Definition = new WhistleDefinition
-                    {
-                        Audio = new AssetReference
-                        {
-                            // "rail" is Railroader's built-in asset-pack id, not the old RAIL mod name.
-                            // FUSE intercepts these loose-file definitions before the base asset loader runs.
-                            AssetPackIdentifier = "rail",
-                            AssetIdentifier = whistle.Id
-                        },
-                        Model = ToAssetReference(whistle.Model)
-                    }
+                    Metadata = BuildWhistleMetadata(whistle),
+                    Definition = BuildWhistleDefinition(whistle)
                 };
             }
+        }
+
+        /// <summary>
+        /// Try to fetch a FUSE-registered whistle by its in-save identifier
+        /// (the same key vanilla passes to
+        /// <see cref="Model.Database.PrefabStore.DefinitionForIdentifier{T}"/>).
+        /// Used by the <see cref="FUSE.Patches.FusePrefabStoreDefinitionForIdentifierWhistlePatch"/>
+        /// Prefix to short-circuit vanilla's asset-pack lookup, which would
+        /// otherwise throw <c>UnknownIdentifierException</c> for FUSE whistle
+        /// ids and abort the whole <c>WhistleController.Configure</c> async
+        /// method — taking the 3D model spawn down with it.
+        /// </summary>
+        public static bool TryBuildWhistleDefinition(string whistleId, out WhistleDefinition definition, out ObjectMetadata metadata)
+        {
+            definition = null;
+            metadata = null;
+            if (string.IsNullOrWhiteSpace(whistleId))
+            {
+                return false;
+            }
+            if (!Whistles.TryGetValue(whistleId, out var whistle))
+            {
+                return false;
+            }
+            definition = BuildWhistleDefinition(whistle);
+            metadata = BuildWhistleMetadata(whistle);
+            return true;
+        }
+
+        private static WhistleDefinition BuildWhistleDefinition(RegisteredWhistle whistle)
+        {
+            return new WhistleDefinition
+            {
+                // Leave Audio with an empty AssetIdentifier on purpose.
+                // <see cref="Model.Definition.Data.AssetReference.IsEmpty"/>
+                // is <c>string.IsNullOrEmpty(AssetIdentifier)</c>, and
+                // <see cref="RollingStock.Steam.WhistleController.Configure"/>
+                // skips its async <c>LoadAssetAsync&lt;AudioClip&gt;</c> branch
+                // when <c>!whistleDefinition.Audio.IsEmpty</c> is false.
+                // FUSE serves the actual clip from disk via
+                // <see cref="TryConfigureWhistle"/> + <see cref="LoadClip"/>,
+                // so we want vanilla to not race against us on the audio side
+                // while still running its Model branch to spawn the 3D whistle.
+                Audio = new AssetReference(),
+                Model = ToAssetReference(whistle.Model)
+            };
+        }
+
+        private static ObjectMetadata BuildWhistleMetadata(RegisteredWhistle whistle)
+        {
+            return new ObjectMetadata
+            {
+                Name = string.IsNullOrWhiteSpace(whistle.Name) ? whistle.Id : whistle.Name,
+                Description = "FUSE loose-file whistle"
+            };
         }
 
         public static bool TryConfigureWhistle(WhistleController controller, string whistleId)
@@ -695,7 +747,16 @@ namespace FUSE.API
 
     internal sealed class FuseHornRuntimeController : MonoBehaviour
     {
-        private IDisposable _observer;
+        // Observe BOTH the FUSE-prefixed key (where the FUSE customize UI
+        // writes new selections) and the legacy SC-era unprefixed key
+        // (where existing saves persisted their selection). Whichever
+        // observer fires re-evaluates the effective selection so a save
+        // with only horn.custom set still applies the right horn at
+        // load time, and a player who picks via the FUSE UI immediately
+        // overrides any legacy value.
+        private IDisposable _observerFuse;
+        private IDisposable _observerLegacy;
+        private Car _car;
         private HornPlayer _player;
         private HornProfile _defaultProfile;
 
@@ -708,12 +769,19 @@ namespace FUSE.API
                 return;
             }
 
+            _car = car;
             _player = car.GetComponentInChildren<HornPlayer>(true);
             _defaultProfile = _player != null ? _player.profile : null;
             if (car.KeyValueObject != null)
             {
-                _observer?.Dispose();
-                _observer = car.KeyValueObject.Observe(FuseAudioAPI.HornCustomKey, OnSelectionChanged, true);
+                _observerFuse?.Dispose();
+                _observerLegacy?.Dispose();
+                _observerFuse = car.KeyValueObject.Observe(FuseAudioAPI.HornCustomKey, OnSelectionChanged, true);
+                // Skip callInitial on the legacy observer — the FUSE-key
+                // observer already triggered an evaluation a moment ago,
+                // and ComputeEffectiveSelection reads both keys so we'd
+                // just double-fire the same effective value.
+                _observerLegacy = car.KeyValueObject.Observe(FuseAudioAPI.LegacyHornCustomKey, OnSelectionChanged, false);
             }
         }
 
@@ -727,20 +795,45 @@ namespace FUSE.API
 
         private void OnDestroy()
         {
-            _observer?.Dispose();
-            _observer = null;
+            _observerFuse?.Dispose();
+            _observerLegacy?.Dispose();
+            _observerFuse = null;
+            _observerLegacy = null;
         }
 
         private void OnSelectionChanged(Value value)
         {
-            CurrentHornId = value.StringValue;
+            // Re-read both keys rather than trusting the observer's value
+            // argument: when only the legacy key was set in a save, the
+            // FUSE-key observer fires first with an empty value (which
+            // would otherwise restore default and clobber the legacy
+            // selection a moment later).
+            CurrentHornId = ComputeEffectiveSelection();
             FuseAudioAPI.ApplyHornSelection(this, _player, CurrentHornId);
+        }
+
+        private string ComputeEffectiveSelection()
+        {
+            if (_car?.KeyValueObject == null)
+            {
+                return string.Empty;
+            }
+            var preferred = _car.KeyValueObject[FuseAudioAPI.HornCustomKey].StringValue;
+            if (!string.IsNullOrWhiteSpace(preferred))
+            {
+                return preferred;
+            }
+            return _car.KeyValueObject[FuseAudioAPI.LegacyHornCustomKey].StringValue ?? string.Empty;
         }
     }
 
     internal sealed class FuseBellRuntimeController : MonoBehaviour
     {
-        private IDisposable _observer;
+        // See FuseHornRuntimeController above for why we observe both
+        // the FUSE-prefixed and the legacy SC-era keys.
+        private IDisposable _observerFuse;
+        private IDisposable _observerLegacy;
+        private Car _car;
         private Bell _bell;
         private IndexedClipDescriptor _defaultClip;
 
@@ -753,12 +846,15 @@ namespace FUSE.API
                 return;
             }
 
+            _car = car;
             _bell = car.GetComponentInChildren<Bell>(true);
             _defaultClip = _bell?.player != null ? _bell.player.indexedClip : null;
             if (car.KeyValueObject != null)
             {
-                _observer?.Dispose();
-                _observer = car.KeyValueObject.Observe(FuseAudioAPI.BellCustomKey, OnSelectionChanged, true);
+                _observerFuse?.Dispose();
+                _observerLegacy?.Dispose();
+                _observerFuse = car.KeyValueObject.Observe(FuseAudioAPI.BellCustomKey, OnSelectionChanged, true);
+                _observerLegacy = car.KeyValueObject.Observe(FuseAudioAPI.LegacyBellCustomKey, OnSelectionChanged, false);
             }
         }
 
@@ -772,14 +868,30 @@ namespace FUSE.API
 
         private void OnDestroy()
         {
-            _observer?.Dispose();
-            _observer = null;
+            _observerFuse?.Dispose();
+            _observerLegacy?.Dispose();
+            _observerFuse = null;
+            _observerLegacy = null;
         }
 
         private void OnSelectionChanged(Value value)
         {
-            CurrentBellId = value.StringValue;
+            CurrentBellId = ComputeEffectiveSelection();
             FuseAudioAPI.ApplyBellSelection(this, _bell, CurrentBellId);
+        }
+
+        private string ComputeEffectiveSelection()
+        {
+            if (_car?.KeyValueObject == null)
+            {
+                return string.Empty;
+            }
+            var preferred = _car.KeyValueObject[FuseAudioAPI.BellCustomKey].StringValue;
+            if (!string.IsNullOrWhiteSpace(preferred))
+            {
+                return preferred;
+            }
+            return _car.KeyValueObject[FuseAudioAPI.LegacyBellCustomKey].StringValue ?? string.Empty;
         }
     }
 }
