@@ -51,6 +51,11 @@ namespace FUSE.Interface
         private string _inspectorSelectedSignature = string.Empty;
         private string _selectedPackageId = string.Empty;
 
+        private Vector2Int DefaultSize => new Vector2Int(740, 660);
+        private Vector2Int MaxSize => new Vector2Int(Screen.width, Screen.height);
+        private Window.Sizing DefaultSizing => Window.Sizing.Resizable(DefaultSize, MaxSize);
+        private Window.Position DefaultPosition => Window.Position.UpperLeft;
+
         public static void Ensure()
         {
             if (_host != null)
@@ -279,7 +284,7 @@ namespace FUSE.Interface
                 return false;
             }
 
-            _window = WindowCreatorHelper.Shared.CreateWindow(WindowIdentifier, 740, 660, Window.Position.UpperLeft);
+            _window = WindowCreatorHelper.Shared.CreateWindow(WindowIdentifier, DefaultSize.x, DefaultSize.y, DefaultPosition);
             if (_window == null)
             {
                 FuseLog.Warning("FUSE health window could not be created from the base-game window prefab.");
@@ -309,6 +314,8 @@ namespace FUSE.Interface
             _window.Title = GetWindowTitle();
             _panel = WindowCreatorHelper.Shared.PopulateWindow(_window, BuildHealthPage);
             _lastBuiltPage = _activePage;
+
+            WindowPersistence.SetInitialPositionSize(_window, WindowIdentifier, DefaultSize, DefaultPosition, DefaultSizing);
 
             if (restoreScroll)
             {
