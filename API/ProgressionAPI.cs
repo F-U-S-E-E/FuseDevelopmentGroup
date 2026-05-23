@@ -491,18 +491,386 @@ namespace FUSE.API
             var initialized = InitializeMissingMapFeatureStates(manager);
             var forcedFeatureState = ForceApplyCurrentMapFeatureState(manager, reason);
             var restoredTrackGroups = RestoreDisabledTrackGroups(manager, reason);
-            var revokedOrphans = RevokeTransientlyPreEnabledOrphanGroups(manager, reason);
+            var finalisedOrphans = RevokeTransientlyPreEnabledOrphanGroups(manager, reason);
             FuseLog.Info(
                 $"FUSE refreshed progression runtime state package='<all>' operation='refresh progression state' " +
                 $"kind='map features' id='<all>' reason='{reason ?? "unspecified"}' " +
                 $"currentProgressionRefreshed={invokedCurrentProgression} initializedFeatureStates={initialized} " +
                 $"forcedFeatureState={forcedFeatureState} restoredDisabledTrackGroups={restoredTrackGroups} " +
-                $"revokedTransientOrphanGroups={revokedOrphans}.");
+                $"finalisedOrphanTrackGroups={finalisedOrphans}.");
 
             if (FuseSettings.VerboseApplyReportDetails)
             {
                 DumpProgressionStateForDiagnostics(manager, reason);
             }
+        }
+
+        /// <summary>
+        /// Builds a structured, JSON-serializable snapshot of the live progression
+        /// graph: every MapFeature with its track-group / area / industry gating
+        /// targets, every Section with current unlocked/available state and prereqs,
+        /// every referenced track group with the feature owners that would set it
+        /// enabled vs disabled, and every Area / Industry (with components and
+        /// track spans) and PassengerStop with the parent-chain a panel filter
+        /// would walk. Mirrors the same data the verbose log dump emits, but as
+        /// an object tree so callers can write it to a file and grep/diff offline.
+        /// </summary>
+        /// <param name="reason">Free-form label echoed into the payload; used to
+        /// distinguish dumps taken at different points (e.g. "console dump",
+        /// "post-apply", "before save").</param>
+        /// <returns>An anonymous object suitable for direct
+        /// <c>JsonConvert.SerializeObject</c>. If the MapFeatureManager isn't
+        /// available yet (no map loaded), returns a sentinel object with
+        /// <c>available=false</c> rather than throwing.</returns>
+        public static object BuildProgressionDiagnosticPayload(string reason = "console dump")
+        {
+            var manager = MapFeatureManager.Shared;
+            if (manager == null)
+            {
+                return new
+                {
+                    available = false,
+                    reason = reason ?? "unspecified",
+                    message = "MapFeatureManager.Shared was not available; load a map with FUSE active before dumping.",
+                };
+            }
+
+            var states = ReadFeatureEnables(manager);
+            var features = (manager.AvailableFeatures ?? Enumerable.Empty<MapFeature>())
+                .Where(feature => feature != null && !string.IsNullOrWhiteSpace(feature.identifier))
+                .ToArray();
+
+            var featurePayloads = features
+                .Select(feature =>
+                {
+                    bool? kvoUnlocked = states != null && states.TryGetValue(feature.identifier, out var kv)
+                        ? (bool?)kv
+                        : null;
+                    var defaultedTo = feature.defaultEnableInSandbox && StateManager.IsSandbox;
+                    return (object)new
+                    {
+                        id = feature.identifier,
+                        displayName = feature.displayName,
+                        defaultEnableInSandbox = feature.defaultEnableInSandbox,
+                        kvoUnlocked = kvoUnlocked,
+                        defaultedTo = defaultedTo,
+                        trackGroupsEnableOnUnlock = feature.trackGroupsEnableOnUnlock ?? Array.Empty<string>(),
+                        trackGroupsAvailableOnUnlock = feature.trackGroupsAvailableOnUnlock ?? Array.Empty<string>(),
+                        areasEnableOnUnlock = ListComponentIds(feature.areasEnableOnUnlock),
+                        industriesInclude = ListComponentIds(feature.unlockIncludeIndustries),
+                        industriesExclude = ListComponentIds(feature.unlockExcludeIndustries),
+                        prerequisiteFeatureIds = ListFeatureIds(feature.prerequisites),
+                    };
+                })
+                .ToArray();
+
+            var sectionsRaw = UnityEngine.Object.FindObjectsOfType<Section>(true) ?? Array.Empty<Section>();
+            var sectionPayloads = sectionsRaw
+                .Where(section => section != null)
+                .OrderBy(section => section.identifier ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .Select(section => (object)new
+                {
+                    id = section.identifier ?? string.Empty,
+                    name = section.name ?? string.Empty,
+                    displayName = section.displayName ?? string.Empty,
+                    unlocked = section.Unlocked,
+                    available = section.Available,
+                    paidCount = section.PaidCount,
+                    fulfilledCount = section.FulfilledCount,
+                    prerequisiteSectionIds = ListSectionIds(section.prerequisiteSections),
+                    enableFeaturesOnUnlock = ListFeatureIds(section.enableFeaturesOnUnlock),
+                    deliveryPhaseCount = section.deliveryPhases?.Length ?? 0,
+                })
+                .ToArray();
+
+            object[] trackGroupPayloads = Array.Empty<object>();
+            var graph = Graph.Shared;
+            if (graph != null)
+            {
+                var enabledOwners = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                var disabledOwners = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                foreach (var feature in features)
+                {
+                    var groups = FeatureTrackGroups(feature).ToArray();
+                    if (groups.Length == 0)
+                    {
+                        continue;
+                    }
+                    var enabled = IsFeatureEnabled(feature, states);
+                    var owners = enabled ? enabledOwners : disabledOwners;
+                    foreach (var groupId in groups)
+                    {
+                        if (!owners.TryGetValue(groupId, out var list))
+                        {
+                            list = new List<string>();
+                            owners[groupId] = list;
+                        }
+                        list.Add(feature.identifier);
+                    }
+                }
+
+                // Build the union of groups referenced by a MapFeature with
+                // groups actually used by live segments. The latter is needed
+                // to surface "orphan" groups (segments carry the groupId but
+                // no feature claims it) — without them the trackGroups list
+                // hides exactly the cases worth investigating, e.g. graph-
+                // only mods that ship visible-but-locked decorative track via
+                // unowned group ids.
+                var allGroups = new HashSet<string>(enabledOwners.Keys, StringComparer.OrdinalIgnoreCase);
+                allGroups.UnionWith(disabledOwners.Keys);
+                var segmentGroupCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                if (graph.Segments != null)
+                {
+                    foreach (var segment in graph.Segments)
+                    {
+                        if (segment == null || string.IsNullOrWhiteSpace(segment.groupId))
+                        {
+                            continue;
+                        }
+                        allGroups.Add(segment.groupId);
+                        segmentGroupCounts.TryGetValue(segment.groupId, out var count);
+                        segmentGroupCounts[segment.groupId] = count + 1;
+                    }
+                }
+
+                trackGroupPayloads = allGroups
+                    .OrderBy(g => g, StringComparer.OrdinalIgnoreCase)
+                    .Select(groupId =>
+                    {
+                        var isEnabledNow = graph.enabledGroupIds != null && graph.enabledGroupIds.Contains(groupId);
+                        var isAvailableNow = graph.availableGroupIds != null && graph.availableGroupIds.Contains(groupId);
+                        enabledOwners.TryGetValue(groupId, out var enabledBy);
+                        disabledOwners.TryGetValue(groupId, out var disabledBy);
+                        // Dedupe: a feature that lists the same group in both
+                        // trackGroupsEnableOnUnlock AND trackGroupsAvailableOnUnlock
+                        // yields the group twice from FeatureTrackGroups. Owners
+                        // are about which features touch this group, not how
+                        // many times.
+                        var enabledByDistinct = enabledBy != null && enabledBy.Count > 0
+                            ? enabledBy.Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+                            : Array.Empty<string>();
+                        var disabledByDistinct = disabledBy != null && disabledBy.Count > 0
+                            ? disabledBy.Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+                            : Array.Empty<string>();
+                        var hasOwner = enabledByDistinct.Length > 0 || disabledByDistinct.Length > 0;
+                        segmentGroupCounts.TryGetValue(groupId, out var segCount);
+                        return (object)new
+                        {
+                            id = groupId,
+                            graphEnabled = isEnabledNow,
+                            graphAvailable = isAvailableNow,
+                            segmentCount = segCount,
+                            orphan = !hasOwner,
+                            enabledBy = enabledByDistinct,
+                            disabledBy = disabledByDistinct,
+                        };
+                    })
+                    .ToArray();
+            }
+
+            object[] passengerStopPayloads = Array.Empty<object>();
+            try
+            {
+                var stops = Model.Ops.PassengerStop.FindAll()
+                    .Where(stop => stop != null && !string.IsNullOrWhiteSpace(stop.identifier))
+                    .ToArray();
+                passengerStopPayloads = stops
+                    .OrderBy(s => s.identifier, StringComparer.OrdinalIgnoreCase)
+                    .Select(stop =>
+                    {
+                        var industry = stop.GetComponentInParent<Industry>(true);
+                        var component = stop.GetComponentInParent<IndustryComponent>(true);
+                        var area = stop.GetComponentInParent<Area>(true);
+                        return (object)new
+                        {
+                            id = stop.identifier,
+                            progressionDisabled = stop.ProgressionDisabled,
+                            parentIndustryId = industry != null ? industry.identifier : null,
+                            parentIndustryProgressionDisabled = industry != null ? (bool?)industry.ProgressionDisabled : null,
+                            parentComponentId = component != null ? component.Identifier : null,
+                            parentComponentProgressionDisabled = component != null ? (bool?)component.ProgressionDisabled : null,
+                            parentAreaId = area != null ? area.identifier : null,
+                            activeSelf = stop.gameObject.activeSelf,
+                            activeInHierarchy = stop.gameObject.activeInHierarchy,
+                            wouldPassPanelFilter = !stop.ProgressionDisabled,
+                            path = FormatGameObjectPath(stop.transform),
+                        };
+                    })
+                    .ToArray();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE progression dump payload passengerStops failed: {ex.Message}");
+            }
+
+            object[] areaPayloads = Array.Empty<object>();
+            try
+            {
+                var areas = UnityEngine.Object.FindObjectsOfType<Area>(true)
+                    .Where(a => a != null && !string.IsNullOrWhiteSpace(a.identifier))
+                    .ToArray();
+                areaPayloads = areas
+                    .OrderBy(a => a.identifier, StringComparer.OrdinalIgnoreCase)
+                    .Select(area =>
+                    {
+                        var industries = area.Industries?.ToArray() ?? Array.Empty<Industry>();
+                        var stopsActive = area.GetComponentsInChildren<Model.Ops.PassengerStop>();
+                        var stopsAll = area.GetComponentsInChildren<Model.Ops.PassengerStop>(true);
+                        return (object)new
+                        {
+                            id = area.identifier,
+                            industryCount = industries.Length,
+                            passengerStopsActiveCount = stopsActive.Length,
+                            passengerStopsAllCount = stopsAll.Length,
+                            activeInHierarchy = area.gameObject.activeInHierarchy,
+                            industries = industries
+                                .Where(i => i != null && !string.IsNullOrWhiteSpace(i.identifier))
+                                .Select(i => new { id = i.identifier, progressionDisabled = i.ProgressionDisabled })
+                                .ToArray(),
+                            passengerStops = stopsActive
+                                .Where(s => s != null && !string.IsNullOrWhiteSpace(s.identifier))
+                                .Select(s => new { id = s.identifier, progressionDisabled = s.ProgressionDisabled })
+                                .ToArray(),
+                        };
+                    })
+                    .ToArray();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE progression dump payload areas failed: {ex.Message}");
+            }
+
+            object[] industryPayloads = Array.Empty<object>();
+            try
+            {
+                var industries = UnityEngine.Object.FindObjectsOfType<Industry>(true)
+                    .Where(industry => industry != null && !string.IsNullOrWhiteSpace(industry.identifier))
+                    .ToArray();
+                industryPayloads = industries
+                    .OrderBy(i => i.identifier, StringComparer.OrdinalIgnoreCase)
+                    .Select(industry =>
+                    {
+                        var area = industry.GetComponentInParent<Area>(true);
+                        var components = industry.GetComponentsInChildren<IndustryComponent>(true)
+                            .Where(c => c != null)
+                            .ToArray();
+                        return (object)new
+                        {
+                            id = industry.identifier,
+                            name = industry.name,
+                            progressionDisabled = industry.ProgressionDisabled,
+                            componentCount = components.Length,
+                            parentAreaId = area != null ? area.identifier : null,
+                            activeInHierarchy = industry.gameObject.activeInHierarchy,
+                            path = FormatGameObjectPath(industry.transform),
+                            components = components
+                                .OrderBy(c => c.Identifier ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                                .Select(component =>
+                                {
+                                    var spans = (component.TrackSpans ?? Enumerable.Empty<TrackSpan>())
+                                        .Where(s => s != null)
+                                        .ToArray();
+                                    return new
+                                    {
+                                        id = component.Identifier,
+                                        type = component.GetType().FullName,
+                                        progressionDisabled = component.ProgressionDisabled,
+                                        isVisible = component.IsVisible,
+                                        loadId = TryReadLoadId(component),
+                                        trackSpanCount = spans.Length,
+                                        spans = spans
+                                            .Select(s => new
+                                            {
+                                                id = s.id ?? s.name,
+                                                lowerSegmentId = s.lower?.segment?.id,
+                                                lowerSegmentGroup = s.lower?.segment?.groupId,
+                                                upperSegmentId = s.upper?.segment?.id,
+                                                upperSegmentGroup = s.upper?.segment?.groupId,
+                                            })
+                                            .ToArray(),
+                                    };
+                                })
+                                .ToArray(),
+                        };
+                    })
+                    .ToArray();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE progression dump payload industries failed: {ex.Message}");
+            }
+
+            return new
+            {
+                available = true,
+                reason = reason ?? "unspecified",
+                counts = new
+                {
+                    features = featurePayloads.Length,
+                    sections = sectionPayloads.Length,
+                    trackGroups = trackGroupPayloads.Length,
+                    passengerStops = passengerStopPayloads.Length,
+                    areas = areaPayloads.Length,
+                    industries = industryPayloads.Length,
+                },
+                features = featurePayloads,
+                sections = sectionPayloads,
+                trackGroups = trackGroupPayloads,
+                passengerStops = passengerStopPayloads,
+                areas = areaPayloads,
+                industries = industryPayloads,
+            };
+        }
+
+        private static string[] ListComponentIds<T>(T[] components) where T : UnityEngine.Component
+        {
+            if (components == null || components.Length == 0)
+            {
+                return Array.Empty<string>();
+            }
+            var list = new List<string>(components.Length);
+            foreach (var component in components)
+            {
+                if (component == null) continue;
+                var id = component.GetType().GetProperty("identifier")?.GetValue(component) as string
+                    ?? component.GetType().GetField("identifier")?.GetValue(component) as string
+                    ?? component.name;
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    list.Add(id);
+                }
+            }
+            return list.ToArray();
+        }
+
+        private static string[] ListFeatureIds(MapFeature[] features)
+        {
+            if (features == null || features.Length == 0)
+            {
+                return Array.Empty<string>();
+            }
+            var list = new List<string>(features.Length);
+            foreach (var feature in features)
+            {
+                if (feature == null || string.IsNullOrWhiteSpace(feature.identifier)) continue;
+                list.Add(feature.identifier);
+            }
+            return list.ToArray();
+        }
+
+        private static string[] ListSectionIds(Section[] sections)
+        {
+            if (sections == null || sections.Length == 0)
+            {
+                return Array.Empty<string>();
+            }
+            var list = new List<string>(sections.Length);
+            foreach (var section in sections)
+            {
+                if (section == null || string.IsNullOrWhiteSpace(section.identifier)) continue;
+                list.Add(section.identifier);
+            }
+            return list.ToArray();
         }
 
         /// <summary>
@@ -2609,16 +2977,38 @@ namespace FUSE.API
         }
 
         /// <summary>
-        /// Disables track groups that <see cref="FUSE.Loading.FuseModLoader.PreEnableInitialTrackGroups"/>
-        /// flipped into <c>Graph.enabledGroupIds</c> purely so segment binding
-        /// would not cull mod-added segments. If no <see cref="MapFeature"/>
-        /// claims the group via <c>trackGroupsEnableOnUnlock</c> or
-        /// <c>trackGroupsAvailableOnUnlock</c>, it is an orphan — keeping it
-        /// enabled would let mod-added segments in that group render
-        /// permanently with no progression control. Run as the last step of
-        /// <see cref="RefreshRuntimeStateAfterApply"/>, AFTER the game's
-        /// HandleFeatureEnablesChanged has set per-feature enabled/disabled
-        /// state for groups that DO have an owner.
+        /// Finalises track groups that <see cref="FUSE.Loading.FuseModLoader.PreEnableInitialTrackGroups"/>
+        /// flipped into <c>Graph.enabledGroupIds</c> + <c>availableGroupIds</c>
+        /// purely so segment binding would not cull mod-added segments. If
+        /// no <see cref="MapFeature"/> claims the group via
+        /// <c>trackGroupsEnableOnUnlock</c> or
+        /// <c>trackGroupsAvailableOnUnlock</c>, it is an orphan — we keep
+        /// it ENABLED (rails stay visible) but flip it to AVAILABLE=false
+        /// (the player's network does not include it; routing/picking
+        /// treat it as off-limits).
+        ///
+        /// The two flags map onto distinct game concerns:
+        /// <list type="bullet">
+        ///   <item><c>enabledGroupIds</c> — "Enabled groups are visible
+        ///   track" (per the tooltip on the field in <c>Track.Graph</c>).
+        ///   Drives mesh inclusion via <c>Graph.AddSegment</c>: a segment
+        ///   whose <c>groupId</c> is not in this set early-returns and
+        ///   never enters the runtime <c>segments</c> dictionary.</item>
+        ///   <item><c>availableGroupIds</c> — "Available groups may be
+        ///   picked." Drives whether the segment is part of the player's
+        ///   reachable / interactive network.</item>
+        /// </list>
+        ///
+        /// Earlier iterations of this method got this wrong twice over:
+        /// once by calling <c>SetGroupEnabled(false)</c> (which deleted the
+        /// rails from the mesh entirely on the next
+        /// <c>RebuildCollections</c>), once by leaving both flags at
+        /// <c>true</c> (which made the orphan track fully owned by the
+        /// player — visible AND interactive). Holding enabled=true and
+        /// available=false is the combination CollieDillsboroOverhaul-style
+        /// graph-only mods need: the rails appear at the
+        /// interchange-extension siding, but the player's routing /
+        /// purchase / industry layer never treats them as owned.
         /// </summary>
         private static int RevokeTransientlyPreEnabledOrphanGroups(MapFeatureManager manager, string reason)
         {
@@ -2663,37 +3053,47 @@ namespace FUSE.API
                 }
             }
 
-            var revoked = 0;
+            var unavailabled = 0;
             foreach (var groupId in candidates)
             {
                 if (claimed.Contains(groupId))
                 {
                     // A feature owns this group; the game's HandleFeatureEnablesChanged
-                    // is in charge of toggling its enabled state per progression.
+                    // is in charge of toggling its enabled and available state per progression.
                     continue;
                 }
 
                 try
                 {
-                    if (graph.SetGroupEnabled(groupId, false))
+                    // Keep enabled=true so segments stay in the mesh.
+                    // Flip available=false so the player's network does
+                    // not treat this orphan track as owned/reachable.
+                    // We deliberately do NOT call SetGroupEnabled here —
+                    // that would remove the group from enabledGroupIds and
+                    // the next RebuildCollections would cull every segment
+                    // belonging to it.
+                    var availableChanged = graph.SetGroupAvailable(groupId, false);
+                    if (availableChanged)
                     {
-                        revoked++;
-                        FuseLog.Info(
-                            $"FUSE revoked transient pre-enable for orphan track group '{groupId}' " +
-                            $"reason='{reason ?? "unspecified"}' " +
-                            "(no MapFeature claims this group via tracksEnable/tracksAvail; " +
-                            "segment-only group is now correctly hidden).");
+                        unavailabled++;
                     }
+                    FuseLog.Info(
+                        $"FUSE finalised orphan track group '{groupId}' as visible-but-unavailable " +
+                        $"reason='{reason ?? "unspecified"}' " +
+                        $"availableFlagFlipped={availableChanged} " +
+                        "(no MapFeature claims this group via tracksEnable/tracksAvail; " +
+                        "enabled=true keeps rails in the mesh, available=false keeps the " +
+                        "segments out of the player's owned/routable network).");
                 }
                 catch (Exception ex)
                 {
                     FuseLog.Warning(
-                        $"FUSE progression refresh package='<all>' operation='revoke transient orphan track group' " +
+                        $"FUSE progression refresh package='<all>' operation='finalise orphan track group' " +
                         $"kind='track group' id='{groupId}' reason='{reason ?? "unspecified"}' message='{ex.Message}'.");
                 }
             }
 
-            return revoked;
+            return unavailabled;
         }
 
         private static bool IsFeatureEnabled(MapFeature feature, IDictionary<string, bool> states)

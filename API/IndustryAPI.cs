@@ -766,6 +766,37 @@ namespace FUSE.API
                 {
                     try
                     {
+                        // Legacy Strange-Customs null-component sentinel: the
+                        // legacy converter turns <c>"foo": null</c> into
+                        // <c>{ "remove": true }</c> so that
+                        // <see cref="FuseIndustryComponent.Remove"/> survives
+                        // Newtonsoft's <c>NullValueHandling.Ignore</c> setting
+                        // (a JSON null would have been dropped during
+                        // deserialization, leaving the apply path with an
+                        // empty dict — the Parson's Tannery / sylva-paperboard /
+                        // sylva-interchange "removal still shows in the
+                        // industry list" bug). Honour the flag here before
+                        // the type-resolution branches below try to inspect
+                        // <c>component.Value.Type</c>.
+                        if (component.Value == null || component.Value.Remove)
+                        {
+                            var existing = GetComponent(industry, component.Key);
+                            if (existing != null)
+                            {
+                                FuseLog.Info(
+                                    $"FUSE removing industry component '{industry.identifier}.{component.Key}' " +
+                                    "because the definition entry is a delete sentinel (legacy SC null-component).");
+                                RemoveComponent(industry, component.Key, false);
+                            }
+                            else
+                            {
+                                FuseLog.Info(
+                                    $"FUSE legacy delete-component request for '{industry.identifier}.{component.Key}' " +
+                                    "had no matching runtime component to remove; skipping.");
+                            }
+                            continue;
+                        }
+
                         var runtime = GetComponent(industry, component.Key) ?? ResolveLegacyComponentAlias(industry, component.Key, component.Value, definedSubIds);
                         if (runtime == null)
                         {

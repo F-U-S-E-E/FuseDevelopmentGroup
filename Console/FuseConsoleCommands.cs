@@ -35,7 +35,10 @@ namespace FUSE.Console
                 new FuseDumpGraphCommand(),
                 new FuseDumpRuntimeGraphCommand(),
                 new FuseDumpMandelasCommand(),
+                new FuseDumpProgressionCommand(),
                 new FuseGroupsCommand(),
+                new FuseSegmentsAuditCommand(),
+                new FuseTrackRebuildCommand(),
                 new FuseValidateCommand(),
                 new FuseConflictsCommand(),
                 new FuseSuppressionsCommand(),
@@ -369,6 +372,57 @@ namespace FUSE.Console
         }
     }
 
+    [ConsoleCommand("/fuse.dumpprogression", "Dump the live progression graph (features, sections, track-group ownership, areas, industries, passenger stops) to FUSE-progression.json in the Railroader folder.")]
+    public sealed class FuseDumpProgressionCommand : IConsoleCommand
+    {
+        public string Execute(string[] components)
+        {
+            try
+            {
+                // The progression graph only exists once a map has loaded and
+                // MapFeatureManager.Shared is populated. Bail with a clear
+                // message rather than write a half-empty file.
+                if (!FuseConsoleCommands.IsInSession())
+                {
+                    return "FUSE dumpprogression: no map loaded. Load a save with FUSE active, then run again.";
+                }
+
+                var payload = ProgressionAPI.BuildProgressionDiagnosticPayload("console dump");
+                var data = new
+                {
+                    tool = "FUSE",
+                    dumpType = "progression",
+                    createdLocal = DateTime.Now.ToString("O"),
+                    source = "Captured from the live Railroader progression state (MapFeatureManager + scene Sections/Areas/Industries/PassengerStops) after loaded FUSE packages have applied.",
+                    notes = "Per-trackGroup enabledBy/disabledBy lists every MapFeature that would set the group enabled or disabled given current feature unlock state — use it to find features that gate a group that's surprisingly enabled or disabled. wouldPassPanelFilter on passengerStops mirrors the FUSE passenger-car-destination panel filter.",
+                    progression = payload
+                };
+
+                var path = FuseConsoleCommands.WriteJsonToRailroaderRoot("FUSE-progression.json", data);
+
+                // Pull counts back out of the payload for the console reply, so the
+                // user gets a one-line summary without having to open the file.
+                var countsProperty = payload.GetType().GetProperty("counts");
+                var counts = countsProperty?.GetValue(payload, null);
+                string CountString(string name)
+                {
+                    if (counts == null) return "?";
+                    var property = counts.GetType().GetProperty(name);
+                    if (property == null) return "?";
+                    var value = property.GetValue(counts, null);
+                    return value?.ToString() ?? "?";
+                }
+
+                return $"FUSE dumpprogression wrote '{path}' features={CountString("features")} sections={CountString("sections")} trackGroups={CountString("trackGroups")} passengerStops={CountString("passengerStops")} areas={CountString("areas")} industries={CountString("industries")}.";
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE dumpprogression console command failed.", ex);
+                return $"FUSE dumpprogression failed: {ex.Message}";
+            }
+        }
+    }
+
     [ConsoleCommand("/fuse.assets", "List FUSE asset pack folders discovered for direct PrefabStore loading.")]
     public sealed class FuseAssetsCommand : IConsoleCommand
     {
@@ -673,6 +727,250 @@ namespace FUSE.Console
             catch (Exception ex)
             {
                 return $"FUSE groups failed: {ex.Message}";
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reports per-segment visual state for diagnosing "track is in the
+    /// graph but no rails are showing." The data tier (segment exists,
+    /// nodes valid, group enabled) is reported by other commands, but
+    /// only this one walks the live Unity scene to confirm whether the
+    /// segment GameObject is actually parented to an active root and
+    /// has child renderers ready to draw. Use after a map load to spot
+    /// FUSE-tracked segments that were registered correctly with the
+    /// Track graph but never got visual meshes attached — exactly the
+    /// failure mode that hid Foxy's Bryson Tweaks s2 segments.
+    /// </summary>
+    [ConsoleCommand("/fuse.segments.audit",
+        "Audit FUSE-tracked track segments for visual renderer state. " +
+        "Optional first arg filters by groupId (e.g. 's2'). " +
+        "Optional 'verbose' flag emits per-segment lines instead of group summaries.")]
+    public sealed class FuseSegmentsAuditCommand : IConsoleCommand
+    {
+        public string Execute(string[] components)
+        {
+            try
+            {
+                var graph = Graph.Shared;
+                if (graph == null || !graph.HasPopulatedCollections)
+                {
+                    return "FUSE segments audit: track graph is not populated yet.";
+                }
+
+                string groupFilter = null;
+                var verbose = false;
+                if (components != null)
+                {
+                    foreach (var arg in components)
+                    {
+                        if (string.IsNullOrWhiteSpace(arg))
+                        {
+                            continue;
+                        }
+
+                        // Railroader's console passes the full token list to
+                        // IConsoleCommand.Execute including the command name
+                        // itself (e.g. components[0] == "/fuse.segments.audit").
+                        // Skip anything that looks like the command name.
+                        if (arg.StartsWith("/", StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        if (string.Equals(arg, "verbose", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(arg, "-v", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(arg, "--verbose", StringComparison.OrdinalIgnoreCase))
+                        {
+                            verbose = true;
+                            continue;
+                        }
+
+                        if (groupFilter == null)
+                        {
+                            groupFilter = arg.Trim();
+                        }
+                    }
+                }
+
+                // Build the FUSE-claimed segment id set so we can flag
+                // "FUSE-tracked but currently invisible" vs vanilla
+                // segments. We don't reject vanilla segments outright in
+                // case the user wants to compare a mixed group.
+                var fuseClaimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    foreach (var key in FuseRegistry.GetClaimedIds(FuseClaimKind.Segment))
+                    {
+                        if (!string.IsNullOrWhiteSpace(key))
+                        {
+                            fuseClaimed.Add(key);
+                        }
+                    }
+                }
+                catch
+                {
+                    // Best-effort — without the claim list we still emit the audit.
+                }
+
+                var segments = graph.Segments
+                    .Where(seg => seg != null && !string.IsNullOrWhiteSpace(seg.id))
+                    .Where(seg => groupFilter == null ||
+                                  string.Equals(seg.groupId ?? string.Empty, groupFilter, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+
+                if (segments.Length == 0)
+                {
+                    return groupFilter == null
+                        ? "FUSE segments audit: no segments in graph."
+                        : $"FUSE segments audit: no segments match groupId='{groupFilter}'.";
+                }
+
+                var groups = segments
+                    .GroupBy(seg => seg.groupId ?? "<none>", StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                var sb = new StringBuilder();
+                sb.AppendLine(
+                    $"FUSE segments audit: {segments.Length} segments across {groups.Length} group(s)" +
+                    (groupFilter != null ? $" (filter='{groupFilter}')" : "") +
+                    $". FUSE-claimed={fuseClaimed.Count}.");
+
+                foreach (var group in groups)
+                {
+                    var groupSegments = group.ToArray();
+                    var rendererCounts = new List<int>(groupSegments.Length);
+                    var enabledRendererCounts = new List<int>(groupSegments.Length);
+                    var inactiveSegments = 0;
+                    var noRendererSegments = 0;
+                    var visibleSegments = 0;
+                    var fuseSegments = 0;
+
+                    foreach (var segment in groupSegments)
+                    {
+                        var renderers = segment.GetComponentsInChildren<Renderer>(true);
+                        var enabledRenderers = 0;
+                        for (var i = 0; i < renderers.Length; i++)
+                        {
+                            if (renderers[i] != null && renderers[i].enabled)
+                            {
+                                enabledRenderers++;
+                            }
+                        }
+
+                        rendererCounts.Add(renderers.Length);
+                        enabledRendererCounts.Add(enabledRenderers);
+
+                        if (renderers.Length == 0)
+                        {
+                            noRendererSegments++;
+                        }
+
+                        if (!segment.gameObject.activeInHierarchy)
+                        {
+                            inactiveSegments++;
+                        }
+                        else if (enabledRenderers > 0)
+                        {
+                            visibleSegments++;
+                        }
+
+                        if (fuseClaimed.Contains(segment.id))
+                        {
+                            fuseSegments++;
+                        }
+                    }
+
+                    sb.AppendLine(
+                        $"  group='{group.Key}' count={groupSegments.Length} fuseClaimed={fuseSegments} " +
+                        $"visible={visibleSegments} inactive={inactiveSegments} noRenderer={noRendererSegments} " +
+                        $"renderers(min/avg/max)={rendererCounts.DefaultIfEmpty(0).Min()}/" +
+                        $"{rendererCounts.DefaultIfEmpty(0).Average():0.#}/" +
+                        $"{rendererCounts.DefaultIfEmpty(0).Max()}.");
+
+                    if (verbose)
+                    {
+                        foreach (var segment in groupSegments
+                                     .OrderBy(s => s.id, StringComparer.OrdinalIgnoreCase))
+                        {
+                            var renderers = segment.GetComponentsInChildren<Renderer>(true);
+                            var enabled = renderers.Count(r => r != null && r.enabled);
+                            sb.AppendLine(
+                                $"    [{(fuseClaimed.Contains(segment.id) ? "F" : "V")}] " +
+                                $"id='{segment.id}' " +
+                                $"active={segment.gameObject.activeInHierarchy} " +
+                                $"renderers={renderers.Length}/{enabled} " +
+                                $"a='{(segment.a != null ? segment.a.id : "<null>")}' " +
+                                $"b='{(segment.b != null ? segment.b.id : "<null>")}' " +
+                                $"parent='{(segment.transform.parent != null ? segment.transform.parent.name : "<null>")}'.");
+                        }
+                    }
+                }
+
+                return sb.ToString();
+            }
+            catch (Exception ex)
+            {
+                return $"FUSE segments audit failed: {ex.Message}";
+            }
+        }
+    }
+
+    /// <summary>
+    /// Force a full TrackObjectManager rebuild. Diagnostic for the
+    /// "segments are registered with the graph but no rails are
+    /// rendered" failure mode: <see cref="Track.Graph.AddSegment"/>
+    /// silently drops any segment whose <c>groupId</c> isn't in
+    /// <see cref="Track.Graph.enabledGroupIds"/> at the moment it
+    /// runs, and <see cref="Track.Graph.RebuildCollections"/> clears
+    /// the segments dictionary and re-evaluates every TrackSegment
+    /// against the current enabled-groups list. If a rebuild fired
+    /// while a track group was transiently absent from
+    /// <c>enabledGroupIds</c>, every segment in that group is missing
+    /// from the dict (and thus from the mesh build); later state
+    /// changes that re-enable the group don't automatically retrigger
+    /// a TrackObjectManager rebuild. Running this command forces one,
+    /// which should make missing track groups (e.g. Foxy's Bryson
+    /// Tweaks s2 segments) snap back into view if that's the failure
+    /// mode at play.
+    /// </summary>
+    [ConsoleCommand("/fuse.track.rebuild",
+        "Invalidate every segment's cached bezier curve and force a full TrackObjectManager rebuild. " +
+        "Recovers from the 'switch tracks do not intersect' geometry failure caused by stale curves " +
+        "that don't reflect post-migration node positions/rotations.")]
+    public sealed class FuseTrackRebuildCommand : IConsoleCommand
+    {
+        public string Execute(string[] components)
+        {
+            try
+            {
+                var graph = Graph.Shared;
+                if (graph == null || !graph.HasPopulatedCollections)
+                {
+                    return "FUSE track rebuild: track graph is not populated yet.";
+                }
+
+                var before = graph.Segments.Count();
+                // Invalidate first — otherwise the rebuild's RebuildCollections
+                // re-adds segments with invalidateNodes:false and the existing
+                // cached _curve fields survive, so SwitchGeometry.Calculate
+                // still sees the same stale curve geometry that failed
+                // before. Wiping every segment's cached curve here forces
+                // the next Curve access to recompute against current node
+                // transforms.
+                var curvesInvalidated = TrackAPI.InvalidateAllCurves("/fuse.track.rebuild");
+                TrackAPI.RebuildGraph();
+                var after = graph.Segments.Count();
+                return $"FUSE track rebuild: invalidated {curvesInvalidated} segment curve(s) " +
+                       $"and requested rebuild. segments before={before} after={after}. " +
+                       "If previously-invisible switches and their connected segments are now rendering, " +
+                       "stale TrackSegment.Curve caches were preventing SwitchGeometry.Calculate from " +
+                       "finding the rail intersection points.";
+            }
+            catch (Exception ex)
+            {
+                return $"FUSE track rebuild failed: {ex.Message}";
             }
         }
     }

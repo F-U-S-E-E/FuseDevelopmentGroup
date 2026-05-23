@@ -1031,6 +1031,89 @@ namespace FUSE.API
             FuseEvents.RaiseGraphRebuilt();
         }
 
+        /// <summary>
+        /// Invalidate the <c>BezierCurve</c> cache on every TrackSegment in
+        /// the graph so that the next time <see cref="TrackSegment.Curve"/>
+        /// is accessed it rebuilds the bezier against the CURRENT node
+        /// transforms.
+        ///
+        /// Necessary because <c>TrackSegment._curve</c> is populated lazily
+        /// from <c>node.transform.localPosition</c> / <c>localRotation</c>
+        /// on first access and then held forever — there's no automatic
+        /// invalidation when the underlying node transform is mutated.
+        /// Vanilla relies on <c>Graph.OnNodeDidChange</c> firing through
+        /// <see cref="Track.Graph.InvalidateNode"/> to invalidate the
+        /// connected segments' curves, but FUSE's legacy-data pipeline can
+        /// land in a state where:
+        ///   * The segment is registered (via <see cref="AddSegment"/>)
+        ///     against node positions/rotations from the first source
+        ///     file that mentioned them, baking those into the curve.
+        ///   * A later mixinto file (e.g. Foxy's KaterRepair-migration
+        ///     altering the rotation of a Bryson Tweaks switch node)
+        ///     moves the node — but if FUSE applies the migration as a
+        ///     raw transform write rather than through <see cref="UpdateNode"/>,
+        ///     <c>OnNodeDidChange</c> doesn't fire and the segment keeps
+        ///     its stale curve.
+        ///   * <see cref="Track.Graph.RebuildCollections"/> re-adds every
+        ///     segment with <c>invalidateNodes:false</c>, so a manual
+        ///     <see cref="RebuildGraph"/> can't recover either.
+        ///   * <see cref="Track.TrackObjectManager"/>'s
+        ///     <c>SwitchGeometry.Calculate</c> then throws
+        ///     "Switch tracks do not intersect" because the two diverging
+        ///     rails it computes from the stale curves don't intersect
+        ///     within the 1.5 m tolerance, and the switch + every
+        ///     connected segment is silently dropped from the mesh build.
+        ///     End result: visible rails are missing where the data says
+        ///     they should be.
+        ///
+        /// This method is the wholesale rescue: clear every segment's
+        /// cached curve. The next rebuild then computes fresh curves
+        /// from current node transforms, the switch geometry calc gets
+        /// real intersection points, and meshes are built. Returns the
+        /// count of segments touched so callers can include it in a
+        /// diagnostic.
+        /// </summary>
+        public static int InvalidateAllCurves(string reason)
+        {
+            var graph = Graph.Shared;
+            if (graph == null)
+            {
+                return 0;
+            }
+
+            var invalidated = 0;
+            foreach (var segment in graph.Segments)
+            {
+                if (segment == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    segment.InvalidateCurve();
+                    invalidated++;
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning(
+                        $"FUSE could not invalidate curve for segment '{segment.id ?? segment.name ?? "<unknown>"}' " +
+                        $"reason='{reason ?? "unspecified"}': {ex.Message}");
+                }
+            }
+
+            if (invalidated > 0)
+            {
+                FuseLog.Info(
+                    $"FUSE invalidated bezier curves on {invalidated} track segment(s) reason='{reason ?? "unspecified"}'. " +
+                    "The next graph rebuild will recompute curves against current node transforms; " +
+                    "this clears the stale-curve state that makes SwitchGeometry.Calculate throw on switches " +
+                    "whose nodes were repositioned by a later mixinto migration.");
+            }
+
+            return invalidated;
+        }
+
         public static int DisableInvalidTrackMarkers(string reason)
         {
             var disabled = 0;

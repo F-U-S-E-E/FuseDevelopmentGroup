@@ -456,6 +456,18 @@ namespace FUSE.Validation
                         continue;
                     }
 
+                    // Remove-sentinel: a component entry whose only purpose is to
+                    // ask the apply path to delete the matching runtime sub-component
+                    // (the legacy converter emits these for Strange-Customs
+                    // <c>"foo": null</c> deletions, e.g. CollieSylvaRemoval).
+                    // These entries intentionally carry no <c>type</c>/<c>name</c>
+                    // and the other component fields are meaningless — skip the
+                    // required-field and shape validation entirely.
+                    if (component.Value.Remove)
+                    {
+                        continue;
+                    }
+
                     if (!component.Value.Partial)
                     {
                         Required(result, $"{componentPath}.type", component.Value.Type);

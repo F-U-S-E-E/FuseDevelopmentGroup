@@ -66,6 +66,21 @@ namespace FUSE.Data
 
     public sealed class FuseIndustryComponent
     {
+        /// <summary>
+        /// Marks the component entry as a deletion request rather than an
+        /// add/update. Emitted by the legacy data converter when a mod uses
+        /// the Strange-Customs <c>"foo": null</c> idiom to remove a vanilla
+        /// component (e.g. CollieSylvaRemoval nulls every component on
+        /// sylva-tannery / sylva-paperboard / sylva-interchange). A JSON
+        /// null cannot be carried straight through because
+        /// <see cref="FUSE.Serialization.FuseSerializer.GetSettings"/> sets
+        /// <c>NullValueHandling.Ignore</c>, which causes the deserializer
+        /// to drop null dictionary entries entirely — leaving the apply
+        /// path with an empty components dict and the vanilla components
+        /// still in place. Routing the deletion through this explicit
+        /// boolean survives serializer settings.
+        /// </summary>
+        public bool Remove { get; set; }
         public bool Partial { get; set; }
         public string Type { get; set; }
         public string Name { get; set; }

@@ -1613,15 +1613,41 @@ namespace FUSE.Loading
             }
 
             var inferenceContext = BuildComponentTypeInferenceContext(sourceComponents);
-            foreach (var component in sourceComponents.Properties().Where(p => p.Value is JObject))
+            foreach (var component in sourceComponents.Properties())
             {
-                if (IsLegacyDirectiveKey(component.Name))
+                // Legacy SC convention: setting a component's value to null
+                // requests deletion of the matching runtime sub-component.
+                // The old <c>Where(p => p.Value is JObject)</c> filter
+                // discarded these sentinels before the apply path could see
+                // them — so removal mods such as CollieSylvaRemoval (which
+                // nulls every component on sylva-tannery / sylva-paperboard /
+                // sylva-interchange to delete them) became silent no-ops and
+                // the vanilla components lingered in the industry list.
+                // We can't pass a JSON <c>null</c> straight through because
+                // <see cref="FUSE.Serialization.FuseSerializer.GetSettings"/>
+                // sets <c>NullValueHandling.Ignore</c>, which would drop the
+                // entry during deserialization. Convert the null into an
+                // explicit <c>{ "remove": true }</c> sentinel that the
+                // <see cref="FUSE.Data.Operations.FuseIndustryComponent.Remove"/>
+                // flag picks up at apply time.
+                if (component.Value == null || component.Value.Type == JTokenType.Null)
                 {
-                    ConvertDirectiveComponents((JObject)component.Value, components, inferenceContext);
+                    components[component.Name] = new JObject { ["remove"] = true };
                     continue;
                 }
 
-                AddConvertedComponent(components, component.Name, (JObject)component.Value, inferenceContext);
+                if (!(component.Value is JObject obj))
+                {
+                    continue;
+                }
+
+                if (IsLegacyDirectiveKey(component.Name))
+                {
+                    ConvertDirectiveComponents(obj, components, inferenceContext);
+                    continue;
+                }
+
+                AddConvertedComponent(components, component.Name, obj, inferenceContext);
             }
 
             return components;

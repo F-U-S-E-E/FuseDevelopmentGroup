@@ -1477,6 +1477,7 @@ namespace FUSE.Loading
 
             var enabledCount = 0;
             var changedCount = 0;
+            var availabilityChangedCount = 0;
             foreach (var groupId in groupsToEnable)
             {
                 try
@@ -1484,6 +1485,24 @@ namespace FUSE.Loading
                     if (graph.SetGroupEnabled(groupId, true))
                     {
                         changedCount++;
+                    }
+                    // ALSO flip available=true. The merged graph rebuild that
+                    // runs after this method builds the visible track mesh,
+                    // and mesh visibility uses Graph.availableGroupIds — not
+                    // enabledGroupIds. If we leave available=false here, the
+                    // mesh build skips the segments outright, and any later
+                    // SetGroupAvailable(groupId, true) (e.g. by the orphan
+                    // finalise tail of RefreshRuntimeStateAfterApply) cannot
+                    // reconstruct mesh entries that were never created.
+                    // This was the CollieDillsboroOverhaul e-c1 regression:
+                    // segments bound to the graph because enabled=true, but
+                    // never appeared because available=false at build time.
+                    // The per-feature refresh later in RefreshRuntimeStateAfterApply
+                    // owns SetGroupAvailable for feature-claimed groups, so
+                    // locked features will still hide their track correctly.
+                    if (graph.SetGroupAvailable(groupId, true))
+                    {
+                        availabilityChangedCount++;
                     }
                     enabledCount++;
                 }
@@ -1513,9 +1532,10 @@ namespace FUSE.Loading
 
             FuseLog.Info(
                 $"FUSE pre-enabled {enabledCount} track group(s) " +
-                $"changed={changedCount} " +
+                $"changed={changedCount} availabilityChanged={availabilityChangedCount} " +
                 $"({groupsFromSegments.Count} from segment groupIds) " +
-                "before apply-segments to prevent graph-rebuild culling; progression refresh will restore gated state after apply.");
+                "before apply-segments to prevent graph-rebuild culling and mesh-build skipping; " +
+                "progression refresh will restore gated state after apply.");
         }
 
         private static void CollectSegmentGroupIds(FuseTrackDefinition tracks, HashSet<string> sink)

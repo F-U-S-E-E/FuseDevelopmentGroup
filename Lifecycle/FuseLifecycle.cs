@@ -78,6 +78,21 @@ namespace FUSE.Lifecycle
                         IndustryAPI.ScrubIndustryComponentCaches("map load after FUSE package apply");
                         IndustryAPI.DisableOrphanedBaseGameIndustries("map load after FUSE package apply");
                         TrackAPI.DisableInvalidTrackMarkers("map load after FUSE package apply");
+                        // Wholesale invalidate every segment's cached
+                        // BezierCurve so the rebuild that EndBatch(true)
+                        // fires below computes fresh curves against the
+                        // post-migration node transforms. Without this,
+                        // segments whose endpoint node positions or
+                        // rotations were mutated by a later legacy
+                        // mixinto migration (e.g. Foxy's KaterRepair-migration
+                        // moving a Bryson Tweaks switch node) keep the
+                        // stale curve baked in at first-access, and
+                        // <c>SwitchGeometry.Calculate</c> in
+                        // <c>TrackObjectManager.BuildDescriptors</c>
+                        // throws "Switch tracks do not intersect" —
+                        // silently dropping the switch and every segment
+                        // attached to it from the mesh build.
+                        TrackAPI.InvalidateAllCurves("map load after FUSE package apply");
                     }
                     finally
                     {
