@@ -4,9 +4,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
+using AssetPack.Runtime;
 using Audio;
 using KeyValue.Runtime;
 using Model;
+using Model.Database;
 using Model.Definition;
 using Model.Definition.Components;
 using Model.Definition.Data;
@@ -35,6 +39,24 @@ namespace FUSE.API
         // is observing the SC key.
         public const string LegacyHornCustomKey = "horn.custom";
         public const string LegacyBellCustomKey = "bell.custom";
+
+        // Reflective handles for WhistleController's private state. Used by
+        // <see cref="TryConfigureWhistle"/>'s model-load branch to swap the
+        // default whistle prefab on the loco cab for a FUSE-loaded one
+        // (legacy SC-era whistle packs ship a <c>model</c> AssetReference
+        // pointing at an asset pack — e.g. <c>audio.whistles01/3ChimeD</c> —
+        // and the visible whistle on the boiler is supposed to come from
+        // there). Going through reflection rather than another Harmony
+        // patch keeps us out of the JIT-shared generic-method hazard that
+        // <c>PrefabStore.DefinitionForIdentifier&lt;T&gt;</c> exposed
+        // (patching the closed generic for one T poisons every other T,
+        // breaking scenery / material / car loading wholesale).
+        private static readonly FieldInfo WhistleControllerWhistleModelField =
+            typeof(WhistleController).GetField("_whistleModel", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo WhistleControllerModelLoadReferenceField =
+            typeof(WhistleController).GetField("_modelLoadReference", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly FieldInfo WhistleControllerLoadCtsField =
+            typeof(WhistleController).GetField("_loadCancellationTokenSource", BindingFlags.Instance | BindingFlags.NonPublic);
 
         private static readonly Dictionary<string, RegisteredWhistle> Whistles = new Dictionary<string, RegisteredWhistle>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, RegisteredHorn> Horns = new Dictionary<string, RegisteredHorn>(StringComparer.OrdinalIgnoreCase);
@@ -225,7 +247,107 @@ namespace FUSE.API
                 FuseLog.Info($"FUSE audio package='{whistle.PackageId}' operation='configure whistle' id='{whistle.Id}' clip='{whistle.ClipPath}'.");
             });
 
+            // Swap the 3D whistle prefab on the loco cab too. Vanilla
+            // Configure normally does this from the WhistleDefinition.Model
+            // branch, but FuseWhistleControllerConfigurePatch suppresses
+            // vanilla entirely when FUSE owns the audio (vanilla's
+            // DefinitionForIdentifier walks asset-pack stores and throws
+            // UnknownIdentifierException for FUSE whistle ids). Fire and
+            // forget — model load is async, and the controller may also
+            // be torn down by car removal before the load completes.
+            if (whistle.Model != null && !string.IsNullOrWhiteSpace(whistle.Model.AssetIdentifier))
+            {
+                _ = LoadAndAttachWhistleModelAsync(controller, whistle);
+            }
+
             return true;
+        }
+
+        private static async Task LoadAndAttachWhistleModelAsync(WhistleController controller, RegisteredWhistle whistle)
+        {
+            try
+            {
+                if (controller == null || whistle?.Model == null)
+                {
+                    return;
+                }
+
+                if (WhistleControllerWhistleModelField == null ||
+                    WhistleControllerModelLoadReferenceField == null ||
+                    WhistleControllerLoadCtsField == null)
+                {
+                    FuseLog.Warning(
+                        $"FUSE audio could not attach whistle model for whistle '{whistle.Id}': " +
+                        "WhistleController private fields not resolvable via reflection (game IL may have changed).");
+                    return;
+                }
+
+                // Cancel and dispose anything an earlier whistle swap on
+                // this controller might have started, then null the fields
+                // so this load owns them cleanly. Mirrors the first three
+                // statements of vanilla's async Configure.
+                var prevCts = WhistleControllerLoadCtsField.GetValue(controller) as CancellationTokenSource;
+                try { prevCts?.Cancel(); } catch { }
+
+                var prevModel = WhistleControllerWhistleModelField.GetValue(controller) as GameObject;
+                if (prevModel != null)
+                {
+                    UnityEngine.Object.Destroy(prevModel);
+                }
+                WhistleControllerWhistleModelField.SetValue(controller, null);
+
+                var prevRef = WhistleControllerModelLoadReferenceField.GetValue(controller) as IDisposable;
+                try { prevRef?.Dispose(); } catch { }
+                WhistleControllerModelLoadReferenceField.SetValue(controller, null);
+
+                var cts = new CancellationTokenSource();
+                WhistleControllerLoadCtsField.SetValue(controller, cts);
+                var token = cts.Token;
+
+                var prefabStore = TrainController.Shared?.PrefabStore;
+                if (prefabStore == null)
+                {
+                    FuseLog.Warning(
+                        $"FUSE audio could not attach whistle model for whistle '{whistle.Id}': " +
+                        "TrainController.Shared.PrefabStore was null.");
+                    return;
+                }
+
+                // This generic method is GENERIC over T but we are CALLING
+                // it, not patching it — there is no JIT-shared-IL hazard.
+                // The result is a LoadedAssetReference<GameObject> we have
+                // to keep alive (assigned into _modelLoadReference) so the
+                // asset pack store does not free the prefab while the
+                // instantiated copy is still on the cab.
+                var loadedRef = await prefabStore.LoadAssetAsync<GameObject>(
+                    whistle.Model.AssetPackIdentifier,
+                    whistle.Model.AssetIdentifier,
+                    token);
+
+                if (controller == null || token.IsCancellationRequested || loadedRef?.Asset == null)
+                {
+                    try { loadedRef?.Dispose(); } catch { }
+                    return;
+                }
+
+                var model = UnityEngine.Object.Instantiate(loadedRef.Asset, controller.transform, worldPositionStays: false);
+                WhistleControllerWhistleModelField.SetValue(controller, model);
+                WhistleControllerModelLoadReferenceField.SetValue(controller, loadedRef);
+
+                FuseLog.Info(
+                    $"FUSE audio package='{whistle.PackageId}' operation='attach whistle model' id='{whistle.Id}' " +
+                    $"assetPack='{whistle.Model.AssetPackIdentifier}' asset='{whistle.Model.AssetIdentifier}'.");
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when another swap interrupts us.
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception(
+                    $"FUSE audio failed to load/attach whistle model for whistle '{whistle?.Id ?? "<null>"}'",
+                    ex);
+            }
         }
 
         internal static void AttachRuntimeControllers()
