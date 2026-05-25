@@ -335,6 +335,32 @@ namespace FUSE.API
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _transientlyPreEnabledLock = new object();
 
+        // Snapshot of every track-group id that was claimed by some
+        // MapFeature's tracksEnable / tracksAvail BEFORE FUSE applied
+        // any mod progression patches. Captured at MapDidLoad time by
+        // <see cref="CaptureBaseFeatureClaimsSnapshot"/> and consulted
+        // by <see cref="RevokeTransientlyPreEnabledOrphanGroups"/> to
+        // tell two kinds of "no current owner" orphans apart:
+        //
+        //   * In this set → group WAS supposed to be progression-gated
+        //     (the base game's <c>alarka</c> feature originally listed
+        //     <c>s3a</c> in tracksEnable); a mod's feature patch
+        //     stripped the owner list (e.g. an extension's
+        //     <c>alarka-patched</c> replaces tracksEnable with
+        //     <c>[alext-off]</c>). We hide the group to preserve the
+        //     "locked until unlock" intent.
+        //   * NOT in this set → genuinely decorative orphan (mod-added
+        //     group with no progression hook by author intent, e.g.
+        //     CollieDillsboroOverhaul's <c>e-c1</c> interchange
+        //     extension siding). We keep it visible-but-unavailable.
+        //
+        // Cleared by <see cref="ClearBaseFeatureClaimsSnapshot"/> on
+        // MapWillUnload so the next map starts fresh.
+        private static readonly HashSet<string> _baseFeatureClaimedGroupIds =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object _baseFeatureClaimsLock = new object();
+        private static bool _baseFeatureClaimsCaptured;
+
         internal static void RecordTransientlyPreEnabledTrackGroup(string groupId)
         {
             if (string.IsNullOrWhiteSpace(groupId))
@@ -344,6 +370,91 @@ namespace FUSE.API
             lock (_transientlyPreEnabledLock)
             {
                 _transientlyPreEnabledTrackGroups.Add(groupId);
+            }
+        }
+
+        /// <summary>
+        /// Capture the set of track-group ids claimed by any MapFeature's
+        /// <c>trackGroupsEnableOnUnlock</c> or
+        /// <c>trackGroupsAvailableOnUnlock</c> at the moment the map
+        /// finished loading and BEFORE any FUSE mod progression patches
+        /// have applied. Mirrors the existing
+        /// <c>TrackAPI.CaptureBaseGraphSnapshot</c> contract for the
+        /// progression layer. Idempotent — only the first call per
+        /// map-load wins. Pair with
+        /// <see cref="ClearBaseFeatureClaimsSnapshot"/> on map unload
+        /// so the next map starts clean.
+        /// </summary>
+        public static void CaptureBaseFeatureClaimsSnapshot(string reason)
+        {
+            lock (_baseFeatureClaimsLock)
+            {
+                if (_baseFeatureClaimsCaptured)
+                {
+                    return;
+                }
+
+                var manager = MapFeatureManager.Shared;
+                if (manager == null)
+                {
+                    FuseLog.Info(
+                        $"FUSE progression base-feature claim snapshot deferred reason='{reason ?? "unspecified"}': " +
+                        "MapFeatureManager.Shared not available yet.");
+                    return;
+                }
+
+                _baseFeatureClaimedGroupIds.Clear();
+                foreach (var feature in manager.AvailableFeatures ?? Enumerable.Empty<MapFeature>())
+                {
+                    if (feature == null)
+                    {
+                        continue;
+                    }
+                    foreach (var group in feature.trackGroupsEnableOnUnlock ?? Array.Empty<string>())
+                    {
+                        if (!string.IsNullOrWhiteSpace(group))
+                        {
+                            _baseFeatureClaimedGroupIds.Add(group);
+                        }
+                    }
+                    foreach (var group in feature.trackGroupsAvailableOnUnlock ?? Array.Empty<string>())
+                    {
+                        if (!string.IsNullOrWhiteSpace(group))
+                        {
+                            _baseFeatureClaimedGroupIds.Add(group);
+                        }
+                    }
+                }
+
+                _baseFeatureClaimsCaptured = true;
+                FuseLog.Info(
+                    $"FUSE progression captured base-feature claim snapshot reason='{reason ?? "unspecified"}' " +
+                    $"baseClaimedGroupIds={_baseFeatureClaimedGroupIds.Count}.");
+            }
+        }
+
+        /// <summary>
+        /// Drop the base-feature claim snapshot so the next map-load
+        /// captures fresh vanilla state. Safe to call repeatedly.
+        /// </summary>
+        public static void ClearBaseFeatureClaimsSnapshot()
+        {
+            lock (_baseFeatureClaimsLock)
+            {
+                _baseFeatureClaimedGroupIds.Clear();
+                _baseFeatureClaimsCaptured = false;
+            }
+        }
+
+        private static bool WasGroupClaimedByBaseFeature(string groupId)
+        {
+            if (string.IsNullOrWhiteSpace(groupId))
+            {
+                return false;
+            }
+            lock (_baseFeatureClaimsLock)
+            {
+                return _baseFeatureClaimedGroupIds.Contains(groupId);
             }
         }
 
@@ -3065,13 +3176,31 @@ namespace FUSE.API
 
                 try
                 {
-                    // Keep enabled=true so segments stay in the mesh.
-                    // Flip available=false so the player's network does
-                    // not treat this orphan track as owned/reachable.
-                    // We deliberately do NOT call SetGroupEnabled here —
-                    // that would remove the group from enabledGroupIds and
-                    // the next RebuildCollections would cull every segment
-                    // belonging to it.
+                    // Keep enabled=true so segments stay in the mesh
+                    // (matches Railloader, which never disables an
+                    // unowned group). Flip available=false so the
+                    // player's network does not treat this orphan track
+                    // as owned/reachable. This is the right state for
+                    // genuine decorative-orphan track shipped by
+                    // graph-only mods (e.g. CollieDillsboroOverhaul's
+                    // e-c1 interchange-extension siding, intentionally
+                    // disconnected from the active network and with no
+                    // progression hook).
+                    //
+                    // Progression-gated track that LOOKS orphan because
+                    // a mod's MapFeature patch stripped the original
+                    // owner list (e.g. the JR MaconCounty mod patching
+                    // <c>alarka</c> with <c>{ "alext-off": true }</c>
+                    // for tracksEnableOnUnlock, which the legacy
+                    // converter used to flatten into a REPLACE set,
+                    // wiping out the base game's <c>[s3a]</c>) is now
+                    // handled upstream: <see cref="NormalizeProgressionValue"/>
+                    // preserves the object form so
+                    // <see cref="FUSE.Data.FuseStringPatch"/>'s merge
+                    // semantics fire, and the base game's gating
+                    // entries survive. By the time we get here, s3a
+                    // is properly claimed by the patched alarka and
+                    // this method never sees it.
                     var availableChanged = graph.SetGroupAvailable(groupId, false);
                     if (availableChanged)
                     {
