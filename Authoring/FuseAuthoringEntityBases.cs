@@ -90,6 +90,30 @@ namespace FUSE.Authoring
 
         public override string EntityKind => "configurable-structure";
 
+        // Track whether the source JSON definition (or a capture from a
+        // live GameObject) explicitly specified a local transform value.
+        // The base <see cref="FuseWorldEntity"/> declares Position /
+        // Rotation / Scale as non-nullable Vector3 properties that
+        // default to Vector3.zero / Vector3.one; without these flags we
+        // cannot tell "the author set localPosition to the origin" apart
+        // from "the author did not specify a position at all". The
+        // distinction matters: <see cref="BuildRuntimeData"/> writes
+        // FuseSceneClone.LocalPosition (a nullable Vector3) and the apply
+        // path in <see cref="FUSE.API.SceneCloneAPI.ApplyDefinition"/>
+        // ONLY rewrites the live transform.localPosition when
+        // LocalPosition.HasValue is true. Without the flags, every
+        // scene-clone definition that omitted localPosition would silently
+        // zero the live transform on apply — which is how a
+        // <c>{ "enabled": true }</c> mandela on the vanilla
+        // <c>World/Large Scenery/Bryson/Freight House</c> path was
+        // collapsing the building's local (202.36, 1.0, 210.45) to
+        // (0, 0, 0), teleporting it from its intended spot by the
+        // Bryson freight house track onto the parent Bryson container's
+        // origin (which happens to overlap Lego's Scrappalachia yard).
+        private bool _hasLocalPosition;
+        private bool _hasLocalRotation;
+        private bool _hasLocalScale;
+
         [FuseEditable("Target Path", Group = "Structure", Order = 10)]
         [FuseReference("scene-path", AllowNull = false)]
         public string TargetPath { get; set; }
@@ -114,17 +138,25 @@ namespace FUSE.Authoring
             TargetPath = definition.TargetPath;
             Source = definition.Source;
             Enabled = definition.Enabled ?? true;
-            if (definition.LocalPosition.HasValue)
+            // Track each transform component independently — a definition
+            // can specify any subset (e.g. only LocalRotation) and we must
+            // preserve that subset through the round-trip so apply does
+            // not zero the unspecified ones. See the
+            // _hasLocalPosition/Rotation/Scale field comments above.
+            _hasLocalPosition = definition.LocalPosition.HasValue;
+            _hasLocalRotation = definition.LocalRotation.HasValue;
+            _hasLocalScale = definition.LocalScale.HasValue;
+            if (_hasLocalPosition)
             {
                 Position = definition.LocalPosition.Value;
             }
 
-            if (definition.LocalRotation.HasValue)
+            if (_hasLocalRotation)
             {
                 Rotation = definition.LocalRotation.Value;
             }
 
-            if (definition.LocalScale.HasValue)
+            if (_hasLocalScale)
             {
                 Scale = definition.LocalScale.Value;
             }
@@ -151,14 +183,23 @@ namespace FUSE.Authoring
 
         public override object BuildRuntimeData()
         {
+            // Only emit a non-null LocalPosition / LocalRotation / LocalScale
+            // when the source definition (JSON) or a runtime capture
+            // actually provided one. The apply path treats
+            // <c>LocalPosition.HasValue == true</c> as "force the live
+            // transform to this value" — and the inherited
+            // <see cref="FuseWorldEntity.Position"/> property's default
+            // of <c>Vector3.zero</c> would otherwise be indistinguishable
+            // from an authored origin, silently teleporting the bound
+            // GameObject to its parent's origin on every apply.
             return new FUSE.Data.FuseSceneClone
             {
                 TargetPath = TargetPath,
                 Source = Source,
                 Enabled = Enabled,
-                LocalPosition = Position,
-                LocalRotation = Rotation,
-                LocalScale = Scale
+                LocalPosition = _hasLocalPosition ? (Vector3?)Position : null,
+                LocalRotation = _hasLocalRotation ? (Vector3?)Rotation : null,
+                LocalScale = _hasLocalScale ? (Vector3?)Scale : null
             };
         }
 
@@ -201,6 +242,13 @@ namespace FUSE.Authoring
             Position = runtime.transform.localPosition;
             Rotation = runtime.transform.localEulerAngles;
             Scale = runtime.transform.localScale;
+            // A capture is an explicit "snapshot the live transform" act,
+            // so promote all three components to "specified" — the user's
+            // intent is that BuildRuntimeData round-trips these values
+            // back into the definition rather than silently dropping them.
+            _hasLocalPosition = true;
+            _hasLocalRotation = true;
+            _hasLocalScale = true;
             Enabled = runtime.activeSelf;
             BindRuntime(runtime);
             MarkDirty("captured configurable structure from runtime");
