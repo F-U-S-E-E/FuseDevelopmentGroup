@@ -56,6 +56,7 @@ namespace FUSE.Tests.Loading
                 // suffix, but if it does we leave the residue rather than
                 // fail the test.
             }
+            GC.SuppressFinalize(this);
         }
 
         [Fact]

@@ -284,7 +284,7 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE scenery asset direct lookup failed for '{candidate}': {ex.Message}");
+                FuseLog.Exception($"FUSE scenery asset direct lookup failed for '{candidate}'", ex);
             }
 
             if (allowLegacyAlias &&
@@ -303,7 +303,7 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE scenery asset registry enumeration failed while resolving '{candidate}': {ex.Message}");
+                FuseLog.Exception($"FUSE scenery asset registry enumeration failed while resolving '{candidate}'", ex);
                 return false;
             }
 
@@ -416,7 +416,7 @@ namespace FUSE.Runtime.API
             return true;
         }
 
-        private static Vector3 Average(IReadOnlyCollection<Vector3> values)
+        private static Vector3 Average(List<Vector3> values)
         {
             if (values == null || values.Count == 0)
             {

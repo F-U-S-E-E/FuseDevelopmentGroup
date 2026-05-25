@@ -354,11 +354,11 @@ namespace FUSE.Interface
             return true;
         }
 
-        private static bool TryAggregateBounds(IReadOnlyList<Renderer> renderers, out Bounds bounds)
+        private static bool TryAggregateBounds(Renderer[] renderers, out Bounds bounds)
         {
             bounds = default;
             var found = false;
-            for (var index = 0; index < renderers.Count; index++)
+            for (var index = 0; index < renderers.Length; index++)
             {
                 var renderer = renderers[index];
                 if (renderer == null)
@@ -451,7 +451,7 @@ namespace FUSE.Interface
                     .Append(impact.Effect);
                 if (!string.IsNullOrWhiteSpace(impact.State))
                 {
-                    builder.Append(" [").Append(impact.State).Append("]");
+                    builder.Append(" [").Append(impact.State).Append(']');
                 }
 
                 if (!string.IsNullOrWhiteSpace(impact.Target))

@@ -12,6 +12,7 @@ namespace FUSE.Runtime.API
         private const float RoundhouseOutlierDistance = 85f;
         private const float RoundhouseOutlierHeight = 45f;
         private const float RoundhouseOutlierSize = 95f;
+        private static readonly char[] PathSeparators = { '/' };
 
         public static GameObject Resolve(string uri)
         {
@@ -70,7 +71,7 @@ namespace FUSE.Runtime.API
                 return null;
             }
 
-            var segments = path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            var segments = path.Split(PathSeparators, StringSplitOptions.RemoveEmptyEntries);
             if (segments.Length == 0)
             {
                 return null;

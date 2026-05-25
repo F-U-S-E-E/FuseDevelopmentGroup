@@ -37,7 +37,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE legacy game-graph compatibility expansion skipped because the runtime graph snapshot failed: {ex.Message}");
+                FuseLog.Exception($"FUSE legacy game-graph compatibility expansion skipped because the runtime graph snapshot failed", ex);
                 return;
             }
 

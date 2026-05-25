@@ -56,7 +56,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag KeyValueBoolAnimator OnEnable postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag KeyValueBoolAnimator OnEnable postfix failed", ex);
             }
         }
 
@@ -96,7 +96,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag KeyValueBoolAnimator PropertyChanged postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag KeyValueBoolAnimator PropertyChanged postfix failed", ex);
             }
         }
     }
@@ -133,7 +133,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag KeyValuePickableToggle.Activate postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag KeyValuePickableToggle.Activate postfix failed", ex);
             }
         }
     }
@@ -173,7 +173,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag CarLoaderSequencer.OnEnable postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag CarLoaderSequencer.OnEnable postfix failed", ex);
             }
         }
     }
@@ -192,7 +192,7 @@ namespace FUSE.Patches
     [HarmonyPatch]
     internal static class FuseGlobalKeyValueObjectOnEnableDiagnosticPatch
     {
-        private static System.Reflection.MethodBase TargetMethod()
+        private static System.Reflection.MethodInfo TargetMethod()
         {
             var type = Type.GetType("RollingStock.Controls.GlobalKeyValueObject, Assembly-CSharp");
             return type?.GetMethod("OnEnable", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
@@ -218,7 +218,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag GlobalKeyValueObject.OnEnable postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag GlobalKeyValueObject.OnEnable postfix failed", ex);
             }
         }
     }
@@ -226,7 +226,7 @@ namespace FUSE.Patches
     [HarmonyPatch]
     internal static class FuseGlobalKeyValueObjectOnDisableDiagnosticPatch
     {
-        private static System.Reflection.MethodBase TargetMethod()
+        private static System.Reflection.MethodInfo TargetMethod()
         {
             var type = Type.GetType("RollingStock.Controls.GlobalKeyValueObject, Assembly-CSharp");
             return type?.GetMethod("OnDisable", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
@@ -251,7 +251,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag GlobalKeyValueObject.OnDisable postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag GlobalKeyValueObject.OnDisable postfix failed", ex);
             }
         }
 

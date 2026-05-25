@@ -371,7 +371,7 @@ namespace FUSE.Interface
                     .Append(hit.IndustryDisplay)
                     .Append("  [")
                     .Append(hit.ComponentKind)
-                    .Append("]")
+                    .Append(']')
                     .Append("  via span ")
                     .AppendLine(SafeId(hit.SpanId));
             }

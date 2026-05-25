@@ -318,9 +318,9 @@ namespace FUSE.Infrastructure
                     _store = new FuseModSetStore();
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
             {
-                FuseLog.Warning($"FUSE could not read mod-set store '{path}': {ex.GetBaseException().Message}");
+                FuseLog.Exception($"FUSE could not read mod-set store '{path}'", ex);
                 _store = new FuseModSetStore();
             }
 

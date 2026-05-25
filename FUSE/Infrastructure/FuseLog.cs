@@ -75,7 +75,7 @@ namespace FUSE.Infrastructure
                 _fileLoggingAvailable = true;
                 _logger?.Log($"FUSE file log: {_logFilePath}");
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 _fileLoggingAvailable = false;
                 _logger?.Warning($"FUSE could not initialize FUSE.log: {ex.Message}");
@@ -137,7 +137,7 @@ namespace FUSE.Infrastructure
                     File.Move(_logFilePath, firstArchive);
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 _logger?.Warning($"FUSE log rotation skipped: {ex.Message}");
             }

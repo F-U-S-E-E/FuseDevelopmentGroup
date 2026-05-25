@@ -21,6 +21,7 @@ namespace FUSE.Tests.Loading
         public void Dispose()
         {
             FuseSaveCarFaultRegistry.Reset();
+            GC.SuppressFinalize(this);
         }
 
         [Fact]

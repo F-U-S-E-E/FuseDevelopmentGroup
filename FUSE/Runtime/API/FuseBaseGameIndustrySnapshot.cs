@@ -112,7 +112,7 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE base-game industry snapshot failed reason='{reason}': {ex.Message}");
+                FuseLog.Exception($"FUSE base-game industry snapshot failed reason='{reason}'", ex);
             }
         }
 

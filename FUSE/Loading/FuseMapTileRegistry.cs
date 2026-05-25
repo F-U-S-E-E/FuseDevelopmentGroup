@@ -84,9 +84,9 @@ namespace FUSE.Loading
                     {
                         tilePaths = Directory.GetFiles(source.ResolvedFolder, "*.data", SearchOption.TopDirectoryOnly);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
                     {
-                        FuseLog.Warning($"FUSE could not enumerate map tiles in '{source.ResolvedFolder}': {ex.Message}");
+                        FuseLog.Exception($"FUSE could not enumerate map tiles in '{source.ResolvedFolder}'", ex);
                         continue;
                     }
 
@@ -204,7 +204,7 @@ namespace FUSE.Loading
                 }
                 catch (Exception ex)
                 {
-                    FuseLog.Warning($"Skipping map tile source '{tileSource.Key}' in '{modId}' because its sourceFolder threw while resolving: {ex.Message}");
+                    FuseLog.Exception($"Skipping map tile source '{tileSource.Key}' in '{modId}' because its sourceFolder threw while resolving", ex);
                     continue;
                 }
 

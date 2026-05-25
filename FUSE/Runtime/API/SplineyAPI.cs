@@ -181,7 +181,7 @@ namespace FUSE.Runtime.API
                     ConfigureTrestle(root, definition, points);
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException();
+                    throw new NotSupportedException($"Unsupported spliney kind '{kind}'.");
             }
 
             root.name = id;
@@ -276,7 +276,7 @@ namespace FUSE.Runtime.API
             return ResolveNamedObject(GetAutoTrestleProfiles(), profileName, "trestle");
         }
 
-        private static IReadOnlyList<SplineProfile> GetSplineProfiles()
+        private static List<SplineProfile> GetSplineProfiles()
         {
             if (_splineProfiles != null && _splineProfiles.Any(profile => profile != null))
             {
@@ -300,7 +300,7 @@ namespace FUSE.Runtime.API
             return _splineProfiles;
         }
 
-        private static IReadOnlyList<AutoTrestleProfile> GetAutoTrestleProfiles()
+        private static List<AutoTrestleProfile> GetAutoTrestleProfiles()
         {
             if (_autoTrestleProfiles != null && _autoTrestleProfiles.Any(profile => profile != null))
             {

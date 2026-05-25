@@ -21,6 +21,7 @@ namespace FUSE.Loading
     internal static class FuseLegacyContainerMixintoRegistry
     {
         private const string ContainerTargetPrefix = "container:";
+        private static readonly char[] PathSeparators = { '.', '/' };
         private static readonly object DiscoveryLock = new object();
         private static readonly object ApplyLock = new object();
         private static Dictionary<string, List<LegacyContainerMixinto>> MixintosByTarget;
@@ -112,7 +113,7 @@ namespace FUSE.Loading
             {
                 root = FuseLegacyDataConverter.ReadLegacyObject(mixinto.SourcePath);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
             {
                 WarnOnce(mixinto.SourcePath, $"FUSE legacy support could not parse container mixinto '{mixinto.SourcePath}': {ex.Message}");
                 return 0;
@@ -564,7 +565,7 @@ namespace FUSE.Loading
             }
 
             var current = token;
-            foreach (var part in path.Split(new[] { '.', '/' }, StringSplitOptions.RemoveEmptyEntries))
+            foreach (var part in path.Split(PathSeparators, StringSplitOptions.RemoveEmptyEntries))
             {
                 if (current is JObject obj)
                 {
@@ -995,7 +996,7 @@ namespace FUSE.Loading
                     RawDefinition = definition
                 };
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
             {
                 WarnOnce(packagePath, $"FUSE legacy support ignored '{packagePath}' because Definition.json could not be parsed: {ex.Message}");
                 return null;

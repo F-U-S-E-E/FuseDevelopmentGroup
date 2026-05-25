@@ -89,7 +89,7 @@ namespace FUSE.Runtime.API
                 }
 
                 FuseMapLabelRuntimeIndex.Instance.Remove(id);
-                FuseLog.Warning($"FUSE failed to create map label '{id}' and cleaned up the partial object: {ex.Message}");
+                FuseLog.Exception($"FUSE failed to create map label '{id}' and cleaned up the partial object", ex);
                 throw;
             }
         }
@@ -596,12 +596,13 @@ namespace FUSE.Runtime.API
                     continue;
                 }
 
-                if (!TelegraphPoleOriginalPositions.ContainsKey(movement.Key))
+                if (!TelegraphPoleOriginalPositions.TryGetValue(movement.Key, out var originalPosition))
                 {
-                    TelegraphPoleOriginalPositions[movement.Key] = node.position;
+                    originalPosition = node.position;
+                    TelegraphPoleOriginalPositions[movement.Key] = originalPosition;
                 }
 
-                node.position = TelegraphPoleOriginalPositions[movement.Key] + movement.Value;
+                node.position = originalPosition + movement.Value;
                 touched.Add(movement.Key);
                 moved++;
             }
@@ -628,7 +629,7 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE telegraph pole movement could not notify node changes: {ex.Message}");
+                FuseLog.Exception($"FUSE telegraph pole movement could not notify node changes", ex);
             }
 
             if (manager == null || !manager.isActiveAndEnabled || TelegraphRebuildMethod == null)
@@ -1138,17 +1139,17 @@ namespace FUSE.Runtime.API
             return WirePrefabField?.GetValue(manager) as TelegraphWire;
         }
 
-        private static List<Vector3> SamplePolyline(IReadOnlyList<Vector3> sourcePoints, float spacing)
+        private static List<Vector3> SamplePolyline(Vector3[] sourcePoints, float spacing)
         {
             var points = new List<Vector3>();
-            if (sourcePoints == null || sourcePoints.Count == 0)
+            if (sourcePoints == null || sourcePoints.Length == 0)
             {
                 return points;
             }
 
             points.Add(sourcePoints[0]);
             var carry = 0f;
-            for (var index = 0; index < sourcePoints.Count - 1; index++)
+            for (var index = 0; index < sourcePoints.Length - 1; index++)
             {
                 var start = sourcePoints[index];
                 var end = sourcePoints[index + 1];
@@ -1171,15 +1172,15 @@ namespace FUSE.Runtime.API
                 carry += length - consumed;
             }
 
-            if ((points[points.Count - 1] - sourcePoints[sourcePoints.Count - 1]).sqrMagnitude > 0.0001f)
+            if ((points[points.Count - 1] - sourcePoints[sourcePoints.Length - 1]).sqrMagnitude > 0.0001f)
             {
-                points.Add(sourcePoints[sourcePoints.Count - 1]);
+                points.Add(sourcePoints[sourcePoints.Length - 1]);
             }
 
             return points;
         }
 
-        private static Vector3 GetTangent(IReadOnlyList<Vector3> positions, int index)
+        private static Vector3 GetTangent(List<Vector3> positions, int index)
         {
             if (positions == null || positions.Count == 0)
             {

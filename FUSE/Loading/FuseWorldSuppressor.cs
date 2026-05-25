@@ -118,7 +118,7 @@ namespace FUSE.Loading
         {
             get
             {
-                return GetClaimedIds(FuseClaimKind.SuppressedScenePath).Any();
+                return GetClaimedIds(FuseClaimKind.SuppressedScenePath).Length > 0;
             }
         }
 
@@ -195,7 +195,7 @@ namespace FUSE.Loading
                 }
                 catch (Exception ex)
                 {
-                    FuseLog.Warning($"FUSE failed to release suppression claim kind='{claim.Key}' id='{claim.Value}' package='{packageId}': {ex.Message}");
+                    FuseLog.Exception($"FUSE failed to release suppression claim kind='{claim.Key}' id='{claim.Value}' package='{packageId}'", ex);
                 }
             }
 
@@ -266,7 +266,7 @@ namespace FUSE.Loading
             var graph = Graph.Shared;
             if (graph == null)
             {
-                if (GetClaimedIds(FuseClaimKind.SuppressedTrackGroup).Any())
+                if (GetClaimedIds(FuseClaimKind.SuppressedTrackGroup).Length > 0)
                 {
                     FuseLog.Warning($"FUSE cannot apply track-group suppressions for '{reason ?? "unspecified"}' because Graph.Shared is not available.");
                 }
@@ -326,7 +326,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE failed to suppress track group '{groupId}' for '{reason}': {ex.Message}");
+                FuseLog.Exception($"FUSE failed to suppress track group '{groupId}' for '{reason}'", ex);
                 return false;
             }
         }
@@ -593,7 +593,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE failed to restore track group '{groupId}' for '{reason}': {ex.Message}");
+                FuseLog.Exception($"FUSE failed to restore track group '{groupId}' for '{reason}'", ex);
             }
         }
 
@@ -621,7 +621,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE failed to restore scene path '{path}' for '{reason}': {ex.Message}");
+                FuseLog.Exception($"FUSE failed to restore scene path '{path}' for '{reason}'", ex);
             }
             finally
             {
@@ -680,7 +680,7 @@ namespace FUSE.Loading
                 }
                 catch (Exception ex)
                 {
-                    FuseLog.Warning($"FUSE failed to restore progression-disabled state for area '{areaId}' item='{DescribeDisablable(kvp.Key)}': {ex.Message}");
+                    FuseLog.Exception($"FUSE failed to restore progression-disabled state for area '{areaId}' item='{DescribeDisablable(kvp.Key)}'", ex);
                 }
             }
 
@@ -748,7 +748,7 @@ namespace FUSE.Loading
             }
         }
 
-        private static IReadOnlyCollection<string> GetClaimedIds(FuseClaimKind kind)
+        private static string[] GetClaimedIds(FuseClaimKind kind)
         {
             return FuseRegistry.GetClaimedIds(kind)
                 .Where(id => FuseRegistry.GetSharedOwners(kind, id).Count > 0)
@@ -769,7 +769,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE could not enumerate industries for suppressed area '{area.identifier}': {ex.Message}");
+                FuseLog.Exception($"FUSE could not enumerate industries for suppressed area '{area.identifier}'", ex);
                 industries = Array.Empty<Industry>();
             }
 
@@ -785,7 +785,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE could not enumerate passenger stops for suppressed area '{area.identifier}': {ex.Message}");
+                FuseLog.Exception($"FUSE could not enumerate passenger stops for suppressed area '{area.identifier}'", ex);
                 passengerStops = Array.Empty<PassengerStop>();
             }
 
@@ -844,7 +844,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE failed to create/register synthetic area MapFeature '{state.FeatureId}': {ex.Message}");
+                FuseLog.Exception($"FUSE failed to create/register synthetic area MapFeature '{state.FeatureId}'", ex);
             }
         }
 
@@ -905,7 +905,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE failed to unregister synthetic MapFeature '{state.FeatureId}': {ex.Message}");
+                FuseLog.Exception($"FUSE failed to unregister synthetic MapFeature '{state.FeatureId}'", ex);
             }
 
             try
@@ -917,7 +917,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE failed to destroy synthetic MapFeature object '{state.FeatureId}': {ex.Message}");
+                FuseLog.Exception($"FUSE failed to destroy synthetic MapFeature object '{state.FeatureId}'", ex);
             }
         }
 
@@ -964,7 +964,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE failed to send IndustriesDidChange after {reason}: {ex.Message}");
+                FuseLog.Exception($"FUSE failed to send IndustriesDidChange after {reason}", ex);
             }
         }
 

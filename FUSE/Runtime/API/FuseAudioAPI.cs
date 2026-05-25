@@ -625,7 +625,7 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE audio operation='update horn sources' warning='{ex.Message}'.");
+                FuseLog.Exception($"FUSE audio operation='update horn sources' warning=''.", ex);
             }
         }
 
@@ -698,7 +698,7 @@ namespace FUSE.Runtime.API
                     }
                     catch (Exception ex)
                     {
-                        FuseLog.Warning($"FUSE audio operation='clip callback' id='{label}' warning='{ex.Message}'.");
+                        FuseLog.Exception($"FUSE audio operation='clip callback' id='{label}' warning=''.", ex);
                     }
                 }
             }

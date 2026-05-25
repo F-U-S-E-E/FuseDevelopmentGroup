@@ -7,6 +7,8 @@ namespace FUSE.Loading
 {
     internal static class FuseLegacyJsonPatch
     {
+        private static readonly char[] PathSeparators = { '.', '/' };
+
         private static readonly HashSet<string> DirectiveKeys =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -454,7 +456,7 @@ namespace FUSE.Loading
             }
 
             var current = token;
-            foreach (var part in path.Split(new[] { '.', '/' }, StringSplitOptions.RemoveEmptyEntries))
+            foreach (var part in path.Split(PathSeparators, StringSplitOptions.RemoveEmptyEntries))
             {
                 if (!(current is JObject obj))
                 {
@@ -560,7 +562,7 @@ namespace FUSE.Loading
 
         private static void SetTokenAtPath(JObject root, string path, JToken value)
         {
-            var parts = path.Split(new[] { '.', '/' }, StringSplitOptions.RemoveEmptyEntries);
+            var parts = path.Split(PathSeparators, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0)
             {
                 return;

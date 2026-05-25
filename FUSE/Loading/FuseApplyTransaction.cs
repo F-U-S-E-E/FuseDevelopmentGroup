@@ -70,7 +70,7 @@ namespace FUSE.Loading
             }
         }
 
-        private void LogQuietBucketSummary(string label, IList<string> items)
+        private void LogQuietBucketSummary(string label, List<string> items)
         {
             if (items == null || items.Count == 0)
             {
@@ -82,7 +82,7 @@ namespace FUSE.Loading
                 $"count={items.Count} details='suppressed; set Settings.VerboseApplyReportDetails=true for per-object entries'.");
         }
 
-        private void LogBucket(string label, IList<string> items, Action<string> logger)
+        private void LogBucket(string label, List<string> items, Action<string> logger)
         {
             if (items == null || items.Count == 0)
             {

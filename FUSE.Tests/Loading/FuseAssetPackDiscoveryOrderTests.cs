@@ -51,6 +51,7 @@ namespace FUSE.Tests.Loading
             {
                 // Best-effort cleanup. Stragglers in TEMP are harmless.
             }
+            GC.SuppressFinalize(this);
         }
 
         private string CreatePackFolder(string relative)

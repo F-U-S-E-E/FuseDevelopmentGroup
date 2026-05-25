@@ -25,6 +25,7 @@ namespace FUSE.Tests.Patches
         public void Dispose()
         {
             FuseAssetPackPatchHelpers.ResetLoggedLoserRedirects();
+            GC.SuppressFinalize(this);
         }
 
         // ---- Reflection-helper null safety ----

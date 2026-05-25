@@ -9,6 +9,12 @@
     <Nullable>disable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!--
+      Suppress perf rules that hurt test readability: CA1861 wants array
+      literals in `Assert.Equal(new[] { ... }, x)` extracted to static fields,
+      but inline expected values are the standard xUnit idiom.
+    -->
+    <NoWarn>$(NoWarn);CA1861</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

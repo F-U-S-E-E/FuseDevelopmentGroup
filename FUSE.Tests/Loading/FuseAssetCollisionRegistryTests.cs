@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -31,6 +32,7 @@ namespace FUSE.Tests.Loading
         public void Dispose()
         {
             FuseAssetCollisionRegistry.Reset();
+            GC.SuppressFinalize(this);
         }
 
         // Synthetic mods root used so the host-mod-folder helper has a
@@ -218,7 +220,7 @@ namespace FUSE.Tests.Loading
         {
             FuseAssetCollisionRegistry.Reset();
             var collisions = FuseAssetCollisionRegistry.ScanForCollisions(
-                new string[0],
+                Array.Empty<string>(),
                 _ => "x",
                 pack => HostMod(pack));
             Assert.Empty(collisions);

@@ -66,7 +66,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag HandleFeatureEnablesChanged prefix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag HandleFeatureEnablesChanged prefix failed", ex);
             }
         }
 
@@ -149,7 +149,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag UpdateFeatureForUnlocked postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag UpdateFeatureForUnlocked postfix failed", ex);
             }
         }
     }

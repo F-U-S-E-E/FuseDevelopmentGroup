@@ -66,7 +66,7 @@ namespace FUSE.Infrastructure
             }
         }
 
-        public Window CreateWindow(string identifier, int width, int height, Window.Position position)
+        public static Window CreateWindow(string identifier, int width, int height, Window.Position position)
         {
             var safeIdentifier = string.IsNullOrWhiteSpace(identifier)
                 ? "FUSE.Window." + DateTime.Now.Ticks
@@ -74,14 +74,14 @@ namespace FUSE.Infrastructure
             return CreateWindowInternal(safeIdentifier, width, height, position);
         }
 
-        public Window CreateWindow(int width, int height, Window.Position position)
+        public static Window CreateWindow(int width, int height, Window.Position position)
         {
             // Generate a unique identifier for the window
             string identifier = "FUSE.Window." + DateTime.Now.Ticks;
             return CreateWindowInternal(identifier, width, height, position);
         }
 
-        public UIPanel PopulateWindow(Window window, Action<UIPanelBuilder> closure)
+        public static UIPanel PopulateWindow(Window window, Action<UIPanelBuilder> closure)
         {
             return PopulateWindowInternal(window, closure);
         }

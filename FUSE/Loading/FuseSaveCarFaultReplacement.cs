@@ -491,7 +491,7 @@ namespace FUSE.Loading
 
         private static void HandleConsistPlacerCompletion(
             bool placed,
-            System.Collections.Generic.IReadOnlyList<FuseSaveCarFault> resolvedFaults,
+            System.Collections.Generic.List<FuseSaveCarFault> resolvedFaults,
             System.Collections.Generic.IReadOnlyList<string> picks,
             Action<bool, System.Collections.Generic.IReadOnlyList<string>> onComplete)
         {

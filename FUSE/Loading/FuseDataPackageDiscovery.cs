@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using FUSE.Infrastructure;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace FUSE.Loading
@@ -297,7 +298,7 @@ namespace FUSE.Loading
                     .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 FuseLog.Exception($"FUSE could not enumerate Mods folder '{modsRoot}' for data packages", ex);
                 return Enumerable.Empty<FusePackageManifest>();
@@ -334,11 +335,11 @@ namespace FUSE.Loading
             {
                 info = FuseLegacyDataConverter.ReadLegacyObject(infoPath);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
             {
                 // A malformed Info.json is an authoring error in a FUSE/UMM package, not a signal to
                 // reinterpret the folder as a legacy data package. Surface the parse failure and stop.
-                FuseLog.Warning($"FUSE ignored package '{folderPath}' because Info.json could not be parsed: {ex.Message}");
+                FuseLog.Exception($"FUSE ignored package '{folderPath}' because Info.json could not be parsed", ex);
                 return false;
             }
 
@@ -666,9 +667,9 @@ namespace FUSE.Loading
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
-                FuseLog.Warning($"FUSE could not inspect Mods folder for required package '{dependencyId}': {ex.Message}");
+                FuseLog.Exception($"FUSE could not inspect Mods folder for required package '{dependencyId}'", ex);
             }
 
             return false;
@@ -884,9 +885,9 @@ namespace FUSE.Loading
             {
                 return FuseDefinitionFileDiscovery.HasFallbackDefinitionFile(folderPath);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
-                FuseLog.Warning($"FUSE could not inspect package root definition files in '{folderPath}': {ex.Message}");
+                FuseLog.Exception($"FUSE could not inspect package root definition files in '{folderPath}'", ex);
                 return false;
             }
         }
@@ -996,9 +997,9 @@ namespace FUSE.Loading
                 return Directory.GetDirectories(path)
                     .Any(child => File.Exists(Path.Combine(child, "Info.json")));
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
-                FuseLog.Warning($"FUSE could not inspect potential Mods root '{path}': {ex.Message}");
+                FuseLog.Exception($"FUSE could not inspect potential Mods root '{path}'", ex);
                 return false;
             }
         }

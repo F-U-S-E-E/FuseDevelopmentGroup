@@ -39,7 +39,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE progression Configure postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE progression Configure postfix failed", ex);
             }
         }
     }
@@ -67,7 +67,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE progression Unconfigure postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE progression Unconfigure postfix failed", ex);
             }
         }
     }

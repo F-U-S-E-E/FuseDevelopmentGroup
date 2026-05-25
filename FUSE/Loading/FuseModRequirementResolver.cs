@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace FUSE.Loading
@@ -81,9 +82,9 @@ namespace FUSE.Loading
             {
                 folders = Directory.GetDirectories(modsRoot);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
-                FuseLog.Warning($"FUSE could not inspect installed mods for mixinto requirements in '{modsRoot}': {ex.Message}");
+                FuseLog.Exception($"FUSE could not inspect installed mods for mixinto requirements in '{modsRoot}'", ex);
                 return result;
             }
 
@@ -139,7 +140,7 @@ namespace FUSE.Loading
                 var version = ReadString(manifest, versionProperty, versionProperty.ToLowerInvariant(), "Version", "version");
                 AddInstalled(result, id, version, sourceName);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
             {
                 WarnOnce(
                     $"manifest:{path}",
@@ -208,7 +209,7 @@ namespace FUSE.Loading
             };
         }
 
-        private static bool TryFindInstalled(string id, IDictionary<string, InstalledMod> installedMods, out InstalledMod installed)
+        private static bool TryFindInstalled(string id, Dictionary<string, InstalledMod> installedMods, out InstalledMod installed)
         {
             installed = null;
             return !string.IsNullOrWhiteSpace(id) &&

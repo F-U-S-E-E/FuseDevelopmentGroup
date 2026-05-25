@@ -23,7 +23,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE industry tick cache scrub failed: {ex.Message}");
+                FuseLog.Exception($"FUSE industry tick cache scrub failed", ex);
             }
         }
     }
@@ -50,7 +50,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE CTC auto-signal reference scrub failed: {ex.Message}");
+                FuseLog.Exception($"FUSE CTC auto-signal reference scrub failed", ex);
             }
         }
     }
@@ -58,7 +58,7 @@ namespace FUSE.Patches
     [HarmonyPatch]
     internal static class FuseCtcAutoSignalNextBlockReferenceScrubPatch
     {
-        private static MethodBase TargetMethod()
+        private static MethodInfo TargetMethod()
         {
             return AccessTools.Method(typeof(CTCAutoSignal), "AspectForBlockAndNextSignal");
         }
@@ -176,7 +176,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE CTC predicate-signal reference scrub failed: {ex.Message}");
+                FuseLog.Exception($"FUSE CTC predicate-signal reference scrub failed", ex);
             }
         }
     }

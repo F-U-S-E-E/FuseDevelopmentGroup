@@ -48,7 +48,7 @@ namespace FUSE.Authoring.Entities
     {
         public FuseDropdownAttribute(params string[] values)
         {
-            Values = values ?? new string[0];
+            Values = values ?? Array.Empty<string>();
         }
 
         public string[] Values { get; }

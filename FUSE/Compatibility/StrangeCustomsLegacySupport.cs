@@ -795,7 +795,7 @@ namespace StrangeCustoms.Tracks
             return CarPrototypeLibrary.instance?.LoadForId(id);
         }
 
-        private static IReadOnlyDictionary<string, TrackNode> BuildNodeIndex()
+        private static Dictionary<string, TrackNode> BuildNodeIndex()
         {
             var dict = new Dictionary<string, TrackNode>(StringComparer.Ordinal);
             var graph = Graph.Shared;
