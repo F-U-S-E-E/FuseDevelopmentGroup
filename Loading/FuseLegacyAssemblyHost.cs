@@ -135,6 +135,75 @@ namespace FUSE.Loading
             return hostedCount;
         }
 
+        /// <summary>
+        /// Snapshot of hosted legacy plugin metadata for callers outside this class
+        /// (settings UI, diagnostics) that need to enumerate live plugin instances.
+        /// </summary>
+        internal readonly struct HostedPluginInfo
+        {
+            public HostedPluginInfo(FuseLegacyAssemblyManifest manifest, Type type, LegacyPluginBase plugin)
+            {
+                Manifest = manifest;
+                PluginType = type;
+                Plugin = plugin;
+            }
+
+            public FuseLegacyAssemblyManifest Manifest { get; }
+            public Type PluginType { get; }
+            public LegacyPluginBase Plugin { get; }
+        }
+
+        /// <summary>
+        /// Returns every hosted legacy plugin instance, regardless of folder.
+        /// </summary>
+        internal static IEnumerable<HostedPluginInfo> EnumerateAllHostedPlugins()
+        {
+            foreach (var hosted in HostedPlugins.Values)
+            {
+                if (hosted == null || hosted.Plugin == null)
+                {
+                    continue;
+                }
+
+                yield return new HostedPluginInfo(hosted.Manifest, hosted.Type, hosted.Plugin);
+            }
+        }
+
+        /// <summary>
+        /// Returns hosted plugin instances that live inside the given package folder
+        /// or whose manifest id matches the provided id. Either match argument can be
+        /// null/empty; at least one must be supplied for a non-empty result.
+        /// </summary>
+        internal static IEnumerable<HostedPluginInfo> EnumerateHostedPlugins(string folderPath, string id)
+        {
+            var hasFolder = !string.IsNullOrWhiteSpace(folderPath);
+            var hasId = !string.IsNullOrWhiteSpace(id);
+            if (!hasFolder && !hasId)
+            {
+                yield break;
+            }
+
+            var normalizedFolder = hasFolder ? NormalizePath(folderPath) : null;
+            foreach (var hosted in HostedPlugins.Values)
+            {
+                if (hosted == null || hosted.Plugin == null || hosted.Manifest == null)
+                {
+                    continue;
+                }
+
+                var folderMatch = hasFolder &&
+                    string.Equals(NormalizePath(hosted.Manifest.FolderPath), normalizedFolder, StringComparison.OrdinalIgnoreCase);
+                var idMatch = hasId &&
+                    string.Equals(hosted.Manifest.Id, id, StringComparison.OrdinalIgnoreCase);
+                if (!folderMatch && !idMatch)
+                {
+                    continue;
+                }
+
+                yield return new HostedPluginInfo(hosted.Manifest, hosted.Type, hosted.Plugin);
+            }
+        }
+
         internal static IEnumerable<ModMixinto> EnumerateMixintos(string identifier)
         {
             if (string.IsNullOrWhiteSpace(identifier))
