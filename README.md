@@ -48,7 +48,7 @@ The FUSE JSON schema lives at `schemas/fuse-mod.schema.json`. The hand-written s
 
 FUSE respects Unity Mod Manager's enabled checkbox for converted package folders that UMM can see. If a converted route/audio/asset package is disabled in UMM, FUSE marks that package disabled and does not load its track or data files.
 
-For converter usage, see `tools/FUSE_CONVERTER.md`.
+For converter usage, see `docs/FUSE_CONVERTER.md`.
 
 ## Update
 
