@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       run_unity_editmode:
-        description: "Run Unity EditMode tests (UnityTests/) - requires Unity 2022.3.62f2 on the runner"
+        description: "Run Unity EditMode tests (FUSE.UnityTests/) - requires Unity 2022.3.62f2 on the runner"
         type: boolean
         default: false
 
@@ -61,15 +61,15 @@ jobs:
       # target runs (it is gated on '$(ModVersion)' != '0.0.0'). This catches
       # regressions in the post-build PowerShell that stamps Info.json.
       - name: Build (Debug)
-        run: dotnet build FUSE.csproj -c Debug -p:ModVersion=0.0.1-ci
+        run: dotnet build FUSE/FUSE.csproj -c Debug -p:ModVersion=0.0.1-ci
 
       - name: Build (Release)
-        run: dotnet build FUSE.csproj -c Release -p:ModVersion=0.0.1-ci
+        run: dotnet build FUSE/FUSE.csproj -c Release -p:ModVersion=0.0.1-ci
 
       - name: Verify Info.json stamped with version
         shell: powershell
         run: |
-          $info = Get-Content 'bin\Release\net48\Info.json' -Raw | ConvertFrom-Json
+          $info = Get-Content 'FUSE\bin\Release\net48\Info.json' -Raw | ConvertFrom-Json
           if ($info.Version -ne '0.0.1') { throw "Info.json Version is '$($info.Version)', expected '0.0.1' (core only)" }
           Write-Host "Manifest stamped correctly: Info.Version=$($info.Version)"
 
@@ -87,7 +87,7 @@ jobs:
           path: FUSE.Tests/TestResults/test-results.trx
           retention-days: 7
 
-      # --- EditMode Unity tests (UnityTests/) ---
+      # --- EditMode Unity tests (FUSE.UnityTests/) ---
       # These exercise SceneCloneAPI.ApplyDefinition,
       # FusePrefabResolver.FindChild, and the Harmony patch
       # installation pipeline against real Unity Transforms +
@@ -169,15 +169,15 @@ jobs:
             "path=$unity"     >> $env:GITHUB_OUTPUT
           }
 
-      - name: Prepare UnityTests assets
+      - name: Prepare FUSE.UnityTests assets
         if: steps.editmode_gate.outputs.enabled == 'true' && steps.unity_probe.outputs.available == 'true'
         continue-on-error: true
         shell: powershell
         run: |
           # Copies FUSE.dll + Railroader-shipped DLLs into
-          # UnityTests/Assets/Plugins/ so Unity can resolve all of FUSE's
+          # FUSE.UnityTests/Assets/Plugins/ so Unity can resolve all of FUSE's
           # references at import time.
-          & "$PWD\UnityTests\prepare_assets.ps1"
+          & "$PWD\FUSE.UnityTests\prepare_assets.ps1"
 
       - name: Run EditMode tests
         if: steps.editmode_gate.outputs.enabled == 'true' && steps.unity_probe.outputs.available == 'true'
@@ -192,8 +192,8 @@ jobs:
           # passed but Unity wanted to be picky about something else").
           # Anything else fails the job.
           $unity = "${{ steps.unity_probe.outputs.path }}"
-          $project = "$PWD\UnityTests"
-          $results = "$PWD\UnityTests\TestResults\editmode-results.xml"
+          $project = "$PWD\FUSE.UnityTests"
+          $results = "$PWD\FUSE.UnityTests\TestResults\editmode-results.xml"
           New-Item -ItemType Directory -Force -Path (Split-Path $results) | Out-Null
 
           & $unity `
@@ -213,7 +213,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: unity-editmode-results
-          path: UnityTests/TestResults/editmode-results.xml
+          path: FUSE.UnityTests/TestResults/editmode-results.xml
           retention-days: 7
 
       # --- Build a stamped Release zip and attach it as a workflow artifact.
@@ -240,7 +240,7 @@ jobs:
           "short_sha=$sha" >> $env:GITHUB_OUTPUT
 
       - name: Rebuild Release with stamped version
-        run: dotnet build FUSE.csproj -c Release -p:ModVersion=${{ steps.build_id.outputs.version }}
+        run: dotnet build FUSE/FUSE.csproj -c Release -p:ModVersion=${{ steps.build_id.outputs.version }}
 
       - name: Package mod zip
         shell: powershell
@@ -255,8 +255,8 @@ jobs:
           New-Item -ItemType Directory -Path $modFolder | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $modFolder 'assets') | Out-Null
 
-          Copy-Item "bin\Release\net48\FUSE.dll" $modFolder
-          Copy-Item "bin\Release\net48\Info.json" $modFolder
+          Copy-Item "FUSE\bin\Release\net48\FUSE.dll" $modFolder
+          Copy-Item "FUSE\bin\Release\net48\Info.json" $modFolder
           Copy-Item -Recurse "schemas" $modFolder
           Copy-Item "tools\assets\fuse_converter_icon.png" (Join-Path $modFolder 'assets\fuse_icon.png')
 

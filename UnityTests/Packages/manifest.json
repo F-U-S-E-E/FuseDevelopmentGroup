@@ -1,7 +1,0 @@
-{
-  "_comment": "Minimal Unity project for FUSE EditMode tests. Pinned to the Railroader Unity version (2022.3.62f2). Tests live in Assets/Tests/ and run via the Unity Test Runner. The DLLs FUSE links against (FUSE.dll, Railroader's Assembly-CSharp.dll, etc.) are not committed — UnityTests/prepare_assets.ps1 copies them in from the FUSE build output and the game install before tests run.",
-  "dependencies": {
-    "com.unity.test-framework": "1.4.5",
-    "com.unity.ide.rider": "3.0.31"
-  }
-}
