@@ -316,12 +316,47 @@ namespace FUSE.Console
                         .Select(component => component.GetType().FullName ?? component.GetType().Name)
                         .ToArray();
 
+                    // Same-named-sibling count: matches the "Duplicate-name
+                    // siblings" block on the hover overlay. Anything > 0
+                    // means the parent has more than one child sharing this
+                    // GameObject's name — which silently changes what
+                    // Unity's Transform.Find (and FUSE's scene-path
+                    // resolver) lands on, and is the classic Bryson
+                    // Freight House style of bug source. Surfacing it in
+                    // the dump lets a user grep for "sameNameSiblingCount":
+                    // numbers > 0 across the whole scene without having to
+                    // hover over every building.
+                    var sameNameSiblingCount = 0;
+                    if (transform.parent != null)
+                    {
+                        for (var siblingIndex = 0; siblingIndex < transform.parent.childCount; siblingIndex++)
+                        {
+                            var sibling = transform.parent.GetChild(siblingIndex);
+                            if (sibling == null || ReferenceEquals(sibling, transform))
+                            {
+                                continue;
+                            }
+                            if (string.Equals(sibling.name, transform.name, StringComparison.Ordinal))
+                            {
+                                sameNameSiblingCount++;
+                            }
+                        }
+                    }
+
                     yield return new
                     {
                         path = FuseConsoleCommands.GetTransformPath(transform),
                         name = gameObject.name,
                         activeSelf = gameObject.activeSelf,
                         activeInHierarchy = gameObject.activeInHierarchy,
+                        // The hover overlay reports worldPos as the
+                        // useful position number; the dump should agree
+                        // so they can be cross-referenced. We also keep
+                        // localPosition because vanilla scene layouts
+                        // sometimes apply at the parent-transform level
+                        // and the local offset is the more diagnostic
+                        // value when comparing duplicates.
+                        worldPosition = FuseConsoleCommands.Vector(transform.position),
                         localPosition = FuseConsoleCommands.Vector(transform.localPosition),
                         localRotation = FuseConsoleCommands.Vector(transform.localEulerAngles),
                         localScale = FuseConsoleCommands.Vector(transform.localScale),
@@ -329,6 +364,7 @@ namespace FUSE.Console
                         enabledRendererCount = renderers.Count(renderer => renderer != null && renderer.enabled),
                         lodGroupCount = lodGroups.Length,
                         mapMaskCount = CountComponentsByName(gameObject, "MapMask"),
+                        sameNameSiblingCount,
                         sceneryAssetIdentifier = TryGetSceneryAssetIdentifier(gameObject),
                         components
                     };

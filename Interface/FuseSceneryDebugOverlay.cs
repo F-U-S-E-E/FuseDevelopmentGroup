@@ -21,6 +21,13 @@ namespace FUSE.Interface
         private const float RefreshInterval = 0.08f;
         private const int MaxSuppressorsToShow = 8;
         private const int MaxComponentsToShow = 12;
+        // Caps on the "duplicate siblings" and "ancestry trail" diagnostic
+        // blocks so the hover tooltip stays bounded even on pathological
+        // hierarchies where Unity's Find() ambiguity bites hardest (e.g.
+        // mod-added empty "Freight House" wrappers nested next to the
+        // real vanilla building — see the Bryson Freight House case).
+        private const int MaxSameNameSiblingsToShow = 6;
+        private const int MaxAncestryLevelsToShow = 6;
 
         private static GameObject _host;
 
@@ -751,6 +758,170 @@ namespace FUSE.Interface
             if (info.Leaf != null && info.Leaf != info.Root)
             {
                 builder.Append("hitLeaf: ").AppendLine(GetTransformPath(info.Leaf.transform));
+            }
+
+            AppendSameNameSiblings(builder, root.transform);
+            AppendAncestryTrail(builder, root.transform);
+        }
+
+        /// <summary>
+        /// Surface any other children of the hovered object's parent that
+        /// share its name. Unity's <c>Transform.Find</c> (and FUSE's own
+        /// scene-path resolver) walks the hierarchy by name and returns the
+        /// FIRST match it sees — so when an upstream mod has injected an
+        /// empty placeholder named the same as a real vanilla building (the
+        /// classic "Bryson/Freight House" symptom), every consumer of the
+        /// path silently lands on whichever Unity picked first. Listing the
+        /// rivals here, with their world positions and renderer counts,
+        /// makes that conflict obvious from a single hover.
+        /// </summary>
+        private static void AppendSameNameSiblings(StringBuilder builder, Transform self)
+        {
+            if (self == null || self.parent == null)
+            {
+                return;
+            }
+
+            var parent = self.parent;
+            var matches = new List<Transform>();
+            for (var index = 0; index < parent.childCount; index++)
+            {
+                var child = parent.GetChild(index);
+                if (child == null || ReferenceEquals(child, self))
+                {
+                    continue;
+                }
+                if (string.Equals(child.name, self.name, StringComparison.Ordinal))
+                {
+                    matches.Add(child);
+                }
+            }
+
+            if (matches.Count == 0)
+            {
+                return;
+            }
+
+            builder.AppendLine();
+            builder.Append("<b>Duplicate-name siblings</b> under '")
+                .Append(GetTransformPath(parent))
+                .Append("' (").Append(matches.Count).AppendLine(")");
+            for (var index = 0; index < matches.Count; index++)
+            {
+                if (index >= MaxSameNameSiblingsToShow)
+                {
+                    builder.Append("  + ").Append(matches.Count - MaxSameNameSiblingsToShow).AppendLine(" more");
+                    break;
+                }
+
+                var sibling = matches[index];
+                if (sibling == null)
+                {
+                    continue;
+                }
+
+                var rendererCount = 0;
+                var enabledRendererCount = 0;
+                try
+                {
+                    var renderers = sibling.gameObject.GetComponentsInChildren<Renderer>(true);
+                    rendererCount = renderers.Length;
+                    for (var renderIndex = 0; renderIndex < renderers.Length; renderIndex++)
+                    {
+                        if (renderers[renderIndex] != null && renderers[renderIndex].enabled)
+                        {
+                            enabledRendererCount++;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Component enumeration is best-effort; skip the breakdown
+                    // rather than abort the whole sibling listing.
+                }
+
+                var pos = sibling.position;
+                builder.Append("  - worldPos=(")
+                    .Append(pos.x.ToString("0.0")).Append(", ")
+                    .Append(pos.y.ToString("0.0")).Append(", ")
+                    .Append(pos.z.ToString("0.0")).Append(")  renderers=")
+                    .Append(rendererCount).Append(" (").Append(enabledRendererCount).Append(" enabled)");
+                if (!sibling.gameObject.activeInHierarchy)
+                {
+                    builder.Append(" [inactive]");
+                }
+
+                builder.AppendLine();
+            }
+        }
+
+        /// <summary>
+        /// Print each ancestor on the hovered object's transform chain (up
+        /// to <see cref="MaxAncestryLevelsToShow"/> levels), annotating
+        /// each with its world position and descendant renderer count. The
+        /// chain tells you whether anything in the parentage was moved
+        /// from its base offset — which is the other half of "why is this
+        /// building showing up here", complementing the sibling check.
+        /// </summary>
+        private static void AppendAncestryTrail(StringBuilder builder, Transform self)
+        {
+            if (self == null || self.parent == null)
+            {
+                return;
+            }
+
+            var levels = new List<Transform>();
+            var cursor = self.parent;
+            while (cursor != null && levels.Count < MaxAncestryLevelsToShow + 1)
+            {
+                levels.Add(cursor);
+                cursor = cursor.parent;
+            }
+
+            if (levels.Count == 0)
+            {
+                return;
+            }
+
+            builder.AppendLine();
+            builder.Append("<b>Ancestry</b> (").Append(levels.Count).AppendLine(")");
+            for (var index = 0; index < levels.Count; index++)
+            {
+                if (index >= MaxAncestryLevelsToShow)
+                {
+                    builder.Append("  + ").Append(levels.Count - MaxAncestryLevelsToShow).AppendLine(" more");
+                    break;
+                }
+
+                var ancestor = levels[index];
+                if (ancestor == null)
+                {
+                    continue;
+                }
+
+                var rendererCount = 0;
+                try
+                {
+                    rendererCount = ancestor.gameObject.GetComponentsInChildren<Renderer>(true).Length;
+                }
+                catch
+                {
+                    // Best-effort; an ancestor with broken descendant components
+                    // shouldn't break the tooltip.
+                }
+
+                var pos = ancestor.position;
+                builder.Append("  ").Append(index == 0 ? "parent" : "ancestor[" + index + "]")
+                    .Append(": '").Append(SafeId(ancestor.name)).Append("'  worldPos=(")
+                    .Append(pos.x.ToString("0.0")).Append(", ")
+                    .Append(pos.y.ToString("0.0")).Append(", ")
+                    .Append(pos.z.ToString("0.0")).Append(")  renderers=").Append(rendererCount);
+                if (!ancestor.gameObject.activeInHierarchy)
+                {
+                    builder.Append(" [inactive]");
+                }
+
+                builder.AppendLine();
             }
         }
 
