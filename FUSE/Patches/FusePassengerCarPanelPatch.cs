@@ -96,7 +96,7 @@ namespace FUSE.Patches
                 }
                 catch (Exception ex)
                 {
-                    FuseLog.Warning($"FUSE diag passenger panel snapshot failed: {ex.Message}");
+                    FuseLog.Exception($"FUSE diag passenger panel snapshot failed", ex);
                 }
             }
 
@@ -260,7 +260,7 @@ namespace FUSE.Patches
             Toast.Present($"Copied to {otherCount} other{(otherCount == 1 ? string.Empty : "s")}");
         }
 
-        private static void JumpTo(IIndustryTrackDisplayable passengerStop)
+        private static void JumpTo(PassengerStop passengerStop)
         {
             if (passengerStop.TrackSpans == null || !passengerStop.TrackSpans.Any())
             {

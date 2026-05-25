@@ -457,7 +457,7 @@ namespace FUSE.Loading
             return true;
         }
 
-        private static bool TryRestoreNode(FuseRemovedNodeSnapshot snapshot, ICollection<string> skipped)
+        private static bool TryRestoreNode(FuseRemovedNodeSnapshot snapshot, List<string> skipped)
         {
             if (snapshot == null || string.IsNullOrWhiteSpace(snapshot.Id))
             {
@@ -494,7 +494,7 @@ namespace FUSE.Loading
             }
         }
 
-        private static bool TryRestoreSegment(FuseRemovedSegmentSnapshot snapshot, ICollection<string> skipped)
+        private static bool TryRestoreSegment(FuseRemovedSegmentSnapshot snapshot, List<string> skipped)
         {
             if (snapshot == null || string.IsNullOrWhiteSpace(snapshot.Id))
             {
@@ -553,7 +553,7 @@ namespace FUSE.Loading
             }
         }
 
-        private static bool TryRestoreSpan(FuseRemovedSpanSnapshot snapshot, ICollection<string> skipped)
+        private static bool TryRestoreSpan(FuseRemovedSpanSnapshot snapshot, List<string> skipped)
         {
             if (snapshot == null || string.IsNullOrWhiteSpace(snapshot.Id))
             {

@@ -46,6 +46,7 @@ namespace FUSE.Tests.Patches
         public void Dispose()
         {
             FusePrefabStoreMaterialDefinitionsPatch.ResetSanitizerLoggingForTests();
+            GC.SuppressFinalize(this);
         }
 
         private static TypedContainerItem<MaterialDefinition> Wrap(string identifier, MaterialDefinition definition) =>

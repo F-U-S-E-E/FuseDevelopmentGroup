@@ -116,7 +116,7 @@ namespace FUSE
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE startup version report failed: {ex.Message}");
+                FuseLog.Exception($"FUSE startup version report failed", ex);
             }
         }
 

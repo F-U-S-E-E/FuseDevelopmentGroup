@@ -21,6 +21,7 @@ namespace FUSE.Runtime.API
         private static readonly FieldInfo PassengerStopSpansField = typeof(PassengerStop).GetField("_spans", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo PassengerStopMarkersField = typeof(PassengerStop).GetField("_markers", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo KeyValueObjectField = typeof(PassengerStop).GetField("_keyValueObject", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly char[] BranchSeparators = { ':' };
         private static readonly HashSet<string> LoggedInvalidSpanWarnings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _subscribedToGraphRefresh;
 
@@ -204,7 +205,7 @@ namespace FUSE.Runtime.API
                 $"loadId='{PassengerLoad.id ?? string.Empty}' cacheCount={cacheCount}.");
         }
 
-        private IEnumerable<TrackSpan> ResolveBoundSpans()
+        private List<TrackSpan> ResolveBoundSpans()
         {
             var spans = TrackSpans ?? Array.Empty<TrackSpan>();
             var valid = new List<TrackSpan>();
@@ -245,7 +246,7 @@ namespace FUSE.Runtime.API
             return valid;
         }
 
-        private HashSet<TrackMarker> RebuildPassengerStopMarkers(Transform stopTransform, IEnumerable<TrackSpan> boundSpans)
+        private static HashSet<TrackMarker> RebuildPassengerStopMarkers(Transform stopTransform, IEnumerable<TrackSpan> boundSpans)
         {
             for (var index = stopTransform.childCount - 1; index >= 0; index--)
             {
@@ -410,7 +411,7 @@ namespace FUSE.Runtime.API
 
             if (!string.IsNullOrWhiteSpace(Branch))
             {
-                foreach (var branchName in Branch.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries))
+                foreach (var branchName in Branch.Split(BranchSeparators, StringSplitOptions.RemoveEmptyEntries))
                 {
                     if (branchDefinitions.Any(definition => string.Equals(definition.Branch, branchName, StringComparison.OrdinalIgnoreCase)))
                     {
@@ -476,7 +477,7 @@ namespace FUSE.Runtime.API
                 }
                 catch (Exception ex)
                 {
-                    FuseLog.Warning($"FUSE diag cache refresh log failed: {ex.Message}");
+                    FuseLog.Exception($"FUSE diag cache refresh log failed", ex);
                 }
             }
 

@@ -265,7 +265,7 @@ namespace FUSE.Runtime.Registry
                     .Where(key => TryParseKey(key, out var parsedKind, out _) && parsedKind == kind)
                     .Select(key =>
                     {
-                        TryParseKey(key, out _, out var id);
+                        _ = TryParseKey(key, out _, out var id);
                         return id;
                     })
                     .Where(id => !string.IsNullOrWhiteSpace(id))

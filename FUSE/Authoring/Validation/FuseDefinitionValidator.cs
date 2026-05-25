@@ -226,7 +226,7 @@ namespace FUSE.Authoring.Validation
             }
         }
 
-        private static void ValidateTrackLocation(ValidationResult result, string path, FuseTrackLocation location, IDictionary<string, FuseSegment> segments, ISet<string> generatedSegmentIds)
+        private static void ValidateTrackLocation(ValidationResult result, string path, FuseTrackLocation location, Dictionary<string, FuseSegment> segments, HashSet<string> generatedSegmentIds)
         {
             if (location == null)
             {
@@ -268,7 +268,7 @@ namespace FUSE.Authoring.Validation
             }
         }
 
-        private static void ValidateSameSegmentSpan(ValidationResult result, string path, FuseSpan span, IDictionary<string, FuseSegment> segments, IDictionary<string, FuseNode> nodes)
+        private static void ValidateSameSegmentSpan(ValidationResult result, string path, FuseSpan span, Dictionary<string, FuseSegment> segments, IDictionary<string, FuseNode> nodes)
         {
             if (span?.Upper == null || span.Lower == null)
             {

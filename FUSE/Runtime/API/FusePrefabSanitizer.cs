@@ -374,7 +374,7 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE prefab sanitizer could not clear field '{component.GetType().FullName}.{fieldName}': {ex.Message}");
+                FuseLog.Exception($"FUSE prefab sanitizer could not clear field '{component.GetType().FullName}.{fieldName}'", ex);
                 return 0;
             }
         }

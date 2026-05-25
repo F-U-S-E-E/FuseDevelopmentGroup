@@ -43,7 +43,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag SetGroupEnabled postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag SetGroupEnabled postfix failed", ex);
             }
         }
 
@@ -95,7 +95,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag SetGroupAvailable postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag SetGroupAvailable postfix failed", ex);
             }
         }
     }

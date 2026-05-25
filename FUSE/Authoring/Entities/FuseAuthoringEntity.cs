@@ -203,7 +203,7 @@ namespace FUSE.Authoring.Entities
                         }
                         catch (Exception ex)
                         {
-                            FuseLog.Warning($"FUSE authoring entity '{Id}' could not load property '{property.Name}': {ex.Message}");
+                            FuseLog.Exception($"FUSE authoring entity '{Id}' could not load property '{property.Name}'", ex);
                         }
                     }
                 }

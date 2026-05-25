@@ -14,7 +14,7 @@ namespace FUSE.Patches
     [HarmonyPatch]
     internal static class LocationsPanelBuilderPatches
     {
-        private static MethodBase TargetMethod()
+        private static MethodInfo TargetMethod()
         {
             var compilerGeneratedType = typeof(LocationsPanelBuilder).GetNestedType("<>c", BindingFlags.NonPublic);
             var method = compilerGeneratedType?.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic)
@@ -150,6 +150,8 @@ namespace FUSE.Patches
     [HarmonyPatch(typeof(IndustryTrackDisplayableExtensions), nameof(IndustryTrackDisplayableExtensions.ShortName))]
     internal static class IndustryTrackDisplayableShortNamePatches
     {
+        private static readonly string[] WordSeparators = { " " };
+
         private static bool Prefix(IIndustryTrackDisplayable ic, Industry industry, ref string __result)
         {
             try
@@ -167,7 +169,7 @@ namespace FUSE.Patches
                     prefixLength > 3 &&
                     prefixLength < text.Length)
                 {
-                    __result = text.Substring(prefixLength, text.Length - prefixLength);
+                    __result = text.Substring(prefixLength);
                     return false;
                 }
 
@@ -202,8 +204,8 @@ namespace FUSE.Patches
                 return false;
             }
 
-            var aWords = a.Split(new[] { " " }, StringSplitOptions.None);
-            var bWords = b.Split(new[] { " " }, StringSplitOptions.None);
+            var aWords = a.Split(WordSeparators, StringSplitOptions.None);
+            var bWords = b.Split(WordSeparators, StringSplitOptions.None);
             var wordIndex = 0;
             while (wordIndex < Math.Min(aWords.Length, bWords.Length) &&
                    string.Equals(aWords[wordIndex], bWords[wordIndex], StringComparison.Ordinal))

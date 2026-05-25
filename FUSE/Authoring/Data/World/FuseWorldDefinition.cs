@@ -23,30 +23,23 @@ namespace FUSE.Authoring.Data
         public string[] SuppressAreas { get; set; }
         public FuseWorldRemovals Removals { get; set; } = new FuseWorldRemovals();
 
-        public bool ShouldSerializeSuppressScenePaths()
-        {
-            return false;
-        }
-
-        public bool ShouldSerializeSuppressGroups()
-        {
-            return false;
-        }
-
-        public bool ShouldSerializeSuppressAreas()
-        {
-            return false;
-        }
+        // ShouldSerializeXxx methods are Json.NET convention — they MUST be
+        // instance methods for the serializer to discover them by reflection.
+#pragma warning disable CA1822 // Mark members as static
+        public bool ShouldSerializeSuppressScenePaths() => false;
+        public bool ShouldSerializeSuppressGroups() => false;
+        public bool ShouldSerializeSuppressAreas() => false;
+#pragma warning restore CA1822
     }
 
     public sealed class FuseWorldRemovals
     {
-        public string[] Scenery { get; set; } = new string[0];
-        public string[] Splineys { get; set; } = new string[0];
-        public string[] TelegraphPoles { get; set; } = new string[0];
-        public string[] MapLabels { get; set; } = new string[0];
-        public string[] MapMasks { get; set; } = new string[0];
-        public string[] SceneClones { get; set; } = new string[0];
+        public string[] Scenery { get; set; } = Array.Empty<string>();
+        public string[] Splineys { get; set; } = Array.Empty<string>();
+        public string[] TelegraphPoles { get; set; } = Array.Empty<string>();
+        public string[] MapLabels { get; set; } = Array.Empty<string>();
+        public string[] MapMasks { get; set; } = Array.Empty<string>();
+        public string[] SceneClones { get; set; } = Array.Empty<string>();
     }
 
     public sealed class FuseScenery
@@ -74,10 +67,10 @@ namespace FUSE.Authoring.Data
             set { AssetIdentifier = value; }
         }
 
-        public bool ShouldSerializeDefinitionIdentifier()
-        {
-            return false;
-        }
+        // Json.NET convention — must be instance for the serializer to discover it.
+#pragma warning disable CA1822 // Mark members as static
+        public bool ShouldSerializeDefinitionIdentifier() => false;
+#pragma warning restore CA1822
 
         public Vector3 Position { get; set; }
         public Vector3 Rotation { get; set; }

@@ -163,7 +163,7 @@ namespace FUSE.Authoring.Entities
         {
             return !string.IsNullOrWhiteSpace(packageId) && ByPackageId.TryGetValue(packageId, out var entities)
                 ? entities.ToArray()
-                : new FuseAuthoringEntity[0];
+                : Array.Empty<FuseAuthoringEntity>();
         }
 
         public static void BindRuntime(FuseAuthoringEntity entity, GameObject gameObject, Component component = null)

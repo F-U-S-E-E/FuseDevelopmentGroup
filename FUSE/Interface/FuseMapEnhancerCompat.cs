@@ -367,7 +367,7 @@ namespace FUSE.Interface
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE Map Enhancer compat type lookup failed: {ex.Message}.");
+                FuseLog.Exception($"FUSE Map Enhancer compat type lookup failed", ex);
             }
 
             return null;

@@ -140,7 +140,7 @@ namespace FUSE.Authoring.Entities
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE authoring could not compare values for editable member: {ex.Message}");
+                FuseLog.Exception($"FUSE authoring could not compare values for editable member", ex);
                 return false;
             }
         }

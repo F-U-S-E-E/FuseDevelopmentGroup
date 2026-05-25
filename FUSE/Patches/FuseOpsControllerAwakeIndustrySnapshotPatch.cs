@@ -27,7 +27,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE early operation removals before OpsController.Awake failed: {ex.Message}");
+                FuseLog.Exception($"FUSE early operation removals before OpsController.Awake failed", ex);
             }
         }
 
@@ -39,7 +39,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE base-game industry snapshot capture failed: {ex.Message}");
+                FuseLog.Exception($"FUSE base-game industry snapshot capture failed", ex);
             }
         }
     }

@@ -1,3 +1,4 @@
+using System;
 using FUSE.Authoring.Data.Common;
 using FUSE.Authoring.Validation;
 using UnityEngine;
@@ -75,10 +76,10 @@ namespace FUSE.Authoring.Entities
 
         [FuseEditable("Track Span Ids", Group = "Track Binding", Order = 10)]
         [FuseReference("track-span", AllowNull = true)]
-        public string[] TrackSpanIds { get; set; } = new string[0];
+        public string[] TrackSpanIds { get; set; } = Array.Empty<string>();
 
         [FuseHidden]
-        public FuseTrackLocation[] RuntimeTrackLocations { get; set; } = new FuseTrackLocation[0];
+        public FuseTrackLocation[] RuntimeTrackLocations { get; set; } = Array.Empty<FuseTrackLocation>();
     }
 
     public class FuseConfigurableStructureEntity : FuseWorldEntity

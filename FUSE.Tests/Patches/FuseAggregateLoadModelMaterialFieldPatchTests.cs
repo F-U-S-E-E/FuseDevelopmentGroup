@@ -50,6 +50,7 @@ namespace FUSE.Tests.Patches
         public void Dispose()
         {
             FuseAggregateLoadModelMaterialFieldPatch.ResetLookupLoggingForTests();
+            GC.SuppressFinalize(this);
         }
 
         // ---- guard paths ----

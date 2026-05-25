@@ -160,7 +160,7 @@ namespace FUSE.Runtime.API
 
             SetIndustryValue(
                 KeyBardoCars,
-                dictionary.Any()
+                dictionary.Count > 0
                     ? Value.Dictionary(dictionary)
                     : Value.Null());
         }

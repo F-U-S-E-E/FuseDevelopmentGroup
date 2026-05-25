@@ -22,6 +22,8 @@ namespace FUSE.Infrastructure
         private static readonly FieldInfo ModEntriesField =
             typeof(UnityModManager).GetField("modEntries", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
 
+        private static readonly string[] LegacySupportRequirements = { "FUSE" };
+
         private static readonly HashSet<string> InjectedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static bool _ranOnce;
         private static string _pendingFuseModEntryPath;
@@ -92,7 +94,7 @@ namespace FUSE.Infrastructure
                 displayName: LegacySupportDisplayName,
                 author: LegacySupportAuthor,
                 version: string.IsNullOrWhiteSpace(fuseVersion) ? "0.0.0" : fuseVersion,
-                requirements: new[] { "FUSE" },
+                requirements: LegacySupportRequirements,
                 folderPath: fuseModEntryPath ?? string.Empty);
             if (entry == null)
             {
@@ -163,7 +165,7 @@ namespace FUSE.Infrastructure
             return injectedCount;
         }
 
-        private static object TryCreateModEntry(
+        private static UnityModManagerNet.UnityModManager.ModEntry TryCreateModEntry(
             string id,
             string displayName,
             string author,

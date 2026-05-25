@@ -90,7 +90,7 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE failed to clone runtime definition '{typeof(T).FullName}': {ex.Message}");
+                FuseLog.Exception($"FUSE failed to clone runtime definition '{typeof(T).FullName}'", ex);
                 return definition;
             }
         }

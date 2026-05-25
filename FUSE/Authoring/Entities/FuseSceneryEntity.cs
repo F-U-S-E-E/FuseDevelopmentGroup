@@ -144,7 +144,7 @@ namespace FUSE.Authoring.Entities
             MarkDirty("captured scenery from runtime");
         }
 
-        public IEnumerable<string> GetAvailableModels()
+        public static IEnumerable<string> GetAvailableModels()
         {
             return SceneryAPI.GetAvailableSceneryModels();
         }

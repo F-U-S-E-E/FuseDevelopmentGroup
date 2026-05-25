@@ -36,7 +36,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE [Experimental] early scene loader patch failed; scene loading will continue normally: {ex.Message}");
+                FuseLog.Exception($"FUSE [Experimental] early scene loader patch failed; scene loading will continue normally", ex);
             }
         }
     }

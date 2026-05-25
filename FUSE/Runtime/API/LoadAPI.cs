@@ -15,6 +15,7 @@ namespace FUSE.Runtime.API
 {
     public static class LoadAPI
     {
+        private static readonly char[] LoadNameSeparators = { '-', '_', '.' };
         private static readonly HashSet<string> PlaceholderLoadWarnings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public static Load GetLoad(string id)
@@ -156,7 +157,7 @@ namespace FUSE.Runtime.API
             ApplyCustomLoadFields(load, definition.Fields);
         }
 
-        private static void ApplyCustomLoadFields(Load load, IDictionary<string, object> fields)
+        private static void ApplyCustomLoadFields(Load load, Dictionary<string, object> fields)
         {
             if (load == null || fields == null || fields.Count == 0)
             {
@@ -308,7 +309,7 @@ namespace FUSE.Runtime.API
                 return "Unknown Load";
             }
 
-            return string.Join(" ", id.Split(new[] { '-', '_', '.' }, StringSplitOptions.RemoveEmptyEntries)
+            return string.Join(" ", id.Split(LoadNameSeparators, StringSplitOptions.RemoveEmptyEntries)
                 .Select(token => token.Length == 0 ? token : char.ToUpperInvariant(token[0]) + token.Substring(1)));
         }
 

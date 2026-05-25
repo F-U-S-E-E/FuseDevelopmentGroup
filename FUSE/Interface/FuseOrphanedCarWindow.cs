@@ -36,10 +36,10 @@ namespace FUSE.Interface
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private string _lastAction = string.Empty;
 
-        private Vector2Int DefaultSize => new Vector2Int(640, 520);
-        private Vector2Int MaxSize => new Vector2Int(Screen.width, Screen.height);
-        private Window.Sizing DefaultSizing => Window.Sizing.Resizable(DefaultSize, MaxSize);
-        private Window.Position DefaultPosition => Window.Position.Center;
+        private static Vector2Int DefaultSize => new Vector2Int(640, 520);
+        private static Vector2Int MaxSize => new Vector2Int(Screen.width, Screen.height);
+        private static Window.Sizing DefaultSizing => Window.Sizing.Resizable(DefaultSize, MaxSize);
+        private static Window.Position DefaultPosition => Window.Position.Center;
 
         /// <summary>
         /// Idempotent host creation. Mirrors the FUSE Health UI
@@ -116,7 +116,7 @@ namespace FUSE.Interface
                 return false;
             }
 
-            _window = WindowCreatorHelper.Shared.CreateWindow(
+            _window = WindowCreatorHelper.CreateWindow(
                 WindowIdentifier, DefaultSize.x, DefaultSize.y, DefaultPosition);
             if (_window == null)
             {
@@ -142,7 +142,7 @@ namespace FUSE.Interface
                 _panel = null;
             }
 
-            _panel = WindowCreatorHelper.Shared.PopulateWindow(_window, BuildContent);
+            _panel = WindowCreatorHelper.PopulateWindow(_window, BuildContent);
             WindowPersistence.SetInitialPositionSize(
                 _window, WindowIdentifier, DefaultSize, DefaultPosition, DefaultSizing);
         }

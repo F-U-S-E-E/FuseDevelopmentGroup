@@ -156,7 +156,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE [Experimental] early scene-path suppression could not prime package definitions; scene-path suppression will no-op: {ex.Message}");
+                FuseLog.Exception($"FUSE [Experimental] early scene-path suppression could not prime package definitions; scene-path suppression will no-op", ex);
                 return false;
             }
         }
@@ -205,7 +205,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE [Experimental] failed during post-complete scene-path suppression: {ex.Message}");
+                FuseLog.Exception($"FUSE [Experimental] failed during post-complete scene-path suppression", ex);
             }
         }
 
@@ -223,7 +223,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE [Experimental] sceneLoaded suppression failed for scene '{scene.name}': {ex.Message}");
+                FuseLog.Exception($"FUSE [Experimental] sceneLoaded suppression failed for scene '{scene.name}'", ex);
             }
         }
 

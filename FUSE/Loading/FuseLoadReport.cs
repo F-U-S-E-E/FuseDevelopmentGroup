@@ -568,7 +568,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE could not display map-load report toast: {ex.Message}");
+                FuseLog.Exception($"FUSE could not display map-load report toast", ex);
             }
         }
 

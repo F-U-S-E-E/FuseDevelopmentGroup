@@ -1,3 +1,4 @@
+using System;
 using System.Reflection;
 using AssetPack.Runtime;
 using FUSE.Loading;
@@ -30,6 +31,7 @@ namespace FUSE.Tests.Patches
         {
             FuseAssetCollisionRegistry.Reset();
             FuseAssetPackPatchHelpers.ResetLoggedLoserRedirects();
+            GC.SuppressFinalize(this);
         }
 
         // ----- AssetBundlePath patch -----

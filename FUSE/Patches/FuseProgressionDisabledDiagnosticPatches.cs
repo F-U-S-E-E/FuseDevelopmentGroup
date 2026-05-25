@@ -42,7 +42,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag PassengerStop.ProgressionDisabled postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag PassengerStop.ProgressionDisabled postfix failed", ex);
             }
         }
 
@@ -90,7 +90,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag Industry.ProgressionDisabled postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag Industry.ProgressionDisabled postfix failed", ex);
             }
         }
     }
@@ -131,7 +131,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag IndustryComponent.ProgressionDisabled postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag IndustryComponent.ProgressionDisabled postfix failed", ex);
             }
         }
     }

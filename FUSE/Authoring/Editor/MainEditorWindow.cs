@@ -162,7 +162,7 @@ namespace FUSE.Authoring.Editor
                 _panel = null;
             }
 
-            _panel = WindowCreatorHelper.Shared.PopulateWindow(_window, builder =>
+            _panel = WindowCreatorHelper.PopulateWindow(_window, builder =>
             {
                 if (FuseEditor.Instance.ModSelected)
                 {
@@ -185,7 +185,7 @@ namespace FUSE.Authoring.Editor
             if (!WindowCreatorHelper.CanCreateWindow)
                 return;
 
-            _window = WindowCreatorHelper.Shared.CreateWindow(400, 500, Window.Position.Center);
+            _window = WindowCreatorHelper.CreateWindow(400, 500, Window.Position.Center);
             _window.Title = "FUSE Editor";
         }
 
@@ -198,7 +198,7 @@ namespace FUSE.Authoring.Editor
 
         }
 
-        void BuildSelectModPanel(UIPanelBuilder builder)
+        static void BuildSelectModPanel(UIPanelBuilder builder)
         {
             List<string> loadedMods = FuseModLoader.GetLoadedModsInOrder().Select(x => x.Definition.Id).ToList();
 

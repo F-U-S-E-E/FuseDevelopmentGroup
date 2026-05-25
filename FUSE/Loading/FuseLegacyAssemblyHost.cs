@@ -433,7 +433,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE legacy support ignored '{folderPath}' because Definition.json could not be parsed: {ex.Message}");
+                FuseLog.Exception($"FUSE legacy support ignored '{folderPath}' because Definition.json could not be parsed", ex);
                 return false;
             }
 
@@ -868,6 +868,9 @@ namespace FUSE.Loading
 
     internal sealed class FuseLegacyAssemblyStartup : MonoBehaviour
     {
+        // Unity invokes Start by reflection on the MonoBehaviour instance, so
+        // this must remain an instance method.
+#pragma warning disable CA1822 // Mark members as static
         private IEnumerator Start()
         {
             yield return null;
@@ -876,6 +879,7 @@ namespace FUSE.Loading
             FUSE.Infrastructure.FuseUmmInjector.FlushPendingInjection();
             FuseLegacyAssemblyHost.LoadAllAvailableAssemblies("legacy support startup");
         }
+#pragma warning restore CA1822
     }
 
     internal sealed class FuseLegacyAssemblyManifest
@@ -1029,7 +1033,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE legacy IModdingContext.TryResolveFilePath threw resolving '{value}': {ex.Message}");
+                FuseLog.Exception($"FUSE legacy IModdingContext.TryResolveFilePath threw resolving '{value}'", ex);
             }
 
             return false;

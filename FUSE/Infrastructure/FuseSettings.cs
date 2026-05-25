@@ -178,7 +178,7 @@ namespace FUSE.Infrastructure
                 WorldLabelsShowTrackSegments = DefaultWorldLabelsShowTrackSegments;
                 ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
-                FuseLog.Warning($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled: {ex.Message}");
+                FuseLog.Exception($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled", ex);
             }
         }
 

@@ -11,6 +11,8 @@ namespace FUSE.Runtime.API
 {
     public static class SceneCloneAPI
     {
+        private static readonly char[] PathSeparators = { '/' };
+
         public static GameObject AddSceneClone(string id, FuseSceneClone definition)
         {
             RequireId(id, nameof(id));
@@ -358,7 +360,7 @@ namespace FUSE.Runtime.API
 
         private static Transform EnsureTargetParent(string targetPath, out string targetName)
         {
-            var segments = targetPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            var segments = targetPath.Split(PathSeparators, StringSplitOptions.RemoveEmptyEntries);
             if (segments.Length < 2)
             {
                 throw new InvalidOperationException($"Target path '{targetPath}' must include a root object and a child path.");

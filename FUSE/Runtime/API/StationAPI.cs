@@ -519,7 +519,7 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE station map icon could not calculate track-aligned rotation; using fixed rotation. {ex.Message}");
+                FuseLog.Exception($"FUSE station map icon could not calculate track-aligned rotation; using fixed rotation.", ex);
             }
 
             direction = Vector3.zero;
@@ -556,7 +556,7 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE station map icon could not calculate station-side graphic offset; using centered icon. {ex.Message}");
+                FuseLog.Exception($"FUSE station map icon could not calculate station-side graphic offset; using centered icon.", ex);
                 return Vector3.zero;
             }
         }
@@ -576,7 +576,7 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE could not place station map icon from station transform; using fallback. {ex.Message}");
+                FuseLog.Exception($"FUSE could not place station map icon from station transform; using fallback.", ex);
                 return stationRoot != null
                     ? stationRoot.position + Vector3.up * MapIconElevation
                     : Vector3.up * MapIconElevation;
@@ -881,7 +881,7 @@ namespace FUSE.Runtime.API
             return mesh;
         }
 
-        private static void AddLineQuad(ICollection<Vector3> vertices, ICollection<int> triangles, Vector2 start, Vector2 end, float width)
+        private static void AddLineQuad(List<Vector3> vertices, List<int> triangles, Vector2 start, Vector2 end, float width)
         {
             var delta = end - start;
             if (delta.sqrMagnitude < 0.001f)

@@ -461,10 +461,10 @@ namespace FUSE.Infrastructure
                 File.WriteAllText(path, _root.ToString(Formatting.Indented));
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 _lastStatus = "Could not save mod settings: " + ex.GetBaseException().Message;
-                FuseLog.Warning("FUSE could not save mod settings: " + ex.GetBaseException().Message);
+                FuseLog.Exception("FUSE could not save mod settings", ex);
                 return false;
             }
         }

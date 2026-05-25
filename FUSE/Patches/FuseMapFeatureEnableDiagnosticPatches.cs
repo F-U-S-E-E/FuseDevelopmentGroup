@@ -43,7 +43,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag SetFeatureEnabled postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag SetFeatureEnabled postfix failed", ex);
             }
         }
 
@@ -94,7 +94,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag SetFeatureEnabled(id) postfix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag SetFeatureEnabled(id) postfix failed", ex);
             }
         }
     }
@@ -127,7 +127,7 @@ namespace FUSE.Patches
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"FUSE diag SetFeatureEnables prefix failed: {ex.Message}");
+                FuseLog.Exception($"FUSE diag SetFeatureEnables prefix failed", ex);
             }
         }
     }
