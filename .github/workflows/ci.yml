@@ -47,7 +47,7 @@ jobs:
       # validates Info.json against schemas/umm-info.schema.json and
       # schemas/fuse-mod.example.json against schemas/fuse-mod.schema.json.
       - name: Setup Python (for json_lint)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
