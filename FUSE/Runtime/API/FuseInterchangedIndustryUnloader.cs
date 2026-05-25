@@ -9,7 +9,7 @@ using Model.Ops.Definition;
 using Network;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public class FuseInterchangedIndustryUnloader : IndustryComponent
     {

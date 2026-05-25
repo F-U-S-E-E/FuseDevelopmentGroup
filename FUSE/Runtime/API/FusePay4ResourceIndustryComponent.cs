@@ -9,7 +9,7 @@ using Model.Ops;
 using Model.Ops.Definition;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     /// <summary>
     /// FUSE-native implementation of the "Pay4Resource" industry-component

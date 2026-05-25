@@ -1,7 +1,7 @@
 using System.Collections.Generic;
-using FUSE.Data;
-using FUSE.Data.Common;
-using FUSE.Validation;
+using FUSE.Authoring.Data;
+using FUSE.Authoring.Data.Common;
+using FUSE.Authoring.Validation;
 using UnityEngine;
 using Xunit;
 

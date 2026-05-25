@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace FUSE.Data
+namespace FUSE.Authoring.Data
 {
     public static class FuseIndustryComponentTypes
     {

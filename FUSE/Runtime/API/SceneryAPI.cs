@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using Helpers;
 using Model.Definition.Data;
-using FUSE.Cache;
-using FUSE.Data;
+using FUSE.Runtime.Cache;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using Track;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public static class SceneryAPI
     {

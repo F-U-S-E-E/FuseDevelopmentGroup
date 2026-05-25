@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using FUSE.API;
-using FUSE.Data;
+using FUSE.Runtime.API;
+using FUSE.Authoring.Data;
 using Game.Progression;
 
 namespace FUSE.Interface

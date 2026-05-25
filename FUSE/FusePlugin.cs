@@ -4,18 +4,18 @@ using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using FUSE.Compatibility;
-using FUSE.Console;
-using FUSE.Events;
+using FUSE.Interface.Console;
+using FUSE.Runtime.Events;
 using FUSE.Infrastructure;
 using FUSE.Interface;
-using FUSE.Lifecycle;
+using FUSE.Runtime.Lifecycle;
 using FUSE.Loading;
-using FUSE.Migrations;
+using FUSE.Authoring.Migrations;
 using FUSE.Patches;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityModManagerNet;
-using FUSE.Editor;
+using FUSE.Authoring.Editor;
 
 namespace FUSE
 {

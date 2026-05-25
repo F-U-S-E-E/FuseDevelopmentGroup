@@ -15,7 +15,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
-namespace FUSE.Editor
+namespace FUSE.Authoring.Editor
 {
     class MainEditorWindow : MonoBehaviour
     {

@@ -4,16 +4,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Model.Ops;
-using FUSE.Cache;
-using FUSE.Data;
-using FUSE.Data.Common;
-using FUSE.Events;
+using FUSE.Runtime.Cache;
+using FUSE.Authoring.Data;
+using FUSE.Authoring.Data.Common;
+using FUSE.Runtime.Events;
 using FUSE.Infrastructure;
 using Track;
 using Track.Signals;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public static class TrackAPI
     {

@@ -1,7 +1,7 @@
 using Track;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     internal sealed class FuseTurntableVisualBinding : MonoBehaviour
     {

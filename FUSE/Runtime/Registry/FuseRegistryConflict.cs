@@ -1,6 +1,6 @@
 using System;
 
-namespace FUSE.Registry
+namespace FUSE.Runtime.Registry
 {
     /// <summary>
     /// A recorded attempt by a package to claim a resource that is already

@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace FUSE.Serialization
+namespace FUSE.Authoring.Serialization
 {
     /// <summary>
     /// Reads either a JSON array (<c>["foo", "bar"]</c>) or a JSON object

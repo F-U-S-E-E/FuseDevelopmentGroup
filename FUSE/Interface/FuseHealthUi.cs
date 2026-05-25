@@ -4,14 +4,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using FUSE.API;
-using FUSE.Cache;
-using FUSE.Data;
+using FUSE.Runtime.API;
+using FUSE.Runtime.Cache;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
-using FUSE.Lifecycle;
+using FUSE.Runtime.Lifecycle;
 using FUSE.Loading;
-using FUSE.Migrations;
-using FUSE.Registry;
+using FUSE.Authoring.Migrations;
+using FUSE.Runtime.Registry;
 using Model;
 using Model.Ops;
 using Newtonsoft.Json.Linq;
@@ -1381,9 +1381,9 @@ namespace FUSE.Interface
             if (FuseSettings.ShowAdvancedHealthDetails)
             {
                 builder.AddSection("Registry");
-                AddValueField(builder, "Exclusive Claims", FUSE.Registry.FuseRegistry.ExclusiveClaimCount.ToString());
-                AddValueField(builder, "Shared Claims", FUSE.Registry.FuseRegistry.SharedClaimCount.ToString());
-                AddValueField(builder, "Conflicts", FUSE.Registry.FuseRegistry.Conflicts.Count.ToString());
+                AddValueField(builder, "Exclusive Claims", FUSE.Runtime.Registry.FuseRegistry.ExclusiveClaimCount.ToString());
+                AddValueField(builder, "Shared Claims", FUSE.Runtime.Registry.FuseRegistry.SharedClaimCount.ToString());
+                AddValueField(builder, "Conflicts", FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count.ToString());
             }
             else
             {
@@ -1620,9 +1620,9 @@ namespace FUSE.Interface
             builder.Spacer(4f);
 
             builder.AddSection("FUSE Registry");
-            AddValueField(builder, "Exclusive Claims", FUSE.Registry.FuseRegistry.ExclusiveClaimCount.ToString());
-            AddValueField(builder, "Shared Claims", FUSE.Registry.FuseRegistry.SharedClaimCount.ToString());
-            AddValueField(builder, "Conflicts", FUSE.Registry.FuseRegistry.Conflicts.Count.ToString());
+            AddValueField(builder, "Exclusive Claims", FUSE.Runtime.Registry.FuseRegistry.ExclusiveClaimCount.ToString());
+            AddValueField(builder, "Shared Claims", FUSE.Runtime.Registry.FuseRegistry.SharedClaimCount.ToString());
+            AddValueField(builder, "Conflicts", FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count.ToString());
             AddValueField(builder, "Asset Stores", FusePerformanceMetrics.FormatCount("direct asset pack store count"));
             builder.Spacer(4f);
 
@@ -2539,9 +2539,9 @@ namespace FUSE.Interface
             builder.AppendLine("Scenery: " + SafeCount(() => SceneryAPI.GetAllScenery().Count()));
             builder.AppendLine();
             builder.AppendLine("FUSE Registry");
-            builder.AppendLine("Exclusive Claims: " + FUSE.Registry.FuseRegistry.ExclusiveClaimCount);
-            builder.AppendLine("Shared Claims: " + FUSE.Registry.FuseRegistry.SharedClaimCount);
-            builder.AppendLine("Conflicts: " + FUSE.Registry.FuseRegistry.Conflicts.Count);
+            builder.AppendLine("Exclusive Claims: " + FUSE.Runtime.Registry.FuseRegistry.ExclusiveClaimCount);
+            builder.AppendLine("Shared Claims: " + FUSE.Runtime.Registry.FuseRegistry.SharedClaimCount);
+            builder.AppendLine("Conflicts: " + FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count);
             return builder.ToString().TrimEnd();
         }
 
@@ -3395,9 +3395,9 @@ namespace FUSE.Interface
                 },
                 ["registry"] = new JObject
                 {
-                    ["exclusiveClaims"] = FUSE.Registry.FuseRegistry.ExclusiveClaimCount,
-                    ["sharedClaims"] = FUSE.Registry.FuseRegistry.SharedClaimCount,
-                    ["conflicts"] = FUSE.Registry.FuseRegistry.Conflicts.Count
+                    ["exclusiveClaims"] = FUSE.Runtime.Registry.FuseRegistry.ExclusiveClaimCount,
+                    ["sharedClaims"] = FUSE.Runtime.Registry.FuseRegistry.SharedClaimCount,
+                    ["conflicts"] = FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count
                 },
                 ["assets"] = new JObject
                 {

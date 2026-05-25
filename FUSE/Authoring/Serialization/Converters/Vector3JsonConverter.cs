@@ -2,7 +2,7 @@ using System;
 using Newtonsoft.Json;
 using UnityEngine;
 
-namespace FUSE.Serialization.Converters
+namespace FUSE.Authoring.Serialization.Converters
 {
     public sealed class Vector3JsonConverter : JsonConverter
     {

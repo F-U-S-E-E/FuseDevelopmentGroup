@@ -1,7 +1,7 @@
-using FUSE.Data.Common;
+using FUSE.Authoring.Data.Common;
 using UnityEngine;
 
-namespace FUSE.Data
+namespace FUSE.Authoring.Data
 {
     /// <summary>
     /// Serializable node snapshot used to restore base-game track removed by a

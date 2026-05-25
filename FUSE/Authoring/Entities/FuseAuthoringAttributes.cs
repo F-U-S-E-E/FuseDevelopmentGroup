@@ -1,6 +1,6 @@
 using System;
 
-namespace FUSE.Authoring
+namespace FUSE.Authoring.Entities
 {
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
     public sealed class FuseEditableAttribute : Attribute

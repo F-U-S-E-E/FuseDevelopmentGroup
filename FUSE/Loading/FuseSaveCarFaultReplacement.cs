@@ -2,7 +2,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 using AssetPack.Runtime;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using HarmonyLib;
 

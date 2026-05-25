@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
-using FUSE.Registry;
+using FUSE.Runtime.Registry;
 using Newtonsoft.Json.Linq;
 using UI.Common;
 

@@ -4,13 +4,14 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using FUSE.API;
-using FUSE.Cache;
+using FUSE.Runtime.API;
+using FUSE.Runtime.Cache;
 using FUSE.Infrastructure;
 using FUSE.Loading;
 using FUSE.Patches;
-using FUSE.Registry;
-using FUSE.Validation;
+using FUSE.Runtime.Registry;
+using FUSE.Authoring.Data;
+using FUSE.Authoring.Validation;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using Track;
@@ -18,7 +19,7 @@ using UnityEngine;
 using UI.Console;
 using Object = UnityEngine.Object;
 
-namespace FUSE.Console
+namespace FUSE.Interface.Console
 {
     internal static class FuseConsoleCommands
     {
@@ -588,29 +589,29 @@ namespace FUSE.Console
             }
         }
 
-        private static int CountProgressionSections(Data.FuseProgressionRoot progression)
+        private static int CountProgressionSections(FuseProgressionRoot progression)
         {
             return (progression.Sections?.Length ?? 0) +
                    (progression.Progressions?.Values.Sum(value => value?.Sections?.Count ?? 0) ?? 0);
         }
 
-        private static int CountDeliveryPhases(Data.FuseProgressionRoot progression)
+        private static int CountDeliveryPhases(FuseProgressionRoot progression)
         {
             return EnumerateSections(progression).Sum(section => section?.DeliveryPhases?.Length ?? 0);
         }
 
-        private static int CountDeliveries(Data.FuseProgressionRoot progression)
+        private static int CountDeliveries(FuseProgressionRoot progression)
         {
             return EnumerateSections(progression)
-                .SelectMany(section => section?.DeliveryPhases ?? Enumerable.Empty<Data.FuseDeliveryPhase>())
+                .SelectMany(section => section?.DeliveryPhases ?? Enumerable.Empty<FuseDeliveryPhase>())
                 .Sum(phase => phase?.Deliveries?.Length ?? 0);
         }
 
-        private static IEnumerable<Data.FuseSection> EnumerateSections(Data.FuseProgressionRoot progression)
+        private static IEnumerable<FuseSection> EnumerateSections(FuseProgressionRoot progression)
         {
-            return (progression.Sections ?? Enumerable.Empty<Data.FuseSection>())
-                .Concat((progression.Progressions?.Values ?? Enumerable.Empty<Data.FuseProgression>())
-                    .SelectMany(value => value?.Sections?.Values ?? Enumerable.Empty<Data.FuseSection>()));
+            return (progression.Sections ?? Enumerable.Empty<FuseSection>())
+                .Concat((progression.Progressions?.Values ?? Enumerable.Empty<FuseProgression>())
+                    .SelectMany(value => value?.Sections?.Values ?? Enumerable.Empty<FuseSection>()));
         }
     }
 
@@ -657,8 +658,8 @@ namespace FUSE.Console
                     totalStations += stations;
                     totalTurntables += turntables;
                     foreach (var component in operations.Industries?.Values
-                                 .SelectMany(industry => industry?.Components?.Values ?? Enumerable.Empty<Data.FuseIndustryComponent>())
-                             ?? Enumerable.Empty<Data.FuseIndustryComponent>())
+                                 .SelectMany(industry => industry?.Components?.Values ?? Enumerable.Empty<FuseIndustryComponent>())
+                             ?? Enumerable.Empty<FuseIndustryComponent>())
                     {
                         var type = string.IsNullOrWhiteSpace(component?.Type) ? "<blank>" : component.Type.Trim();
                         componentTypes[type] = componentTypes.TryGetValue(type, out var count) ? count + 1 : 1;
@@ -1135,7 +1136,7 @@ namespace FUSE.Console
         public string Execute(string[] components)
         {
             FuseExperimentalLog.WarnFirstUse(
-                "FUSE.Console./fuse.reapply",
+                "FUSE.Interface.Console./fuse.reapply",
                 "mid-session reapply via console");
 
             var guard = FuseConsoleCommands.SessionGuardMessage("/fuse.reapply", components);
@@ -1165,7 +1166,7 @@ namespace FUSE.Console
         public string Execute(string[] components)
         {
             FuseExperimentalLog.WarnFirstUse(
-                "FUSE.Console./fuse.restore",
+                "FUSE.Interface.Console./fuse.restore",
                 "mid-session full restore via console");
 
             var guard = FuseConsoleCommands.SessionGuardMessage("/fuse.restore", components);

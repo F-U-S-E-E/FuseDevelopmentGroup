@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using FUSE.Data.Common;
+using FUSE.Authoring.Data.Common;
 using UnityEngine;
 
-namespace FUSE.Data
+namespace FUSE.Authoring.Data
 {
     public sealed class FuseTrackDefinition
     {

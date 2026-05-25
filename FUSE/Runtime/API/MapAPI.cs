@@ -5,8 +5,8 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using Map.Runtime.MapModifiers;
 using Map.Runtime.MaskComponents;
-using FUSE.Cache;
-using FUSE.Data;
+using FUSE.Runtime.Cache;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using TelegraphPoles;
 using TMPro;
@@ -15,7 +15,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using RuntimeSimpleGraph = SimpleGraph.Runtime.SimpleGraph;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public static class MapAPI
     {
@@ -1015,7 +1015,7 @@ namespace FUSE.API
             mask.enableMaskModifier = definition?.EnableMaskModifier ?? false;
             mask.enableSetHeight = definition?.EnableSetHeight ?? false;
 
-            // Convert from the FuseMapMask MaskName (from FUSE.Data) into the Map runtime MaskName
+            // Convert from the FuseMapMask MaskName (from FUSE.Authoring.Data) into the Map runtime MaskName
             if (definition?.MaskName.HasValue == true)
             {
                 var sourceName = definition.MaskName.Value.ToString();

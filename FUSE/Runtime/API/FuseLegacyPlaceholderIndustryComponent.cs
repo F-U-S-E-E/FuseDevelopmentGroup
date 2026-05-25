@@ -1,7 +1,7 @@
 using Model.Ops;
 using Model.Ops.Definition;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public sealed class FuseLegacyPlaceholderIndustryComponent : IndustryComponent
     {

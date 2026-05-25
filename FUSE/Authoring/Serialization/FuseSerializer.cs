@@ -1,14 +1,14 @@
 using System;
 using System.IO;
-using FUSE.Data;
-using FUSE.Migrations;
-using FUSE.Serialization.Converters;
+using FUSE.Authoring.Data;
+using FUSE.Authoring.Migrations;
+using FUSE.Authoring.Serialization.Converters;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Bson;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 
-namespace FUSE.Serialization
+namespace FUSE.Authoring.Serialization
 {
     public static class FuseSerializer
     {

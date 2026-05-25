@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     /// <summary>
     /// Pure disambiguation logic for

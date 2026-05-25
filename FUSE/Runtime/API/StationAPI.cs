@@ -5,15 +5,15 @@ using System.Reflection;
 using Helpers;
 using Model;
 using Model.Ops;
-using FUSE.Cache;
-using FUSE.Data;
+using FUSE.Runtime.Cache;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using TMPro;
 using UI.Map;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public static class StationAPI
     {

@@ -5,7 +5,7 @@ using FUSE.Infrastructure;
 using Model.Ops;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     // Runtime observation: by the time FUSE's OnMapDidLoad handler runs the legacy
     // package apply pass, some base-game IndustryComponents (e.g. Whittier Saw Mill's

@@ -3,8 +3,8 @@ using Game.Messages;
 using Game.State;
 using HarmonyLib;
 using FUSE.Infrastructure;
-using FUSE.Lifecycle;
-using FUSE.Migrations;
+using FUSE.Runtime.Lifecycle;
+using FUSE.Authoring.Migrations;
 
 namespace FUSE.Patches
 {

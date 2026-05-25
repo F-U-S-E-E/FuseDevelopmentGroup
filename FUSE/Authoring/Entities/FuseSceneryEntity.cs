@@ -1,11 +1,11 @@
 using System.Collections.Generic;
 using Helpers;
-using FUSE.API;
-using FUSE.Data;
-using FUSE.Validation;
+using FUSE.Runtime.API;
+using FUSE.Authoring.Data;
+using FUSE.Authoring.Validation;
 using UnityEngine;
 
-namespace FUSE.Authoring
+namespace FUSE.Authoring.Entities
 {
     public sealed class FuseSceneryEntity : FuseWorldEntity
     {

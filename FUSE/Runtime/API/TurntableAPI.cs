@@ -5,14 +5,14 @@ using System.Reflection;
 using Core;
 using Helpers;
 using KeyValue.Runtime;
-using FUSE.Cache;
-using FUSE.Data;
+using FUSE.Runtime.Cache;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using RollingStock.Controls;
 using Track;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public static class TurntableAPI
     {

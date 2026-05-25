@@ -12,7 +12,7 @@ using Track;
 using UI.Map;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     internal sealed class FusePrefabSanitizerResult
     {

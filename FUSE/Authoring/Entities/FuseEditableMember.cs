@@ -3,9 +3,9 @@ using System.Linq;
 using System.Reflection;
 using Newtonsoft.Json.Linq;
 using FUSE.Infrastructure;
-using FUSE.Serialization;
+using FUSE.Authoring.Serialization;
 
-namespace FUSE.Authoring
+namespace FUSE.Authoring.Entities
 {
     public sealed class FuseEditableMember
     {

@@ -1,7 +1,7 @@
 using System;
 using HarmonyLib;
 using FUSE.Infrastructure;
-using FUSE.Lifecycle;
+using FUSE.Runtime.Lifecycle;
 using UnityEngine;
 using System.Collections.Generic;
 using System.Reflection.Emit;

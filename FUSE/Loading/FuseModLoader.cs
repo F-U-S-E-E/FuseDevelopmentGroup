@@ -3,14 +3,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Model.Ops;
-using FUSE.API;
-using FUSE.Authoring;
-using FUSE.Data;
-using FUSE.Events;
+using FUSE.Runtime.API;
+using FUSE.Authoring.Entities;
+using FUSE.Authoring.Data;
+using FUSE.Runtime.Events;
 using FUSE.Infrastructure;
-using FUSE.Registry;
-using FUSE.Serialization;
-using FUSE.Validation;
+using FUSE.Runtime.Registry;
+using FUSE.Authoring.Serialization;
+using FUSE.Authoring.Validation;
 using Newtonsoft.Json.Linq;
 using Map.Runtime;
 using Track;
@@ -1527,7 +1527,7 @@ namespace FUSE.Loading
             // game's HandleFeatureEnablesChanged still owns those.
             foreach (var groupId in groupsFromSegments)
             {
-                FUSE.API.ProgressionAPI.RecordTransientlyPreEnabledTrackGroup(groupId);
+                FUSE.Runtime.API.ProgressionAPI.RecordTransientlyPreEnabledTrackGroup(groupId);
             }
 
             FuseLog.Info(

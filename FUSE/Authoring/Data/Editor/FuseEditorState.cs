@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace FUSE.Data
+namespace FUSE.Authoring.Data
 {
     public sealed class FuseEditorState
     {

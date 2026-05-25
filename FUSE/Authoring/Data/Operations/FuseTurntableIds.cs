@@ -1,4 +1,4 @@
-namespace FUSE.Data
+namespace FUSE.Authoring.Data
 {
     /// <summary>
     /// Pure ID generation for turntable-derived nodes and segments. Lives here,

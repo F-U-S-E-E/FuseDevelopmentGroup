@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using FUSE.API;
+using FUSE.Runtime.API;
 using FUSE.Infrastructure;
 using Model.Ops;
 using Track;
@@ -615,7 +615,7 @@ namespace FUSE.Interface
             string owner;
             try
             {
-                owner = FUSE.Registry.FuseRegistry.GetExclusiveOwner(FUSE.Registry.FuseClaimKind.Segment, segment.id);
+                owner = FUSE.Runtime.Registry.FuseRegistry.GetExclusiveOwner(FUSE.Runtime.Registry.FuseClaimKind.Segment, segment.id);
             }
             catch
             {

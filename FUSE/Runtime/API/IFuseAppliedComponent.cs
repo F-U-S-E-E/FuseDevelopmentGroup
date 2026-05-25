@@ -1,4 +1,4 @@
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     internal interface IFuseAppliedComponent
     {

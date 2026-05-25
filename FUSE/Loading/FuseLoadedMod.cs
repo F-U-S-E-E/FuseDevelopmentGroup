@@ -1,4 +1,4 @@
-using FUSE.Data;
+using FUSE.Authoring.Data;
 
 namespace FUSE.Loading
 {

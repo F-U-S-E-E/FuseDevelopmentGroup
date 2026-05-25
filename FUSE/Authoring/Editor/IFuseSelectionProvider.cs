@@ -1,4 +1,4 @@
-namespace FUSE.Editor
+namespace FUSE.Authoring.Editor
 {
     public interface IFuseSelectionProvider
     {

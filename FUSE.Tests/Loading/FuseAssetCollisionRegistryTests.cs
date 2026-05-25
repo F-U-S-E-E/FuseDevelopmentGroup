@@ -543,8 +543,8 @@ namespace FUSE.Tests.Loading
                 _ => "Widgets",
                 pack => HostMod(pack));
 
-            var owners = FUSE.Registry.FuseRegistry.GetSharedOwners(
-                FUSE.Registry.FuseClaimKind.AssetCollision, "widget");
+            var owners = FUSE.Runtime.Registry.FuseRegistry.GetSharedOwners(
+                FUSE.Runtime.Registry.FuseClaimKind.AssetCollision, "widget");
 
             // Both pack folders contribute the same owner label ("Widgets"
             // from the test stub), de-duped by the shared-owners HashSet.
@@ -564,15 +564,15 @@ namespace FUSE.Tests.Loading
                 _ => "Widgets",
                 pack => HostMod(pack));
 
-            Assert.NotEmpty(FUSE.Registry.FuseRegistry.GetSharedOwners(
-                FUSE.Registry.FuseClaimKind.AssetCollision, "widget"));
+            Assert.NotEmpty(FUSE.Runtime.Registry.FuseRegistry.GetSharedOwners(
+                FUSE.Runtime.Registry.FuseClaimKind.AssetCollision, "widget"));
 
             FuseAssetCollisionRegistry.Reset();
 
             // Reset must drop every claim the scan recorded — otherwise
             // FuseRegistry state leaks across game-session reloads.
-            Assert.Empty(FUSE.Registry.FuseRegistry.GetSharedOwners(
-                FUSE.Registry.FuseClaimKind.AssetCollision, "widget"));
+            Assert.Empty(FUSE.Runtime.Registry.FuseRegistry.GetSharedOwners(
+                FUSE.Runtime.Registry.FuseClaimKind.AssetCollision, "widget"));
         }
 
         // ===== Construction / data class invariants =====
@@ -583,7 +583,7 @@ namespace FUSE.Tests.Loading
             // The data class should not throw when handed nulls — every
             // collision goes through reporting surfaces that expect
             // non-null values.
-            var collision = new FUSE.Data.FuseAssetCollision(null, null, null, null);
+            var collision = new FUSE.Authoring.Data.FuseAssetCollision(null, null, null, null);
             Assert.Equal(string.Empty, collision.SharedIdentifier);
             Assert.Equal(string.Empty, collision.WinnerFolder);
             Assert.Equal(string.Empty, collision.WinnerBundlePath);
@@ -594,7 +594,7 @@ namespace FUSE.Tests.Loading
         [Fact]
         public void FuseAssetCollision_constructor_preserves_supplied_values()
         {
-            var collision = new FUSE.Data.FuseAssetCollision(
+            var collision = new FUSE.Authoring.Data.FuseAssetCollision(
                 "shared-id",
                 @"C:\winner",
                 @"C:\winner\Bundle",

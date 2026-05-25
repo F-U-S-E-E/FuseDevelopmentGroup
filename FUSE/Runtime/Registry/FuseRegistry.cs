@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using FUSE.Infrastructure;
 
-namespace FUSE.Registry
+namespace FUSE.Runtime.Registry
 {
     /// <summary>
     /// Tracks which FUSE package owns each runtime resource. Exclusive claims permit

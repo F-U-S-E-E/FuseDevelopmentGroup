@@ -1,4 +1,4 @@
-using FUSE.API;
+using FUSE.Runtime.API;
 using NUnit.Framework;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -8,7 +8,7 @@ namespace FUSE.UnityTests
 {
     /// <summary>
     /// Integration tests for the duplicate-named-sibling
-    /// disambiguation in <see cref="FUSE.API.FusePrefabResolver"/>.
+    /// disambiguation in <see cref="FUSE.Runtime.API.FusePrefabResolver"/>.
     /// The pure resolver in <see cref="FuseFindChildResolver"/> is
     /// already pinned by xUnit tests against a fake candidate list;
     /// this suite verifies the live <see cref="Transform"/>-walking

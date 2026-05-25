@@ -1,8 +1,8 @@
-using FUSE.Data.Common;
-using FUSE.Validation;
+using FUSE.Authoring.Data.Common;
+using FUSE.Authoring.Validation;
 using UnityEngine;
 
-namespace FUSE.Authoring
+namespace FUSE.Authoring.Entities
 {
     public abstract class FuseTrackEntity : FuseAuthoringEntity
     {
@@ -99,7 +99,7 @@ namespace FUSE.Authoring
         // from "the author did not specify a position at all". The
         // distinction matters: <see cref="BuildRuntimeData"/> writes
         // FuseSceneClone.LocalPosition (a nullable Vector3) and the apply
-        // path in <see cref="FUSE.API.SceneCloneAPI.ApplyDefinition"/>
+        // path in <see cref="FUSE.Runtime.API.SceneCloneAPI.ApplyDefinition"/>
         // ONLY rewrites the live transform.localPosition when
         // LocalPosition.HasValue is true. Without the flags, every
         // scene-clone definition that omitted localPosition would silently
@@ -128,7 +128,7 @@ namespace FUSE.Authoring
         [FuseHidden]
         public GameObject RuntimeStructure { get; private set; }
 
-        public void LoadDefinition(FUSE.Data.FuseSceneClone definition)
+        public void LoadDefinition(FUSE.Authoring.Data.FuseSceneClone definition)
         {
             if (definition == null)
             {
@@ -164,9 +164,9 @@ namespace FUSE.Authoring
             ClearDirty();
         }
 
-        public FUSE.Data.FuseSceneClone ToDefinition()
+        public FUSE.Authoring.Data.FuseSceneClone ToDefinition()
         {
-            return (FUSE.Data.FuseSceneClone)BuildRuntimeData();
+            return (FUSE.Authoring.Data.FuseSceneClone)BuildRuntimeData();
         }
 
         public override ValidationResult Validate()
@@ -192,7 +192,7 @@ namespace FUSE.Authoring
             // of <c>Vector3.zero</c> would otherwise be indistinguishable
             // from an authored origin, silently teleporting the bound
             // GameObject to its parent's origin on every apply.
-            return new FUSE.Data.FuseSceneClone
+            return new FUSE.Authoring.Data.FuseSceneClone
             {
                 TargetPath = TargetPath,
                 Source = Source,
@@ -203,7 +203,7 @@ namespace FUSE.Authoring
             };
         }
 
-        public override bool SaveToDefinition(FUSE.Data.FuseModDefinition definition)
+        public override bool SaveToDefinition(FUSE.Authoring.Data.FuseModDefinition definition)
         {
             if (definition?.World?.SceneClones == null)
             {
@@ -216,16 +216,16 @@ namespace FUSE.Authoring
 
         public override void ApplyToRuntime()
         {
-            var definition = (FUSE.Data.FuseSceneClone)BuildRuntimeData();
-            RuntimeStructure = FUSE.API.SceneCloneAPI.GetSceneClone(Id);
+            var definition = (FUSE.Authoring.Data.FuseSceneClone)BuildRuntimeData();
+            RuntimeStructure = FUSE.Runtime.API.SceneCloneAPI.GetSceneClone(Id);
             if (RuntimeStructure == null)
             {
-                RuntimeStructure = FUSE.API.SceneCloneAPI.AddSceneClone(Id, definition);
+                RuntimeStructure = FUSE.Runtime.API.SceneCloneAPI.AddSceneClone(Id, definition);
             }
             else
             {
-                FUSE.API.SceneCloneAPI.UpdateSceneClone(Id, definition);
-                RuntimeStructure = FUSE.API.SceneCloneAPI.GetSceneClone(Id);
+                FUSE.Runtime.API.SceneCloneAPI.UpdateSceneClone(Id, definition);
+                RuntimeStructure = FUSE.Runtime.API.SceneCloneAPI.GetSceneClone(Id);
             }
 
             BindRuntime(RuntimeStructure);
@@ -233,7 +233,7 @@ namespace FUSE.Authoring
 
         public override void CaptureFromRuntime()
         {
-            var runtime = RuntimeStructure ?? FUSE.API.SceneCloneAPI.GetSceneClone(Id);
+            var runtime = RuntimeStructure ?? FUSE.Runtime.API.SceneCloneAPI.GetSceneClone(Id);
             if (runtime == null)
             {
                 return;

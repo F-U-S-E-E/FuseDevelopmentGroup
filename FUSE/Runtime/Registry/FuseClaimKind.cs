@@ -1,4 +1,4 @@
-namespace FUSE.Registry
+namespace FUSE.Runtime.Registry
 {
     /// <summary>
     /// Kinds of resource a FUSE package can claim ownership of.

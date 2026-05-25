@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using FUSE.Authoring;
+using FUSE.Authoring.Entities;
 using FUSE.Infrastructure;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public sealed class FuseObjectSaveOptions
     {

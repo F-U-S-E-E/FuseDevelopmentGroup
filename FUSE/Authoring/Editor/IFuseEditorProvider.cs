@@ -1,6 +1,6 @@
-using FUSE.Validation;
+using FUSE.Authoring.Validation;
 
-namespace FUSE.Editor
+namespace FUSE.Authoring.Editor
 {
     public interface IFuseEditorProvider
     {

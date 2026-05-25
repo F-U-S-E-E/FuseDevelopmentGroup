@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Newtonsoft.Json.Linq;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
-using FUSE.Serialization;
-using FUSE.Validation;
+using FUSE.Authoring.Serialization;
+using FUSE.Authoring.Validation;
 using UnityEngine;
 
-namespace FUSE.Authoring
+namespace FUSE.Authoring.Entities
 {
     public abstract class FuseAuthoringEntity
     {

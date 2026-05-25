@@ -1,8 +1,8 @@
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using Track;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public interface IFuseTurntableController
     {

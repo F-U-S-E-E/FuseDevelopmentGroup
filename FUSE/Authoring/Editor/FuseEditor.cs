@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 using UI.CarEditor;
 using UnityEngine;
 
-namespace FUSE.Editor
+namespace FUSE.Authoring.Editor
 {
     public class FuseEditor : MonoBehaviour
     {

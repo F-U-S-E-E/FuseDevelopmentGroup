@@ -1,6 +1,6 @@
 using System;
 
-namespace FUSE.Data
+namespace FUSE.Authoring.Data
 {
     /// <summary>
     /// A record of one car instance the save could not restore because

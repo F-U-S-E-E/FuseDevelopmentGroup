@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace FUSE.Data
+namespace FUSE.Authoring.Data
 {
     public sealed class FuseOperationsDefinition
     {
@@ -73,7 +73,7 @@ namespace FUSE.Data
         /// component (e.g. CollieSylvaRemoval nulls every component on
         /// sylva-tannery / sylva-paperboard / sylva-interchange). A JSON
         /// null cannot be carried straight through because
-        /// <see cref="FUSE.Serialization.FuseSerializer.GetSettings"/> sets
+        /// <see cref="FUSE.Authoring.Serialization.FuseSerializer.GetSettings"/> sets
         /// <c>NullValueHandling.Ignore</c>, which causes the deserializer
         /// to drop null dictionary entries entirely — leaving the apply
         /// path with an empty components dict and the vanilla components

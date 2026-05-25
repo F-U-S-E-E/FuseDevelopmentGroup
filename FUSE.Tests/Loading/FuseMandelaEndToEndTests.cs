@@ -1,7 +1,7 @@
-using FUSE.API;
-using FUSE.Data;
+using FUSE.Runtime.API;
+using FUSE.Authoring.Data;
 using FUSE.Loading;
-using FUSE.Serialization;
+using FUSE.Authoring.Serialization;
 using Newtonsoft.Json.Linq;
 using Xunit;
 

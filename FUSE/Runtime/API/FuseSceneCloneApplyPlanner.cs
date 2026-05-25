@@ -1,7 +1,7 @@
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     /// <summary>
     /// Pure-function planner that decides what mutations FUSE's scene-clone

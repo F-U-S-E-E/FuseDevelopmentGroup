@@ -645,7 +645,7 @@ namespace StrangeCustoms.Tracks
         /// <summary>
         /// Patch target for legacy plugins that Postfix component application.
         /// FUSE configures these fields natively in
-        /// <see cref="FUSE.API.IndustryAPI"/>.ApplyComponentDefinition, so
+        /// <see cref="FUSE.Runtime.API.IndustryAPI"/>.ApplyComponentDefinition, so
         /// this method is a no-op — but Harmony needs the target to exist so
         /// the plugin's Harmony.PatchAll doesn't crash before installing its
         /// other (game-type) patches.

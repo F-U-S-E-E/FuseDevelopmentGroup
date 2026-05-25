@@ -1,12 +1,12 @@
 using System;
 using System.Diagnostics;
 using System.Reflection;
-using FUSE.API;
-using FUSE.Cache;
+using FUSE.Runtime.API;
+using FUSE.Runtime.Cache;
 using FUSE.Infrastructure;
 using FUSE.Loading;
 
-namespace FUSE.Lifecycle
+namespace FUSE.Runtime.Lifecycle
 {
     internal static class FuseRuntimeReloadService
     {

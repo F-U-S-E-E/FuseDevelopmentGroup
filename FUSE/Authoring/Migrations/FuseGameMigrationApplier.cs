@@ -5,7 +5,7 @@ using FUSE.Loading;
 using Game.Messages;
 using Newtonsoft.Json.Linq;
 
-namespace FUSE.Migrations
+namespace FUSE.Authoring.Migrations
 {
     /// <summary>
     /// Applies "game-migrations" data carried in FUSE definitions'

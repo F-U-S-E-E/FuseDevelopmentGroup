@@ -1,4 +1,4 @@
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     internal static class FuseDefinitionKind
     {

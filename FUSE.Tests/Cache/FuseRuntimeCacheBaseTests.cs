@@ -1,5 +1,5 @@
 using System.Linq;
-using FUSE.Cache;
+using FUSE.Runtime.Cache;
 using Xunit;
 
 namespace FUSE.Tests.Cache

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using FUSE.Cache;
+using FUSE.Runtime.Cache;
 using FUSE.Infrastructure;
 using GalaSoft.MvvmLight.Messaging;
 using Helpers;
