@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: FUSE.Tests/TestResults/test-results.trx
@@ -210,7 +210,7 @@ jobs:
 
       - name: Upload EditMode test results
         if: always() && steps.editmode_gate.outputs.enabled == 'true' && steps.unity_probe.outputs.available == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unity-editmode-results
           path: FUSE.UnityTests/TestResults/editmode-results.xml
@@ -264,7 +264,7 @@ jobs:
 
       - name: Upload build artifact
         id: build_upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.build_id.outputs.archive }}
           path: ${{ steps.build_id.outputs.archive }}
