@@ -88,8 +88,8 @@ namespace FUSE.Runtime.API
             var gameObject = new GameObject(displayName);
             gameObject.SetActive(false);
             gameObject.transform.SetParent(root, false);
-            gameObject.transform.localPosition = definition.Position;
-            gameObject.transform.localRotation = Quaternion.Euler(definition.Rotation);
+            gameObject.transform.localPosition = definition.Position ?? Vector3.zero;
+            gameObject.transform.localRotation = Quaternion.Euler(definition.Rotation ?? Vector3.zero);
 
             var industry = gameObject.AddComponent<Industry>();
             industry.identifier = id;
@@ -126,17 +126,37 @@ namespace FUSE.Runtime.API
             }
 
             var displayName = string.IsNullOrWhiteSpace(definition.Name) ? id : definition.Name;
-            var root = GetIndustryRoot(definition);
-            if (root != null && industry.transform.parent != root)
+            // Only reparent / relocate / re-rotate when the definition
+            // explicitly specifies these fields. Legacy SC patches against an
+            // existing base-game industry (e.g. a top-level
+            // industries.whittier-sawmill.components.{...} patch) routinely
+            // omit areaId / position / rotation; running unconditional
+            // mutations here used to drag the industry into the first Area
+            // and the origin, after which MapEnhancer's
+            // OpsController.Shared.Areas -> area.Industries lookup picked the
+            // wrong Area's tagColor for every component on it.
+            if (!string.IsNullOrWhiteSpace(definition.AreaId))
             {
-                industry.transform.SetParent(root, false);
-                FuseLog.Info($"FUSE reparented industry '{id}' to '{DescribeIndustryParent(root)}'.");
+                var root = GetIndustryRoot(definition);
+                if (root != null && industry.transform.parent != root)
+                {
+                    industry.transform.SetParent(root, false);
+                    FuseLog.Info($"FUSE reparented industry '{id}' to '{DescribeIndustryParent(root)}'.");
+                }
             }
 
             industry.gameObject.name = displayName;
             industry.name = displayName;
-            industry.transform.localPosition = definition.Position;
-            industry.transform.localRotation = Quaternion.Euler(definition.Rotation);
+            if (definition.Position.HasValue)
+            {
+                industry.transform.localPosition = definition.Position.Value;
+            }
+
+            if (definition.Rotation.HasValue)
+            {
+                industry.transform.localRotation = Quaternion.Euler(definition.Rotation.Value);
+            }
+
             industry.usesContract = definition.UsesContract;
             RememberIndustryOrder(id, definition.Order);
             FuseCreatedIndustryIds.Add(id);
@@ -443,9 +463,10 @@ namespace FUSE.Runtime.API
                     return matchedArea.transform;
                 }
 
+                var probePosition = definition.Position ?? Vector3.zero;
                 var nearestArea = areas
                     .Where(area => area != null)
-                    .OrderBy(area => (area.transform.localPosition - definition.Position).sqrMagnitude)
+                    .OrderBy(area => (area.transform.localPosition - probePosition).sqrMagnitude)
                     .FirstOrDefault();
                 if (nearestArea != null)
                 {
