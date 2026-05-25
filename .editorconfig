@@ -19,11 +19,12 @@ trim_trailing_whitespace = true
 # require a one-time mass re-encode. The .NET compiler accepts both, and
 # `dotnet format whitespace` does not check the encoding either way.
 
-# Codebase is Windows-native (.NET Framework 4.8 + Unity 2022.3.62f2). All
-# tracked .cs / project / props / targets files use CRLF on disk; locking
-# this in stops mixed-EOL drift from cross-platform editors.
-[*.{cs,csproj,props,targets,slnx}]
-end_of_line = crlf
+# `end_of_line` is intentionally not pinned. .gitattributes already declares
+# `* text=auto`, which normalizes text files to LF in the repository and
+# lets each working copy honour the local platform convention (CRLF on
+# Windows checkouts when core.autocrlf=true, LF elsewhere). Pinning either
+# value here would either fail on the CI checkout (which sees LF) or
+# generate noise for Windows contributors (who see CRLF on disk).
 
 # YAML / JSON / shell scripts are typically 2-space indented across this
 # repo and the wider ecosystem (GitHub Actions workflows, package files).
