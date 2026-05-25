@@ -17,12 +17,12 @@ permissions:
 
 jobs:
   json-lint:
-    # ubuntu-latest is sufficient: tools/json_lint.py is pure Python with a
-    # single jsonschema dependency and does not touch any Unity / Railroader
-    # binaries. Running here keeps the self-hosted runner free for the
-    # Unity-dependent build + tests in ci.yml, and lets this check run in
-    # parallel with the build.
-    runs-on: ubuntu-latest
+    # Runs on the same self-hosted runner as ci.yml + release.yml. The lint
+    # itself only needs Python + jsonschema, but keeping every workflow on
+    # one runner avoids the matrix of "do we have git available?" /
+    # "do we have UMM DLLs available?" / "does actions/setup-python work
+    # here?" questions every time a check is touched.
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repository
