@@ -53,7 +53,7 @@ jobs:
 
       - name: Build FUSE mod (Release)
         shell: powershell
-        run: dotnet build FUSE.csproj -c Release -p:ModVersion=${{ steps.version.outputs.version }}
+        run: dotnet build FUSE/FUSE.csproj -c Release -p:ModVersion=${{ steps.version.outputs.version }}
 
       - name: Package UMM mod zip
         id: package
@@ -75,8 +75,8 @@ jobs:
           # Copy the runtime assembly and its stamped manifest. Source the
           # manifest from bin so the InjectModVersionIntoInfoJson target's
           # rewrite is what ships.
-          Copy-Item "bin\Release\net48\FUSE.dll" $modFolder
-          Copy-Item "bin\Release\net48\Info.json" $modFolder
+          Copy-Item "FUSE\bin\Release\net48\FUSE.dll" $modFolder
+          Copy-Item "FUSE\bin\Release\net48\Info.json" $modFolder
 
           # Schemas are referenced by FUSE.csproj and copied into bin. We re-copy
           # from source to avoid picking up any stale files left over in bin
