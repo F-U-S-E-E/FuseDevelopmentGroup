@@ -99,36 +99,109 @@ def find_git_executable() -> str | None:
     return None
 
 
-def tracked_json_files(root: Path) -> list[Path]:
-    """Return every .json file tracked by git, repo-relative paths sorted."""
-    # ls-files is the right primitive here: it ignores build artifacts in
-    # bin/obj, leftover files under .git/worktrees, and anything in
-    # .gitignore. Avoids accidentally linting machine-generated files.
-    #
-    # subprocess.run on Windows uses CreateProcess directly and does NOT
-    # walk PATH the way a shell would, so a bare "git" argv0 fails on the
-    # CI runner with "The system cannot find the file specified" even
-    # though git is plainly on the runner's PATH. find_git_executable
-    # resolves an absolute path via env var, shutil.which, or canonical
-    # Windows install locations; passing the absolute path then succeeds
-    # on Windows, macOS, and Linux without falling back to shell=True
-    # (which would re-introduce quoting risk on the glob argument).
-    git_executable = find_git_executable()
-    if git_executable is None:
-        raise RuntimeError(
-            "git executable not found via GIT_EXECUTABLE env var, shutil.which, or any "
-            "canonical Windows install path (C:\\Program Files\\Git\\cmd\\git.exe etc.). "
-            "Install git or set GIT_EXECUTABLE to its absolute path."
-        )
-    result = subprocess.run(
-        [git_executable, "ls-files", "*.json"],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
+# Directory names to skip when falling back to a filesystem walk. These
+# are the same categories ``git ls-files`` would exclude either via
+# .gitignore or because they sit outside the index (bin/obj build
+# outputs, IDE caches, Unity's regenerated Library/, this repo's tmp/
+# scratch folder, the agent's worktree scratch, etc.). Matched against
+# any path component, case-sensitively on Linux/macOS and
+# case-insensitively on Windows (which the comparison normalises below).
+_FILESYSTEM_WALK_SKIP_DIRS = frozenset(
+    name.lower() for name in (
+        ".git",
+        ".github",  # only the workflow yml lives here, no .json
+        ".vs",
+        ".vscode",
+        ".idea",
+        ".claude",
+        "bin",
+        "obj",
+        "Library",         # Unity-regenerated
+        "Temp",            # Unity-regenerated
+        "Logs",
+        "UserSettings",
+        "PackageCache",
+        "TestResults",
+        "node_modules",
+        "_work",
+        "tmp",
+        "Plugins",         # UnityTests/Assets/Plugins/ — copied DLLs only
     )
-    paths = [Path(line) for line in result.stdout.splitlines() if line.strip()]
-    return sorted(paths)
+)
+
+
+def filesystem_json_files(root: Path) -> list[Path]:
+    """Walk ``root`` and yield every .json file outside our skip-list.
+
+    Fallback for environments where git is unavailable (e.g. the
+    self-hosted CI runner where actions/checkout has populated the
+    workspace via the GitHub API rather than a real git clone, leaving
+    no git binary callable from a subprocess). Matches the practical
+    coverage of ``git ls-files *.json`` for this repo because the
+    workspace contains only tracked files anyway.
+    """
+    discovered: list[Path] = []
+    for path in root.rglob("*.json"):
+        if path.is_dir():
+            continue
+        relative = path.relative_to(root)
+        if any(part.lower() in _FILESYSTEM_WALK_SKIP_DIRS for part in relative.parts):
+            continue
+        discovered.append(relative)
+    return sorted(discovered)
+
+
+def tracked_json_files(root: Path) -> list[Path]:
+    """Return every .json file under ``root`` worth linting, sorted.
+
+    Prefers ``git ls-files *.json`` when git is available — it respects
+    .gitignore for free and is fast even on a large repo. Falls back to
+    a filesystem walk with a fixed skip-list when git is missing (the
+    GitHub-actions self-hosted runner is the immediate motivator: it
+    populates the workspace via the GitHub API and has no callable git
+    binary, so a hard requirement on git would block CI). The fallback
+    matches git's practical coverage for this repo because the
+    workspace only contains tracked files when populated by CI; locally,
+    a developer's untracked .json scratch files just get linted too,
+    which is harmless and arguably desirable.
+    """
+    # subprocess.run on Windows uses CreateProcess directly and does NOT
+    # walk PATH the way a shell would, so a bare "git" argv0 fails on
+    # the CI runner with "The system cannot find the file specified"
+    # even though git is plainly on the runner's PATH.
+    # find_git_executable resolves an absolute path via env var,
+    # shutil.which, or canonical Windows install locations; passing the
+    # absolute path then succeeds on Windows, macOS, and Linux without
+    # falling back to shell=True (which would re-introduce quoting risk
+    # on the glob argument).
+    git_executable = find_git_executable()
+    if git_executable is not None:
+        try:
+            result = subprocess.run(
+                [git_executable, "ls-files", "*.json"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            # `git ls-files` outside a git working tree exits non-zero;
+            # the CI workspace populated via the GitHub API hits this.
+            # Fall through to the filesystem-walk fallback.
+            print(
+                f"json_lint: git ls-files failed ({exc.returncode}); "
+                f"falling back to filesystem walk."
+            )
+        else:
+            paths = [Path(line) for line in result.stdout.splitlines() if line.strip()]
+            return sorted(paths)
+    else:
+        print(
+            "json_lint: git executable not found; falling back to filesystem walk "
+            "(set GIT_EXECUTABLE if a specific binary should be preferred)."
+        )
+
+    return filesystem_json_files(root)
 
 
 def syntax_check(root: Path, relative_path: Path) -> str | None:
