@@ -1,0 +1,4 @@
+Placeholder so the empty Plugins/ folder is checked in. The actual DLLs
+this folder will hold (FUSE.dll, Railroader's Assembly-CSharp.dll, etc.)
+are deliberately git-ignored — see ../../.gitignore. They get populated
+by UnityTests/prepare_assets.ps1 immediately before tests run.
