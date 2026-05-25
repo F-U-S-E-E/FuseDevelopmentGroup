@@ -25,10 +25,11 @@
     <Compile Remove="_work\**\*.cs" />
     <Compile Remove="FUSE.Tests\**\*.cs" />
     <None Remove="FUSE.Tests\**\*" />
-    <!-- tmp/ holds disposable scratch artifacts (decompiled reference
-         sources we examine during compatibility work, throwaway scripts).
-         It must never be part of the build — including it pulls in code
-         we don't own and wouldn't ship. -->
+    <!-- tmp/ holds disposable scratch artifacts (throwaway scripts,
+         intermediate analysis files, third-party reference material
+         under investigation). It must never be part of the build —
+         including it would pull in code FUSE does not own and would
+         not ship. -->
     <Compile Remove="tmp\**\*.cs" />
     <None Remove="tmp\**\*" />
     <!-- UnityTests/ is a separate Unity project that compiles inside
