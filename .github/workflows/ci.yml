@@ -40,6 +40,23 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      # JSON lint runs BEFORE the .NET build: syntax + schema errors in
+      # Info.json, the example, or any tracked .json should fail in ~2s
+      # rather than wait through a multi-minute build to find out the
+      # manifest the build was about to stamp is malformed. The lint
+      # validates Info.json against schemas/umm-info.schema.json and
+      # schemas/fuse-mod.example.json against schemas/fuse-mod.schema.json.
+      - name: Setup Python (for json_lint)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install json_lint dependencies
+        run: pip install jsonschema
+
+      - name: Run JSON lint
+        run: python tools/json_lint.py
+
       # Pass a non-default ModVersion so the InjectModVersionIntoInfoJson
       # target runs (it is gated on '$(ModVersion)' != '0.0.0'). This catches
       # regressions in the post-build PowerShell that stamps Info.json.
