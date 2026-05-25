@@ -347,6 +347,7 @@ namespace FUSE.Loading
                 ["name"] = ReadString(item, "name") ?? id,
                 ["position"] = Vector(item["localPosition"] ?? item["position"], false),
                 ["radius"] = Clone(item["radius"]),
+                ["tagColor"] = Clone(item["tagColor"] ?? item["TagColor"]),
                 ["order"] = Clone(item["order"]),
                 ["spanIds"] = ToStringArray(item["spanIds"] ?? item["spans"]),
                 ["groupId"] = ReadString(item, "groupId", "GroupId")
