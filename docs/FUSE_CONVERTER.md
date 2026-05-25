@@ -69,10 +69,10 @@ and data JSON files, then writes output to:
 
 `/path/to/legacy-mod-folder/FUSEConverted`
 
-You can also use the repo-root helper:
+Or invoke the folder converter directly:
 
 ```bash
-python3 FUSEConvertFolder.py "/path/to/legacy-mod-folder"
+python3 tools/fuse_convert_folder.py "/path/to/legacy-mod-folder"
 ```
 
 To build a single portable Python archive:
