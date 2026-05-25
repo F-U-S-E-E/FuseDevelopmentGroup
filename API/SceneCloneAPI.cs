@@ -233,16 +233,31 @@ namespace FUSE.API
                 throw new InvalidOperationException($"Scene clone '{id}' is missing a target path.");
             }
 
+            // The decision of WHAT mutations to perform lives in
+            // FuseSceneCloneApplyPlanner so it can be unit-tested in
+            // isolation (every mandela regression we've shipped was
+            // rooted in this branching, and Unity refuses to spawn
+            // GameObjects outside the Editor/Player so we cannot
+            // exercise the executor itself from xUnit). This method
+            // is the executor: it resolves the existing target, runs
+            // the planner, and applies the resulting Plan against
+            // real Unity APIs.
             var existing = FusePrefabResolver.ResolveScenePath(definition.TargetPath);
+            var plan = FuseSceneCloneApplyPlanner.Compute(definition, existing != null);
+
             GameObject targetObject;
-            var clonedFromSource = !string.IsNullOrWhiteSpace(definition.Source);
-            if (clonedFromSource)
+            if (plan.CloneFromSource)
             {
-                if (existing != null)
+                if (plan.DestroyExistingTarget)
                 {
                     UnityEngine.Object.Destroy(existing);
                 }
 
+                // EnsureParentChainExists currently always travels with
+                // CloneFromSource — we never instantiate a clone without
+                // walking the parent chain. The planner exposes the
+                // flag separately to make the intent explicit and
+                // future-proof, but the executor pairs them here.
                 var parent = EnsureTargetParent(definition.TargetPath, out var targetName);
                 var source = FusePrefabResolver.Resolve(definition.Source);
                 if (source == null)
@@ -262,7 +277,14 @@ namespace FUSE.API
 
                 targetObject = UnityEngine.Object.Instantiate(source, parent);
                 targetObject.name = targetName;
-                targetObject.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+                if (plan.ZeroLocalTransformBeforeOverride)
+                {
+                    // Identity baseline so the planner's nullable
+                    // OverrideLocal* values are the SOLE source of
+                    // truth for what the clone ends up at — no
+                    // inherited prefab offset can sneak through.
+                    targetObject.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+                }
             }
             else
             {
@@ -279,42 +301,47 @@ namespace FUSE.API
             marker.DesiredEnabled = definition.Enabled;
             marker.Source = definition.Source;
 
-            if (clonedFromSource)
+            if (plan.StripUnsupportedRuntimeComponents)
             {
                 StripUnsupportedRuntimeComponents(targetObject);
             }
-            if (definition.LocalPosition.HasValue)
+
+            // OverrideLocal* are nullable; HasValue == false means the
+            // planner decided we should NOT touch the live transform.
+            // This is the contract that an enabled-only mandela on a
+            // vanilla GameObject leaves the base-game placement alone.
+            if (plan.OverrideLocalPosition.HasValue)
             {
-                targetObject.transform.localPosition = definition.LocalPosition.Value;
+                targetObject.transform.localPosition = plan.OverrideLocalPosition.Value;
             }
 
-            if (definition.LocalRotation.HasValue)
+            if (plan.OverrideLocalRotation.HasValue)
             {
-                targetObject.transform.localRotation = Quaternion.Euler(definition.LocalRotation.Value);
+                targetObject.transform.localRotation = Quaternion.Euler(plan.OverrideLocalRotation.Value);
             }
 
-            if (definition.LocalScale.HasValue)
+            if (plan.OverrideLocalScale.HasValue)
             {
-                targetObject.transform.localScale = definition.LocalScale.Value;
+                targetObject.transform.localScale = plan.OverrideLocalScale.Value;
             }
 
-            if (definition.Enabled != null)
+            if (plan.SetActiveState.HasValue)
             {
-                targetObject.SetActive(definition.Enabled.Value);
+                targetObject.SetActive(plan.SetActiveState.Value);
             }
 
-            if (clonedFromSource && definition.Enabled != false)
+            if (plan.ForceRenderable)
             {
                 ForceRenderable(id, targetObject);
             }
 
-            if (clonedFromSource)
+            if (plan.RunPrefabSanitizer)
             {
                 FusePrefabSanitizer.SanitizeSceneClone(targetObject, id).Log($"FUSE scene clone '{id}'");
             }
 
             MapAPI.RefreshAttachedMapMasks(targetObject, $"scene clone '{id}' apply");
-            if (definition.Enabled != false)
+            if (plan.RunPostBindValidation)
             {
                 FusePrefabSanitizer.ValidateSceneClonePostBind(targetObject, id).Log($"FUSE scene clone '{id}' post-bind");
             }
@@ -327,6 +354,7 @@ namespace FUSE.API
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.SceneClone, id, definition);
             return targetObject;
         }
+
 
         private static Transform EnsureTargetParent(string targetPath, out string targetName)
         {

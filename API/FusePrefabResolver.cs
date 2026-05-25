@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using Helpers;
 using FUSE.Infrastructure;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -131,13 +133,18 @@ namespace FUSE.API
                 return null;
             }
 
-            var exact = parent.Find(name);
-            if (exact != null)
-            {
-                return exact;
-            }
+            // Walk the parent's children once, classify each name match
+            // as exact-vs-case-insensitive AND with-vs-without scene
+            // content, then defer to FuseFindChildResolver for the
+            // priority pick. Splitting the resolver out keeps the
+            // disambiguation rule (whose subtleties — see the resolver
+            // class doc — caused the Bryson Freight House regression)
+            // unit-testable without spinning up Unity, and leaves this
+            // method as the thin Unity-facing adapter that knows how to
+            // map child indices back to Transforms.
+            var candidates = new List<FuseFindChildResolver.Candidate>();
+            var childTransforms = new List<Transform>();
 
-            Transform caseInsensitiveMatch = null;
             for (var index = 0; index < parent.childCount; index++)
             {
                 var child = parent.GetChild(index);
@@ -146,14 +153,58 @@ namespace FUSE.API
                     continue;
                 }
 
-                if (string.Equals(child.name, name, StringComparison.OrdinalIgnoreCase))
+                var isExact = string.Equals(child.name, name, StringComparison.Ordinal);
+                var isCaseInsensitive = !isExact &&
+                    string.Equals(child.name, name, StringComparison.OrdinalIgnoreCase);
+                if (!isExact && !isCaseInsensitive)
                 {
-                    caseInsensitiveMatch = child;
-                    break;
+                    continue;
                 }
+
+                var kind = isExact
+                    ? FuseFindChildResolver.MatchKind.Exact
+                    : FuseFindChildResolver.MatchKind.CaseInsensitive;
+                candidates.Add(new FuseFindChildResolver.Candidate(kind, HasSceneContent(child), childTransforms.Count));
+                childTransforms.Add(child);
             }
 
-            return caseInsensitiveMatch;
+            var winner = FuseFindChildResolver.SelectWinningIndex(candidates);
+            return winner.HasValue ? childTransforms[candidates[winner.Value].OriginalIndex] : null;
+        }
+
+        /// <summary>
+        /// True when <paramref name="transform"/>'s GameObject (or anything
+        /// in its descendant tree) carries scenery content — either a
+        /// <c>SceneryAssetInstance</c> placement or a real <c>Renderer</c>.
+        /// Used by <see cref="FindChild"/> to disambiguate duplicate-named
+        /// siblings: the empty placeholder under a vanilla container fails
+        /// both checks, the real prefab-backed sibling passes either.
+        /// Includes inactive descendants so a renderer behind a culled
+        /// LODGroup still counts.
+        /// </summary>
+        private static bool HasSceneContent(Transform transform)
+        {
+            if (transform == null)
+            {
+                return false;
+            }
+            var gameObject = transform.gameObject;
+            if (gameObject == null)
+            {
+                return false;
+            }
+            // Cheap component look-ups; we avoid GetComponentsInChildren
+            // until we need it because most siblings either carry their
+            // SceneryAssetInstance directly or have nothing at all.
+            if (gameObject.GetComponentInChildren<SceneryAssetInstance>(true) != null)
+            {
+                return true;
+            }
+            if (gameObject.GetComponentInChildren<Renderer>(true) != null)
+            {
+                return true;
+            }
+            return false;
         }
 
         private static GameObject ResolveVanilla(string key)
