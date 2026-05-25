@@ -17,11 +17,11 @@ permissions:
 
 jobs:
   cs-lint:
-    # ubuntu-latest is sufficient: tools/cs_lint.py is pure Python with no
-    # third-party dependencies and does not touch the Unity-shipped DLLs.
-    # Running here keeps the self-hosted runner free for the build job in
-    # ci.yml and lets this check execute in parallel with the build.
-    runs-on: ubuntu-latest
+    # Runs on the same self-hosted runner as ci.yml + release.yml. The
+    # script itself only needs Python, but keeping every workflow on one
+    # runner avoids divergence between the lint and the build's view of
+    # the source tree (line-ending normalisation, BOM handling, etc.).
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repository
