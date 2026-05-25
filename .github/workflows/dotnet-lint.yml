@@ -1,0 +1,47 @@
+name: .NET Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch/PR when a new commit lands.
+concurrency:
+  group: dotnet-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet-format:
+    # Same self-hosted runner as ci.yml + release.yml: dotnet format needs
+    # to load FUSE.csproj and FUSE.Tests.csproj, both of which Reference
+    # game-shipped Unity DLLs at $(UnityManagedDir). The runner is set up
+    # with those DLLs already (the build job depends on the same paths),
+    # so the project graph loads cleanly here.
+    runs-on: self-hosted
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      # `dotnet format whitespace` verifies the tree matches the rules in
+      # .editorconfig: charset, indentation, line endings, final newline,
+      # and trailing whitespace. The scope is intentionally limited to the
+      # whitespace subcommand for now — style and analyzer modes are
+      # appropriate to layer on once an .editorconfig style baseline is
+      # established. Running --verify-no-changes makes the step exit
+      # non-zero when any file would change, which is what gates PR review.
+      - name: Run dotnet format (whitespace, verify only)
+        run: dotnet format whitespace FUSE.slnx --verify-no-changes

@@ -42,7 +42,6 @@ namespace FUSE.Editor
 
         public static void Setup()
         {
-            
         }
 
         private void Awake()
@@ -200,7 +199,7 @@ namespace FUSE.Editor
         }
 
         void BuildSelectModPanel(UIPanelBuilder builder)
-        { 
+        {
             List<string> loadedMods = FuseModLoader.GetLoadedModsInOrder().Select(x => x.Definition.Id).ToList();
 
             loadedMods.Insert(0, "Select a Mod");

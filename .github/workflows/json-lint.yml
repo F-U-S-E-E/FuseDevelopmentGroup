@@ -1,0 +1,44 @@
+name: JSON Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch/PR when a new commit lands.
+concurrency:
+  group: json-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  json-lint:
+    # ubuntu-latest is sufficient: tools/json_lint.py is pure Python with a
+    # single jsonschema dependency and does not touch any Unity / Railroader
+    # binaries. Running here keeps the self-hosted runner free for the
+    # Unity-dependent build + tests in ci.yml, and lets this check run in
+    # parallel with the build.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Install json_lint dependencies
+        run: pip install jsonschema
+
+      # Validates every tracked .json file in the repo (strict parse) and
+      # cross-checks the canonical instance/schema pairs:
+      #   FUSE/Info.json               -> schemas/umm-info.schema.json
+      #   schemas/fuse-mod.example.json -> schemas/fuse-mod.schema.json
+      - name: Run JSON lint
+        run: python tools/json_lint.py
