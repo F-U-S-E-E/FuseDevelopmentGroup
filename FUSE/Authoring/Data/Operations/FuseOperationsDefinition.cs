@@ -40,8 +40,12 @@ namespace FUSE.Authoring.Data
         public string Name { get; set; }
         public string AreaId { get; set; }
         public int? Order { get; set; }
-        public Vector3 Position { get; set; }
-        public Vector3 Rotation { get; set; }
+        // Nullable so partial legacy SC industry patches that omit position
+        // and rotation can update components without relocating or re-rotating
+        // an existing industry to the origin. The apply path skips the
+        // transform mutation when these are null.
+        public Vector3? Position { get; set; }
+        public Vector3? Rotation { get; set; }
         public bool UsesContract { get; set; }
         public bool MergeComponents { get; set; }
 

@@ -391,18 +391,45 @@ namespace FUSE.Loading
                     "trims any vanilla components not in the converted set.");
             }
 
-            return CleanObject(new JObject
+            // Emit areaId / position / rotation only when the SC source
+            // actually provided them. Vector(null, false) returns
+            // {x:0,y:0,z:0}, which CleanObject would NOT strip — so
+            // unconditional emission used to feed FuseIndustry.Position =
+            // (0,0,0) into UpdateIndustry and yank existing base-game
+            // industries to the origin. Same story for areaId on top-level
+            // industry patches (e.g.
+            // industries.whittier-sawmill.components.{R1: {...}}): a
+            // string-typed JValue with null content survives CleanObject and
+            // gets deserialized as a directive that reparents the industry
+            // to an arbitrary first Area.
+            var positionToken = item["localPosition"] ?? item["position"];
+            var rotationToken = item["localRotation"] ?? item["rotation"];
+            var resolvedAreaId = areaId ?? ReadString(item, "areaId", "area");
+            var result = new JObject
             {
                 ["name"] = ReadString(item, "name") ?? id,
-                ["areaId"] = areaId ?? ReadString(item, "areaId", "area"),
                 ["order"] = Clone(item["order"]),
-                ["position"] = Vector(item["localPosition"] ?? item["position"], false),
-                ["rotation"] = Vector(item["localRotation"] ?? item["rotation"], false),
                 ["usesContract"] = ReadBool(item, "usesContract", false),
                 ["mergeComponents"] = !isReplace,
                 ["replaceComponents"] = isReplace,
                 ["components"] = components
-            });
+            };
+            if (!string.IsNullOrWhiteSpace(resolvedAreaId))
+            {
+                result["areaId"] = resolvedAreaId;
+            }
+
+            if (positionToken != null && positionToken.Type != JTokenType.Null)
+            {
+                result["position"] = Vector(positionToken, false);
+            }
+
+            if (rotationToken != null && rotationToken.Type != JTokenType.Null)
+            {
+                result["rotation"] = Vector(rotationToken, false);
+            }
+
+            return CleanObject(result);
         }
 
         // Looks for a top-level <c>$replace</c> entry whose value is the
