@@ -1,4 +1,4 @@
-# Populate UnityTests/Assets/Plugins/ with FUSE.dll and the full
+# Populate FUSE.UnityTests/Assets/Plugins/ with FUSE.dll and the full
 # Railroader-shipped Managed/ DLL set so Unity can load FUSE.dll for
 # EditMode tests.
 #
@@ -20,15 +20,15 @@
 #     domain; we never want them included in player builds)
 #
 # Run before launching the Unity Test Runner. Idempotent — re-running
-# just overwrites with the latest DLLs. UnityTests/.gitignore excludes
+# just overwrites with the latest DLLs. FUSE.UnityTests/.gitignore excludes
 # Assets/Plugins/*.dll and *.meta so nothing here ends up in version
 # control.
 
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
-$plugins  = Join-Path $repoRoot 'UnityTests\Assets\Plugins'
-$fuseDll  = Join-Path $repoRoot 'bin\Release\net48\FUSE.dll'
+$plugins  = Join-Path $repoRoot 'FUSE.UnityTests\Assets\Plugins'
+$fuseDll  = Join-Path $repoRoot 'FUSE\bin\Release\net48\FUSE.dll'
 
 # GameDir mirrors the same property the production build uses (see
 # FUSE.csproj). Honour an explicit override env var first so CI / users
@@ -55,7 +55,7 @@ if (-not (Test-Path $managed)) {
 }
 
 if (-not (Test-Path $fuseDll)) {
-    throw "FUSE.dll not found at '$fuseDll'. Run 'dotnet build FUSE.csproj -c Release' first."
+    throw "FUSE.dll not found at '$fuseDll'. Run 'dotnet build FUSE/FUSE.csproj -c Release' first."
 }
 
 # Some Managed/ DLLs are Unity Editor-only stubs (UnityEditor.*) or

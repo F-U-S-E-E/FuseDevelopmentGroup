@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="FUSE.Tests/FUSE.Tests.csproj" />
+  <Project Path="FUSE/FUSE.csproj" />
+</Solution>

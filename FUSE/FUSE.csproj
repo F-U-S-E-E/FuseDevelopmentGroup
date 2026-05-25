@@ -21,32 +21,20 @@
     <EnableModDeploy Condition="'$(EnableModDeploy)' == ''">false</EnableModDeploy>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Compile Remove="_work\**\*.cs" />
-    <Compile Remove="FUSE.Tests\**\*.cs" />
-    <None Remove="FUSE.Tests\**\*" />
-    <!-- tmp/ holds disposable scratch artifacts (throwaway scripts,
-         intermediate analysis files, third-party reference material
-         under investigation). It must never be part of the build —
-         including it would pull in code FUSE does not own and would
-         not ship. -->
-    <Compile Remove="tmp\**\*.cs" />
-    <None Remove="tmp\**\*" />
-    <!-- UnityTests/ is a separate Unity project that compiles inside
-         the Unity Editor (via its own .asmdef + UnityEngine SDK).
-         It must never compile as part of FUSE.dll — the test code
-         references NUnit and UnityEditor namespaces that this MSBuild
-         project does not pull in. -->
-    <Compile Remove="UnityTests\**\*.cs" />
-    <None Remove="UnityTests\**\*" />
-  </ItemGroup>
+  <!-- No <Compile Remove> entries needed: the default `**/*.cs` glob is
+       rooted at this csproj's directory (FUSE/), which only contains
+       FUSE production source. The xUnit test project lives at FUSE.Tests/,
+       scratch artifacts at tmp/, and Unity test sources at
+       FUSE.UnityTests/ — all OUTSIDE FUSE/ and therefore never picked up
+       by the default compile pattern. -->
 
   <ItemGroup>
     <InternalsVisibleTo Include="FUSE.Tests" />
-    <!-- EditMode tests in UnityTests/ reach in to internal types
+    <!-- EditMode tests in FUSE.UnityTests/ reach in to internal types
          (FusePrefabResolver, the apply-planner enums, etc.) to drive
          the production code paths against a real Transform tree. The
-         assembly name matches the asmdef name at UnityTests/Assets/Tests/. -->
+         assembly name matches the asmdef name at
+         FUSE.UnityTests/Assets/Tests/. -->
     <InternalsVisibleTo Include="FUSE.UnityTests.Tests" />
   </ItemGroup>
 
@@ -164,16 +152,20 @@
     <None Include="Info.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="schemas\**\*">
+    <!-- schemas/ and tools/assets/ remain at the repo root so the JSON-schema
+         lint, the CI mod-zip step, and the converter all read them from a
+         single canonical location. The csproj reaches up one level via "..\"
+         to include + ship them with FUSE.dll's build output. -->
+    <None Include="..\schemas\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>schemas\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </None>
-    <None Include="tools\assets\fuse_converter_icon.png">
+    <None Include="..\tools\assets\fuse_converter_icon.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>assets\fuse_icon.png</Link>
     </None>
-    <SchemaFiles Include="schemas\**\*" />
-    <FuseAssets Include="tools\assets\fuse_converter_icon.png" />
+    <SchemaFiles Include="..\schemas\**\*" />
+    <FuseAssets Include="..\tools\assets\fuse_converter_icon.png" />
   </ItemGroup>
 
   <Target Name="ValidateUnityReferences" BeforeTargets="ResolveReferences">

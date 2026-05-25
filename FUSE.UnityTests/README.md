@@ -27,14 +27,14 @@ Prerequisites:
   *probably* work but may surface UnityEngine API drift; pin if you can.
 - A Railroader install at one of the paths `prepare_assets.ps1`
   probes, or `$env:GameDir` pointing at it.
-- A Release build of FUSE (`dotnet build FUSE.csproj -c Release` from
-  the repo root).
+- A Release build of FUSE (`dotnet build FUSE/FUSE.csproj -c Release`
+  from the repo root).
 
 Run:
 
 ```powershell
 # 1. Copy FUSE.dll + Railroader-shipped DLLs into Assets/Plugins/
-.\UnityTests\prepare_assets.ps1
+.\FUSE.UnityTests\prepare_assets.ps1
 
 # 2. Open the project in Unity Hub, then Window -> General -> Test Runner
 #    -> EditMode tab -> Run All.
@@ -44,8 +44,8 @@ For a headless run (no GUI, suitable for CI):
 
 ```powershell
 $unity   = 'C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe'
-$project = "$PWD\UnityTests"
-$results = "$PWD\UnityTests\TestResults\editmode-results.xml"
+$project = "$PWD\FUSE.UnityTests"
+$results = "$PWD\FUSE.UnityTests\TestResults\editmode-results.xml"
 New-Item -ItemType Directory -Force -Path (Split-Path $results) | Out-Null
 
 & $unity `

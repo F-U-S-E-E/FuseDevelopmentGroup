@@ -3,11 +3,12 @@ version: 2
 # Dependabot configuration for FUSE.
 #
 # We monitor two ecosystems:
-#   - NuGet packages referenced from FUSE.csproj and FUSE.Tests/.csproj.
-#     The game-shipped <Reference Include="…"> entries (Assembly-CSharp,
-#     UnityEngine.*, Definition, etc.) are <HintPath> resolutions to the
-#     local Railroader install — Dependabot doesn't see them, which is
-#     what we want; those follow the game's version, not NuGet's.
+#   - NuGet packages referenced from FUSE/FUSE.csproj and
+#     FUSE.Tests/FUSE.Tests.csproj. The game-shipped
+#     <Reference Include="…"> entries (Assembly-CSharp, UnityEngine.*,
+#     Definition, etc.) are <HintPath> resolutions to the local Railroader
+#     install — Dependabot doesn't see them, which is what we want; those
+#     follow the game's version, not NuGet's.
 #   - GitHub Actions referenced in .github/workflows/.
 #
 # Schedule is weekly (Monday early-morning UTC) to avoid weekend noise

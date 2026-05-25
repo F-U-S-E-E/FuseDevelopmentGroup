@@ -45,7 +45,10 @@ except ImportError:  # pragma: no cover - reported at use-site below
 # entry here is validated structurally against its schema in addition to
 # the syntax pass.
 SCHEMA_PAIRS: dict[str, str] = {
-    "Info.json": "schemas/umm-info.schema.json",
+    # Info.json lives inside the FUSE/ project folder under the .NET-conventional
+    # layout (it's a build artifact of FUSE.csproj; the InjectModVersionIntoInfoJson
+    # target stamps the version into the copy under FUSE/bin/Release/...).
+    "FUSE/Info.json": "schemas/umm-info.schema.json",
     "schemas/fuse-mod.example.json": "schemas/fuse-mod.schema.json",
 }
 
@@ -125,7 +128,7 @@ _FILESYSTEM_WALK_SKIP_DIRS = frozenset(
         "node_modules",
         "_work",
         "tmp",
-        "Plugins",         # UnityTests/Assets/Plugins/ — copied DLLs only
+        "Plugins",         # FUSE.UnityTests/Assets/Plugins/ — copied DLLs only
     )
 )
 
