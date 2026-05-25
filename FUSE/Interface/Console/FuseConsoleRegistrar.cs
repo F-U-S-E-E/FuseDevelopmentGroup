@@ -4,7 +4,7 @@ using System.Reflection;
 using FUSE.Infrastructure;
 using UnityEngine;
 
-namespace FUSE.Console
+namespace FUSE.Interface.Console
 {
     /// <summary>
     /// Registers FUSE's console commands against Railroader's UI.Console.ConsoleCommandHandler.

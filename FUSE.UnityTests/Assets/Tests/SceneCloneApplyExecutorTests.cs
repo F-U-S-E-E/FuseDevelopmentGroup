@@ -1,5 +1,5 @@
-using FUSE.API;
-using FUSE.Data;
+using FUSE.Runtime.API;
+using FUSE.Authoring.Data;
 using NUnit.Framework;
 using UnityEditor.SceneManagement;
 using UnityEngine;

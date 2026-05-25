@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 
 using Newtonsoft.Json;
-using FUSE.Serialization.Converters;
+using FUSE.Authoring.Serialization.Converters;
 
-namespace FUSE.Data
+namespace FUSE.Authoring.Data
 {
     public sealed class FuseModDefinition
     {

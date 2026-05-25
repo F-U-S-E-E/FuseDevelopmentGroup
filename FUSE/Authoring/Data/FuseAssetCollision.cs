@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace FUSE.Data
+namespace FUSE.Authoring.Data
 {
     /// <summary>
     /// Describes one asset-pack identifier collision discovered during pack

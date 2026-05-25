@@ -2,12 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using FUSE.Data;
-using FUSE.Data.Common;
+using FUSE.Authoring.Data;
+using FUSE.Authoring.Data.Common;
 using FUSE.Infrastructure;
 using UnityEngine;
 
-namespace FUSE.Migrations
+namespace FUSE.Authoring.Migrations
 {
     public static class FuseMigration
     {

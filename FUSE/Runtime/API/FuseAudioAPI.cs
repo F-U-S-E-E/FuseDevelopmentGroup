@@ -14,7 +14,7 @@ using Model.Database;
 using Model.Definition;
 using Model.Definition.Components;
 using Model.Definition.Data;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using FUSE.Loading;
 using RollingStock;
@@ -22,7 +22,7 @@ using RollingStock.Steam;
 using UnityEngine;
 using UnityEngine.Networking;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public static class FuseAudioAPI
     {

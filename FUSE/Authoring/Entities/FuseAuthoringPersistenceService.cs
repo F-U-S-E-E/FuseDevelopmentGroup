@@ -3,15 +3,15 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json.Linq;
-using FUSE.Data;
-using FUSE.Editor;
+using FUSE.Authoring.Data;
+using FUSE.Authoring.Editor;
 using FUSE.Infrastructure;
 using FUSE.Loading;
-using FUSE.Serialization;
-using FUSE.Validation;
+using FUSE.Authoring.Serialization;
+using FUSE.Authoring.Validation;
 using UnityEngine;
 
-namespace FUSE.Authoring
+namespace FUSE.Authoring.Entities
 {
     public static class FuseAuthoringPersistenceService
     {
@@ -329,7 +329,7 @@ namespace FUSE.Authoring
         public static bool ApplyToRuntime(FuseAuthoringEntity entity)
         {
             FuseExperimentalLog.WarnFirstUse(
-                "FUSE.Authoring.FuseAuthoringPersistenceService.ApplyToRuntime",
+                "FUSE.Authoring.Entities.FuseAuthoringPersistenceService.ApplyToRuntime",
                 "runtime authoring mutation");
 
             return ApplyToRuntimeCore(entity);

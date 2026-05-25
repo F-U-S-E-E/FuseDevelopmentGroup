@@ -5,7 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using AssetPack.Runtime;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using HarmonyLib;
 using Model.Definition;

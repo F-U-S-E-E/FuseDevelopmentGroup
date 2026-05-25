@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using FUSE.API;
-using FUSE.Data;
-using FUSE.Data.Common;
+using FUSE.Runtime.API;
+using FUSE.Authoring.Data;
+using FUSE.Authoring.Data.Common;
 using FUSE.Infrastructure;
-using FUSE.Registry;
+using FUSE.Runtime.Registry;
 using Track;
 using UnityEngine;
 

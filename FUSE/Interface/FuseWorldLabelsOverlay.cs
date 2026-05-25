@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using FUSE.API;
-using FUSE.Cache;
+using FUSE.Runtime.API;
+using FUSE.Runtime.Cache;
 using FUSE.Infrastructure;
 using Track;
 using UnityEngine;

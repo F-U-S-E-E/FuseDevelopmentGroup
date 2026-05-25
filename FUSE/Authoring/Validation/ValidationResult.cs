@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace FUSE.Validation
+namespace FUSE.Authoring.Validation
 {
     public sealed class ValidationResult
     {

@@ -8,7 +8,7 @@ namespace FUSE.Patches
 {
     /// <summary>
     /// Harmony postfix on <see cref="Progression.Configure(KeyValueObject)"/> that
-    /// notifies <see cref="FUSE.API.ProgressionAPI"/> as soon as the
+    /// notifies <see cref="FUSE.Runtime.API.ProgressionAPI"/> as soon as the
     /// game's progression has finished initializing from save data. From this
     /// point on, <c>StateManager.IsSandbox</c> returns the real value (before
     /// Configure it defaults to true because GameMode hasn't been deserialized
@@ -25,8 +25,8 @@ namespace FUSE.Patches
     /// track group was added to enabledGroupIds during the racy pre-Configure
     /// window and never removed.
     ///
-    /// Any pre-Configure refresh request that <see cref="FUSE.API.ProgressionAPI.RefreshRuntimeStateAfterApply"/>
-    /// parked is replayed inside <see cref="FUSE.API.ProgressionAPI.NotifyGameProgressionConfigured"/>.
+    /// Any pre-Configure refresh request that <see cref="FUSE.Runtime.API.ProgressionAPI.RefreshRuntimeStateAfterApply"/>
+    /// parked is replayed inside <see cref="FUSE.Runtime.API.ProgressionAPI.NotifyGameProgressionConfigured"/>.
     /// </summary>
     [HarmonyPatch(typeof(Progression), nameof(Progression.Configure))]
     internal static class FuseProgressionConfigureHookPatch
@@ -35,7 +35,7 @@ namespace FUSE.Patches
         {
             try
             {
-                FUSE.API.ProgressionAPI.NotifyGameProgressionConfigured();
+                FUSE.Runtime.API.ProgressionAPI.NotifyGameProgressionConfigured();
             }
             catch (Exception ex)
             {
@@ -63,7 +63,7 @@ namespace FUSE.Patches
         {
             try
             {
-                FUSE.API.ProgressionAPI.NotifyGameProgressionUnconfigured();
+                FUSE.Runtime.API.ProgressionAPI.NotifyGameProgressionUnconfigured();
             }
             catch (Exception ex)
             {

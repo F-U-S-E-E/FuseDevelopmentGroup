@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace FUSE.Cache
+namespace FUSE.Runtime.Cache
 {
     public static class FuseCacheRegistry
     {

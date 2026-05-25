@@ -1,8 +1,8 @@
 using System.Collections.Generic;
-using FUSE.Serialization;
+using FUSE.Authoring.Serialization;
 using Newtonsoft.Json;
 
-namespace FUSE.Data
+namespace FUSE.Authoring.Data
 {
     public sealed class FuseProgressionRoot
     {

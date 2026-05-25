@@ -5,13 +5,13 @@ using System.Reflection;
 using Model.Definition.Data;
 using Model;
 using Model.Ops.Definition;
-using FUSE.Cache;
-using FUSE.Data;
+using FUSE.Runtime.Cache;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public static class LoadAPI
     {

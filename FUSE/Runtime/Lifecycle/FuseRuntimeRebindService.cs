@@ -2,13 +2,13 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using FUSE.API;
-using FUSE.Authoring;
-using FUSE.Cache;
+using FUSE.Runtime.API;
+using FUSE.Authoring.Entities;
+using FUSE.Runtime.Cache;
 using FUSE.Infrastructure;
 using UnityEngine;
 
-namespace FUSE.Lifecycle
+namespace FUSE.Runtime.Lifecycle
 {
     /// <summary>
     /// Snapshot/turntable callbacks must NOT trigger a full package or world reapply.

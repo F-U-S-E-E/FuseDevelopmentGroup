@@ -213,13 +213,13 @@ namespace FUSE.Tests.Loading
                 pack => HostModName(pack),
                 pack => HostMod(pack));
 
-            Assert.NotEmpty(FUSE.Registry.FuseRegistry.GetSharedOwners(
-                FUSE.Registry.FuseClaimKind.AssetCollision, "widget"));
+            Assert.NotEmpty(FUSE.Runtime.Registry.FuseRegistry.GetSharedOwners(
+                FUSE.Runtime.Registry.FuseClaimKind.AssetCollision, "widget"));
 
             FuseAssetCollisionRegistry.Reset();
 
-            Assert.Empty(FUSE.Registry.FuseRegistry.GetSharedOwners(
-                FUSE.Registry.FuseClaimKind.AssetCollision, "widget"));
+            Assert.Empty(FUSE.Runtime.Registry.FuseRegistry.GetSharedOwners(
+                FUSE.Runtime.Registry.FuseClaimKind.AssetCollision, "widget"));
         }
 
         // ----- helpers -----

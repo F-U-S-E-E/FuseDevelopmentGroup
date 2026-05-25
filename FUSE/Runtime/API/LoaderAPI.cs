@@ -3,14 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Model.Ops;
-using FUSE.Cache;
-using FUSE.Data;
+using FUSE.Runtime.Cache;
+using FUSE.Authoring.Data;
 using RollingStock;
 using RollingStock.Controls;
 using Track;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public static class LoaderAPI
     {

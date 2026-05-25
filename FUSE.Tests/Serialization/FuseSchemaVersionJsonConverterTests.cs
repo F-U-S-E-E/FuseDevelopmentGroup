@@ -1,4 +1,4 @@
-using FUSE.Serialization.Converters;
+using FUSE.Authoring.Serialization.Converters;
 using Newtonsoft.Json;
 using Xunit;
 

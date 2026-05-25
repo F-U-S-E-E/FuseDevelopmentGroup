@@ -1,14 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using FUSE.API;
-using FUSE.Data;
-using FUSE.Data.Common;
+using FUSE.Runtime.API;
+using FUSE.Authoring.Data;
+using FUSE.Authoring.Data.Common;
 using FUSE.Infrastructure;
-using FUSE.Migrations;
+using FUSE.Authoring.Migrations;
 using UnityEngine;
 
-namespace FUSE.Validation
+namespace FUSE.Authoring.Validation
 {
     public sealed class FuseDefinitionValidator : IValidator<FuseModDefinition>
     {

@@ -4,9 +4,9 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
-using FUSE.Serialization;
+using FUSE.Authoring.Serialization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -1983,11 +1983,11 @@ namespace FUSE.Loading
                 // sylva-interchange to delete them) became silent no-ops and
                 // the vanilla components lingered in the industry list.
                 // We can't pass a JSON <c>null</c> straight through because
-                // <see cref="FUSE.Serialization.FuseSerializer.GetSettings"/>
+                // <see cref="FUSE.Authoring.Serialization.FuseSerializer.GetSettings"/>
                 // sets <c>NullValueHandling.Ignore</c>, which would drop the
                 // entry during deserialization. Convert the null into an
                 // explicit <c>{ "remove": true }</c> sentinel that the
-                // <see cref="FUSE.Data.Operations.FuseIndustryComponent.Remove"/>
+                // <see cref="FUSE.Authoring.Data.Operations.FuseIndustryComponent.Remove"/>
                 // flag picks up at apply time.
                 if (component.Value == null || component.Value.Type == JTokenType.Null)
                 {
@@ -2603,12 +2603,12 @@ namespace FUSE.Loading
                     // fields here (the SC convention: <c>{ "foo": true,
                     // "bar": false }</c> on tracksEnable / tracksAvail /
                     // prerequisites / etc.). The downstream
-                    // <see cref="FUSE.Serialization.FuseStringPatchConverter"/>
+                    // <see cref="FUSE.Authoring.Serialization.FuseStringPatchConverter"/>
                     // recognises both the array shape (replace) and the
                     // object shape (merge: keys with true ADD, keys with
                     // false REMOVE) and stores them on
-                    // <see cref="FUSE.Data.FuseStringPatch.Set"/> vs
-                    // <see cref="FUSE.Data.FuseStringPatch.Patch"/>
+                    // <see cref="FUSE.Authoring.Data.FuseStringPatch.Set"/> vs
+                    // <see cref="FUSE.Authoring.Data.FuseStringPatch.Patch"/>
                     // accordingly. <see cref="ApplyMapFeatureDefinition"/>
                     // then merges with whatever the live runtime
                     // <c>MapFeature</c> already has via
@@ -3148,7 +3148,7 @@ namespace FUSE.Loading
         //
         // This leniency is INTENTIONALLY scoped to the legacy pipeline.
         // Native FUSE definitions (*.fuse.json) load through
-        // <see cref="FUSE.Serialization.FuseSerializer.FromJson"/>, which
+        // <see cref="FUSE.Authoring.Serialization.FuseSerializer.FromJson"/>, which
         // hands the text straight to a strict JsonConvert and surfaces
         // Newtonsoft's parser error with line/column. Authors of new
         // FUSE addons are expected to format their JSON correctly; we

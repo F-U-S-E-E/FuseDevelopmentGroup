@@ -2,14 +2,14 @@ using System;
 using System.Diagnostics;
 using GalaSoft.MvvmLight.Messaging;
 using Game.Events;
-using FUSE.API;
-using FUSE.Cache;
-using FUSE.Console;
-using FUSE.Events;
+using FUSE.Runtime.API;
+using FUSE.Runtime.Cache;
+using FUSE.Interface.Console;
+using FUSE.Runtime.Events;
 using FUSE.Infrastructure;
 using FUSE.Loading;
 
-namespace FUSE.Lifecycle
+namespace FUSE.Runtime.Lifecycle
 {
     internal sealed class FuseLifecycle
     {

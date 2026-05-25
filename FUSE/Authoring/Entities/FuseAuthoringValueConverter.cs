@@ -1,8 +1,8 @@
 using System;
 using Newtonsoft.Json.Linq;
-using FUSE.Serialization;
+using FUSE.Authoring.Serialization;
 
-namespace FUSE.Authoring
+namespace FUSE.Authoring.Entities
 {
     internal static class FuseAuthoringValueConverter
     {

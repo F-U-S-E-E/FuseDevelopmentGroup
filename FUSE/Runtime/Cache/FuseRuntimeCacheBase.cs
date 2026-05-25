@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace FUSE.Cache
+namespace FUSE.Runtime.Cache
 {
     public abstract class FuseRuntimeCacheBase<TCache, TValue>
         where TCache : FuseRuntimeCacheBase<TCache, TValue>

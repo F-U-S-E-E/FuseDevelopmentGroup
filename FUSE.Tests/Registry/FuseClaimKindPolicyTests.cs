@@ -1,5 +1,5 @@
 using System;
-using FUSE.Registry;
+using FUSE.Runtime.Registry;
 using Xunit;
 
 namespace FUSE.Tests.Registry

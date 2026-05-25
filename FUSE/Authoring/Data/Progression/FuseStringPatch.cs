@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using FUSE.Serialization;
+using FUSE.Authoring.Serialization;
 using Newtonsoft.Json;
 
-namespace FUSE.Data
+namespace FUSE.Authoring.Data
 {
     /// <summary>
     /// Two-shape container for the unlock-fan-out fields on

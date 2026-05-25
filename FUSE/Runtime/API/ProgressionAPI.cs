@@ -8,14 +8,14 @@ using KeyValue.Runtime;
 using Model;
 using Model.Ops;
 using Model.Ops.Definition;
-using FUSE.Cache;
-using FUSE.Data;
+using FUSE.Runtime.Cache;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using FUSE.Loading;
 using Track;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public static class ProgressionAPI
     {
@@ -3196,7 +3196,7 @@ namespace FUSE.API
                     // wiping out the base game's <c>[s3a]</c>) is now
                     // handled upstream: <see cref="NormalizeProgressionValue"/>
                     // preserves the object form so
-                    // <see cref="FUSE.Data.FuseStringPatch"/>'s merge
+                    // <see cref="FUSE.Authoring.Data.FuseStringPatch"/>'s merge
                     // semantics fire, and the base game's gating
                     // entries survive. By the time we get here, s3a
                     // is properly claimed by the patched alarka and

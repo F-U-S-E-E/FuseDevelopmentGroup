@@ -5,7 +5,7 @@ using FUSE.Infrastructure;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     internal static class FusePrefabResolver
     {

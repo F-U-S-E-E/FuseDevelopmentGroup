@@ -3,11 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using Helpers;
 using KeyValue.Runtime;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public static class SceneCloneAPI
     {

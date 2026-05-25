@@ -1,6 +1,6 @@
 using System;
 using System.IO;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using FUSE.Loading;
 
 namespace FUSE.Interface

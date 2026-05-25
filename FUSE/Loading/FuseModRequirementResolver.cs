@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using Newtonsoft.Json.Linq;
 

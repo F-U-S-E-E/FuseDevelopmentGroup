@@ -1,7 +1,7 @@
 using FUSE.Infrastructure;
 using Model.Ops;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public sealed class FuseFormulaicIndustryComponent : FormulaicIndustryComponent
     {

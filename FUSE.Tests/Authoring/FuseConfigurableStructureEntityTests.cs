@@ -1,5 +1,5 @@
-using FUSE.Authoring;
-using FUSE.Data;
+using FUSE.Authoring.Entities;
+using FUSE.Authoring.Data;
 using UnityEngine;
 using Xunit;
 
@@ -10,7 +10,7 @@ namespace FUSE.Tests.Authoring
     /// definition round-trip. The entity wraps a
     /// <see cref="FuseSceneClone"/> for the authoring/editor pipeline; the
     /// runtime apply path
-    /// (<c>FUSE.API.SceneCloneAPI.ApplyDefinition</c>) treats
+    /// (<c>FUSE.Runtime.API.SceneCloneAPI.ApplyDefinition</c>) treats
     /// <c>LocalPosition.HasValue == true</c> as an explicit "force the
     /// live transform to this value" command. So if BuildRuntimeData
     /// promotes the entity's default <c>Vector3.zero</c> Position into an

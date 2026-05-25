@@ -1,9 +1,9 @@
 using System;
-using FUSE.Validation;
+using FUSE.Authoring.Validation;
 using Model.Ops;
 using Track;
 
-namespace FUSE.Events
+namespace FUSE.Runtime.Events
 {
     public static class FuseEvents
     {

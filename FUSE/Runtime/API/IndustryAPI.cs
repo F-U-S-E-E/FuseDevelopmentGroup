@@ -7,15 +7,15 @@ using Game.Events;
 using Model;
 using Model.Ops;
 using Model.Ops.Definition;
-using FUSE.Cache;
-using FUSE.Data;
-using FUSE.Events;
+using FUSE.Runtime.Cache;
+using FUSE.Authoring.Data;
+using FUSE.Runtime.Events;
 using FUSE.Infrastructure;
 using Newtonsoft.Json.Linq;
 using Track;
 using UnityEngine;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public static class IndustryAPI
     {

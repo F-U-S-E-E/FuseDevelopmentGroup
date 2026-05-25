@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using Map.Runtime;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using UnityEngine;
 

@@ -1,5 +1,5 @@
 using System;
-using FUSE.Serialization;
+using FUSE.Authoring.Serialization;
 using Newtonsoft.Json;
 using Xunit;
 

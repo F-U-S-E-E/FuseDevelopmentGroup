@@ -1,4 +1,4 @@
-namespace FUSE.Data.Common
+namespace FUSE.Authoring.Data.Common
 {
     public sealed class FuseTrackLocation
     {

@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 
-namespace FUSE.Serialization.Converters
+namespace FUSE.Authoring.Serialization.Converters
 {
     public sealed class FlexibleStringArrayJsonConverter : JsonConverter
     {

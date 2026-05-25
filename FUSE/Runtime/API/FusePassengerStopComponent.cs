@@ -6,14 +6,14 @@ using Game.Progression;
 using Model.Ops;
 using Model.Ops.Definition;
 using Model.Ops.Timetable;
-using FUSE.Data;
-using FUSE.Events;
+using FUSE.Authoring.Data;
+using FUSE.Runtime.Events;
 using FUSE.Infrastructure;
 using Track;
 using UnityEngine;
 using KeyValue.Runtime;
 
-namespace FUSE.API
+namespace FUSE.Runtime.API
 {
     public sealed class FusePassengerStopComponent : IndustryComponent, IFuseAppliedComponent
     {

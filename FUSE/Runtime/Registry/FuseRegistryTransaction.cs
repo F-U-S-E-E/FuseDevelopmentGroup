@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace FUSE.Registry
+namespace FUSE.Runtime.Registry
 {
     /// <summary>
     /// Snapshots a package's existing claims, releases them, and lets the caller

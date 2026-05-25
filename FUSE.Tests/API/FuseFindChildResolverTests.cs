@@ -1,14 +1,14 @@
 using System.Collections.Generic;
-using FUSE.API;
+using FUSE.Runtime.API;
 using Xunit;
-using static FUSE.API.FuseFindChildResolver;
+using static FUSE.Runtime.API.FuseFindChildResolver;
 
 namespace FUSE.Tests.API
 {
     /// <summary>
     /// Pins the four-tier priority that
     /// <see cref="FuseFindChildResolver.SelectWinningIndex"/> applies
-    /// when <see cref="FUSE.API.FusePrefabResolver"/> needs to pick
+    /// when <see cref="FUSE.Runtime.API.FusePrefabResolver"/> needs to pick
     /// among siblings whose names match a requested string. The rule
     /// was added to fix the Bryson Freight House regression where
     /// Unity's built-in <c>Transform.Find</c> would land on an empty

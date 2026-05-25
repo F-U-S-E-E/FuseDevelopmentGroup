@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace FUSE.Serialization
+namespace FUSE.Authoring.Serialization
 {
     /// <summary>
     /// Accepts both legacy AMM-shaped <c>{"id": true, "id2": false}</c>
