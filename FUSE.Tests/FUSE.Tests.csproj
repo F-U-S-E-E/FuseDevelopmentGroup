@@ -27,7 +27,7 @@
          in a clean .NET Framework process (CI runners). The NuGet copy carries
          the same AssemblyVersion (13.0.0.0) and PublicKeyToken so FUSE.dll's
          reference resolves to it at test time. -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 
   <ItemGroup>
