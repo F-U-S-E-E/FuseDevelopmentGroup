@@ -25,10 +25,28 @@
     <Compile Remove="_work\**\*.cs" />
     <Compile Remove="FUSE.Tests\**\*.cs" />
     <None Remove="FUSE.Tests\**\*" />
+    <!-- tmp/ holds disposable scratch artifacts (decompiled reference
+         sources we examine during compatibility work, throwaway scripts).
+         It must never be part of the build — including it pulls in code
+         we don't own and wouldn't ship. -->
+    <Compile Remove="tmp\**\*.cs" />
+    <None Remove="tmp\**\*" />
+    <!-- UnityTests/ is a separate Unity project that compiles inside
+         the Unity Editor (via its own .asmdef + UnityEngine SDK).
+         It must never compile as part of FUSE.dll — the test code
+         references NUnit and UnityEditor namespaces that this MSBuild
+         project does not pull in. -->
+    <Compile Remove="UnityTests\**\*.cs" />
+    <None Remove="UnityTests\**\*" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="FUSE.Tests" />
+    <!-- EditMode tests in UnityTests/ reach in to internal types
+         (FusePrefabResolver, the apply-planner enums, etc.) to drive
+         the production code paths against a real Transform tree. The
+         assembly name matches the asmdef name at UnityTests/Assets/Tests/. -->
+    <InternalsVisibleTo Include="FUSE.UnityTests.Tests" />
   </ItemGroup>
 
   <ItemGroup>
@@ -101,6 +119,10 @@
     </Reference>
     <Reference Include="UnityEngine.CoreModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.AudioModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.AudioModule.dll')">

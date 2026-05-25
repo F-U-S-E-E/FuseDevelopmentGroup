@@ -141,6 +141,7 @@ namespace FUSE.Loading
                 LegacyAssetPackAliases = null;
             }
             FuseLegacyContainerMixintoRegistry.Reset();
+            FuseAssetCollisionRegistry.Reset();
             FuseLog.Info("FUSE asset pack mount state reset.");
         }
 
@@ -461,6 +462,25 @@ namespace FUSE.Loading
                 return;
             }
 
+            // Detect within-mod asset-bundle collisions BEFORE we register
+            // any store. The bundle-path patch consults the collision
+            // table on every <c>AssetBundlePath</c> read, so populating
+            // it here means the very first <c>LoadAsset</c> on a
+            // colliding store already redirects to the winner's bundle.
+            // The scan only flags collisions where two pack folders
+            // inside the SAME mod share the SAME leaf folder name —
+            // that's the structural signal a mod author duplicated a
+            // pack (the TOFC root vs SCAssetPacks pattern). It
+            // deliberately ignores catalog-identifier overlap because
+            // mod authors routinely typo-share catalog identifiers
+            // across distinct packs, and earlier attempts that keyed on
+            // catalog identifier produced false positives that broke
+            // unrelated content.
+            FuseAssetCollisionRegistry.ScanForCollisions(
+                sourcePaths,
+                ReadHostingPackageId,
+                ReadHostingPackageFolder);
+
             MethodInfo addStore;
             try
             {
@@ -534,8 +554,186 @@ namespace FUSE.Loading
                     $"skippedAlreadyAdded={skippedAlreadyAdded}.");
             }
 
+            // Verbose mode dumps the post-discovery state of the legacy
+            // alias map and the PrefabStore._stores list so a follow-up
+            // failure can be diagnosed without restarting under a
+            // breakpoint. The dump is gated behind the existing
+            // VerboseApplyReportDetails setting because both tables can
+            // be hundreds of lines on a heavily-modded install.
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                try
+                {
+                    DumpAssetPackResolutionDiagnostics(prefabStore);
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning($"FUSE verbose asset-pack resolution diagnostics failed softly: {ex.Message}");
+                }
+            }
+
             FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
             FusePerformanceMetrics.RecordCount("direct asset pack store count", DirectAssetPackStoreIdentifiers.Count);
+        }
+
+        /// <summary>
+        /// Emits the legacy-identifier alias map and a snapshot of
+        /// <c>PrefabStore._stores</c> to FUSE.log. Designed to be called
+        /// once at startup when
+        /// <see cref="FuseSettings.VerboseApplyReportDetails"/> is on,
+        /// so a follow-up "wrong bundle picked for X" report can be
+        /// answered just from the captured log without re-running under
+        /// a debugger.
+        /// </summary>
+        internal static void DumpAssetPackResolutionDiagnostics(PrefabStore prefabStore)
+        {
+            // Alias map dump first — most useful when diagnosing
+            // "AssetPackForIdentifier returned the wrong store",
+            // because the patch fed through this table before exact
+            // lookup ran.
+            try
+            {
+                var aliases = GetLegacyAssetPackAliases();
+                FuseLog.Info(
+                    $"FUSE verbose asset-pack resolution: legacy alias map " +
+                    $"contains {aliases.Count} entr(y/ies).");
+                foreach (var pair in aliases.OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    FuseLog.Info($"FUSE alias-map: '{pair.Key}' -> '{pair.Value}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE alias map dump skipped: {ex.GetBaseException().Message}");
+            }
+
+            // Stores snapshot — order matters for
+            // AssetPackContainingIdentifier (first-match wins), so dump
+            // each store with its index, identifier, and resolved
+            // BasePath.
+            try
+            {
+                if (prefabStore == null)
+                {
+                    FuseLog.Info("FUSE verbose asset-pack resolution: PrefabStore reference is null; cannot dump _stores.");
+                    return;
+                }
+
+                var storesField = AccessTools.Field(typeof(PrefabStore), "_stores");
+                if (storesField == null)
+                {
+                    FuseLog.Info("FUSE verbose asset-pack resolution: PrefabStore._stores field not found; cannot dump.");
+                    return;
+                }
+
+                if (!(storesField.GetValue(prefabStore) is System.Collections.IList stores))
+                {
+                    FuseLog.Info("FUSE verbose asset-pack resolution: PrefabStore._stores is null or not a list.");
+                    return;
+                }
+
+                FuseLog.Info(
+                    $"FUSE verbose asset-pack resolution: PrefabStore._stores contains " +
+                    $"{stores.Count} store(s) (registration order):");
+                for (var index = 0; index < stores.Count; index++)
+                {
+                    var store = stores[index] as AssetPackRuntimeStore;
+                    if (store == null)
+                    {
+                        FuseLog.Info($"FUSE stores[{index}]: <null>");
+                        continue;
+                    }
+
+                    string basePath = null;
+                    try
+                    {
+                        basePath = (AccessTools.Property(typeof(AssetPackRuntimeStore), "BasePath")
+                            ?.GetValue(store, null)) as string;
+                    }
+                    catch
+                    {
+                        basePath = "<base-path-error>";
+                    }
+
+                    FuseLog.Info(
+                        $"FUSE stores[{index}]: location={store.Location} identifier='{store.Identifier}' " +
+                        $"basePath='{basePath ?? "<null>"}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE _stores dump skipped: {ex.GetBaseException().Message}");
+            }
+        }
+
+        /// <summary>
+        /// Walks the supplied pack folder up to its mod-package root and
+        /// returns whatever package id that mod's Info.json / Definition.json
+        /// declares (or the folder name as a final fallback). Used by the
+        /// collision registry to attribute every collision participant to
+        /// a host mod for reporting.
+        /// </summary>
+        private static string ReadHostingPackageId(string packFolderAbsolutePath)
+        {
+            var folder = ReadHostingPackageFolder(packFolderAbsolutePath);
+            if (string.IsNullOrWhiteSpace(folder))
+            {
+                return null;
+            }
+            return TryReadPackageId(folder) ?? Path.GetFileName(folder);
+        }
+
+        /// <summary>
+        /// Walks the supplied pack folder up to its mod-package root and
+        /// returns the absolute path of that mod folder (the directory
+        /// living directly under the Mods folder). Returns <c>null</c> if
+        /// no such ancestor exists. Used by the collision registry to
+        /// scope collisions to within a single mod — two packs are only
+        /// considered colliding when this helper returns the SAME folder
+        /// for both.
+        /// </summary>
+        private static string ReadHostingPackageFolder(string packFolderAbsolutePath)
+        {
+            if (string.IsNullOrWhiteSpace(packFolderAbsolutePath))
+            {
+                return null;
+            }
+
+            try
+            {
+                var modsRoot = FuseDataPackageDiscovery.GetModsRoot();
+                if (string.IsNullOrWhiteSpace(modsRoot))
+                {
+                    return null;
+                }
+                var modsRootFull = Path.GetFullPath(modsRoot);
+                var cursor = Path.GetFullPath(packFolderAbsolutePath);
+                // Climb until the parent IS the mods root — the directory
+                // we are sitting in at that point IS the mod-package
+                // directory we want to return.
+                while (!string.IsNullOrEmpty(cursor))
+                {
+                    var parent = Path.GetDirectoryName(cursor);
+                    if (string.IsNullOrEmpty(parent))
+                    {
+                        break;
+                    }
+
+                    if (string.Equals(parent, modsRootFull, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return cursor;
+                    }
+
+                    cursor = parent;
+                }
+            }
+            catch
+            {
+                // Best-effort; the caller treats null as "skip this folder
+                // from collision detection" which is the safe default.
+            }
+
+            return null;
         }
 
         internal static bool TryResolveDirectStoreBasePath(string identifier, out string path)
@@ -669,9 +867,40 @@ namespace FUSE.Loading
             }
         }
 
-        private static IEnumerable<string> EnumerateFallbackAssetPackFolders(string packagePath)
+        /// <summary>
+        /// Walks a single mod-package folder and returns the asset-pack
+        /// folders inside it in the order they should be registered with
+        /// <see cref="Model.Database.PrefabStore"/>. Root-level packs come
+        /// first, then anything nested under <c>SCAssetPacks/</c>.
+        /// Exposed as <c>internal</c> so the discovery-order test in
+        /// <c>FUSE.Tests</c> can assert the ordering directly — the
+        /// ordering is the load-time fix for the duplicate-CAB bundle
+        /// failure and must not silently regress.
+        /// </summary>
+        internal static IEnumerable<string> EnumerateFallbackAssetPackFolders(string packagePath)
         {
+            // Discovery order is load-bearing. PrefabStore.AssetPackContainingIdentifier
+            // returns the FIRST store whose Definitions claim a given
+            // identifier, and only that store's bundle is ever loaded —
+            // so the order we feed pack folders into _stores decides
+            // which bundle file actually gets loaded when two packs in
+            // the same mod publish the same identifier under different
+            // folders. Empirically, mods with both a root-level pack
+            // and an SCAssetPacks/<sameName> pack ship the modern build
+            // at the root and keep the SCAssetPacks/ copy as a legacy
+            // artifact; the two bundles share an internal CAB name but
+            // contain DIFFERENT versions of the same assets, so loading
+            // the wrong one for a "modern" car identifier renders the
+            // legacy mesh into the modern car's hierarchy and produces
+            // visibly broken cars. Yielding root packs first keeps
+            // modern saves on the modern bundle.
             var scAssetPacks = Path.Combine(packagePath, "SCAssetPacks");
+
+            foreach (var folder in EnumerateRootAssetPackFolders(packagePath, scAssetPacks))
+            {
+                yield return folder;
+            }
+
             if (Directory.Exists(scAssetPacks))
             {
                 if (IsAssetPackFolder(scAssetPacks))
@@ -685,11 +914,6 @@ namespace FUSE.Loading
                         yield return folder;
                     }
                 }
-            }
-
-            foreach (var folder in EnumerateRootAssetPackFolders(packagePath, scAssetPacks))
-            {
-                yield return folder;
             }
         }
 

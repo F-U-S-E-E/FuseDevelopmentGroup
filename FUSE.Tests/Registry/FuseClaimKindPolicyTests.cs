@@ -28,6 +28,7 @@ namespace FUSE.Tests.Registry
         [InlineData(FuseClaimKind.SuppressedScenePath)]
         [InlineData(FuseClaimKind.SuppressedTrackGroup)]
         [InlineData(FuseClaimKind.SuppressedArea)]
+        [InlineData(FuseClaimKind.AssetCollision)]
         public void SharedKinds_AreShared(FuseClaimKind kind)
         {
             Assert.True(FuseClaimKindPolicy.IsShared(kind));
@@ -49,7 +50,7 @@ namespace FUSE.Tests.Registry
             {
                 FuseClaimKind.Industry, FuseClaimKind.Scenery,
                 FuseClaimKind.SuppressedScenePath, FuseClaimKind.SuppressedTrackGroup,
-                FuseClaimKind.SuppressedArea
+                FuseClaimKind.SuppressedArea, FuseClaimKind.AssetCollision
             };
 
             var defined = (FuseClaimKind[])Enum.GetValues(typeof(FuseClaimKind));

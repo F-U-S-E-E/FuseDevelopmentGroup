@@ -26,7 +26,17 @@ namespace FUSE.Registry
         // Shared/refcounted suppressions
         SuppressedScenePath,
         SuppressedTrackGroup,
-        SuppressedArea
+        SuppressedArea,
+
+        // Asset-pack-level collisions. Reported when two pack folders inside
+        // a single mod publish the same Catalog identifier (and therefore
+        // the same internal Unity AssetBundle manifest name) — Unity will
+        // only ever load one of the two bundles at runtime, and FUSE
+        // redirects the losers' bundle loads to the winner so all
+        // definitions stay reachable. Shared so the "id" (the colliding
+        // catalog identifier, e.g. "spinecar1") can record every pack
+        // folder that contributes to the collision as a co-owner.
+        AssetCollision
     }
 
     internal static class FuseClaimKindPolicy
@@ -40,6 +50,7 @@ namespace FUSE.Registry
                 case FuseClaimKind.SuppressedScenePath:
                 case FuseClaimKind.SuppressedTrackGroup:
                 case FuseClaimKind.SuppressedArea:
+                case FuseClaimKind.AssetCollision:
                     return true;
                 default:
                     return false;
