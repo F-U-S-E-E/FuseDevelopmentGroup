@@ -2597,12 +2597,40 @@ namespace FUSE.Loading
                 {
                     result[targetKey] = NormalizeDeliveryDirection(property.Value);
                 }
-                else if (IsBooleanDictionaryArrayField(targetKey) && property.Value is JObject boolDict)
-                {
-                    result[targetKey] = BoolDictionaryToArray(boolDict);
-                }
                 else
                 {
+                    // We deliberately do NOT pre-collapse boolean-dictionary
+                    // fields here (the SC convention: <c>{ "foo": true,
+                    // "bar": false }</c> on tracksEnable / tracksAvail /
+                    // prerequisites / etc.). The downstream
+                    // <see cref="FUSE.Serialization.FuseStringPatchConverter"/>
+                    // recognises both the array shape (replace) and the
+                    // object shape (merge: keys with true ADD, keys with
+                    // false REMOVE) and stores them on
+                    // <see cref="FUSE.Data.FuseStringPatch.Set"/> vs
+                    // <see cref="FUSE.Data.FuseStringPatch.Patch"/>
+                    // accordingly. <see cref="ApplyMapFeatureDefinition"/>
+                    // then merges with whatever the live runtime
+                    // <c>MapFeature</c> already has via
+                    // <see cref="FuseStringPatch.ApplyTo"/>.
+                    //
+                    // The previous behaviour here called
+                    // <c>BoolDictionaryToArray</c> for the boolean-dict
+                    // fields and flattened them into a JSON array of just
+                    // the truthy keys, which the converter then read as a
+                    // REPLACE set — silently dropping the rest of the
+                    // base feature's tracksEnable list. The MaconCounty
+                    // mod's <c>"alarka": { "trackGroupsEnableOnUnlock":
+                    // { "alext-off": true } }</c> patch was meant to ADD
+                    // <c>alext-off</c> on top of the base game's
+                    // <c>[s3a]</c>; under the old normalisation it
+                    // REPLACED with <c>[alext-off]</c>, dropped s3a, and
+                    // left the Alarka branch track group as an unowned
+                    // orphan (so the orphan-finaliser had to guess what
+                    // to do, and either visibly leaked or wholesale
+                    // hid the rails). Leaving the object shape intact
+                    // here makes the patch behave the way SC's
+                    // documented object-key merge always did.
                     result[targetKey] = NormalizeProgressionValue(property.Value);
                 }
             }
