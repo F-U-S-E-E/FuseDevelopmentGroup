@@ -30,6 +30,27 @@ updates:
     commit-message:
       prefix: nuget
       include: scope
+    # ABI-pinned packages: ignore major-version bumps so Dependabot
+    # does not propose changes that compile fine but break at runtime
+    # against the game-bundled DLL of the same name. Specifically:
+    #
+    # - Serilog is referenced compile-time-only via ExcludeAssets="runtime"
+    #   in FUSE.csproj. The game ships its own Serilog 2.0.0.0
+    #   (PublicKeyToken 24c2f752a8e58a10) and our PatchingContext shim
+    #   must type-check against THAT exact assembly identity so legacy
+    #   StrangeCustoms plugins, which were compiled against the same
+    #   2.0.0.0, can be hosted unchanged. Bumping our NuGet reference
+    #   to Serilog 3.x or 4.x would change the assembly identity FUSE.dll
+    #   references, and at runtime the CLR would fail to bind those
+    #   references against the still-2.0.0.0 game DLL.
+    #
+    # If you ever need to bump Serilog, you must FIRST verify that the
+    # game's bundled Serilog has moved to the new major (check
+    # Railroader_Data/Managed/Serilog.dll's AssemblyVersion).
+    ignore:
+      - dependency-name: Serilog
+        update-types:
+          - version-update:semver-major
     groups:
       nuget-minor-and-patch:
         applies-to: version-updates
@@ -38,7 +59,7 @@ updates:
           - patch
       # Group all xunit-family packages (xunit, xunit.runner.*, xunit.analyzers)
       # together so a coordinated bump lands as one PR. Same for the
-      # Microsoft.NET.Test.* family and the coverlet packages — they
+      # Microsoft.NET.Test.* family and the coverlet packages - they
       # version together upstream and shipping their bumps separately
       # tends to produce broken intermediate states.
       xunit:
