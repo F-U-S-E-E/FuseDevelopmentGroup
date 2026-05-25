@@ -55,6 +55,50 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def find_git_executable() -> str | None:
+    """Locate the git binary across the runner shapes we care about.
+
+    Returns the absolute path to a git executable, or None if none of the
+    fallbacks resolve. Order:
+
+      1. The ``GIT_EXECUTABLE`` env var, if set and points at a real file —
+         lets an operator pin a specific install without editing the
+         script. Honoured first so it's not overridden by stale PATH state.
+      2. ``shutil.which("git")`` — picks up whatever the current shell
+         considers canonical. Works on macOS, Linux, and Windows when git
+         is on the user's PATH.
+      3. A list of canonical Windows install locations. The
+         GitHub-actions self-hosted runner used by FUSE's CI has Git for
+         Windows installed but the Python subprocess inherits the
+         service-account PATH, which is narrower than the interactive
+         shell PATH — so ``which`` comes back empty even though
+         ``actions/checkout`` had no trouble finding git at workflow
+         start.
+    """
+    import os
+
+    env_override = os.environ.get("GIT_EXECUTABLE")
+    if env_override and Path(env_override).is_file():
+        return env_override
+
+    via_path = shutil.which("git")
+    if via_path:
+        return via_path
+
+    # Standard Git-for-Windows install layouts.
+    windows_candidates = [
+        r"C:\Program Files\Git\cmd\git.exe",
+        r"C:\Program Files\Git\bin\git.exe",
+        r"C:\Program Files (x86)\Git\cmd\git.exe",
+        r"C:\Program Files (x86)\Git\bin\git.exe",
+    ]
+    for candidate in windows_candidates:
+        if Path(candidate).is_file():
+            return candidate
+
+    return None
+
+
 def tracked_json_files(root: Path) -> list[Path]:
     """Return every .json file tracked by git, repo-relative paths sorted."""
     # ls-files is the right primitive here: it ignores build artifacts in
@@ -64,16 +108,17 @@ def tracked_json_files(root: Path) -> list[Path]:
     # subprocess.run on Windows uses CreateProcess directly and does NOT
     # walk PATH the way a shell would, so a bare "git" argv0 fails on the
     # CI runner with "The system cannot find the file specified" even
-    # though git is plainly on the runner's PATH. shutil.which resolves
-    # the executable's full path against PATH/PATHEXT first; passing the
-    # absolute path then succeeds on Windows, macOS, and Linux without
-    # falling back to shell=True (which would re-introduce quoting risk
-    # on the glob argument).
-    git_executable = shutil.which("git")
+    # though git is plainly on the runner's PATH. find_git_executable
+    # resolves an absolute path via env var, shutil.which, or canonical
+    # Windows install locations; passing the absolute path then succeeds
+    # on Windows, macOS, and Linux without falling back to shell=True
+    # (which would re-introduce quoting risk on the glob argument).
+    git_executable = find_git_executable()
     if git_executable is None:
         raise RuntimeError(
-            "git executable not found on PATH; install git or run this "
-            "script from an environment where git is available."
+            "git executable not found via GIT_EXECUTABLE env var, shutil.which, or any "
+            "canonical Windows install path (C:\\Program Files\\Git\\cmd\\git.exe etc.). "
+            "Install git or set GIT_EXECUTABLE to its absolute path."
         )
     result = subprocess.run(
         [git_executable, "ls-files", "*.json"],
