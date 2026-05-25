@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual trigger lets you opt into the Unity EditMode tests on
+  # demand without flipping the repo variable. The input below is
+  # the one knob that controls the gate.
+  workflow_dispatch:
+    inputs:
+      run_unity_editmode:
+        description: "Run Unity EditMode tests (UnityTests/) — requires Unity 2022.3.62f2 on the runner"
+        type: boolean
+        default: false
 
 # Cancel in-progress runs for the same branch/PR when a new commit lands.
 concurrency:
@@ -59,6 +68,135 @@ jobs:
         with:
           name: test-results
           path: FUSE.Tests/TestResults/test-results.trx
+          retention-days: 7
+
+      # --- EditMode Unity tests (UnityTests/) ---
+      # These exercise SceneCloneAPI.ApplyDefinition,
+      # FusePrefabResolver.FindChild, and the Harmony patch
+      # installation pipeline against real Unity Transforms +
+      # game types, catching regressions the pure xUnit suite
+      # cannot reach. They require Unity Editor 2022.3.62f2
+      # installed on the runner (matches Railroader's shipped
+      # Unity version).
+      #
+      # Off by default — flip on with EITHER:
+      #   * Repository variable RUN_UNITY_EDITMODE_TESTS=true
+      #     (Settings → Secrets and variables → Actions → Variables)
+      #     to enable on every push/PR.
+      #   * Workflow dispatch with the `run_unity_editmode` input
+      #     checked, for one-off runs.
+      #
+      # Even when enabled, the steps use `continue-on-error: true`
+      # so a Unity install / probe / runtime hiccup leaves the job
+      # green for the rest of CI. The EditMode result still
+      # appears in the workflow summary, and the result XML
+      # artifact uploads either way.
+      - name: Decide EditMode-gate
+        id: editmode_gate
+        shell: powershell
+        run: |
+          $manual = "${{ github.event_name == 'workflow_dispatch' && inputs.run_unity_editmode == true }}"
+          $repoVar = "${{ vars.RUN_UNITY_EDITMODE_TESTS }}"
+          $enabled = ($manual -eq 'True') -or ($repoVar -eq 'true')
+          if ($enabled) {
+            Write-Host "EditMode tests ENABLED (manual=$manual, repo-var=$repoVar)"
+            "enabled=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "EditMode tests skipped — set vars.RUN_UNITY_EDITMODE_TESTS=true or"
+            Write-Host "  trigger the workflow manually with run_unity_editmode=true to enable."
+            "enabled=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Probe for Unity Editor
+        id: unity_probe
+        if: steps.editmode_gate.outputs.enabled == 'true'
+        shell: powershell
+        run: |
+          # Honour an explicit override first so an operator can point
+          # at a non-standard install (e.g. a portable Unity instance).
+          $unity = $env:UNITY_EDITOR_PATH
+          if (-not $unity -or -not (Test-Path $unity)) {
+            # Search both the default Unity Hub layout AND the
+            # standalone layout some installers use (e.g. when a
+            # specific LTS was downloaded outside Hub). We pin to
+            # 2022.3.62f2 because that's Railroader's shipped Unity
+            # version — the FUSE.dll being tested is compiled against
+            # its UnityEngine.dll set, and a mismatched Editor would
+            # risk subtle type-load failures.
+            $candidates = @(
+              # Unity Hub install layout (Editor under …\Hub\Editor\<version>\Editor\)
+              'C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe',
+              'D:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe',
+              'D:\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe',
+              # Standalone install layout (Editor under …\Unity <version>\Editor\)
+              'C:\Program Files\Unity 2022.3.62f2\Editor\Unity.exe',
+              'D:\Program Files\Unity 2022.3.62f2\Editor\Unity.exe',
+              'C:\Unity\2022.3.62f2\Editor\Unity.exe',
+              'D:\Unity\2022.3.62f2\Editor\Unity.exe'
+            )
+            foreach ($c in $candidates) {
+              if (Test-Path $c) { $unity = $c; break }
+            }
+          }
+
+          if (-not $unity -or -not (Test-Path $unity)) {
+            Write-Host "Unity Editor 2022.3.62f2 not found; skipping EditMode tests."
+            Write-Host "To enable: install Unity 2022.3.62f2 via Unity Hub and set"
+            Write-Host "  UNITY_EDITOR_PATH on the runner, or place the editor at the"
+            Write-Host "  default 'C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe'."
+            "available=false" >> $env:GITHUB_OUTPUT
+          }
+          else {
+            Write-Host "Unity Editor: $unity"
+            "available=true"  >> $env:GITHUB_OUTPUT
+            "path=$unity"     >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Prepare UnityTests assets
+        if: steps.editmode_gate.outputs.enabled == 'true' && steps.unity_probe.outputs.available == 'true'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          # Copies FUSE.dll + Railroader-shipped DLLs into
+          # UnityTests/Assets/Plugins/ so Unity can resolve all of FUSE's
+          # references at import time.
+          & "$PWD\UnityTests\prepare_assets.ps1"
+
+      - name: Run EditMode tests
+        if: steps.editmode_gate.outputs.enabled == 'true' && steps.unity_probe.outputs.available == 'true'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          # -batchmode -nographics: no GUI, no GPU needed.
+          # -runTests: invokes the Test Runner against -testPlatform.
+          # -testResults: NUnit XML output for the upload step below.
+          # -logFile -: stream Unity's log to stdout for the CI logs.
+          # An exit code of 0/2 means tests passed (2 = "all tests
+          # passed but Unity wanted to be picky about something else").
+          # Anything else fails the job.
+          $unity = "${{ steps.unity_probe.outputs.path }}"
+          $project = "$PWD\UnityTests"
+          $results = "$PWD\UnityTests\TestResults\editmode-results.xml"
+          New-Item -ItemType Directory -Force -Path (Split-Path $results) | Out-Null
+
+          & $unity `
+            -batchmode -nographics `
+            -projectPath $project `
+            -runTests `
+            -testPlatform EditMode `
+            -testResults $results `
+            -logFile -
+
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+            throw "Unity Test Runner exited with code $LASTEXITCODE"
+          }
+
+      - name: Upload EditMode test results
+        if: always() && steps.editmode_gate.outputs.enabled == 'true' && steps.unity_probe.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-editmode-results
+          path: UnityTests/TestResults/editmode-results.xml
           retention-days: 7
 
       # --- Build a stamped Release zip and attach it as a workflow artifact.

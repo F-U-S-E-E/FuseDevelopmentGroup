@@ -16,3 +16,5 @@ TestResults/
 /staging/
 /FUSE-v*.zip
 Local.Build.props
+
+tmp/
