@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using FUSE.Data;
 using FUSE.Infrastructure;
 using FUSE.Registry;
 using Newtonsoft.Json.Linq;
@@ -21,6 +22,35 @@ namespace FUSE.Loading
         private static string _lastSummary = "FUSE load report has not been generated yet.";
         private static string _lastDetails = "FUSE load report has not been generated yet.";
         private static string _lastJson = "{ \"status\": \"FUSE load report has not been generated yet.\" }";
+
+        // Captured at the moment of <see cref="PublishMapLoadReport"/>
+        // so the on-demand <see cref="GetLastDetailReport"/> /
+        // <see cref="GetLastJsonReport"/> rebuild can use the same
+        // reason string + pass counts the published summary did. The
+        // registries themselves are re-read fresh so any fault
+        // recorded after publish (e.g. per-car AddCarInternal
+        // finalizer) shows up.
+        private static string _lastPublishReason;
+        private static int _lastLoadedFromDiskThisPass;
+        private static int _lastAppliedToRuntimeThisPass;
+        private static bool _hasPublishedAtLeastOnce;
+
+        // Deferred-publish bookkeeping: lifecycle hands us the
+        // "reason / loadedCount / appliedCount" tuple while the
+        // map-load pipeline is closing out, but the per-car
+        // AddCarInternal finalizer (which populates the orphan
+        // registry) doesn't run until after HandleSnapshotCars
+        // processes the save. Publishing inline at lifecycle time
+        // would produce a toast that says "orphans 0" even when 2
+        // are about to be recorded. <see cref="ScheduleMapLoadReport"/>
+        // stashes the args and a Postfix on HandleSnapshotCars
+        // calls <see cref="FlushScheduledMapLoadReport"/> at the
+        // right time so the toast / log / cached strings reflect
+        // the real registry state.
+        private static bool _pendingPublishScheduled;
+        private static string _pendingPublishReason;
+        private static int _pendingLoadedFromDisk;
+        private static int _pendingAppliedToRuntime;
 
         public static string LastSummary
         {
@@ -115,18 +145,133 @@ namespace FUSE.Loading
 
         public static string GetLastDetailReport()
         {
-            lock (Sync)
+            // The cached <c>_lastDetails</c> was generated at the
+            // PublishMapLoadReport moment, which fires during initial
+            // load before per-car snapshot processing finishes. Some
+            // registries (notably <see cref="FuseSaveCarFaultRegistry"/>)
+            // are populated AFTER that point, so a stale cache would
+            // miss them. Re-snapshot here so /fuse.report always
+            // reflects the current registry state. If we have not yet
+            // generated any report this session (rare — only before
+            // the first load), fall back to the placeholder.
+            var hasPublished = HasGeneratedAReport();
+            var registryCount = FuseSaveCarFaultRegistry.Count;
+            FuseLog.Info(
+                $"FUSE diag GetLastDetailReport invoked: hasPublishedAtLeastOnce={hasPublished} " +
+                $"orphanRegistryCount={registryCount}.");
+
+            if (!hasPublished)
             {
-                return _lastDetails;
+                lock (Sync)
+                {
+                    return _lastDetails;
+                }
             }
+
+            var snapshot = CaptureCurrentSnapshot();
+            var summary = BuildSummary(snapshot);
+            return BuildDetails(snapshot, summary);
         }
 
         public static string GetLastJsonReport()
         {
+            var hasPublished = HasGeneratedAReport();
+            var registryCount = FuseSaveCarFaultRegistry.Count;
+            FuseLog.Info(
+                $"FUSE diag GetLastJsonReport invoked: hasPublishedAtLeastOnce={hasPublished} " +
+                $"orphanRegistryCount={registryCount}.");
+
+            if (!hasPublished)
+            {
+                lock (Sync)
+                {
+                    return _lastJson;
+                }
+            }
+
+            var snapshot = CaptureCurrentSnapshot();
+            var summary = BuildSummary(snapshot);
+            return BuildJson(snapshot, summary);
+        }
+
+        /// <summary>
+        /// Re-snapshots every registry the report exposes without
+        /// disturbing the cached "as-published" summary that the
+        /// startup toast / log line consumers depend on. Used by the
+        /// on-demand console getters so the displayed report always
+        /// reflects fault records added after initial publish.
+        /// </summary>
+        private static ReportSnapshot CaptureCurrentSnapshot()
+        {
+            string lastReason;
             lock (Sync)
             {
-                return _lastJson;
+                lastReason = _lastPublishReason ?? "map load";
             }
+            return CaptureSnapshot(lastReason, _lastLoadedFromDiskThisPass, _lastAppliedToRuntimeThisPass);
+        }
+
+        private static bool HasGeneratedAReport()
+        {
+            lock (Sync)
+            {
+                return _hasPublishedAtLeastOnce;
+            }
+        }
+
+        /// <summary>
+        /// Records the lifecycle's intent to publish a map-load
+        /// report but defers the actual publish until
+        /// <see cref="FlushScheduledMapLoadReport"/> is called. The
+        /// hook firing the flush is a Postfix on
+        /// <c>TrainController.HandleSnapshotCars</c>, which runs
+        /// AFTER every snapshot car has been attempted and the
+        /// orphan registry has been populated by the per-car
+        /// finalizer. Without this deferral the toast and the log
+        /// summary line fire while the orphan registry is still
+        /// empty and report <c>orphans 0</c> even when the save
+        /// contains broken legacy car instances.
+        /// </summary>
+        public static void ScheduleMapLoadReport(string reason, int loadedFromDiskThisPass, int appliedToRuntimeThisPass)
+        {
+            lock (Sync)
+            {
+                _pendingPublishScheduled = true;
+                _pendingPublishReason = reason;
+                _pendingLoadedFromDisk = loadedFromDiskThisPass;
+                _pendingAppliedToRuntime = appliedToRuntimeThisPass;
+            }
+        }
+
+        /// <summary>
+        /// Publishes the previously-scheduled map-load report, then
+        /// clears the pending flag. No-ops when nothing is
+        /// scheduled (idempotent — safe to call from multiple
+        /// snapshot-cars completion points). The publish runs the
+        /// normal path so the toast, log lines, and cached strings
+        /// get the orphan-aware data.
+        /// </summary>
+        public static void FlushScheduledMapLoadReport()
+        {
+            string reason;
+            int loadedFromDisk;
+            int appliedToRuntime;
+            lock (Sync)
+            {
+                if (!_pendingPublishScheduled)
+                {
+                    return;
+                }
+                reason = _pendingPublishReason;
+                loadedFromDisk = _pendingLoadedFromDisk;
+                appliedToRuntime = _pendingAppliedToRuntime;
+                _pendingPublishScheduled = false;
+                _pendingPublishReason = null;
+                _pendingLoadedFromDisk = 0;
+                _pendingAppliedToRuntime = 0;
+            }
+
+            PublishMapLoadReport(reason, loadedFromDisk, appliedToRuntime);
         }
 
         public static void PublishMapLoadReport(string reason, int loadedFromDiskThisPass, int appliedToRuntimeThisPass)
@@ -140,6 +285,10 @@ namespace FUSE.Loading
                 _lastSummary = summary;
                 _lastDetails = details;
                 _lastJson = BuildJson(snapshot, summary);
+                _lastPublishReason = reason;
+                _lastLoadedFromDiskThisPass = loadedFromDiskThisPass;
+                _lastAppliedToRuntimeThisPass = appliedToRuntimeThisPass;
+                _hasPublishedAtLeastOnce = true;
             }
 
             if (snapshot.HasProblems)
@@ -183,6 +332,7 @@ namespace FUSE.Loading
             var faults = FusePackageFaultRegistry.GetFaults().ToArray();
             var conflicts = FuseRegistry.Conflicts.ToArray();
             var legacyConvertedPackageIds = FuseDataPackageDiscovery.GetLegacyConvertedPackageIds().ToArray();
+            var orphanedCars = FuseSaveCarFaultRegistry.GetAll().ToArray();
 
             return new ReportSnapshot
             {
@@ -203,7 +353,8 @@ namespace FUSE.Loading
                 UnknownSceneryAssets = unknownScenery,
                 GraphPostBindIssues = graphPostBindIssues,
                 ProgressionTransferSkips = progressionTransferSkips,
-                Notices = notices
+                Notices = notices,
+                OrphanedCars = orphanedCars
             };
         }
 
@@ -219,7 +370,7 @@ namespace FUSE.Loading
                 $"FUSE: {loadedCount} loaded | faults {snapshot.FaultedPackageCount} | " +
                 $"conflicts {snapshot.Conflicts.Length} | assets {snapshot.UnknownSceneryAssets.Length} | " +
                 $"graph {snapshot.GraphPostBindIssues.Length} | transfers {snapshot.ProgressionTransferSkips.Length} | " +
-                $"suppressions {suppressionCount} | /fuse.report";
+                $"suppressions {suppressionCount} | orphans {snapshot.OrphanedCarCount} | /fuse.report";
         }
 
         private static string BuildDetails(ReportSnapshot snapshot, string summary)
@@ -275,6 +426,18 @@ namespace FUSE.Loading
             AppendList(sb, "Graph post-bind issues", snapshot.GraphPostBindIssues);
             AppendList(sb, "Progression transfer skips", snapshot.ProgressionTransferSkips);
             AppendList(sb, "Notices", snapshot.Notices);
+
+            if (snapshot.OrphanedCarCount > 0)
+            {
+                sb.AppendLine($"Orphaned cars (save references prototype FUSE filtered or game cannot resolve): {snapshot.OrphanedCarCount}");
+                foreach (var fault in snapshot.OrphanedCars)
+                {
+                    sb.AppendLine(
+                        $"  {fault.DisplayName} (id={fault.CarId}) missingPrototype='{fault.MissingPrototypeId}' " +
+                        $"at segment={fault.LocationSegmentId} dist={fault.LocationDistance:F1}");
+                }
+            }
+
             return sb.ToString();
         }
 
@@ -306,7 +469,8 @@ namespace FUSE.Loading
                     ["graphIssues"] = snapshot.GraphPostBindIssues.Length,
                     ["progressionTransferSkips"] = snapshot.ProgressionTransferSkips.Length,
                     ["suppressions"] = suppressionCount,
-                    ["notices"] = snapshot.Notices.Length
+                    ["notices"] = snapshot.Notices.Length,
+                    ["orphanedCars"] = snapshot.OrphanedCarCount
                 },
                 ["packages"] = new JObject
                 {
@@ -346,7 +510,19 @@ namespace FUSE.Loading
                 })),
                 ["graphPostBindIssues"] = ToArray(snapshot.GraphPostBindIssues),
                 ["progressionTransferSkips"] = ToArray(snapshot.ProgressionTransferSkips),
-                ["notices"] = ToArray(snapshot.Notices)
+                ["notices"] = ToArray(snapshot.Notices),
+                ["orphanedCars"] = new JArray((snapshot.OrphanedCars ?? Array.Empty<FuseSaveCarFault>()).Select(fault => new JObject
+                {
+                    ["carId"] = fault.CarId ?? string.Empty,
+                    ["displayName"] = fault.DisplayName ?? string.Empty,
+                    ["reportingMark"] = fault.ReportingMark ?? string.Empty,
+                    ["roadNumber"] = fault.RoadNumber ?? string.Empty,
+                    ["missingPrototypeId"] = fault.MissingPrototypeId ?? string.Empty,
+                    ["locationSegmentId"] = fault.LocationSegmentId ?? string.Empty,
+                    ["locationDistance"] = fault.LocationDistance,
+                    ["locationEndIsA"] = fault.LocationEndIsA,
+                    ["reason"] = fault.Reason ?? string.Empty
+                }))
             };
 
             return root.ToString(Newtonsoft.Json.Formatting.Indented);
@@ -437,11 +613,14 @@ namespace FUSE.Loading
             public string[] GraphPostBindIssues { get; set; }
             public string[] ProgressionTransferSkips { get; set; }
             public string[] Notices { get; set; }
+            public FuseSaveCarFault[] OrphanedCars { get; set; }
 
             public int FaultedPackageCount =>
                 Faults == null
                     ? 0
                     : Faults.Select(fault => fault.PackageId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+
+            public int OrphanedCarCount => OrphanedCars?.Length ?? 0;
 
             public bool HasProblems =>
                 FaultedPackageCount > 0 ||
@@ -450,7 +629,8 @@ namespace FUSE.Loading
                 (GraphPostBindIssues != null && GraphPostBindIssues.Length > 0) ||
                 (ProgressionTransferSkips != null && ProgressionTransferSkips.Length > 0) ||
                 (SkippedPackages != null && SkippedPackages.Any(item => !FusePackageFaultRegistry.IsOptionalSkipReason(item.Value))) ||
-                (Notices != null && Notices.Length > 0);
+                (Notices != null && Notices.Length > 0) ||
+                OrphanedCarCount > 0;
         }
 
         private static JArray ToArray(IEnumerable<string> values)

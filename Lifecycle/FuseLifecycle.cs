@@ -156,7 +156,16 @@ namespace FUSE.Lifecycle
                 FuseLog.Exception("FUSE console registration on map-load failed.", ex);
             }
 
-            FuseLoadReport.PublishMapLoadReport(
+            // Defer the actual publish (toast + log summary +
+            // cached strings) until the game's
+            // TrainController.HandleSnapshotCars Postfix flushes it.
+            // That hook fires AFTER every snapshot car has been
+            // attempted, which is the only point where the orphan-
+            // car registry is fully populated for this load. If we
+            // published inline here the toast would say "orphans 0"
+            // even when broken legacy car instances are about to be
+            // recorded a few seconds later.
+            FuseLoadReport.ScheduleMapLoadReport(
                 pipelineCompleted ? "map load" : "map load failed",
                 loadedCount,
                 appliedCount);
