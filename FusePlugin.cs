@@ -73,6 +73,7 @@ namespace FUSE
 
                 FuseEditor.OnFuseLoad();
                 FuseHealthUi.Ensure();
+                FuseOrphanedCarWindow.Ensure();
                 FuseTrackDebugOverlay.Ensure();
                 FuseSceneryDebugOverlay.Ensure();
                 FuseWorldLabelsOverlay.Ensure();

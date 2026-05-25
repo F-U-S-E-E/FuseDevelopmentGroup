@@ -15,6 +15,7 @@ using FUSE.Registry;
 using Model;
 using Model.Ops;
 using Newtonsoft.Json.Linq;
+using Railloader;
 using TMPro;
 using Track;
 using UI;
@@ -50,6 +51,16 @@ namespace FUSE.Interface
         private string _inspectorSearchTerm = string.Empty;
         private string _inspectorSelectedSignature = string.Empty;
         private string _selectedPackageId = string.Empty;
+        private string _selectedLegacyModSignature = string.Empty;
+        // Tracks which legacy IModTabHandler plugin instances currently have an
+        // "open" tab in our settings UI. Key is "{packageId}|{pluginTypeFullName}";
+        // value is the plugin reference held until we call ModTabDidClose on it.
+        // We use this to honour the Railloader contract where DidOpen runs every
+        // rebuild while a tab is visible, and DidClose runs once when the user
+        // navigates away — exactly so plugins like NotEnoughRosters can persist
+        // their state on close.
+        private readonly Dictionary<string, IModTabHandler> _openTabHandlers =
+            new Dictionary<string, IModTabHandler>(StringComparer.OrdinalIgnoreCase);
 
         private Vector2Int DefaultSize => new Vector2Int(740, 660);
         private Vector2Int MaxSize => new Vector2Int(Screen.width, Screen.height);
@@ -122,6 +133,11 @@ namespace FUSE.Interface
 
         private void OnDestroy()
         {
+            // Notify any open legacy plugin tabs before tearing the panel down so
+            // they get a chance to persist state (NotEnoughRosters writes to
+            // trains.json from ModTabDidClose, for example).
+            CloseAllOpenTabHandlers("FUSE health UI destroyed");
+
             if (_panel != null)
             {
                 _panel.Dispose();
@@ -263,6 +279,7 @@ namespace FUSE.Interface
 
             if (_window.IsShown)
             {
+                CloseAllOpenTabHandlers("FUSE health window closed");
                 _window.CloseWindow();
                 return;
             }
@@ -342,6 +359,7 @@ namespace FUSE.Interface
                 row.AddButtonCompact(_activePage == Page.Audits ? "[ Audits ]" : "Audits", () => SetPage(Page.Audits));
                 row.AddButtonCompact(_activePage == Page.Advanced ? "[ Advanced ]" : "Advanced", () => SetPage(Page.Advanced));
                 row.AddButtonCompact(_activePage == Page.Settings ? "[ Settings ]" : "Settings", () => SetPage(Page.Settings));
+                row.AddButtonCompact(_activePage == Page.LegacyMods ? "[ Legacy Mods ]" : "Legacy Mods", () => SetPage(Page.LegacyMods));
                 row.AddButtonCompact("Refresh", RebuildWindow);
             }, 6f).Height(34f);
 
@@ -381,6 +399,9 @@ namespace FUSE.Interface
                 case Page.ModSets:
                     BuildModSetsContent(builder);
                     return;
+                case Page.LegacyMods:
+                    BuildLegacyModsContent(builder);
+                    return;
                 case Page.Health:
                 default:
                     BuildHealthContent(builder);
@@ -390,6 +411,15 @@ namespace FUSE.Interface
 
         private void SetPage(Page page)
         {
+            // Leaving the Legacy Mods page closes any open IModTabHandler tabs
+            // so their ModTabDidClose runs (e.g. NotEnoughRosters writes its
+            // trains.json from that hook). When the user returns, the tabs
+            // are re-opened on the next rebuild.
+            if (_activePage == Page.LegacyMods && page != Page.LegacyMods)
+            {
+                CloseAllOpenTabHandlers("user left FUSE Legacy Mods page");
+            }
+
             _activePage = page;
             RebuildWindow();
         }
@@ -525,11 +555,206 @@ namespace FUSE.Interface
             problemRows += AddProblemSummary(builder, report, null, "graphPostBindIssues", "Graph Issues", false);
             problemRows += AddProblemSummary(builder, report, null, "progressionTransferSkips", "Transfer Skips", false);
             problemRows += AddProblemSummary(builder, report, null, "notices", "Notices", false);
+            problemRows += AddSaveCarFaultSummaryRow(builder);
             if (problemRows == 0)
             {
                 AddValueField(builder, "Status", "None");
             }
             builder.Spacer(8f);
+
+            BuildSaveCarFaultsSection(builder);
+        }
+
+        /// <summary>
+        /// Adds a single-row entry to "Active Problems" for cars the
+        /// save load could not restore. The count is read live from
+        /// <see cref="FuseSaveCarFaultRegistry"/>; if zero, no row is
+        /// drawn (matching the no-show-zero convention of the
+        /// surrounding rows). Returns the number of rows produced so
+        /// the caller can sum into the empty-state "Status: None"
+        /// path.
+        /// </summary>
+        private static int AddSaveCarFaultSummaryRow(UIPanelBuilder builder)
+        {
+            var count = FuseSaveCarFaultRegistry.Count;
+            if (count == 0)
+            {
+                return 0;
+            }
+            builder.AddField("Orphaned Cars", () => count + " - see below", 0).Height(24f);
+            return 1;
+        }
+
+        // Per-prototype replacement-target selection persists across
+        // the panel rebuild cycle so the user's dropdown choice
+        // doesn't reset every time the UI redraws.
+        private static readonly Dictionary<string, string> _saveCarFaultReplacementSelection =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Lists every car the save load could not restore, grouped
+        /// by the missing prototype identifier so cars that share a
+        /// broken type cluster together (and a fix targeting the
+        /// type can address them all at once). Empty when the
+        /// registry has no entries — silent in that case so the
+        /// Health page stays clean. Each group has a picker for a
+        /// replacement car type and a button that applies the
+        /// replacement to every car in the group, spawning new cars
+        /// at the original locations with the original ids /
+        /// waybills / properties preserved.
+        /// </summary>
+        private void BuildSaveCarFaultsSection(UIPanelBuilder builder)
+        {
+            var faults = FuseSaveCarFaultRegistry.GetAll();
+            if (faults.Count == 0)
+            {
+                return;
+            }
+
+            builder.AddSection("Orphaned Cars (this save)");
+            AddWrappedLabel(
+                builder,
+                "These cars were in the save but could not be restored — their car-type definitions " +
+                "weren't usable (e.g., the only definition lived in a legacy SCAssetPacks pack whose " +
+                "bundle conflicts with the modern pack's bundle, so FUSE filtered it out to prevent " +
+                "Unity from refusing the bundle load). Pick a replacement car type per group below " +
+                "and FUSE will spawn the car back at its original location with the same id, road " +
+                "number, waybill, and load — only the prefab/type changes.",
+                52f);
+            builder.Spacer(4f);
+
+            // Refresh the available-replacement list every panel
+            // rebuild so the picker reflects packs that came in via a
+            // late legacy-data converter (the list is cheap to
+            // enumerate; this keeps the UI honest about what the game
+            // can actually load right now).
+            var availableReplacements = FuseSaveCarFaultReplacement.GetAvailablePrototypeIds();
+
+            var byPrototype = faults
+                .GroupBy(f => f.MissingPrototypeId, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in byPrototype)
+            {
+                var groupKey = string.IsNullOrEmpty(group.Key) ? "<unknown>" : group.Key;
+                var groupList = group.ToList();
+                AddValueField(builder, "Type", $"{groupKey} ({groupList.Count})");
+                foreach (var fault in groupList.OrderBy(f => f.DisplayName, StringComparer.OrdinalIgnoreCase))
+                {
+                    AddWrappedField(
+                        builder,
+                        "  " + fault.DisplayName,
+                        $"id={fault.CarId} at segment={fault.LocationSegmentId} dist={fault.LocationDistance:F1}",
+                        34f);
+                }
+
+                BuildReplacementPickerRow(builder, groupKey, groupList, availableReplacements);
+                builder.Spacer(4f);
+            }
+            builder.Spacer(8f);
+        }
+
+        /// <summary>
+        /// Renders the replacement controls for one prototype group:
+        /// a dropdown of currently-loadable car identifiers and an
+        /// Apply button that spawns a replacement for every car in
+        /// the group using the selected identifier. Choices persist
+        /// across rebuilds via
+        /// <see cref="_saveCarFaultReplacementSelection"/>.
+        /// </summary>
+        private void BuildReplacementPickerRow(
+            UIPanelBuilder builder,
+            string groupKey,
+            List<FuseSaveCarFault> groupFaults,
+            string[] availableReplacements)
+        {
+            if (availableReplacements == null || availableReplacements.Length == 0)
+            {
+                AddWrappedLabel(
+                    builder,
+                    "  No replacement car types are currently loadable. Make sure your TOFC Cars (or " +
+                    "equivalent) pack is installed at the mod root with the modern definitions.",
+                    32f);
+                return;
+            }
+
+            if (!_saveCarFaultReplacementSelection.TryGetValue(groupKey, out var selected) ||
+                Array.IndexOf(availableReplacements, selected) < 0)
+            {
+                selected = availableReplacements[0];
+                _saveCarFaultReplacementSelection[groupKey] = selected;
+            }
+
+            // The picker uses a paged-button row instead of a
+            // dropdown so the implementation stays simple and the UI
+            // works on all UIPanelBuilder shipping in the host. Each
+            // button shows one available identifier; clicking sets
+            // the selection. Selected identifier is shown bold-ish
+            // via a square-bracket marker (no rich-text dep).
+            builder.AddField("  Replacement", () =>
+            {
+                if (_saveCarFaultReplacementSelection.TryGetValue(groupKey, out var current))
+                {
+                    return current;
+                }
+                return availableReplacements[0];
+            }, 0).Height(24f);
+
+            // Render up to ~6 candidates per row so the user can scan
+            // without scrolling forever. For large catalogs we just
+            // show the first N alphabetically; refining with a
+            // search box can come in a later iteration.
+            const int MaxCandidates = 24;
+            var candidates = availableReplacements.Take(MaxCandidates).ToArray();
+            builder.HStack(row =>
+            {
+                row.Spacing = 2f;
+                foreach (var candidate in candidates)
+                {
+                    var captured = candidate;
+                    var label = string.Equals(captured, selected, StringComparison.Ordinal)
+                        ? "[" + captured + "]"
+                        : captured;
+                    row.AddButtonCompact(label, () =>
+                    {
+                        _saveCarFaultReplacementSelection[groupKey] = captured;
+                        RebuildWindow();
+                    });
+                }
+            }, 4f).Height(28f);
+
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact(
+                    $"Replace {groupFaults.Count} car(s) with '{selected}'",
+                    () => ApplyReplacementGroup(groupKey, groupFaults, selected));
+            }, 6f).Height(32f);
+        }
+
+        private void ApplyReplacementGroup(
+            string groupKey,
+            List<FuseSaveCarFault> groupFaults,
+            string replacementPrototypeId)
+        {
+            var applied = 0;
+            var failed = 0;
+            foreach (var fault in groupFaults)
+            {
+                if (FuseSaveCarFaultReplacement.TryApply(fault, replacementPrototypeId))
+                {
+                    applied++;
+                }
+                else
+                {
+                    failed++;
+                }
+            }
+
+            _lastAction = failed == 0
+                ? $"Replaced {applied} orphaned car(s) of type '{groupKey}' with '{replacementPrototypeId}'."
+                : $"Replaced {applied} of {applied + failed} orphaned car(s) of type '{groupKey}' " +
+                  $"with '{replacementPrototypeId}'; {failed} failed — see FUSE.log.";
+            RebuildWindow();
         }
 
         private void BuildPackagesContent(UIPanelBuilder builder)
@@ -718,6 +943,223 @@ namespace FUSE.Interface
                         : "Only advanced settings are declared. Enable Advanced Details to show them.",
                     44f);
             }
+
+            // Legacy-loader plugin settings (IModTabHandler) live on their own
+            // tab — see Page.LegacyMods / BuildLegacyModsContent. We keep the
+            // per-package settings panel focused on FUSE-native settings so
+            // legacy plugin UIs do not double-render here.
+        }
+
+        /// <summary>
+        /// Renders the "Legacy Mods" page: a mod picker at the top, then the
+        /// selected mod's <see cref="IModTabHandler"/> tab rendered into its
+        /// own panel below. Only mods whose hosted plugin implements
+        /// <c>IModTabHandler</c> (i.e. expose at least one option) are listed.
+        ///
+        /// Lifecycle: selecting a different mod fires <c>ModTabDidClose</c> on
+        /// the previously-selected mod's handler so plugins like
+        /// NotEnoughRosters can persist their state (it writes
+        /// <c>trains.json</c> from that hook). The newly-selected mod's
+        /// handler receives <c>ModTabDidOpen</c> on the next rebuild.
+        /// </summary>
+        private void BuildLegacyModsContent(UIPanelBuilder builder)
+        {
+            builder.FieldLabelWidth = 170f;
+            builder.Spacing = 6f;
+
+            var hostedPlugins = FuseLegacyAssemblyHost
+                .EnumerateAllHostedPlugins()
+                .Where(info => info.Plugin is IModTabHandler)
+                .Select(info => new TabHandlerEntry(
+                    BuildTabHandlerSignature(info.Manifest, info.PluginType),
+                    info.Manifest,
+                    info.PluginType,
+                    (IModTabHandler)info.Plugin))
+                .OrderBy(entry => entry.DisplayLabel, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            builder.AddSection("Legacy Mods Settings");
+            AddWrappedField(
+                builder,
+                "Scope",
+                "Settings tabs declared by legacy-loader plugins (Railloader IModTabHandler). Only mods that expose at least one tab option appear here.",
+                52f);
+            AddValueField(builder, "Mods Found", hostedPlugins.Count.ToString());
+
+            if (hostedPlugins.Count == 0)
+            {
+                // No eligible mod means no signature should remain open.
+                CloseAllOpenTabHandlers("no legacy mods with settings");
+                AddWrappedField(
+                    builder,
+                    "Status",
+                    "No hosted legacy plugin implements IModTabHandler. Mods that only register console commands or mixintos appear in the Mods tab instead.",
+                    52f);
+                builder.Spacer(8f);
+                return;
+            }
+
+            // Resolve which mod is selected. If the stored selection is stale
+            // (mod no longer hosted) fall back to the first available entry.
+            var selected = hostedPlugins.FirstOrDefault(entry =>
+                               string.Equals(entry.Signature, _selectedLegacyModSignature, StringComparison.OrdinalIgnoreCase))
+                           ?? hostedPlugins[0];
+            _selectedLegacyModSignature = selected.Signature;
+
+            // Close any other mod's handler so only the selected one is "open".
+            var keepOnlySelected = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                selected.Signature
+            };
+            CloseTabHandlersExcept(keepOnlySelected, "legacy mods selection changed");
+
+            // Mod picker.
+            var labels = hostedPlugins.Select(entry => entry.DisplayLabel).ToList();
+            var selectedIndex = Math.Max(0, hostedPlugins.FindIndex(entry =>
+                string.Equals(entry.Signature, _selectedLegacyModSignature, StringComparison.OrdinalIgnoreCase)));
+            builder.AddField(
+                "Mod",
+                builder.AddDropdown(labels, selectedIndex, index =>
+                {
+                    if (index < 0 || index >= hostedPlugins.Count)
+                    {
+                        return;
+                    }
+
+                    var chosen = hostedPlugins[index];
+                    if (string.Equals(chosen.Signature, _selectedLegacyModSignature, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+
+                    _selectedLegacyModSignature = chosen.Signature;
+                    RebuildWindow();
+                })).Height(32f);
+            builder.Spacer(6f);
+
+            // Selected mod's panel.
+            builder.AddSection(selected.DisplayLabel);
+            AddWrappedField(builder, "Mod Id", selected.ManifestIdOrFallback, 28f);
+            if (!string.IsNullOrWhiteSpace(selected.ManifestVersion))
+            {
+                AddValueField(builder, "Version", selected.ManifestVersion);
+            }
+            builder.Spacer(4f);
+
+            _openTabHandlers[selected.Signature] = selected.Plugin;
+            try
+            {
+                selected.Plugin.ModTabDidOpen(builder);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception(
+                    $"Legacy plugin '{selected.PluginType.FullName}' threw from ModTabDidOpen while FUSE was rendering its settings tab",
+                    ex);
+                AddWrappedField(
+                    builder,
+                    "Plugin Error",
+                    $"{selected.PluginType.Name} threw {ex.GetType().Name} from ModTabDidOpen: {ex.GetBaseException().Message}",
+                    54f);
+            }
+
+            builder.Spacer(8f);
+        }
+
+        private sealed class TabHandlerEntry
+        {
+            public TabHandlerEntry(string signature, FUSE.Loading.FuseLegacyAssemblyManifest manifest, Type pluginType, IModTabHandler plugin)
+            {
+                Signature = signature ?? string.Empty;
+                Manifest = manifest;
+                PluginType = pluginType;
+                Plugin = plugin;
+                DisplayLabel = BuildDisplayLabel(manifest, pluginType);
+            }
+
+            public string Signature { get; }
+            public FUSE.Loading.FuseLegacyAssemblyManifest Manifest { get; }
+            public Type PluginType { get; }
+            public IModTabHandler Plugin { get; }
+            public string DisplayLabel { get; }
+
+            public string ManifestIdOrFallback
+            {
+                get
+                {
+                    if (Manifest != null && !string.IsNullOrWhiteSpace(Manifest.Id))
+                    {
+                        return Manifest.Id;
+                    }
+
+                    return PluginType == null ? "(unknown)" : (PluginType.FullName ?? PluginType.Name);
+                }
+            }
+
+            public string ManifestVersion => Manifest == null ? string.Empty : (Manifest.Version ?? string.Empty);
+
+            private static string BuildDisplayLabel(FUSE.Loading.FuseLegacyAssemblyManifest manifest, Type pluginType)
+            {
+                var modName = manifest == null
+                    ? null
+                    : (!string.IsNullOrWhiteSpace(manifest.Name) ? manifest.Name : manifest.Id);
+                var typeName = pluginType == null ? "(unnamed plugin)" : (pluginType.Name ?? pluginType.FullName);
+                if (string.IsNullOrWhiteSpace(modName))
+                {
+                    return typeName;
+                }
+
+                return string.Equals(modName, typeName, StringComparison.OrdinalIgnoreCase)
+                    ? modName
+                    : modName + " | " + typeName;
+            }
+        }
+
+        /// <summary>
+        /// Calls <c>ModTabDidClose</c> on any tracked handlers whose signature is
+        /// NOT in <paramref name="keepSignatures"/>, and forgets them. Plugins
+        /// can rely on this to persist state when the user navigates away from
+        /// their tab. Exceptions are logged but never bubble — a misbehaving
+        /// plugin must not break FUSE's UI teardown.
+        /// </summary>
+        private void CloseTabHandlersExcept(HashSet<string> keepSignatures, string reason)
+        {
+            if (_openTabHandlers.Count == 0)
+            {
+                return;
+            }
+
+            var toClose = _openTabHandlers
+                .Where(pair => keepSignatures == null || !keepSignatures.Contains(pair.Key))
+                .ToArray();
+            foreach (var entry in toClose)
+            {
+                _openTabHandlers.Remove(entry.Key);
+                try
+                {
+                    entry.Value?.ModTabDidClose();
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception(
+                        $"Legacy plugin handler '{entry.Key}' threw from ModTabDidClose ({reason})",
+                        ex);
+                }
+            }
+        }
+
+        private void CloseAllOpenTabHandlers(string reason)
+        {
+            CloseTabHandlersExcept(null, reason);
+        }
+
+        private static string BuildTabHandlerSignature(FUSE.Loading.FuseLegacyAssemblyManifest manifest, Type pluginType)
+        {
+            var packageKey = manifest == null
+                ? string.Empty
+                : (manifest.Id ?? manifest.FolderPath ?? string.Empty);
+            var typeKey = pluginType == null ? string.Empty : (pluginType.FullName ?? pluginType.Name ?? string.Empty);
+            return packageKey + "|" + typeKey;
         }
 
         private static FuseLoadedMod[] GetLoadedDefinitionsForPackage(FusePackageManifestSnapshot manifest)
@@ -3451,7 +3893,8 @@ namespace FUSE.Interface
             Audits,
             Advanced,
             Settings,
-            ModSets
+            ModSets,
+            LegacyMods
         }
     }
 }
