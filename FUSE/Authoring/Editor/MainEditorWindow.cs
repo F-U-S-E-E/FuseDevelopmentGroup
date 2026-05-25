@@ -1,4 +1,4 @@
-﻿﻿using FUSE.Infrastructure;
+﻿using FUSE.Infrastructure;
 using FUSE.Loading;
 using GalaSoft.MvvmLight.Messaging;
 using Game.Events;
