@@ -276,7 +276,7 @@ jobs:
       # in place rather than spamming the conversation.
       - name: Post / update PR comment with download link
         if: github.event_name == 'pull_request' && success()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: pr-build-artifact
           message: |
