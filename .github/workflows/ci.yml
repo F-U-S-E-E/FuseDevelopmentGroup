@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       run_unity_editmode:
-        description: "Run Unity EditMode tests (UnityTests/) — requires Unity 2022.3.62f2 on the runner"
+        description: "Run Unity EditMode tests (UnityTests/) - requires Unity 2022.3.62f2 on the runner"
         type: boolean
         default: false
 
@@ -79,9 +79,9 @@ jobs:
       # installed on the runner (matches Railroader's shipped
       # Unity version).
       #
-      # Off by default — flip on with EITHER:
+      # Off by default - flip on with EITHER:
       #   * Repository variable RUN_UNITY_EDITMODE_TESTS=true
-      #     (Settings → Secrets and variables → Actions → Variables)
+      #     (Settings -> Secrets and variables -> Actions -> Variables)
       #     to enable on every push/PR.
       #   * Workflow dispatch with the `run_unity_editmode` input
       #     checked, for one-off runs.
@@ -102,7 +102,7 @@ jobs:
             Write-Host "EditMode tests ENABLED (manual=$manual, repo-var=$repoVar)"
             "enabled=true" >> $env:GITHUB_OUTPUT
           } else {
-            Write-Host "EditMode tests skipped — set vars.RUN_UNITY_EDITMODE_TESTS=true or"
+            Write-Host "EditMode tests skipped - set vars.RUN_UNITY_EDITMODE_TESTS=true or"
             Write-Host "  trigger the workflow manually with run_unity_editmode=true to enable."
             "enabled=false" >> $env:GITHUB_OUTPUT
           }
@@ -120,15 +120,15 @@ jobs:
             # standalone layout some installers use (e.g. when a
             # specific LTS was downloaded outside Hub). We pin to
             # 2022.3.62f2 because that's Railroader's shipped Unity
-            # version — the FUSE.dll being tested is compiled against
+            # version - the FUSE.dll being tested is compiled against
             # its UnityEngine.dll set, and a mismatched Editor would
             # risk subtle type-load failures.
             $candidates = @(
-              # Unity Hub install layout (Editor under …\Hub\Editor\<version>\Editor\)
+              # Unity Hub install layout (Editor under ...\Hub\Editor\<version>\Editor\)
               'C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe',
               'D:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe',
               'D:\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe',
-              # Standalone install layout (Editor under …\Unity <version>\Editor\)
+              # Standalone install layout (Editor under ...\Unity <version>\Editor\)
               'C:\Program Files\Unity 2022.3.62f2\Editor\Unity.exe',
               'D:\Program Files\Unity 2022.3.62f2\Editor\Unity.exe',
               'C:\Unity\2022.3.62f2\Editor\Unity.exe',
@@ -255,7 +255,7 @@ jobs:
           if-no-files-found: error
 
       # Posts (or updates, on re-runs) a single PR comment with the download link.
-      # The `header` field is the dedup key — subsequent runs replace the same comment
+      # The `header` field is the dedup key - subsequent runs replace the same comment
       # in place rather than spamming the conversation.
       - name: Post / update PR comment with download link
         if: github.event_name == 'pull_request' && success()
@@ -272,7 +272,7 @@ jobs:
             | Archive | `${{ steps.build_id.outputs.archive }}` |
             | Run | [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
 
-            **[⬇ Download from this workflow run](${{ steps.build_upload.outputs.artifact-url }})**
+            **[Download from this workflow run](${{ steps.build_upload.outputs.artifact-url }})**
 
             ### Install
 
