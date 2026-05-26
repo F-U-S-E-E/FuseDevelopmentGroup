@@ -199,10 +199,12 @@ namespace FUSE.Runtime.API
             PassengerStopSpansField?.SetValue(passengerStop, boundSpans);
             PassengerStopMarkersField?.SetValue(passengerStop, RebuildPassengerStopMarkers(passengerStop.transform, boundSpans));
             var cacheCount = RefreshPassengerStopCache();
+            var reboundAgents = StationAPI.RebindStationAgentsForPassengerStop(passengerStop);
             FuseLog.Info(
                 $"FUSE passenger stop refreshed id='{stopIdentifier}' " +
                 $"component='{Identifier}' spanCount={boundSpans.Length} " +
-                $"loadId='{PassengerLoad.id ?? string.Empty}' cacheCount={cacheCount}.");
+                $"loadId='{PassengerLoad.id ?? string.Empty}' cacheCount={cacheCount} " +
+                $"reboundStationAgents={reboundAgents}.");
         }
 
         private List<TrackSpan> ResolveBoundSpans()
