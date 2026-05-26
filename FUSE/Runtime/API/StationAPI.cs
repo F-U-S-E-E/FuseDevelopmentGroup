@@ -90,6 +90,68 @@ namespace FUSE.Runtime.API
             return UnityEngine.Object.FindObjectsOfType<StationAgent>(true);
         }
 
+        /// <summary>
+        /// Re-binds StationAgent.passengerStop on every FUSE-tracked station whose
+        /// stored definition references <paramref name="stop"/>'s identifier.
+        ///
+        /// FusePassengerStopComponent.RefreshPassengerStop destroys and recreates
+        /// the PassengerStop on every GraphRebuilt. The depot's StationAgent
+        /// keeps a Unity-null C# reference to the destroyed instance, so the
+        /// vanilla StationWindow.Populate check `passengerStop != null` evaluates
+        /// false and silently drops the Passengers tab. This helper is the
+        /// re-bind step the refresh path was missing.
+        /// </summary>
+        internal static int RebindStationAgentsForPassengerStop(PassengerStop stop)
+        {
+            if (stop == null || PassengerStopField == null)
+            {
+                return 0;
+            }
+
+            var stopId = stop.identifier;
+            if (string.IsNullOrWhiteSpace(stopId))
+            {
+                return 0;
+            }
+
+            var rebound = 0;
+            foreach (var cached in FuseStationRuntimeIndex.Instance.Values)
+            {
+                var agent = cached as StationAgent;
+                if (agent == null)
+                {
+                    continue;
+                }
+
+                var agentId = agent.name;
+                if (string.IsNullOrWhiteSpace(agentId))
+                {
+                    continue;
+                }
+
+                if (!FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Station, agentId, out FuseStation definition) || definition == null)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(definition.PassengerStopId, stopId, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var current = PassengerStopField.GetValue(agent) as PassengerStop;
+                if (ReferenceEquals(current, stop))
+                {
+                    continue;
+                }
+
+                PassengerStopField.SetValue(agent, stop);
+                rebound++;
+            }
+
+            return rebound;
+        }
+
         public static PassengerStop GetPassengerStop(string id)
         {
             return !string.IsNullOrWhiteSpace(id)
