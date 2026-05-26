@@ -16,7 +16,11 @@ against an actual Unity scene graph.
 | Test file | Coverage |
 |---|---|
 | `Assets/Tests/SceneCloneApplyExecutorTests.cs` | An `{ enabled: true }` mandela on a vanilla wrapper with non-zero `localPosition` must leave the position untouched (the Bryson Freight House regression). Plus enabled/disabled active-state, partial overrides (scale-only, etc.), and the touchless null-enabled case. |
+| `Assets/Tests/SceneCloneApiSurfaceTests.cs` | The rest of the `SceneCloneAPI` public surface: Add/Update/Remove round-trips, validation throws (blank id, null definition, missing target, duplicate id), `GetSceneClone` / `GetAllSceneClones` / `TryGetSceneCloneInfo` lookups, `GetDefinition` reading live transform state, `ReapplyEnabledFromCache` reconciling cache-vs-live divergence (and its no-op path for `Enabled = null`), and the marker's `OnEnable` guard auto-re-disabling a force-reactivated clone. |
 | `Assets/Tests/FindChildIntegrationTests.cs` | Duplicate-named-sibling disambiguation: content-bearing wins, tie-break by sibling order, exact match beats case-insensitive, null when no match. Drives the real `Transform`-walking wrapper, not just the pure resolver. |
+| `Assets/Tests/PrefabResolverUriTests.cs` | `FusePrefabResolver.Resolve(uri)` scheme dispatch (`empty://`, `path://` with/without `scene/` prefix, case-insensitive scheme) and validation throws (unknown scheme, missing `://` separator, null/blank). Plus the `ResolveScenePath` edge cases the FindChild suite doesn't hit (blank input, root-only path, exact-vs-case-insensitive root match). |
+| `Assets/Tests/HarmonyPatchInstallationTests.cs` | Harmony's full installation pipeline against `FuseAssetPackPatchHelpers.Assembly` — every prefix/postfix signature must match its target's parameters, no patch class can crash during apply. Plus an end-to-end drive of the `FuseAggregateLoadModelMaterialFieldPatch` prefix against a malformed `MaterialDefinition` to prove the patch actually intercepts the live game type. |
+| `Assets/Tests/RailroaderReflectionSurfaceTests.cs` | Regression canary for every Railroader private/internal member FUSE accesses by **name string** via reflection. One `[Test]` per `(type, member, BindingFlags)` tuple across ~25 game types (`PassengerStop`, `Turntable`, `Graph`, `StationAgent`, `MapLabel`/`MapStore`/`MapManager`, `AssetPackRuntimeStore`, `PrefabStore`, `CarInspector`, `MapFeature`, `TrackSpan`, `Industry`/`IndustryComponent`/`FormulaicIndustryComponent`/`RepairTrack`/`IndustryContentHoverable`, `MapFeatureManager`/`ProgressionManager`/`Progression`/`Section`/`InterchangeTransfer`, `RiverBuilder`, `TelegraphPoleManager`, `CTCAutoSignal`, `Model.Car`, `ContainerSerialization`). When a Railroader patch renames or moves a field FUSE depends on, the test goes red immediately and pinpoints exactly which member is gone — instead of the rename surfacing as a silent NRE in someone's playthrough months later. **When you add a new reflection-by-name accessor anywhere in FUSE, add a matching `[Test]` here.** |
 
 ## How to run locally
 
@@ -92,3 +96,9 @@ hiccup never blocks a PR.
 - Not a substitute for the xUnit suite. The xUnit suite is the fast
   feedback loop (under 3 seconds for 634 tests); EditMode tests are
   the slow, thorough backstop.
+- Not a substitute for true end-to-end testing against a live
+  Railroader session. The reflection canary catches *member-renamed*
+  drift; behavioural drift (e.g. a game patch that keeps `_spans` the
+  same name and type but changes WHEN it gets re-read) still needs
+  the in-game harness tracked in
+  [FuseDevelopmentGroup#16](https://github.com/F-U-S-E-E/FuseDevelopmentGroup/issues/16).
