@@ -38,6 +38,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FUSE\FUSE.csproj" />
+    <!-- FUSE.Editor reference is for pure-logic test coverage of types
+         like FuseEditorWindowRegistry. Unity-coupled types in the editor
+         (FuseEditorScreen, FuseNodeMarker) stay in the in-game harness;
+         they're not directly tested here. -->
+    <ProjectReference Include="..\FUSE.Editor\FUSE.Editor.csproj" />
+    <ProjectReference Include="..\FUSE.Converter\FUSE.Converter.csproj" />
   </ItemGroup>
 
   <!-- The main FUSE project references game-shipped assemblies with <Private>false</Private>
