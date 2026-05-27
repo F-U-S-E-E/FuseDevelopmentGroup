@@ -13,7 +13,7 @@ using UnityEngine;
 
 namespace FUSE.Interface.MenuWindow
 {
-    internal class ModsPanelBuilder
+    internal struct ModsPanelBuilder
     {
         public static void Build(UIPanelBuilder builder, UIState<string> selectedItem)
         {
