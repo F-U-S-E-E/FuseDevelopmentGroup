@@ -1,0 +1,224 @@
+using System;
+using System.IO;
+using FUSE.Editor.Mods;
+using Xunit;
+
+namespace FUSE.Tests.Editor
+{
+    /// <summary>
+    /// Coverage for the mod-browser's classification logic. Each test
+    /// builds a fake mod folder with the appropriate marker files and
+    /// asserts the catalog reads it the way the browser will at
+    /// runtime. Pure filesystem — no Unity dependencies, no game state.
+    /// </summary>
+    public sealed class FuseEditorModCatalogTests : IDisposable
+    {
+        private readonly string _modsRoot;
+
+        public FuseEditorModCatalogTests()
+        {
+            _modsRoot = Path.Combine(Path.GetTempPath(), "FuseEditorModCatalogTests-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(_modsRoot);
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                if (Directory.Exists(_modsRoot))
+                {
+                    Directory.Delete(_modsRoot, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best-effort temp cleanup.
+            }
+
+            GC.SuppressFinalize(this);
+        }
+
+        [Fact]
+        public void EnumerateAll_returns_empty_when_root_missing()
+        {
+            var result = FuseEditorModCatalog.EnumerateAll(Path.Combine(_modsRoot, "missing"));
+            Assert.NotNull(result);
+            Assert.Empty(result);
+        }
+
+        [Fact]
+        public void EnumerateAll_returns_empty_when_root_null_or_empty()
+        {
+            Assert.Empty(FuseEditorModCatalog.EnumerateAll(null));
+            Assert.Empty(FuseEditorModCatalog.EnumerateAll(string.Empty));
+        }
+
+        [Fact]
+        public void Classify_FuseMod_with_fuse_json_marker()
+        {
+            var folder = CreateModFolder("my_mod");
+            File.WriteAllText(Path.Combine(folder, "my_mod.fuse.json"),
+                "{ \"Id\": \"my_mod\", \"Name\": \"My Mod\", \"Author\": \"alex\", \"ModVersion\": \"1.0.0\" }");
+
+            var entry = FuseEditorModCatalog.Classify(folder);
+
+            Assert.Equal(FuseEditorModKind.FuseMod, entry.Kind);
+            Assert.Equal("my_mod", entry.Id);
+            Assert.Equal("My Mod", entry.DisplayName);
+            Assert.Equal("alex", entry.Author);
+            Assert.Equal("1.0.0", entry.Version);
+            Assert.Null(entry.IneligibilityReason);
+        }
+
+        [Fact]
+        public void Classify_LegacyRailLoader_when_definition_requires_railloader()
+        {
+            var folder = CreateModFolder("legacy_mod");
+            File.WriteAllText(Path.Combine(folder, "Definition.json"),
+                "{ \"manifestVersion\": 1, \"id\": \"acme.legacy\", \"name\": \"Legacy Mod\", " +
+                "\"version\": \"1.0\", \"requires\": [{ \"id\": \"railloader\", \"notBefore\": \"1.0\" }] }");
+
+            var entry = FuseEditorModCatalog.Classify(folder);
+
+            Assert.Equal(FuseEditorModKind.LegacyRailLoader, entry.Kind);
+            Assert.Equal("acme.legacy", entry.Id);
+            Assert.Equal("Legacy Mod", entry.DisplayName);
+            Assert.Equal("1.0", entry.Version);
+            Assert.NotNull(entry.IneligibilityReason);
+        }
+
+        [Fact]
+        public void Classify_Definition_without_railloader_require_falls_through()
+        {
+            // A Definition.json without a railloader require is some
+            // other kind of mod (or a malformed legacy); we don't claim
+            // it as LegacyRailLoader.
+            var folder = CreateModFolder("not_legacy");
+            File.WriteAllText(Path.Combine(folder, "Definition.json"),
+                "{ \"id\": \"x\", \"requires\": [{ \"id\": \"something_else\" }] }");
+
+            var entry = FuseEditorModCatalog.Classify(folder);
+
+            Assert.Equal(FuseEditorModKind.Unknown, entry.Kind);
+        }
+
+        [Fact]
+        public void Classify_LegacyMapMod_with_mapmod_yaml()
+        {
+            var folder = CreateModFolder("amm_patch");
+            File.WriteAllText(Path.Combine(folder, "mapmod.yaml"), "name: My Patch\n");
+
+            var entry = FuseEditorModCatalog.Classify(folder);
+
+            Assert.Equal(FuseEditorModKind.LegacyMapMod, entry.Kind);
+            Assert.NotNull(entry.IneligibilityReason);
+        }
+
+        [Fact]
+        public void Classify_CodeOnlyMod_with_info_json_but_no_data_markers()
+        {
+            var folder = CreateModFolder("CodeMod");
+            File.WriteAllText(Path.Combine(folder, "Info.json"),
+                "{ \"Id\": \"CodeMod\", \"DisplayName\": \"Code Mod\", \"Author\": \"alex\", " +
+                "\"AssemblyName\": \"CodeMod.dll\", \"EntryMethod\": \"CodeMod.Plugin.Load\" }");
+
+            var entry = FuseEditorModCatalog.Classify(folder);
+
+            Assert.Equal(FuseEditorModKind.CodeOnlyMod, entry.Kind);
+            Assert.Equal("Code Mod", entry.DisplayName);
+            Assert.Equal("alex", entry.Author);
+        }
+
+        [Fact]
+        public void Classify_Unknown_when_no_recognised_markers()
+        {
+            var folder = CreateModFolder("rubbish");
+            File.WriteAllText(Path.Combine(folder, "readme.txt"), "hello");
+
+            var entry = FuseEditorModCatalog.Classify(folder);
+
+            Assert.Equal(FuseEditorModKind.Unknown, entry.Kind);
+        }
+
+        [Fact]
+        public void EnumerateAll_sorts_by_display_name_case_insensitive()
+        {
+            CreateFuseMod("zebra", "Zebra Mod");
+            CreateFuseMod("alpha", "Alpha Mod");
+            CreateFuseMod("middle", "Middle Mod");
+
+            var entries = FuseEditorModCatalog.EnumerateAll(_modsRoot);
+
+            Assert.Equal(3, entries.Count);
+            Assert.Equal("Alpha Mod", entries[0].DisplayName);
+            Assert.Equal("Middle Mod", entries[1].DisplayName);
+            Assert.Equal("Zebra Mod", entries[2].DisplayName);
+        }
+
+        [Fact]
+        public void CreateNewMod_writes_scaffold_files_and_returns_folder_path()
+        {
+            var path = FuseEditorModCatalog.CreateNewMod(_modsRoot, "test.mod", "Test Mod", "alex");
+
+            Assert.NotNull(path);
+            Assert.True(Directory.Exists(path));
+            Assert.True(File.Exists(Path.Combine(path, "Info.json")));
+            Assert.True(File.Exists(Path.Combine(path, "test.mod.fuse.json")));
+
+            // Re-classifying the new folder should report it as FuseMod.
+            var entry = FuseEditorModCatalog.Classify(path);
+            Assert.Equal(FuseEditorModKind.FuseMod, entry.Kind);
+            Assert.Equal("Test Mod", entry.DisplayName);
+            Assert.Equal("alex", entry.Author);
+        }
+
+        [Fact]
+        public void CreateNewMod_rejects_existing_folder()
+        {
+            FuseEditorModCatalog.CreateNewMod(_modsRoot, "dupe", "Dupe", "alex");
+            var second = FuseEditorModCatalog.CreateNewMod(_modsRoot, "dupe", "Dupe", "alex");
+
+            Assert.Null(second);
+        }
+
+        [Fact]
+        public void CreateNewMod_rejects_empty_inputs()
+        {
+            Assert.Null(FuseEditorModCatalog.CreateNewMod(_modsRoot, null, "Name", "a"));
+            Assert.Null(FuseEditorModCatalog.CreateNewMod(_modsRoot, "", "Name", "a"));
+            Assert.Null(FuseEditorModCatalog.CreateNewMod(_modsRoot, "   ", "Name", "a"));
+            Assert.Null(FuseEditorModCatalog.CreateNewMod(null, "id", "Name", "a"));
+        }
+
+        [Theory]
+        [InlineData("simple", "simple")]
+        [InlineData("with spaces", "with-spaces")]
+        [InlineData("ALL CAPS", "ALL-CAPS")]
+        [InlineData("path/like", "path-like")]
+        [InlineData("multi   spaces", "multi-spaces")]
+        [InlineData("--leading-trailing--", "leading-trailing")]
+        [InlineData("dots.are.fine", "dots.are.fine")]
+        [InlineData("under_scores_too", "under_scores_too")]
+        [InlineData("@#$%^&*", "")]
+        public void SanitizeId_normalises_to_filesystem_safe(string input, string expected)
+        {
+            Assert.Equal(expected, FuseEditorModCatalog.SanitizeId(input));
+        }
+
+        // --- helpers ---
+
+        private string CreateModFolder(string name)
+        {
+            var path = Path.Combine(_modsRoot, name);
+            Directory.CreateDirectory(path);
+            return path;
+        }
+
+        private void CreateFuseMod(string id, string displayName)
+        {
+            var folder = CreateModFolder(id);
+            File.WriteAllText(Path.Combine(folder, $"{id}.fuse.json"),
+                "{ \"Id\": \"" + id + "\", \"Name\": \"" + displayName + "\" }");
+        }
+    }
+}

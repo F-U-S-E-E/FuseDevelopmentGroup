@@ -226,6 +226,50 @@ namespace FUSE.Authoring.Entities
             return true;
         }
 
+        /// <summary>
+        /// Removes an authoring object from the loaded mod's definition
+        /// and writes the file back to disk. Counterpart to
+        /// <see cref="SaveDefinitionObject"/>. Supports the same set of
+        /// kinds via <see cref="TryRemoveDefinitionObject"/>; unsupported
+        /// kinds log a warning and return false.
+        /// </summary>
+        public static bool RemoveDefinitionObject(string packageId, string kind, string objectId, string reason = null)
+        {
+            if (string.IsNullOrWhiteSpace(packageId))
+            {
+                FuseLog.Warning($"FUSE authoring definition remove skipped '{kind}' '{objectId}' because package id was empty.");
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(objectId))
+            {
+                FuseLog.Warning($"FUSE authoring definition remove skipped '{kind}' because object id was empty.");
+                return false;
+            }
+
+            if (!FuseModLoader.TryGetLoadedMod(packageId, out var loaded) || loaded?.Definition == null)
+            {
+                FuseLog.Warning($"FUSE authoring definition remove skipped '{kind}' '{objectId}' because package '{packageId}' is not loaded.");
+                return false;
+            }
+
+            if (!TryRemoveDefinitionObject(loaded.Definition, kind, objectId))
+            {
+                FuseLog.Warning($"FUSE authoring definition remove skipped unsupported or absent '{kind}' '{objectId}' in package '{loaded.Definition.Id}'.");
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(loaded.DefinitionPath))
+            {
+                FuseLog.Warning($"FUSE authoring removed '{kind}' '{objectId}' from package '{loaded.Definition.Id}' in memory, but no definition path is available for disk write.");
+                return false;
+            }
+
+            SaveDefinitionToPath(loaded.Definition, loaded.DefinitionPath);
+            FuseLog.Info($"FUSE authoring removed '{kind}' '{objectId}' from package '{loaded.Definition.Id}' reason='{reason ?? string.Empty}'.");
+            return true;
+        }
+
         public static void QueueDefinitionAutosave(string packageId, string kind, string objectId, object definition, string reason = null)
         {
             if (string.IsNullOrWhiteSpace(packageId) || string.IsNullOrWhiteSpace(kind) || string.IsNullOrWhiteSpace(objectId) || definition == null)
@@ -633,6 +677,57 @@ namespace FUSE.Authoring.Entities
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Removes an object from the in-memory definition by kind/id.
+        /// Returns whether the object existed (and was removed). Only
+        /// the kinds the FUSE editor currently surfaces are wired here;
+        /// adding a new kind is the same shape as
+        /// <see cref="TryApplyDefinitionObject"/>.
+        /// </summary>
+        private static bool TryRemoveDefinitionObject(FuseModDefinition package, string kind, string objectId)
+        {
+            if (package == null || string.IsNullOrEmpty(kind) || string.IsNullOrEmpty(objectId))
+            {
+                return false;
+            }
+
+            switch (kind)
+            {
+                case "node":
+                    return package.Tracks?.Nodes != null && package.Tracks.Nodes.Remove(objectId);
+
+                case "segment":
+                    return package.Tracks?.Segments != null && package.Tracks.Segments.Remove(objectId);
+
+                case "span":
+                    return package.Tracks?.Spans != null && package.Tracks.Spans.Remove(objectId);
+
+                case "area":
+                    return package.Tracks?.Areas != null && package.Tracks.Areas.Remove(objectId);
+
+                case "scenery":
+                    return package.World?.Scenery != null && package.World.Scenery.Remove(objectId);
+
+                case "spliney":
+                    return package.World?.Splineys != null && package.World.Splineys.Remove(objectId);
+
+                case "industry":
+                    return package.Operations?.Industries != null && package.Operations.Industries.Remove(objectId);
+
+                case "load":
+                    return package.Operations?.Loads != null && package.Operations.Loads.Remove(objectId);
+
+                case "station":
+                    return package.Operations?.Stations != null && package.Operations.Stations.Remove(objectId);
+
+                case "turntable":
+                    return package.Operations?.Turntables != null && package.Operations.Turntables.Remove(objectId);
+
+                default:
+                    return false;
+            }
         }
 
         private static void SaveDefinitionToPath(FuseModDefinition definition, string definitionPath)
