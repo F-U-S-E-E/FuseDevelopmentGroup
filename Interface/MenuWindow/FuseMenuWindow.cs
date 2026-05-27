@@ -29,6 +29,7 @@ namespace FUSE.Interface.MenuWindow
 
         private readonly UIState<string> _selectedTabState = new(null);
         private readonly UIState<string> _selectedStatusItem = new(null);
+        private readonly UIState<string> _selectedModListItem = new(null);
 
         private string _lastBuiltTab = TabIdStatus;
 
@@ -74,6 +75,21 @@ namespace FUSE.Interface.MenuWindow
             {
                 TryInstallHudButton();
             }
+        }
+
+        private void BuildFuseMenu(UIPanelBuilder builder)
+        {
+            builder.AddTabbedPanels(_selectedTabState, delegate (UITabbedPanelBuilder tabBuilder)
+            {
+                tabBuilder.AddTab("Status", TabIdStatus, b =>
+                {
+                    StatusPanelBuilder.Build(b, _selectedStatusItem);
+                });
+                tabBuilder.AddTab("Mods", TabIdMods, b =>
+                {
+                    ModsPanelBuilder.Build(b, _selectedModListItem);
+                });
+            });
         }
 
         private void TryInstallHudButton()
@@ -359,17 +375,6 @@ namespace FUSE.Interface.MenuWindow
             return scrollRects == null || scrollRects.Length == 0
                 ? null
                 : scrollRects[scrollRects.Length - 1];
-        }
-
-        private void BuildFuseMenu(UIPanelBuilder builder)
-        {
-            builder.AddTabbedPanels(_selectedTabState, delegate (UITabbedPanelBuilder tabBuilder)
-            {
-                tabBuilder.AddTab("Status", TabIdStatus, b =>
-                {
-                    StatusPanelBuilder.Build(b, _selectedStatusItem);
-                });
-            });
         }
     }
 }
