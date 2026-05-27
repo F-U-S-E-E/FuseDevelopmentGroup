@@ -51,13 +51,24 @@ namespace FUSE.Editor.Screen.UI
                     nameKey: "fuse.editor.window.entity_tree",
                     openByDefault: true,
                     important: true),
+                [FuseEditorWindowKind.Locations] = new State(
+                    nameKey: "fuse.editor.window.locations",
+                    openByDefault: true,
+                    important: true),
                 [FuseEditorWindowKind.Properties] = new State(
                     nameKey: "fuse.editor.window.properties",
                     openByDefault: true,
                     important: true),
+                [FuseEditorWindowKind.Assets] = new State(
+                    nameKey: "fuse.editor.window.assets",
+                    openByDefault: true,
+                    important: true),
                 [FuseEditorWindowKind.ToolStrip] = new State(
                     nameKey: "fuse.editor.window.tool_strip",
-                    openByDefault: true,
+                    // Default off — the new top icon toolbar replaces
+                    // it as the primary gizmo surface, but power users
+                    // can opt back in from View → Tool Strip.
+                    openByDefault: false,
                     important: true),
             };
         }

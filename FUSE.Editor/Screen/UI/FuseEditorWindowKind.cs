@@ -18,10 +18,21 @@ namespace FUSE.Editor.Screen.UI
         /// <summary>Left-hand collapsible category/bucket tree of entities in the active mod.</summary>
         EntityTree,
 
+        /// <summary>Left-hand bookmarked-camera positions list (tab alongside <see cref="EntityTree"/>).</summary>
+        Locations,
+
         /// <summary>Right-hand attributes panel for the current selection.</summary>
         Properties,
 
-        /// <summary>Bottom-of-viewport tool strip (Select / Move / Rotate / Scale / Place).</summary>
+        /// <summary>Right-hand placement palette (tab alongside <see cref="Properties"/>; F1–F6 filters).</summary>
+        Assets,
+
+        /// <summary>
+        /// Bottom-of-viewport tool strip (Select / Move / Rotate / Scale / Place).
+        /// The EDEN-style overhaul moved the gizmo buttons into the top icon toolbar,
+        /// but this kind is kept so a user can re-enable the bottom strip as a fallback
+        /// surface if they prefer it.
+        /// </summary>
         ToolStrip,
     }
 }

@@ -40,27 +40,25 @@ namespace FUSE.Editor.Screen
         // implemented; the disabled top-bar button surfaces an explanatory
         // tooltip until then.
 
-        private const float TopBarHeight = 36f;
-        private const float BookmarkBarHeight = 26f;
-        private const float BottomBarHeight = 24f;
+        // EDEN-style chrome heights. Sourced from FuseEditorTheme.Metrics
+        // so a future tweak only touches the theme; declared as locals
+        // here for readability in the per-region layout math below.
+        private const float MenuBarHeight = 24f;
+        private const float ToolbarHeight = 32f;
+        private const float BottomBarHeight = 28f;
         private const float LeftPanelWidth = 280f;
-        private const float RightPanelWidth = 320f;
+        private const float RightPanelWidth = 340f;
         private const float Padding = 6f;
-        private const float WindowsPopupWidth = 220f;
-        private const float WindowsPopupRowHeight = 22f;
-        private const float WindowsButtonWidth = 110f;
         private const float BookmarkTabWidth = 140f;
         private const float BookmarkAddButtonWidth = 28f;
 
         /// <summary>Y coordinate where panels and the viewport start.</summary>
-        private const float ContentTop = TopBarHeight + BookmarkBarHeight;
+        private const float ContentTop = MenuBarHeight + ToolbarHeight;
 
         private Vector2 _entityTreeScroll;
         private Vector2 _propertiesScroll;
         private string _selectedEntityKind = "Node";
         private string _selectedEntityId;
-        private bool _windowsPopupOpen;
-        private Rect _windowsButtonRect;
         private readonly HashSet<string> _expandedCategories = new HashSet<string>(StringComparer.Ordinal);
 
         // Per-field IMGUI buffers for the Properties panel's inline
@@ -112,11 +110,28 @@ namespace FUSE.Editor.Screen
         private int _legacyCatalogRefreshedFrame = -1;
         private bool _stylesInitialized;
 
+        // EDEN-style chrome — owns its own state so the screen body
+        // stays a thin orchestrator over composed components.
+        private FuseEditorMenuBar _menuBar;
+        private FuseEditorIconToolbar _toolbar;
+        private FuseEditorTabStrip _leftTabs;
+        private FuseEditorTabStrip _rightTabs;
+        private string _assetSearchBuffer = string.Empty;
+        private readonly FuseEditorBottomBar.Options _bottomBarOptions = new FuseEditorBottomBar.Options();
+
+        // Either side panel is "open" when its underlying registry
+        // window kind is open. With tab strips, the panel collapses
+        // only when ALL its tabs' kinds are off — that's rare in
+        // practice, but the math keeps the layout robust.
         private static float CurrentLeftPanelWidth =>
-            FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.EntityTree) ? LeftPanelWidth : 0f;
+            (FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.EntityTree)
+             || FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.Locations))
+                ? LeftPanelWidth : 0f;
 
         private static float CurrentRightPanelWidth =>
-            FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.Properties) ? RightPanelWidth : 0f;
+            (FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.Properties)
+             || FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.Assets))
+                ? RightPanelWidth : 0f;
 
         private void OnEnable()
         {
@@ -125,229 +140,475 @@ namespace FUSE.Editor.Screen
             _expandedCategories.Add("Tracks");
             _expandedCategories.Add("World");
             _expandedCategories.Add("Operations");
+
+            BuildMenuBar();
+            BuildToolbar();
+            BuildLeftTabs();
+            BuildRightTabs();
+
+            _bottomBarOptions.OnPlayClicked = OnPlayMenuClicked;
+            _bottomBarOptions.CanPlay = () => FuseEditor.Instance?.ActiveMod != null;
+            _bottomBarOptions.CannotPlayReasonKey = "fuse.editor.bottombar.play.no_mod";
         }
 
-        private void OnGUI()
+        // -----------------------------------------------------------------
+        // Component construction. Kept as separate methods so the body
+        // of OnEnable stays readable and each region's wiring is one
+        // contiguous block to scan.
+        // -----------------------------------------------------------------
+
+        private void BuildMenuBar()
         {
-            EnsureStyles();
-
-            var screenRect = new Rect(0f, 0f, UnityEngine.Screen.width, UnityEngine.Screen.height);
-
-            // No full-screen dim — the loaded world (Bushnell & Whittier
-            // map + editor-mode camera) shows through the center viewport
-            // gap. Top / left / right / bottom panels each paint their
-            // own opaque backgrounds so they stay legible against the
-            // scene behind them.
-            DrawTopBar(screenRect);
-            DrawBookmarkBar(screenRect);
-
-            // Mod browser gates the rest of the editor: until a FUSE mod
-            // is active, the user can't meaningfully select entities or
-            // edit attributes. The browser fills the content area in
-            // place of the side panels + viewport.
-            if (FuseEditor.Instance?.ActiveMod == null)
-            {
-                DrawModBrowser(screenRect);
-            }
-            else
-            {
-                if (FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.EntityTree))
+            // Scenario: functional file ops (New / Open / Save / Exit).
+            // Other top-level menus stub with disabled items that
+            // surface their reason via the standard tooltip pipeline.
+            var scenario = new FuseEditorMenuBar.MenuItem(
+                labelKey: "fuse.editor.menu.scenario",
+                children: new[]
                 {
-                    DrawLeftPanel(screenRect);
-                }
-                DrawCenterViewport(screenRect);
-                if (FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.Properties))
+                    new FuseEditorMenuBar.MenuItem("fuse.editor.menu.scenario.new", OnNewModMenuClicked),
+                    new FuseEditorMenuBar.MenuItem("fuse.editor.menu.scenario.open", OnOpenModMenuClicked),
+                    new FuseEditorMenuBar.MenuItem("fuse.editor.menu.scenario.save", OnSaveMenuClicked),
+                    FuseEditorMenuBar.MenuItem.Separator(),
+                    new FuseEditorMenuBar.MenuItem("fuse.editor.menu.scenario.exit", () => ExitRequested?.Invoke()),
+                });
+
+            var edit = new FuseEditorMenuBar.MenuItem(
+                "fuse.editor.menu.edit",
+                children: new[]
                 {
-                    DrawRightPanel(screenRect);
+                    Stub("fuse.editor.menu.edit.undo"),
+                    Stub("fuse.editor.menu.edit.redo"),
+                    FuseEditorMenuBar.MenuItem.Separator(),
+                    Stub("fuse.editor.menu.edit.cut"),
+                    Stub("fuse.editor.menu.edit.copy"),
+                    Stub("fuse.editor.menu.edit.paste"),
+                });
+
+            // View → toggle each tab/panel kind via the registry. We
+            // build the children dynamically so adding a new
+            // FuseEditorWindowKind doesn't require editing this list.
+            var viewChildren = new List<FuseEditorMenuBar.MenuItem>();
+            foreach (FuseEditorWindowKind kind in System.Enum.GetValues(typeof(FuseEditorWindowKind)))
+            {
+                var capturedKind = kind;
+                viewChildren.Add(new FuseEditorMenuBar.MenuItem(
+                    FuseEditorWindowRegistry.NameKey(kind),
+                    () => FuseEditorWindowRegistry.Toggle(capturedKind)));
+            }
+            var view = new FuseEditorMenuBar.MenuItem("fuse.editor.menu.view", children: viewChildren.ToArray());
+
+            var attributes = new FuseEditorMenuBar.MenuItem("fuse.editor.menu.attributes",
+                children: new[] { Stub("fuse.editor.menu.coming_soon") });
+            var tools = new FuseEditorMenuBar.MenuItem("fuse.editor.menu.tools",
+                children: new[] { Stub("fuse.editor.menu.coming_soon") });
+            var settings = new FuseEditorMenuBar.MenuItem("fuse.editor.menu.settings",
+                children: new[] { Stub("fuse.editor.menu.coming_soon") });
+
+            var play = new FuseEditorMenuBar.MenuItem(
+                "fuse.editor.menu.play",
+                children: new[]
+                {
+                    new FuseEditorMenuBar.MenuItem("fuse.editor.menu.play.sandbox", OnPlayMenuClicked),
+                });
+
+            var help = new FuseEditorMenuBar.MenuItem("fuse.editor.menu.help",
+                children: new[] { Stub("fuse.editor.menu.help.about") });
+
+            _menuBar = new FuseEditorMenuBar(new[] { scenario, edit, view, attributes, tools, settings, play, help });
+        }
+
+        private static FuseEditorMenuBar.MenuItem Stub(string labelKey)
+        {
+            return new FuseEditorMenuBar.MenuItem(
+                labelKey: labelKey,
+                action: null,
+                unavailableReasonKey: "fuse.editor.menu.coming_soon");
+        }
+
+        private void BuildToolbar()
+        {
+            var fileGroup = new FuseEditorIconToolbar.Group("file",
+                new FuseEditorIconToolbar.Button(FuseEditorIconKind.New, "fuse.editor.toolbar.new", OnNewModMenuClicked),
+                new FuseEditorIconToolbar.Button(FuseEditorIconKind.Open, "fuse.editor.toolbar.open", OnOpenModMenuClicked),
+                new FuseEditorIconToolbar.Button(FuseEditorIconKind.Save, "fuse.editor.toolbar.save", OnSaveMenuClicked,
+                    isAvailable: () => FuseEditor.Instance?.ActiveMod != null,
+                    unavailableReasonKey: "fuse.editor.bottombar.play.no_mod"));
+
+            var historyGroup = new FuseEditorIconToolbar.Group("history",
+                new FuseEditorIconToolbar.Button(FuseEditorIconKind.Undo, "fuse.editor.toolbar.undo",
+                    isAvailable: () => false,
+                    unavailableReasonKey: "fuse.editor.menu.coming_soon"),
+                new FuseEditorIconToolbar.Button(FuseEditorIconKind.Redo, "fuse.editor.toolbar.redo",
+                    isAvailable: () => false,
+                    unavailableReasonKey: "fuse.editor.menu.coming_soon"));
+
+            // Gizmo group drives the tool registry — same buttons that
+            // used to live in the bottom tool strip, just relocated.
+            var gizmoGroup = new FuseEditorIconToolbar.Group("gizmo",
+                ToolButton(FuseEditorIconKind.Select, "fuse.editor.tool.select", "fuse.editor.tool.select"),
+                ToolButton(FuseEditorIconKind.Move, "fuse.editor.tool.move", "fuse.editor.tool.move"),
+                ToolButton(FuseEditorIconKind.Rotate, "fuse.editor.tool.rotate", "fuse.editor.tool.rotate"),
+                ToolButton(FuseEditorIconKind.Scale, "fuse.editor.tool.scale", "fuse.editor.tool.scale"),
+                ToolButton(FuseEditorIconKind.Place, "fuse.editor.tool.place", "fuse.editor.tool.place"));
+
+            var viewGroup = new FuseEditorIconToolbar.Group("view",
+                new FuseEditorIconToolbar.Button(FuseEditorIconKind.Grid, "fuse.editor.toolbar.grid",
+                    isAvailable: () => false,
+                    unavailableReasonKey: "fuse.editor.menu.coming_soon"),
+                new FuseEditorIconToolbar.Button(FuseEditorIconKind.Camera, "fuse.editor.toolbar.camera",
+                    onClick: ResetCameraToDefaultSpawn));
+
+            _toolbar = new FuseEditorIconToolbar(new[] { fileGroup, historyGroup, gizmoGroup, viewGroup });
+        }
+
+        private static FuseEditorIconToolbar.Button ToolButton(FuseEditorIconKind icon, string labelKey, string toolId)
+        {
+            return new FuseEditorIconToolbar.Button(
+                icon: icon,
+                labelKey: labelKey,
+                onClick: () =>
+                {
+                    var tool = FuseEditorToolRegistry.FindById("fuse.editor.tool." + toolId.Substring(toolId.LastIndexOf('.') + 1));
+                    if (tool != null) FuseEditorToolRegistry.SetActive(tool);
+                },
+                isActive: () => FuseEditorToolRegistry.Active?.Id == "fuse.editor.tool." + toolId.Substring(toolId.LastIndexOf('.') + 1));
+        }
+
+        private void BuildLeftTabs()
+        {
+            _leftTabs = new FuseEditorTabStrip(
+                new FuseEditorTabStrip.Tab(
+                    id: "entities",
+                    labelKey: "fuse.editor.window.entity_tree",
+                    iconKind: FuseEditorIconKind.EntityTree,
+                    drawContent: DrawEntitiesTabContent,
+                    isAvailable: () => FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.EntityTree),
+                    unavailableReasonKey: "fuse.editor.window.entity_tree.description"),
+                new FuseEditorTabStrip.Tab(
+                    id: "locations",
+                    labelKey: "fuse.editor.window.locations",
+                    iconKind: FuseEditorIconKind.Locations,
+                    drawContent: DrawLocationsTabContent,
+                    isAvailable: () => FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.Locations),
+                    unavailableReasonKey: "fuse.editor.window.locations.description"));
+        }
+
+        private void BuildRightTabs()
+        {
+            _rightTabs = new FuseEditorTabStrip(
+                new FuseEditorTabStrip.Tab(
+                    id: "properties",
+                    labelKey: "fuse.editor.window.properties",
+                    iconKind: FuseEditorIconKind.Properties,
+                    drawContent: DrawPropertiesTabContent,
+                    isAvailable: () => FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.Properties),
+                    unavailableReasonKey: "fuse.editor.window.properties.description"),
+                new FuseEditorTabStrip.Tab(
+                    id: "assets",
+                    labelKey: "fuse.editor.window.assets",
+                    iconKind: FuseEditorIconKind.Assets,
+                    drawContent: DrawAssetsTabContent,
+                    isAvailable: () => FuseEditorWindowRegistry.IsOpen(FuseEditorWindowKind.Assets),
+                    unavailableReasonKey: "fuse.editor.window.assets.description"));
+        }
+
+        // Menu / toolbar action handlers — small adapters so the menu
+        // bar and toolbar can share the same click targets and the
+        // body stays declarative.
+        private void OnNewModMenuClicked()
+        {
+            // Force the mod browser into view on the Create New tab.
+            FuseEditor.Instance?.SetActiveMod(null);
+            _modBrowserTab = 1;
+        }
+
+        private void OnOpenModMenuClicked()
+        {
+            FuseEditor.Instance?.SetActiveMod(null);
+            _modBrowserTab = 0;
+        }
+
+        private static void OnSaveMenuClicked()
+        {
+            // Authoring persistence service writes on every edit today;
+            // this is a no-op "ack" that just refreshes the save tracker
+            // for the bottom-bar timestamp.
+            FuseEditorSaveTracker.MarkSaved();
+        }
+
+        private void OnPlayMenuClicked()
+        {
+            // Play wiring lands when the preview-revert contract is
+            // implemented. For now this is a stub; the bottom-bar
+            // CTA carries the same handler so when Play comes online
+            // both surfaces light up together.
+            FuseLog.Info("FUSE editor: Play requested — preview wiring is pending.");
+        }
+
+        private static void ResetCameraToDefaultSpawn()
+        {
+            try
+            {
+                var defaultSpawn = global::Character.SpawnPoint.Default;
+                if (defaultSpawn != null && global::CameraSelector.shared != null)
+                {
+                    var (pos, rot) = defaultSpawn.GamePositionRotation;
+                    global::CameraSelector.shared.JumpToPoint(pos, rot, global::CameraSelector.CameraIdentifier.Strategy);
                 }
             }
-
-            DrawBottomBar(screenRect);
-
-            // Windows popup paints after the framing chrome so it overlays
-            // panels but stays behind the tooltip pass.
-            if (_windowsPopupOpen)
+            catch (Exception ex)
             {
-                DrawWindowsPopup();
-            }
-
-            // Tooltip pass goes last so it paints over every other panel.
-            // Reads GUI.tooltip captured by the most-recently-hovered
-            // GUIContent across the whole frame.
-            FuseEditorUiHelper.RenderHoverTooltip(_panelStyle);
-
-            // Dismiss the windows popup on a click outside its rect — the
-            // standard implicit-modal idiom in Unity IMGUI.
-            HandleWindowsPopupDismissal();
-        }
-
-        private void DrawTopBar(Rect screen)
-        {
-            var rect = new Rect(0f, 0f, screen.width, TopBarHeight);
-            GUI.Box(rect, GUIContent.none, _topBarStyle);
-
-            // Title + active mod label
-            var titleRect = new Rect(Padding, 0f, 360f, TopBarHeight);
-            var titleLabel = FuseEditorStrings.Get("fuse.editor.topbar.title");
-            var modLabel = FuseEditorStrings.Get("fuse.editor.topbar.mod_label");
-            var activeModId = FuseEditor.Instance?.ActiveMod?.Definition?.Id
-                              ?? FuseEditorStrings.Get("fuse.editor.topbar.no_mod_selected");
-            GUI.Label(titleRect, $"{titleLabel}    •    {modLabel}: {activeModId}", _propertyLabelStyle);
-
-            // Right-aligned cluster: Windows ▾ | Save | Play | Exit
-            const float buttonWidth = 96f;
-            var buttonY = (TopBarHeight - 22f) * 0.5f;
-            float x = screen.width - Padding - buttonWidth;
-
-            // Exit Editor — enabled, surfaces its description on hover.
-            if (FuseEditorUiHelper.Button(
-                    new Rect(x, buttonY, buttonWidth, 22f),
-                    "fuse.editor.topbar.exit",
-                    _toolButtonStyle))
-            {
-                ExitRequested?.Invoke();
-            }
-
-            x -= buttonWidth + Padding;
-            FuseEditorUiHelper.DisabledButton(
-                new Rect(x, buttonY, buttonWidth, 22f),
-                "fuse.editor.topbar.play",
-                reason: null,
-                style: _toolButtonStyle);
-
-            x -= buttonWidth + Padding;
-            FuseEditorUiHelper.DisabledButton(
-                new Rect(x, buttonY, buttonWidth, 22f),
-                "fuse.editor.topbar.save",
-                reason: null,
-                style: _toolButtonStyle);
-
-            // Windows toggle button — opens a small popup with one
-            // checkbox per registered FuseEditorWindowKind. Same shape as
-            // Axiom's main-menu-bar "Window" dropdown, scaled down to a
-            // single button + popup for Unity IMGUI.
-            x -= WindowsButtonWidth + Padding;
-            _windowsButtonRect = new Rect(x, buttonY, WindowsButtonWidth, 22f);
-            if (FuseEditorUiHelper.Button(_windowsButtonRect, "fuse.editor.topbar.windows", _toolButtonStyle))
-            {
-                _windowsPopupOpen = !_windowsPopupOpen;
+                FuseLog.Exception("FUSE editor: reset-camera button failed.", ex);
             }
         }
 
-        private void DrawBookmarkBar(Rect screen)
-        {
-            var rect = new Rect(0f, TopBarHeight, screen.width, BookmarkBarHeight);
-            GUI.Box(rect, GUIContent.none, _bookmarkBarStyle);
+        // -----------------------------------------------------------------
+        // Tab content renderers. Each is a per-tab callback the tab
+        // strip invokes with the area below the tab bar. They paint
+        // their region in place; the tab strip handles the bar +
+        // selection state.
+        // -----------------------------------------------------------------
 
-            // Keep the rename buffer in sync with the registry: when the
-            // active tab changes (via teleport, delete, add) reseed from
-            // the new bookmark's Name so we don't carry over the
-            // previous tab's typed string.
+        private void DrawEntitiesTabContent(Rect contentRect)
+        {
+            var rowHeight = 20f;
+            var contentHeight = ComputeEntityTreeHeight(rowHeight);
+            var innerRect = new Rect(contentRect.x + Padding, contentRect.y + Padding,
+                                      contentRect.width - Padding * 2,
+                                      contentRect.height - Padding * 2);
+            var viewRect = new Rect(0f, 0f, innerRect.width - 16f, contentHeight);
+            _entityTreeScroll = GUI.BeginScrollView(innerRect, _entityTreeScroll, viewRect);
+            DrawEntityTree(viewRect, rowHeight);
+            GUI.EndScrollView();
+        }
+
+        private void DrawLocationsTabContent(Rect contentRect)
+        {
             SyncActiveBookmarkBuffer();
-
             var bookmarks = FuseEditorBookmarkRegistry.All;
-            var contentY = rect.y + (BookmarkBarHeight - 22f) * 0.5f;
 
-            // Reserve space for the right-aligned action buttons: ✕ then +.
-            var actionsWidth = (BookmarkAddButtonWidth * 2f) + Padding * 2f;
-            var available = screen.width - actionsWidth;
-
-            if (bookmarks.Count == 0)
-            {
-                var hint = FuseEditorStrings.Get("fuse.editor.bookmarks.empty_hint");
-                var hintRect = new Rect(Padding, rect.y, available - Padding, BookmarkBarHeight);
-                GUI.Label(hintRect, hint, _propertyLabelStyle);
-            }
-            else
-            {
-                DrawBookmarkTabs(rect, available, bookmarks);
-            }
-
-            // Right-aligned cluster: ✕ delete | + add. Delete is gray
-            // when no bookmark is currently active; + is always enabled
-            // so the user can capture the live camera position.
+            // Header row with + / ✕ action buttons mirroring the old
+            // bookmark bar's right cluster.
+            var headerY = contentRect.y + Padding;
+            const float ActionWidth = 28f;
             var addRect = new Rect(
-                screen.width - BookmarkAddButtonWidth - Padding,
-                contentY,
-                BookmarkAddButtonWidth,
-                22f);
-            if (FuseEditorUiHelper.Button(addRect, "fuse.editor.bookmarks.add", _toolButtonStyle))
+                contentRect.x + contentRect.width - Padding - ActionWidth,
+                headerY, ActionWidth, 22f);
+            if (FuseEditorUiHelper.Button(addRect, "fuse.editor.bookmarks.add", FuseEditorTheme.ToolbarButton))
             {
                 TryCaptureBookmarkFromCamera();
             }
 
-            var deleteRect = new Rect(
-                addRect.x - BookmarkAddButtonWidth - Padding,
-                contentY,
-                BookmarkAddButtonWidth,
-                22f);
+            var deleteRect = new Rect(addRect.x - ActionWidth - Padding, headerY, ActionWidth, 22f);
             if (FuseEditorBookmarkRegistry.ActiveIndex < 0)
             {
-                FuseEditorUiHelper.DisabledButton(
-                    deleteRect,
-                    "fuse.editor.bookmarks.delete",
+                FuseEditorUiHelper.DisabledButton(deleteRect, "fuse.editor.bookmarks.delete",
                     reason: FuseEditorStrings.Get("fuse.editor.bookmarks.delete.no_selection"),
-                    style: _toolButtonStyle);
+                    style: FuseEditorTheme.ToolbarButton);
             }
-            else if (FuseEditorUiHelper.Button(deleteRect, "fuse.editor.bookmarks.delete", _toolButtonStyle))
+            else if (FuseEditorUiHelper.Button(deleteRect, "fuse.editor.bookmarks.delete", FuseEditorTheme.ToolbarButton))
             {
                 TryDeleteActiveBookmark();
             }
-        }
 
-        private void DrawBookmarkTabs(Rect barRect, float availableWidth, System.Collections.Generic.IReadOnlyList<Bookmarks.FuseEditorBookmark> bookmarks)
-        {
-            var totalNeeded = bookmarks.Count * (BookmarkTabWidth + Padding);
-            var viewRect = new Rect(0f, 0f, Mathf.Max(totalNeeded, availableWidth), BookmarkBarHeight);
-            var clipRect = new Rect(0f, barRect.y, availableWidth, BookmarkBarHeight);
-            _bookmarkBarScroll = GUI.BeginScrollView(clipRect, _bookmarkBarScroll, viewRect, false, false);
+            // List body — one row per bookmark. Active row renders as
+            // an inline TextField so rename works without a popup.
+            var listTop = headerY + 26f + Padding;
+            var listRect = new Rect(contentRect.x + Padding, listTop,
+                                     contentRect.width - Padding * 2,
+                                     contentRect.height - (listTop - contentRect.y) - Padding);
 
-            var tabX = Padding;
+            if (bookmarks.Count == 0)
+            {
+                var hint = FuseEditorStrings.Get("fuse.editor.bookmarks.empty_hint");
+                GUI.Label(listRect, hint, FuseEditorTheme.PropertyLabel);
+                return;
+            }
+
+            const float RowHeight = 22f;
+            var viewRect = new Rect(0f, 0f, listRect.width - 16f, bookmarks.Count * (RowHeight + 2f));
+            _bookmarkBarScroll = GUI.BeginScrollView(listRect, _bookmarkBarScroll, viewRect);
             var activeIndex = FuseEditorBookmarkRegistry.ActiveIndex;
             for (int i = 0; i < bookmarks.Count; i++)
             {
+                var rowRect = new Rect(0f, i * (RowHeight + 2f), viewRect.width, RowHeight);
                 var bookmark = bookmarks[i];
-                var tabRect = new Rect(tabX, (BookmarkBarHeight - 22f) * 0.5f, BookmarkTabWidth, 22f);
                 var isActive = activeIndex == i;
-                var tooltip = FuseEditorStrings.Get("fuse.editor.bookmarks.tooltip");
-
                 if (isActive)
                 {
-                    // Active tab renders as an inline-editable TextField
-                    // so the user can rename without a separate dialog.
-                    var newName = GUI.TextField(tabRect, _activeBookmarkNameBuffer ?? string.Empty, _bookmarkTabActiveStyle);
+                    // Rename in place.
+                    var newName = GUI.TextField(rowRect, _activeBookmarkNameBuffer ?? string.Empty,
+                                                 FuseEditorTheme.TreeRowSelected);
                     if (!string.Equals(newName, _activeBookmarkNameBuffer, StringComparison.Ordinal))
                     {
                         _activeBookmarkNameBuffer = newName;
-                        // Registry.Rename rejects null/whitespace, so an
-                        // empty buffer doesn't wipe the saved name —
-                        // user gets the previous name back on next render
-                        // via SyncActiveBookmarkBuffer.
                         FuseEditorBookmarkRegistry.Rename(i, newName);
                     }
                 }
                 else
                 {
-                    if (GUI.Button(tabRect, new GUIContent(bookmark.Name, tooltip), _bookmarkTabStyle))
+                    var tooltip = FuseEditorStrings.Get("fuse.editor.bookmarks.tooltip");
+                    if (GUI.Button(rowRect, new GUIContent(bookmark.Name, tooltip), FuseEditorTheme.TreeRow))
                     {
                         TryTeleportToBookmark(i);
                     }
                 }
-
-                tabX += BookmarkTabWidth + Padding;
             }
-
             GUI.EndScrollView();
         }
+
+        private void DrawPropertiesTabContent(Rect contentRect)
+        {
+            // Defer to the existing Properties drawing logic. It expects
+            // a panel rect (with header + body); recreate the same
+            // shape inside this tab's content area.
+            DrawRightPanelInto(contentRect);
+        }
+
+        private void DrawAssetsTabContent(Rect contentRect)
+        {
+            // F1–F6 selector row across the top of the tab.
+            const float RowHeight = 36f;
+            var rowRect = new Rect(contentRect.x + Padding, contentRect.y + Padding,
+                                    contentRect.width - Padding * 2, RowHeight);
+            DrawAssetCategorySelector(rowRect);
+
+            // Search field under the row.
+            var searchRect = new Rect(rowRect.x, rowRect.y + RowHeight + Padding,
+                                       rowRect.width, 22f);
+            var searchHint = FuseEditorStrings.Get("fuse.editor.assets.search_placeholder");
+            _assetSearchBuffer = GUI.TextField(searchRect,
+                string.IsNullOrEmpty(_assetSearchBuffer) ? string.Empty : _assetSearchBuffer,
+                FuseEditorTheme.SearchField);
+            if (string.IsNullOrEmpty(_assetSearchBuffer))
+            {
+                // Placeholder text painted over the field when empty.
+                var hintStyle = new GUIStyle(FuseEditorTheme.SearchField);
+                hintStyle.normal.textColor = FuseEditorTheme.Palette.TextDisabled;
+                GUI.Label(searchRect, searchHint, hintStyle);
+            }
+
+            // Empty-state body for the current category. Asset
+            // listings light up as their per-kind tools come online;
+            // this surfaces the same "coming soon" message the
+            // placeholder F-keys use so the user gets context.
+            var bodyTop = searchRect.y + searchRect.height + Padding;
+            var bodyRect = new Rect(contentRect.x + Padding, bodyTop,
+                                     contentRect.width - Padding * 2,
+                                     contentRect.height - (bodyTop - contentRect.y) - Padding);
+            GUI.Label(bodyRect, FuseEditorStrings.Get("fuse.editor.assets.empty"),
+                      FuseEditorTheme.PropertyLabel);
+        }
+
+        private static void DrawAssetCategorySelector(Rect rect)
+        {
+            var infos = FuseEditorAssetCategoryRegistry.All;
+            const int Slots = 6;
+            var slotWidth = (rect.width - (Slots - 1) * 4f) / Slots;
+            for (int i = 0; i < Slots; i++)
+            {
+                var info = infos[i];
+                var slotRect = new Rect(rect.x + (slotWidth + 4f) * i, rect.y, slotWidth, rect.height);
+                var label = FuseEditorUiHelper.TranslateLabel(info.LabelKey);
+                var active = FuseEditorAssetCategoryRegistry.Active == info.Kind;
+                var style = active ? FuseEditorTheme.ToolbarButtonActive : FuseEditorTheme.ToolbarButton;
+
+                if (!info.IsAvailable)
+                {
+                    var reason = info.UnavailableReasonKey != null
+                        ? FuseEditorUiHelper.TranslateLabel(info.UnavailableReasonKey).Title
+                        : label.Description;
+                    var prev = GUI.enabled;
+                    GUI.enabled = false;
+                    GUI.Button(slotRect, new GUIContent(string.Empty, reason ?? label.Description), style);
+                    FuseEditorIcons.Draw(slotRect, info.IconKind, style, FuseEditorTheme.Palette.TextDisabled);
+                    GUI.enabled = prev;
+                    continue;
+                }
+
+                if (GUI.Button(slotRect, new GUIContent(string.Empty, label.Description), style))
+                {
+                    FuseEditorAssetCategoryRegistry.SetActive(info.Kind);
+                }
+                FuseEditorIcons.Draw(slotRect, info.IconKind, style,
+                                      active ? FuseEditorTheme.Palette.TextAccent : FuseEditorTheme.Palette.TextPrimary);
+            }
+        }
+
+        private void OnGUI()
+        {
+            EnsureStyles();
+            FuseEditorTheme.EnsureCreated();
+
+            var screenRect = new Rect(0f, 0f, UnityEngine.Screen.width, UnityEngine.Screen.height);
+
+            // EDEN-style chrome (menu bar + icon toolbar) frames the
+            // entire surface. Side panels and bottom bar paint their
+            // own opaque backgrounds; the center viewport gap shows
+            // the 3D world through so the editor sits over the loaded
+            // map rather than blanking it out.
+            var menuRect = new Rect(0f, 0f, screenRect.width, MenuBarHeight);
+            _menuBar.DrawBar(menuRect);
+
+            var toolbarRect = new Rect(0f, MenuBarHeight, screenRect.width, ToolbarHeight);
+            _toolbar.Draw(toolbarRect);
+
+            if (FuseEditor.Instance?.ActiveMod == null)
+            {
+                // Mod browser gates the rest of the editor — until a
+                // mod is active, side panels and the viewport overlay
+                // would have nothing to show.
+                DrawModBrowser(screenRect);
+            }
+            else
+            {
+                if (CurrentLeftPanelWidth > 0f)
+                {
+                    var leftRect = new Rect(0f, ContentTop, LeftPanelWidth,
+                                            screenRect.height - ContentTop - BottomBarHeight);
+                    GUI.Box(leftRect, GUIContent.none, FuseEditorTheme.Panel);
+                    _leftTabs.Draw(leftRect);
+                }
+
+                DrawCenterViewport(screenRect);
+
+                if (CurrentRightPanelWidth > 0f)
+                {
+                    var rightRect = new Rect(screenRect.width - RightPanelWidth, ContentTop, RightPanelWidth,
+                                             screenRect.height - ContentTop - BottomBarHeight);
+                    GUI.Box(rightRect, GUIContent.none, FuseEditorTheme.Panel);
+                    _rightTabs.Draw(rightRect);
+                }
+            }
+
+            // Bottom bar — live coordinates on the left, Play CTA on
+            // the right. Delegates entirely to FuseEditorBottomBar.
+            var bottomRect = new Rect(0f, screenRect.height - BottomBarHeight,
+                                       screenRect.width, BottomBarHeight);
+            FuseEditorBottomBar.Draw(bottomRect, _bottomBarOptions);
+
+            // Submenu popup paints above all chrome but below the
+            // tooltip layer.
+            _menuBar.DrawOpenSubmenu(MenuBarHeight);
+
+            // Tooltip pass goes last so it paints over every other
+            // panel. Reads GUI.tooltip captured by the most-recently-
+            // hovered GUIContent across the whole frame.
+            FuseEditorUiHelper.RenderHoverTooltip(FuseEditorTheme.TooltipBox);
+        }
+
+        // -----------------------------------------------------------------
+        // Bookmark helpers — used by the Locations tab content. Kept
+        // here (rather than on FuseEditorBookmarkRegistry) because they
+        // bridge screen-level state (the rename buffer) and the
+        // registry's persistence model.
+        // -----------------------------------------------------------------
 
         private void SyncActiveBookmarkBuffer()
         {
             var idx = FuseEditorBookmarkRegistry.ActiveIndex;
-            if (idx == _lastActiveBookmarkIndex)
-            {
-                return;
-            }
-
+            if (idx == _lastActiveBookmarkIndex) return;
             var active = FuseEditorBookmarkRegistry.Active;
             _activeBookmarkNameBuffer = active?.Name ?? string.Empty;
             _lastActiveBookmarkIndex = idx;
@@ -356,15 +617,8 @@ namespace FUSE.Editor.Screen
         private static void TryDeleteActiveBookmark()
         {
             var idx = FuseEditorBookmarkRegistry.ActiveIndex;
-            if (idx < 0)
-            {
-                return;
-            }
-
+            if (idx < 0) return;
             FuseEditorBookmarkRegistry.RemoveAt(idx);
-            // RemoveAt clears ActiveIndex when the deleted entry was the
-            // active one; SyncActiveBookmarkBuffer picks the change up on
-            // the next render.
         }
 
         private static void TryCaptureBookmarkFromCamera()
@@ -375,33 +629,22 @@ namespace FUSE.Editor.Screen
                 FuseLog.Info("FUSE editor bookmarks: Camera.main was null; nothing captured.");
                 return;
             }
-
             var name = $"View {FuseEditorBookmarkRegistry.All.Count + 1}";
             var bookmark = FuseEditorBookmark.FromCamera(name, cam);
             var index = FuseEditorBookmarkRegistry.Add(bookmark);
-            if (index >= 0)
-            {
-                FuseEditorBookmarkRegistry.SetActive(index);
-            }
+            if (index >= 0) FuseEditorBookmarkRegistry.SetActive(index);
         }
 
         private static void TryTeleportToBookmark(int index)
         {
-            if (index < 0 || index >= FuseEditorBookmarkRegistry.All.Count)
-            {
-                return;
-            }
-
+            if (index < 0 || index >= FuseEditorBookmarkRegistry.All.Count) return;
             FuseEditorBookmarkRegistry.SetActive(index);
 
             var bookmark = FuseEditorBookmarkRegistry.All[index];
             var selector = CameraSelector.shared;
             if (selector != null)
             {
-                try
-                {
-                    selector.ZoomToPoint(bookmark.PositionVector);
-                }
+                try { selector.ZoomToPoint(bookmark.PositionVector); }
                 catch (Exception ex)
                 {
                     FuseLog.Exception($"FUSE editor bookmarks: failed to teleport to '{bookmark.Name}'.", ex);
@@ -411,125 +654,6 @@ namespace FUSE.Editor.Screen
             {
                 FuseLog.Info($"FUSE editor bookmarks: CameraSelector.shared was null; skipping teleport to '{bookmark.Name}'.");
             }
-        }
-
-        private void DrawWindowsPopup()
-        {
-            var kinds = new List<FuseEditorWindowKind>();
-            foreach (var kind in FuseEditorWindowRegistry.All())
-            {
-                if (FuseEditorWindowRegistry.IsImportant(kind))
-                {
-                    kinds.Add(kind);
-                }
-            }
-
-            var popupHeight = kinds.Count * WindowsPopupRowHeight + Padding * 2f;
-            var popupRect = new Rect(
-                _windowsButtonRect.x,
-                _windowsButtonRect.y + _windowsButtonRect.height + 2f,
-                WindowsPopupWidth,
-                popupHeight);
-
-            // Background panel — opaque so it covers anything below.
-            GUI.Box(popupRect, GUIContent.none, _panelStyle);
-
-            for (int i = 0; i < kinds.Count; i++)
-            {
-                var kind = kinds[i];
-                var rowRect = new Rect(
-                    popupRect.x + Padding,
-                    popupRect.y + Padding + i * WindowsPopupRowHeight,
-                    popupRect.width - Padding * 2f,
-                    WindowsPopupRowHeight);
-
-                var isOpen = FuseEditorWindowRegistry.IsOpen(kind);
-                var nameKey = FuseEditorWindowRegistry.NameKey(kind);
-                var label = FuseEditorUiHelper.TranslateLabel(nameKey);
-                var marker = isOpen ? "✔" : "  ";
-                var rowStyle = isOpen ? _windowsPopupRowSelectedStyle : _windowsPopupRowStyle;
-                var content = new GUIContent($"  {marker}  {label.Title}", label.Description);
-                if (GUI.Button(rowRect, content, rowStyle))
-                {
-                    FuseEditorWindowRegistry.Toggle(kind);
-                }
-            }
-        }
-
-        private void HandleWindowsPopupDismissal()
-        {
-            if (!_windowsPopupOpen)
-            {
-                return;
-            }
-
-            var ev = Event.current;
-            if (ev == null)
-            {
-                return;
-            }
-
-            if (ev.type != EventType.MouseDown)
-            {
-                return;
-            }
-
-            // Skip dismissal if the click hit the toggle button itself
-            // (it'll close via the button's own toggle handler).
-            if (_windowsButtonRect.Contains(ev.mousePosition))
-            {
-                return;
-            }
-
-            // Skip dismissal if the click hit the popup body — the user
-            // wants to toggle multiple checkboxes without re-opening.
-            if (ComputeWindowsPopupRect().Contains(ev.mousePosition))
-            {
-                return;
-            }
-
-            _windowsPopupOpen = false;
-        }
-
-        private Rect ComputeWindowsPopupRect()
-        {
-            int importantCount = 0;
-            foreach (var kind in FuseEditorWindowRegistry.All())
-            {
-                if (FuseEditorWindowRegistry.IsImportant(kind))
-                {
-                    importantCount++;
-                }
-            }
-
-            var popupHeight = importantCount * WindowsPopupRowHeight + Padding * 2f;
-            return new Rect(
-                _windowsButtonRect.x,
-                _windowsButtonRect.y + _windowsButtonRect.height + 2f,
-                WindowsPopupWidth,
-                popupHeight);
-        }
-
-        private void DrawLeftPanel(Rect screen)
-        {
-            var panelRect = new Rect(0f, ContentTop, LeftPanelWidth, screen.height - ContentTop - BottomBarHeight);
-            GUI.Box(panelRect, GUIContent.none, _panelStyle);
-
-            var headerRect = new Rect(panelRect.x + Padding, panelRect.y + Padding, panelRect.width - Padding * 2, 20f);
-            GUI.Label(headerRect, "Entities", _categoryHeaderStyle);
-
-            var contentRect = new Rect(panelRect.x + Padding,
-                                       panelRect.y + Padding + 24f,
-                                       panelRect.width - Padding * 2,
-                                       panelRect.height - Padding * 2 - 24f);
-
-            var rowHeight = 20f;
-            var contentHeight = ComputeEntityTreeHeight(rowHeight);
-            var viewRect = new Rect(0f, 0f, contentRect.width - 16f, contentHeight);
-
-            _entityTreeScroll = GUI.BeginScrollView(contentRect, _entityTreeScroll, viewRect);
-            DrawEntityTree(viewRect, rowHeight);
-            GUI.EndScrollView();
         }
 
         private float ComputeEntityTreeHeight(float rowHeight)
@@ -751,21 +875,17 @@ namespace FUSE.Editor.Screen
             }
         }
 
-        private void DrawRightPanel(Rect screen)
+        /// <summary>
+        /// Renders the Properties panel content into
+        /// <paramref name="panelRect"/>. Called by the right-panel
+        /// tab strip's Properties tab callback.
+        /// </summary>
+        private void DrawRightPanelInto(Rect panelRect)
         {
-            var panelRect = new Rect(screen.width - RightPanelWidth,
-                                     ContentTop,
-                                     RightPanelWidth,
-                                     screen.height - ContentTop - BottomBarHeight);
-            GUI.Box(panelRect, GUIContent.none, _panelStyle);
-
-            var headerRect = new Rect(panelRect.x + Padding, panelRect.y + Padding, panelRect.width - Padding * 2, 20f);
-            GUI.Label(headerRect, FuseEditorStrings.Get("fuse.editor.properties.header"), _categoryHeaderStyle);
-
             var contentRect = new Rect(panelRect.x + Padding,
-                                       panelRect.y + Padding + 24f,
+                                       panelRect.y + Padding,
                                        panelRect.width - Padding * 2,
-                                       panelRect.height - Padding * 2 - 24f);
+                                       panelRect.height - Padding * 2);
 
             if (string.IsNullOrEmpty(_selectedEntityId))
             {

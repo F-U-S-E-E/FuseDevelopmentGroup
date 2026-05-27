@@ -44,6 +44,26 @@ namespace FUSE.Editor.Screen.UI
         }
 
         /// <summary>
+        /// Looks up a registered tool by <see cref="IFuseEditorTool.Id"/>.
+        /// Returns <c>null</c> when nothing matches — callers that
+        /// dispatch tool changes by id (toolbar buttons, menu items)
+        /// should treat null as "tool not registered yet" and skip
+        /// the activation rather than throwing.
+        /// </summary>
+        public static IFuseEditorTool FindById(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+            for (int i = 0; i < Tools.Count; i++)
+            {
+                if (string.Equals(Tools[i].Id, id, StringComparison.Ordinal))
+                {
+                    return Tools[i];
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
         /// Adds <paramref name="tool"/> to the registry. Duplicate
         /// registrations (same <see cref="IFuseEditorTool.Id"/>) are
         /// dropped so an Enter → Exit → re-Enter cycle that re-registers

@@ -1,3 +1,4 @@
+using System.Reflection;
 using FUSE.Authoring.Editor;
 using FUSE.Editor.Bookmarks;
 using FUSE.Editor.Screen;
@@ -7,6 +8,7 @@ using FUSE.Infrastructure;
 using FUSE.Loading;
 using GalaSoft.MvvmLight.Messaging;
 using Game.Events;
+using HarmonyLib;
 using JetBrains.Annotations;
 using UnityEngine;
 
@@ -29,6 +31,23 @@ namespace FUSE.Editor
         // store, so the controller's IMGUI store browser would just get in
         // the way. AlinasMapMod takes the same approach.
         private const string DefinitionEditorModeControllerName = "Definition Editor Mode Controller";
+
+        // Character.PlayerController.SetSelected toggles the player
+        // avatar's grip on the FirstPerson camera. Reached through
+        // AccessTools because the method is internal; cached at first
+        // use to avoid repeating the lookup per coroutine tick.
+        private static readonly MethodInfo PlayerControllerSetSelectedMethod =
+            AccessTools.Method(typeof(global::Character.PlayerController), "SetSelected",
+                new[] { typeof(bool), typeof(Camera) });
+
+        // Watchdog window after the initial Strategy jump. If anything
+        // re-engages FirstPerson in this window we re-deselect + re-jump
+        // on each Update tick. 120 frames ≈ 2 s at 60 fps — generous
+        // enough to outlast any post-spawn coroutine the game has,
+        // short enough that we stop spending CPU once the camera state
+        // has settled.
+        private const int StrategyWatchdogFrames = 120;
+        private int _strategyWatchdogFramesRemaining;
 
         static FuseEditor _instance;
 
@@ -100,17 +119,17 @@ namespace FUSE.Editor
                 FuseLog.Exception("FUSE failed to suppress the built-in DefinitionEditorModeController.", ex);
             }
 
-            // The game's own MapDidLoad subscriber races us at this same
-            // event tick — fighting it from a SelectCamera retry loop
-            // was unreliable because the avatar spawn flow keeps snapping
-            // the camera back to FirstPerson for the first few frames.
-            // CameraSelector.JumpToPoint queues into the selector's
-            // pending-jump slot which the spawn flow honors, so we get
-            // a single deterministic landing in Strategy at a known
-            // in-world point. Wait one frame so the game's own
-            // MapDidLoad handler finishes draining its pending jump
-            // (if any) before we queue ours.
-            StartCoroutine(JumpToStrategySpawnNextFrame());
+            // Avatar wrestling: the previous JumpToPoint-only approach
+            // (queue Strategy into _pendingJump and yield one frame)
+            // wasn't sufficient — the game's own MapDidLoad spawns the
+            // player avatar shortly after, and the avatar's
+            // PlayerController.SetSelected(true, FirstPersonCamera)
+            // re-engages FirstPerson, overriding whatever we queued.
+            // Strategy: poll until the avatar exists, deselect it
+            // (release its FirstPerson grip), then JumpToPoint. A
+            // watchdog in Update reapplies for ~2 sec in case anything
+            // else tries to re-engage FirstPerson.
+            StartCoroutine(EnterStrategyViewCoroutine());
 
             try
             {
@@ -174,43 +193,115 @@ namespace FUSE.Editor
         }
 
         /// <summary>
-        /// New editor sessions boot as a sandbox + spawn the player as
-        /// the first-person engineer avatar at the world spawn — that's
-        /// fine for gameplay but useless for editing. We hop to the
-        /// default spawn point in Strategy view as part of the editor's
-        /// MapDidLoad handoff so the modder lands in a free-moving
-        /// overhead camera at a known-good in-world location instead
-        /// of inside an avatar.
+        /// New editor sessions boot as a sandbox + spawn the player
+        /// as the first-person engineer avatar at the world spawn —
+        /// that's fine for gameplay but useless for editing. We need
+        /// the modder to land in the overhead Strategy view, not
+        /// stuck behind the avatar's eyes.
         /// </summary>
         /// <remarks>
-        /// CameraSelector.JumpToPoint is the documented public
-        /// API for "go here AND use this camera mode" — it parks the
-        /// requested destination in the selector's pending-jump slot
-        /// which the avatar's spawn flow honors. That replaces the
-        /// earlier retry loop that fought the spawn flow frame-by-frame.
+        /// Strategy:
+        /// <list type="number">
+        ///   <item>Poll up to <see cref="StrategyWatchdogFrames"/>
+        ///     frames for the player avatar to actually exist
+        ///     (CameraSelector.shared.localAvatar non-null AND a
+        ///     PlayerController instance findable in the scene).</item>
+        ///   <item>Once found, call PlayerController.SetSelected(false,
+        ///     null) to release its grip on the FirstPerson camera —
+        ///     reflection because the method is internal.</item>
+        ///   <item>Call CameraSelector.JumpToPoint(spawn, Strategy)
+        ///     for the actual transition.</item>
+        ///   <item>Arm the watchdog so Update re-applies for ~2 s if
+        ///     anything else re-engages FirstPerson during the
+        ///     spawn-flow window.</item>
+        /// </list>
         /// </remarks>
-        private static System.Collections.IEnumerator JumpToStrategySpawnNextFrame()
+        private System.Collections.IEnumerator EnterStrategyViewCoroutine()
         {
-            // Settle one frame so the game's own MapDidLoad subscribers
-            // (which include the camera selector) finish their work
-            // before we queue our jump.
+            // Yield one frame first so the game's own MapDidLoad
+            // subscribers run before we start polling — the selector
+            // itself subscribes to MapDidLoad and we want it set up.
             yield return null;
 
-            var selector = global::CameraSelector.shared;
-            if (selector == null)
+            global::Character.PlayerController controller = null;
+            int frameCount = 0;
+            while (frameCount < StrategyWatchdogFrames)
             {
-                FuseLog.Warning("FUSE editor: CameraSelector.shared was null one frame after MapDidLoad; cannot park Strategy camera at spawn.");
+                var selector = global::CameraSelector.shared;
+                if (selector != null && selector.localAvatar != null)
+                {
+                    // Selector knows about the avatar — the spawn
+                    // flow has progressed far enough that
+                    // PlayerController should exist too.
+                    controller = UnityEngine.Object.FindObjectOfType<global::Character.PlayerController>();
+                    if (controller != null)
+                    {
+                        break;
+                    }
+                }
+                frameCount++;
+                yield return null;
+            }
+
+            if (controller == null)
+            {
+                FuseLog.Warning(
+                    $"FUSE editor: player avatar / PlayerController not detected after {StrategyWatchdogFrames} frames; " +
+                    "skipping Strategy view transition. Press F2 (or game's camera key) to switch manually.");
                 yield break;
             }
 
+            FuseLog.Info(
+                $"FUSE editor: detected player avatar after {frameCount} frame(s); releasing FirstPerson grip.");
+            TryDeselectPlayerAvatar(controller);
+
             var spawn = ResolveDefaultSpawn();
+            var jumpSelector = global::CameraSelector.shared;
+            if (jumpSelector != null)
+            {
+                try
+                {
+                    jumpSelector.JumpToPoint(spawn.position, spawn.rotation, global::CameraSelector.CameraIdentifier.Strategy);
+                    FuseLog.Info(
+                        $"FUSE editor: jumped to Strategy view at spawn (x={spawn.position.x:0.0}, y={spawn.position.y:0.0}, z={spawn.position.z:0.0}).");
+                }
+                catch (System.Exception ex)
+                {
+                    FuseLog.Exception("FUSE editor: CameraSelector.JumpToPoint threw.", ex);
+                }
+            }
+            else
+            {
+                FuseLog.Warning("FUSE editor: CameraSelector.shared was null after avatar detect; cannot jump to Strategy view.");
+            }
+
+            // Arm the watchdog. Update() will re-deselect + re-jump
+            // every frame the camera isn't in Strategy for the next
+            // window — robust against late spawn-flow ticks that
+            // would otherwise re-engage FirstPerson.
+            _strategyWatchdogFramesRemaining = StrategyWatchdogFrames;
+        }
+
+        /// <summary>
+        /// Releases the supplied avatar's grip on the FirstPerson
+        /// camera by calling its <c>SetSelected(false, null)</c>.
+        /// Uses reflection because the method is internal in
+        /// Railroader's Character namespace.
+        /// </summary>
+        private static void TryDeselectPlayerAvatar(global::Character.PlayerController controller)
+        {
+            if (controller == null || PlayerControllerSetSelectedMethod == null)
+            {
+                return;
+            }
+
             try
             {
-                selector.JumpToPoint(spawn.position, spawn.rotation, global::CameraSelector.CameraIdentifier.Strategy);
+                PlayerControllerSetSelectedMethod.Invoke(controller, new object[] { false, null });
             }
             catch (System.Exception ex)
             {
-                FuseLog.Exception("FUSE editor: CameraSelector.JumpToPoint threw.", ex);
+                FuseLog.Exception("FUSE editor: PlayerController.SetSelected(false, null) reflection invoke threw.", ex);
             }
         }
 
@@ -273,6 +364,61 @@ namespace FUSE.Editor
             // Flush bookmark mutations to disk. The registry only writes
             // when dirty so this is free in steady state.
             FuseEditorBookmarkRegistry.SaveIfDirty();
+
+            // Camera watchdog: while the post-entry window is open, if
+            // anything re-engages FirstPerson, re-deselect the avatar
+            // and re-apply Strategy. The window decrements every tick
+            // and stops re-applying once it hits zero, so steady-state
+            // cost is a single int compare per frame.
+            TickStrategyWatchdog();
+        }
+
+        private void TickStrategyWatchdog()
+        {
+            if (_strategyWatchdogFramesRemaining <= 0)
+            {
+                return;
+            }
+            _strategyWatchdogFramesRemaining--;
+
+            var selector = global::CameraSelector.shared;
+            if (selector == null)
+            {
+                return;
+            }
+
+            if (selector.CurrentCameraIdentifier == global::CameraSelector.CameraIdentifier.Strategy)
+            {
+                // Camera is in the expected state; nothing to do this
+                // frame. Keep counting down so the watchdog still
+                // covers a later re-engagement attempt within the
+                // window.
+                return;
+            }
+
+            // Camera drifted away from Strategy. Most common cause is
+            // a late spawn-flow tick re-selecting the avatar. Release
+            // it again and re-park the camera.
+            var controller = UnityEngine.Object.FindObjectOfType<global::Character.PlayerController>();
+            if (controller != null)
+            {
+                TryDeselectPlayerAvatar(controller);
+            }
+
+            try
+            {
+                var spawn = ResolveDefaultSpawn();
+                selector.JumpToPoint(spawn.position, spawn.rotation, global::CameraSelector.CameraIdentifier.Strategy);
+                // Log only on watchdog reapply — steady state stays quiet,
+                // but if this fires past frame 1 it's a useful diagnostic.
+                FuseLog.Info(
+                    $"FUSE editor: watchdog re-applied Strategy view (camera was '{selector.CurrentCameraIdentifier}', " +
+                    $"frames remaining {_strategyWatchdogFramesRemaining}).");
+            }
+            catch (System.Exception ex)
+            {
+                FuseLog.Exception("FUSE editor: watchdog JumpToPoint reapply threw.", ex);
+            }
         }
 
         public void Enter()

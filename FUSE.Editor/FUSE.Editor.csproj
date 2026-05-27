@@ -114,6 +114,10 @@
       <HintPath>$(UnityManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.IMGUIModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
@@ -146,8 +150,26 @@
        FUSE.csproj's deploy target already creates that directory; build order
        (FUSE.Editor depends on FUSE) means FUSE has already deployed by the
        time this target fires. -->
+  <!-- Icons folder: loose PNGs the runtime loads via File.ReadAllBytes +
+       Texture2D.LoadImage. Each <FuseEditorIconKind>.png is optional —
+       FuseEditorIcons falls back to a Unicode glyph when a file is
+       missing — so this glob picks up zero or more files. Marked as
+       Content + CopyToOutputDirectory so the same files travel into
+       the deploy folder via the Copy step below. -->
+  <ItemGroup>
+    <Content Include="Resources\Icons\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Icons\%(Filename)%(Extension)</Link>
+    </Content>
+    <Content Include="Resources\Icons\README.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Icons\%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
   <Target Name="DeployFuseEditorToUnityModManagerFolder" AfterTargets="Build" Condition="'$(EnableModDeploy)' == 'true'">
     <MakeDir Directories="$(ModDeployDir)" />
+    <MakeDir Directories="$(ModDeployDir)\Icons" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" Condition="Exists('$(TargetDir)$(TargetName).pdb') and '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' " />
     <!-- FUSE.Converter.dll comes in via the ProjectReference; .NET's
@@ -156,5 +178,12 @@
          runtime. Match the pdb pattern of FUSE.Editor itself. -->
     <Copy SourceFiles="$(TargetDir)FUSE.Converter.dll" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)FUSE.Converter.dll')" />
     <Copy SourceFiles="$(TargetDir)FUSE.Converter.pdb" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" Condition="Exists('$(TargetDir)FUSE.Converter.pdb') and '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' " />
+    <!-- Icon PNGs land alongside the DLL so FuseEditorIcons can find
+         them via Assembly.GetExecutingAssembly().Location + /Icons/. -->
+    <ItemGroup>
+      <FuseIconFiles Include="$(TargetDir)Icons\*.png" />
+      <FuseIconFiles Include="$(TargetDir)Icons\README.md" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FuseIconFiles)" DestinationFolder="$(ModDeployDir)\Icons" SkipUnchangedFiles="true" Condition="@(FuseIconFiles->Count()) &gt; 0" />
   </Target>
 </Project>
