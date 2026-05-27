@@ -20,7 +20,7 @@ namespace FUSE.Interface.MenuWindow
             var manifests = FuseDataPackageDiscovery.GetPackageManifestSnapshots();
 
             List<UIPanelBuilder.ListItem<FusePackageManifestSnapshot>> list = manifests
-                .OrderByDescending(m => m.DisplayName)
+                .OrderBy(m => m.DisplayName)
                 .Select(m => new UIPanelBuilder.ListItem<FusePackageManifestSnapshot>(m.Id, m, "Active Mods", m.DisplayName))
                 .ToList();
 
