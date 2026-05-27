@@ -622,6 +622,19 @@ namespace FUSE.Editor.Screen
                                            screenRect.width, BottomBarHeight);
                 FuseEditorBottomBar.Draw(bottomRect, _bottomBarOptions);
 
+                // World-orientation gizmo — overlays the viewport's
+                // bottom-left corner with a small three-axis compass
+                // that rotates to match the camera. Sits above the
+                // viewport and below the modal overlays so it stays
+                // visible during normal editing but dims out under
+                // the browser / settings panels' backdrops.
+                var gizmoViewport = new Rect(
+                    CurrentLeftPanelWidth,
+                    ContentTop,
+                    screenRect.width - CurrentLeftPanelWidth - CurrentRightPanelWidth,
+                    screenRect.height - ContentTop - BottomBarHeight);
+                FuseEditorAxisGizmo.Draw(gizmoViewport);
+
                 // Submenu popup paints above all chrome but below the
                 // tooltip layer.
                 _menuBar.DrawOpenSubmenu(MenuBarHeight);

@@ -53,6 +53,16 @@ namespace FUSE.Editor.Screen.UI
             public static readonly Color BorderStrong = new Color(0.32f, 0.34f, 0.38f, 1f);
             public static readonly Color HighlightHover = new Color(1f, 1f, 1f, 0.06f);
             public static readonly Color HighlightSelected = new Color(0.96f, 0.48f, 0.12f, 0.22f);
+
+            // Axis colors — warm red / green / blue triplet for the
+            // world-orientation gizmo and any future axis-coded
+            // affordance (e.g. a "constrain to X" toggle). Hex sources:
+            // #E04A4A / #5BC04A / #4A87E0. Matches Unity / Blender /
+            // EDEN's convention so the visual language is consistent
+            // with adjacent CAD tools.
+            public static readonly Color AxisX = new Color(0.878f, 0.290f, 0.290f, 1f);
+            public static readonly Color AxisY = new Color(0.357f, 0.753f, 0.290f, 1f);
+            public static readonly Color AxisZ = new Color(0.290f, 0.529f, 0.878f, 1f);
         }
 
         // Layout tokens — kept here so any region can read them
