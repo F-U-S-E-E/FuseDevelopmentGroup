@@ -347,11 +347,58 @@ namespace FUSE.Loading
                 ["name"] = ReadString(item, "name") ?? id,
                 ["position"] = Vector(item["localPosition"] ?? item["position"], false),
                 ["radius"] = Clone(item["radius"]),
-                ["tagColor"] = Clone(item["tagColor"] ?? item["TagColor"]),
+                ["tagColor"] = NormalizeAreaTagColor(id, item["tagColor"] ?? item["TagColor"]),
                 ["order"] = Clone(item["order"]),
                 ["spanIds"] = ToStringArray(item["spanIds"] ?? item["spans"]),
                 ["groupId"] = ReadString(item, "groupId", "GroupId")
             });
+        }
+
+        /// <summary>
+        /// Coerces a legacy <c>tagColor</c> value into the 3- or 4-element
+        /// RGB / RGBA shape FUSE's schema validator requires. A handful of
+        /// legacy mods (Graham County, Macon County) shipped 6-element
+        /// arrays by accidentally concatenating two RGB triples; trim
+        /// those down. Sub-3 arrays get zero-padded so we never reject
+        /// the package on a malformed color when the data IS otherwise
+        /// loadable. Anything that isn't an array passes through —
+        /// the runtime treats non-array tagColor as the default tint.
+        /// </summary>
+        private static JToken NormalizeAreaTagColor(string areaId, JToken value)
+        {
+            var cloned = Clone(value);
+            if (!(cloned is JArray arr))
+            {
+                return cloned;
+            }
+
+            if (arr.Count >= 3 && arr.Count <= 4)
+            {
+                return arr;
+            }
+
+            if (arr.Count > 4)
+            {
+                FuseLog.Info(
+                    $"FUSE legacy converter: area '{areaId}' tagColor has {arr.Count} values; " +
+                    $"FUSE accepts 3 or 4. Truncated to the first 3 values to keep the package loadable.");
+                var truncated = new JArray();
+                for (int i = 0; i < 3; i++) truncated.Add(arr[i].DeepClone());
+                return truncated;
+            }
+
+            if (arr.Count > 0)
+            {
+                FuseLog.Warning(
+                    $"FUSE legacy converter: area '{areaId}' tagColor has only {arr.Count} value(s); " +
+                    $"FUSE requires 3 or 4. Padded with zeros to length 3 to keep the package loadable.");
+                var padded = new JArray();
+                foreach (var item in arr) padded.Add(item.DeepClone());
+                while (padded.Count < 3) padded.Add(0.0);
+                return padded;
+            }
+
+            return arr;
         }
 
         private static JObject ConvertIndustry(string id, JObject item, string areaId)
