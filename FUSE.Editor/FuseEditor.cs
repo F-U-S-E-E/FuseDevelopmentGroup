@@ -478,8 +478,73 @@ namespace FUSE.Editor
             _screen.ExitRequested += OnScreenExitRequested;
 
             RegisterDefaultTools();
+            EnsureScratchModActive();
 
             FuseLog.Info("FUSE editor screen spawned over loaded world.");
+        }
+
+        /// <summary>
+        /// Activates the auto-scaffolded "Untitled" scratch mod when
+        /// no other mod is the active one on editor entry. The user
+        /// drops directly into an editable project instead of being
+        /// gated behind the mod browser.
+        /// </summary>
+        /// <remarks>
+        /// Scratch mod has a stable id (<c>local.untitled-fuse-editor-scratch</c>)
+        /// so subsequent entries reuse the same folder rather than
+        /// accumulating untitled-NN orphans. The user can promote it
+        /// to a real mod via the mod browser, or open a different mod
+        /// via Scenario → Open Mod.
+        /// </remarks>
+        private void EnsureScratchModActive()
+        {
+            if (ActiveMod != null)
+            {
+                return;
+            }
+
+            var modsRoot = ResolveModsRootPath();
+            if (string.IsNullOrEmpty(modsRoot))
+            {
+                FuseLog.Warning("FUSE editor: could not resolve mods root for scratch mod scaffold.");
+                return;
+            }
+
+            var scratch = Mods.FuseEditorModCatalog.EnsureScratchMod(modsRoot);
+            if (scratch != null)
+            {
+                SetActiveMod(scratch);
+                FuseLog.Info($"FUSE editor: activated scratch mod '{scratch.Definition?.Id}'.");
+            }
+        }
+
+        private static string ResolveModsRootPath()
+        {
+            // Same heuristic the mod-browser uses: walk up from a
+            // known mod folder to the parent. FuseModLoader exposes
+            // loaded mods via GetLoadedModsInOrder; the parent of
+            // any of them is the mods root.
+            try
+            {
+                var loaded = FuseModLoader.GetLoadedModsInOrder();
+                if (loaded != null)
+                {
+                    for (int i = 0; i < loaded.Count; i++)
+                    {
+                        var folder = loaded[i]?.FolderPath;
+                        if (!string.IsNullOrEmpty(folder))
+                        {
+                            var parent = System.IO.Directory.GetParent(folder);
+                            if (parent != null) return parent.FullName;
+                        }
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                FuseLog.Exception("FUSE editor: failed to resolve mods root path.", ex);
+            }
+            return null;
         }
 
         /// <summary>

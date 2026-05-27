@@ -119,6 +119,14 @@ namespace FUSE.Editor.Screen
         private string _assetSearchBuffer = string.Empty;
         private readonly FuseEditorBottomBar.Options _bottomBarOptions = new FuseEditorBottomBar.Options();
 
+        // Overlay-dialog visibility flags. Both default off — the
+        // editor opens directly into the active mod (auto-scaffolded
+        // by FuseEditor.SpawnScreenIfNeeded if needed). The user
+        // surfaces these panels explicitly via the menu.
+        private bool _modBrowserOpen;
+        private bool _settingsPanelOpen;
+        private FuseEditorSettingsPanel.Options _settingsPanelOptions;
+
         // Either side panel is "open" when its underlying registry
         // window kind is open. With tab strips, the panel collapses
         // only when ALL its tabs' kinds are off — that's rare in
@@ -147,6 +155,11 @@ namespace FUSE.Editor.Screen
             BuildRightTabs();
 
             _bottomBarOptions.OnPlayClicked = OnPlayMenuClicked;
+
+            _settingsPanelOptions = new FuseEditorSettingsPanel.Options
+            {
+                OnClose = () => _settingsPanelOpen = false,
+            };
             _bottomBarOptions.CanPlay = () => FuseEditor.Instance?.ActiveMod != null;
             _bottomBarOptions.CannotPlayReasonKey = "fuse.editor.bottombar.play.no_mod";
         }
@@ -203,7 +216,10 @@ namespace FUSE.Editor.Screen
             var tools = new FuseEditorMenuBar.MenuItem("fuse.editor.menu.tools",
                 children: new[] { Stub("fuse.editor.menu.coming_soon") });
             var settings = new FuseEditorMenuBar.MenuItem("fuse.editor.menu.settings",
-                children: new[] { Stub("fuse.editor.menu.coming_soon") });
+                children: new[]
+                {
+                    new FuseEditorMenuBar.MenuItem("fuse.editor.settings.ui_scale", OnOpenSettingsPanelClicked),
+                });
 
             var play = new FuseEditorMenuBar.MenuItem(
                 "fuse.editor.menu.play",
@@ -318,14 +334,17 @@ namespace FUSE.Editor.Screen
         // body stays declarative.
         private void OnNewModMenuClicked()
         {
-            // Force the mod browser into view on the Create New tab.
-            FuseEditor.Instance?.SetActiveMod(null);
+            // Open the mod browser overlay on the Create New tab.
+            // Crucially we DO NOT clear the active mod — closing the
+            // browser without picking anything returns the editor to
+            // its previous state.
+            _modBrowserOpen = true;
             _modBrowserTab = 1;
         }
 
         private void OnOpenModMenuClicked()
         {
-            FuseEditor.Instance?.SetActiveMod(null);
+            _modBrowserOpen = true;
             _modBrowserTab = 0;
         }
 
@@ -344,6 +363,11 @@ namespace FUSE.Editor.Screen
             // CTA carries the same handler so when Play comes online
             // both surfaces light up together.
             FuseLog.Info("FUSE editor: Play requested — preview wiring is pending.");
+        }
+
+        private void OnOpenSettingsPanelClicked()
+        {
+            _settingsPanelOpen = true;
         }
 
         private static void ResetCameraToDefaultSpawn()
@@ -541,28 +565,39 @@ namespace FUSE.Editor.Screen
             EnsureStyles();
             FuseEditorTheme.EnsureCreated();
 
-            var screenRect = new Rect(0f, 0f, UnityEngine.Screen.width, UnityEngine.Screen.height);
+            // Apply the user's chosen UI scale via a global GUI matrix
+            // transform. Layout math then runs in LOGICAL pixels
+            // (screen width / scale, screen height / scale), and
+            // Unity automatically transforms Event.current.mousePosition
+            // against the matrix so hit-testing + tooltip placement
+            // stay correct. Markers / Camera / Physics raycasts are
+            // screen-space-independent and unaffected by this matrix.
+            var prevMatrix = GUI.matrix;
+            var scale = FuseEditorSettings.UiScale;
+            GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
 
-            // EDEN-style chrome (menu bar + icon toolbar) frames the
-            // entire surface. Side panels and bottom bar paint their
-            // own opaque backgrounds; the center viewport gap shows
-            // the 3D world through so the editor sits over the loaded
-            // map rather than blanking it out.
-            var menuRect = new Rect(0f, 0f, screenRect.width, MenuBarHeight);
-            _menuBar.DrawBar(menuRect);
-
-            var toolbarRect = new Rect(0f, MenuBarHeight, screenRect.width, ToolbarHeight);
-            _toolbar.Draw(toolbarRect);
-
-            if (FuseEditor.Instance?.ActiveMod == null)
+            try
             {
-                // Mod browser gates the rest of the editor — until a
-                // mod is active, side panels and the viewport overlay
-                // would have nothing to show.
-                DrawModBrowser(screenRect);
-            }
-            else
-            {
+                var screenRect = new Rect(0f, 0f,
+                    UnityEngine.Screen.width / scale,
+                    UnityEngine.Screen.height / scale);
+
+                // EDEN-style chrome (menu bar + icon toolbar) frames
+                // the entire surface. Side panels and bottom bar paint
+                // their own opaque backgrounds; the center viewport
+                // gap shows the 3D world through so the editor sits
+                // over the loaded map rather than blanking it out.
+                var menuRect = new Rect(0f, 0f, screenRect.width, MenuBarHeight);
+                _menuBar.DrawBar(menuRect);
+
+                var toolbarRect = new Rect(0f, MenuBarHeight, screenRect.width, ToolbarHeight);
+                _toolbar.Draw(toolbarRect);
+
+                // Side panels + viewport render unconditionally now.
+                // ActiveMod = null no longer gates the surface — a
+                // scratch mod gets auto-scaffolded on editor entry
+                // by FuseEditor.SpawnScreenIfNeeded so the editor is
+                // never staring at "select a mod first".
                 if (CurrentLeftPanelWidth > 0f)
                 {
                     var leftRect = new Rect(0f, ContentTop, LeftPanelWidth,
@@ -580,22 +615,38 @@ namespace FUSE.Editor.Screen
                     GUI.Box(rightRect, GUIContent.none, FuseEditorTheme.Panel);
                     _rightTabs.Draw(rightRect);
                 }
+
+                // Bottom bar — live coordinates on the left, Play CTA on
+                // the right. Delegates entirely to FuseEditorBottomBar.
+                var bottomRect = new Rect(0f, screenRect.height - BottomBarHeight,
+                                           screenRect.width, BottomBarHeight);
+                FuseEditorBottomBar.Draw(bottomRect, _bottomBarOptions);
+
+                // Submenu popup paints above all chrome but below the
+                // tooltip layer.
+                _menuBar.DrawOpenSubmenu(MenuBarHeight);
+
+                // Mod browser overlay — opt-in via Scenario menu.
+                if (_modBrowserOpen)
+                {
+                    DrawModBrowser(screenRect);
+                }
+
+                // Settings panel overlay — opt-in via Settings menu.
+                if (_settingsPanelOpen)
+                {
+                    FuseEditorSettingsPanel.Draw(screenRect, _settingsPanelOptions);
+                }
+
+                // Tooltip pass goes last so it paints over every other
+                // panel. Reads GUI.tooltip captured by the most-recently-
+                // hovered GUIContent across the whole frame.
+                FuseEditorUiHelper.RenderHoverTooltip(FuseEditorTheme.TooltipBox);
             }
-
-            // Bottom bar — live coordinates on the left, Play CTA on
-            // the right. Delegates entirely to FuseEditorBottomBar.
-            var bottomRect = new Rect(0f, screenRect.height - BottomBarHeight,
-                                       screenRect.width, BottomBarHeight);
-            FuseEditorBottomBar.Draw(bottomRect, _bottomBarOptions);
-
-            // Submenu popup paints above all chrome but below the
-            // tooltip layer.
-            _menuBar.DrawOpenSubmenu(MenuBarHeight);
-
-            // Tooltip pass goes last so it paints over every other
-            // panel. Reads GUI.tooltip captured by the most-recently-
-            // hovered GUIContent across the whole frame.
-            FuseEditorUiHelper.RenderHoverTooltip(FuseEditorTheme.TooltipBox);
+            finally
+            {
+                GUI.matrix = prevMatrix;
+            }
         }
 
         // -----------------------------------------------------------------
@@ -1395,8 +1446,20 @@ namespace FUSE.Editor.Screen
 
             GUI.Box(rect, GUIContent.none, _panelStyle);
 
-            var headerRect = new Rect(rect.x + Padding * 2f, rect.y + Padding, rect.width - Padding * 4f, 24f);
+            // Header row with title + Close (✕). The close button
+            // dismisses the browser overlay without changing the
+            // active mod.
+            var headerRect = new Rect(rect.x + Padding * 2f, rect.y + Padding,
+                                       rect.width - Padding * 4f - 28f, 24f);
             GUI.Label(headerRect, FuseEditorStrings.Get("fuse.editor.modbrowser.title"), _categoryHeaderStyle);
+
+            var closeRect = new Rect(rect.xMax - Padding * 2f - 24f, rect.y + Padding + 2f, 24f, 22f);
+            if (GUI.Button(closeRect,
+                            new GUIContent("✕", FuseEditorStrings.Get("fuse.editor.modbrowser.close.description")),
+                            _toolButtonStyle))
+            {
+                _modBrowserOpen = false;
+            }
 
             var subtitleRect = new Rect(rect.x + Padding * 2f, headerRect.yMax, rect.width - Padding * 4f, 20f);
             GUI.Label(subtitleRect, FuseEditorStrings.Get("fuse.editor.modbrowser.subtitle"), _propertyLabelStyle);
@@ -1471,6 +1534,7 @@ namespace FUSE.Editor.Screen
                 {
                     FuseEditor.Instance?.SetActiveMod(mod);
                     _newModStatusMessage = null;
+                    _modBrowserOpen = false;
                 }
             }
 

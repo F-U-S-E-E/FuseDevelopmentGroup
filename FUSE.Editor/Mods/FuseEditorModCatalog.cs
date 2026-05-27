@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using FUSE.Infrastructure;
+using FUSE.Loading;
 using Newtonsoft.Json.Linq;
 
 namespace FUSE.Editor.Mods
@@ -319,6 +320,88 @@ namespace FUSE.Editor.Mods
                 FuseLog.Exception($"FUSE editor mod catalog: CreateNewMod failed for '{folder}'.", ex);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Stable id for the auto-scaffolded "Untitled" scratch mod
+        /// the editor lands the user in when no other mod is active.
+        /// Picking a deterministic id (not a timestamp) means we
+        /// reuse the same folder across editor sessions instead of
+        /// accumulating orphan untitled-NN folders.
+        /// </summary>
+        public const string ScratchModId = "local.untitled-fuse-editor-scratch";
+
+        /// <summary>
+        /// Returns the existing scratch mod if it's already loaded,
+        /// otherwise scaffolds it under <paramref name="modsRootPath"/>
+        /// and tries to return the freshly-loaded handle from
+        /// <see cref="FuseModLoader.GetLoadedModsInOrder"/>. Returns
+        /// <c>null</c> if scaffolding fails or the loader hasn't
+        /// picked up the new mod yet (e.g. when called before the
+        /// loader has run for the current session).
+        /// </summary>
+        /// <remarks>
+        /// Idempotent: a second call returns the same mod handle
+        /// without recreating the folder. Folder existence on disk
+        /// short-circuits the <see cref="CreateNewMod"/> call so we
+        /// never warn about "folder already exists".
+        /// </remarks>
+        public static FuseLoadedMod EnsureScratchMod(string modsRootPath)
+        {
+            // Fast path: scratch mod is already loaded.
+            var loaded = FuseModLoader.GetLoadedModsInOrder();
+            if (loaded != null)
+            {
+                for (int i = 0; i < loaded.Count; i++)
+                {
+                    if (string.Equals(loaded[i]?.Definition?.Id, ScratchModId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return loaded[i];
+                    }
+                }
+            }
+
+            // Slow path: scaffold on disk if absent. The folder name
+            // is the same as the id since SanitizeId is identity for
+            // this all-lowercase / dot-separated id.
+            if (string.IsNullOrEmpty(modsRootPath))
+            {
+                FuseLog.Warning("FUSE editor mod catalog: EnsureScratchMod skipped because mods root path was empty.");
+                return null;
+            }
+
+            var folder = Path.Combine(modsRootPath, ScratchModId);
+            if (!Directory.Exists(folder))
+            {
+                var created = CreateNewMod(modsRootPath, ScratchModId, "Untitled Mod", "(scratch)");
+                if (created == null)
+                {
+                    // CreateNewMod already logged the failure reason.
+                    return null;
+                }
+            }
+
+            // Re-query the loader. If the loader hasn't run since the
+            // scaffold (typical at first editor entry when the
+            // scratch folder didn't exist at boot), the new mod
+            // won't be in the loaded list yet — caller activates a
+            // null and falls back to the mod browser as a safety net.
+            loaded = FuseModLoader.GetLoadedModsInOrder();
+            if (loaded != null)
+            {
+                for (int i = 0; i < loaded.Count; i++)
+                {
+                    if (string.Equals(loaded[i]?.Definition?.Id, ScratchModId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return loaded[i];
+                    }
+                }
+            }
+
+            FuseLog.Info(
+                $"FUSE editor mod catalog: scratch mod scaffold at '{folder}' isn't loaded yet; " +
+                "the editor will pick it up on the next Railroader launch.");
+            return null;
         }
 
         /// <summary>

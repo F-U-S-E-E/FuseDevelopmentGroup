@@ -96,6 +96,18 @@ namespace FUSE.Editor.Screen.UI
             ["fuse.editor.toolbar.camera"]                      = "Camera",
             ["fuse.editor.toolbar.camera.description"]          = "Reset the camera to the default view.",
 
+            // Settings panel
+            ["fuse.editor.settings.title"]                      = "FUSE Editor Settings",
+            ["fuse.editor.settings.close"]                      = "✕",
+            ["fuse.editor.settings.close.description"]          = "Dismiss the settings panel. Changes apply as you drag.",
+            ["fuse.editor.settings.ui_scale"]                   = "UI Scale",
+            ["fuse.editor.settings.ui_scale.description"]       = "Open the editor settings panel to adjust UI scale.",
+            ["fuse.editor.settings.ui_scale.hint"]              = "Drag the slider to grow or shrink the editor chrome. The 3D viewport, in-world markers, and gizmos are not affected. The setting persists across editor sessions.",
+
+            // Mod browser overlay (close button)
+            ["fuse.editor.modbrowser.close"]                    = "✕",
+            ["fuse.editor.modbrowser.close.description"]        = "Dismiss the mod browser. The currently-active mod stays active.",
+
             // Right panel — Assets tab F1–F6 selector
             ["fuse.editor.assets.tracks"]                       = "F1 Tracks",
             ["fuse.editor.assets.tracks.description"]           = "Place track nodes, segments, and spans.",

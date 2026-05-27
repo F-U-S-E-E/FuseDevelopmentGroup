@@ -220,5 +220,50 @@ namespace FUSE.Tests.Editor
             File.WriteAllText(Path.Combine(folder, $"{id}.fuse.json"),
                 "{ \"Id\": \"" + id + "\", \"Name\": \"" + displayName + "\" }");
         }
+
+        // -------------------------------------------------------------
+        // EnsureScratchMod
+        //
+        // Note: FuseModLoader.GetLoadedModsInOrder is empty in xUnit
+        // (no Railroader runtime), so EnsureScratchMod's "is it
+        // already loaded?" fast path is skipped and we exercise the
+        // scaffold-on-disk slow path. Asserting on folder existence
+        // (not the return value) keeps these tests deterministic.
+        // -------------------------------------------------------------
+
+        [Fact]
+        public void EnsureScratchMod_scaffolds_folder_when_absent()
+        {
+            FuseEditorModCatalog.EnsureScratchMod(_modsRoot);
+            var folder = Path.Combine(_modsRoot, FuseEditorModCatalog.ScratchModId);
+            Assert.True(Directory.Exists(folder),
+                "EnsureScratchMod should have scaffolded the scratch mod folder.");
+            Assert.True(File.Exists(Path.Combine(folder, "Info.json")));
+            Assert.True(File.Exists(Path.Combine(folder, FuseEditorModCatalog.ScratchModId + ".fuse.json")));
+        }
+
+        [Fact]
+        public void EnsureScratchMod_is_idempotent()
+        {
+            FuseEditorModCatalog.EnsureScratchMod(_modsRoot);
+            var folder = Path.Combine(_modsRoot, FuseEditorModCatalog.ScratchModId);
+            var infoFirstWrite = File.GetLastWriteTimeUtc(Path.Combine(folder, "Info.json"));
+
+            // Sleep so a mtime change would be observable, then call
+            // again — should NOT rewrite (folder already exists short-
+            // circuits the CreateNewMod path).
+            System.Threading.Thread.Sleep(20);
+            FuseEditorModCatalog.EnsureScratchMod(_modsRoot);
+            var infoSecondWrite = File.GetLastWriteTimeUtc(Path.Combine(folder, "Info.json"));
+
+            Assert.Equal(infoFirstWrite, infoSecondWrite);
+        }
+
+        [Fact]
+        public void EnsureScratchMod_with_empty_root_returns_null()
+        {
+            Assert.Null(FuseEditorModCatalog.EnsureScratchMod(null));
+            Assert.Null(FuseEditorModCatalog.EnsureScratchMod(string.Empty));
+        }
     }
 }
