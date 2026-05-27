@@ -260,10 +260,23 @@ namespace FUSE.Runtime.API
             var segmentLength = segment.GetLength();
             var distance = definition.Distance ?? ((definition.Normalized ?? 0f) * segmentLength);
             distance += definition.Offset;
+
+            // Out-of-range distances used to throw and kill the whole
+            // apply phase; legacy AlinasMapMod tolerated them and so do
+            // we now. Log the clamp so the package owner can see the
+            // recovery happened, then fall through to the same
+            // Mathf.Clamp the well-formed path already runs. The
+            // downstream span-endpoint pair validator still gets a
+            // chance to re-anchor / reject if the clamped pair is
+            // structurally degenerate.
             if (distance < -SpanDistanceTolerance || distance > segmentLength + SpanDistanceTolerance)
             {
-                throw new InvalidOperationException(
-                    $"Track location on segment '{definition.SegmentId}' is outside the segment length. distance={distance:0.###}, segmentLength={segmentLength:0.###}, end='{definition.End ?? "A"}'.");
+                var clamped = Mathf.Clamp(distance, 0f, segmentLength);
+                FuseLog.Info(
+                    $"FUSE auto-repaired track location on segment '{definition.SegmentId}': " +
+                    $"distance {distance:0.###} outside segment length {segmentLength:0.###} (end='{definition.End ?? "A"}'); " +
+                    $"clamped to {clamped:0.###} to keep the package loadable.");
+                distance = clamped;
             }
 
             return new Location(
