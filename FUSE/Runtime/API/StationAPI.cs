@@ -91,15 +91,17 @@ namespace FUSE.Runtime.API
         }
 
         /// <summary>
-        /// Re-binds StationAgent.passengerStop on every FUSE-tracked station whose
-        /// stored definition references <paramref name="stop"/>'s identifier.
+        /// Re-binds StationAgent.passengerStop on every compatible station agent.
         ///
         /// FusePassengerStopComponent.RefreshPassengerStop destroys and recreates
         /// the PassengerStop on every GraphRebuilt. The depot's StationAgent
         /// keeps a Unity-null C# reference to the destroyed instance, so the
         /// vanilla StationWindow.Populate check `passengerStop != null` evaluates
         /// false and silently drops the Passengers tab. This helper is the
-        /// re-bind step the refresh path was missing.
+        /// re-bind step the refresh path was missing. Legacy packages sometimes
+        /// add only a passenger-stop component under an existing area/industry
+        /// and rely on the area's station agent for UI, so the fallback also
+        /// binds unambiguous area-local station agents that have no live stop.
         /// </summary>
         internal static int RebindStationAgentsForPassengerStop(PassengerStop stop)
         {
@@ -115,32 +117,22 @@ namespace FUSE.Runtime.API
             }
 
             var rebound = 0;
-            foreach (var cached in FuseStationRuntimeIndex.Instance.Values)
+            var stopArea = stop.GetComponentInParent<Area>(true);
+            var stopIsOnlyPassengerStopInArea = IsOnlyPassengerStopInArea(stop, stopArea);
+            foreach (var agent in UnityEngine.Object.FindObjectsOfType<StationAgent>(true))
             {
-                var agent = cached as StationAgent;
                 if (agent == null)
                 {
                     continue;
                 }
 
-                var agentId = agent.name;
-                if (string.IsNullOrWhiteSpace(agentId))
-                {
-                    continue;
-                }
-
-                if (!FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Station, agentId, out FuseStation definition) || definition == null)
-                {
-                    continue;
-                }
-
-                if (!string.Equals(definition.PassengerStopId, stopId, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                var current = PassengerStopField.GetValue(agent) as PassengerStop;
+                var current = GetStationPassengerStop(agent);
                 if (ReferenceEquals(current, stop))
+                {
+                    continue;
+                }
+
+                if (!ShouldRebindStationAgent(agent, current, stopId, stopArea, stopIsOnlyPassengerStopInArea))
                 {
                     continue;
                 }
@@ -150,6 +142,96 @@ namespace FUSE.Runtime.API
             }
 
             return rebound;
+        }
+
+        private static bool ShouldRebindStationAgent(
+            StationAgent agent,
+            PassengerStop current,
+            string stopId,
+            Area stopArea,
+            bool stopIsOnlyPassengerStopInArea)
+        {
+            var agentId = agent.name;
+            if (!string.IsNullOrWhiteSpace(agentId) &&
+                FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Station, agentId, out FuseStation definition) &&
+                definition != null)
+            {
+                return string.Equals(definition.PassengerStopId, stopId, StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (PassengerStopHasIdentifier(current, stopId))
+            {
+                return true;
+            }
+
+            if (current != null || stopArea == null || !stopIsOnlyPassengerStopInArea)
+            {
+                return false;
+            }
+
+            var agentArea = AreaField?.GetValue(agent) as Area;
+            return ReferenceEquals(agentArea, stopArea);
+        }
+
+        private static PassengerStop GetStationPassengerStop(StationAgent agent)
+        {
+            try
+            {
+                return PassengerStopField?.GetValue(agent) as PassengerStop;
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FUSE station rebinder could not read StationAgent.passengerStop for '{agent?.name ?? "<unknown>"}'.", ex);
+                return null;
+            }
+        }
+
+        private static bool PassengerStopHasIdentifier(PassengerStop stop, string stopId)
+        {
+            if (stop == null || string.IsNullOrWhiteSpace(stopId))
+            {
+                return false;
+            }
+
+            try
+            {
+                return string.Equals(stop.identifier, stopId, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (MissingReferenceException)
+            {
+                return false;
+            }
+        }
+
+        private static bool IsOnlyPassengerStopInArea(PassengerStop stop, Area stopArea)
+        {
+            if (stop == null || stopArea == null)
+            {
+                return false;
+            }
+
+            var count = 0;
+            foreach (var candidate in PassengerStop.FindAll())
+            {
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                var candidateArea = candidate.GetComponentInParent<Area>(true);
+                if (!ReferenceEquals(candidateArea, stopArea))
+                {
+                    continue;
+                }
+
+                count++;
+                if (count > 1)
+                {
+                    return false;
+                }
+            }
+
+            return count == 1;
         }
 
         public static PassengerStop GetPassengerStop(string id)
