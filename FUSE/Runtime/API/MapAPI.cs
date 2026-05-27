@@ -155,14 +155,44 @@ namespace FUSE.Runtime.API
                 return (MapLabel)cached;
             }
 
-            return !string.IsNullOrWhiteSpace(id)
-                ? UnityEngine.Object.FindObjectsOfType<MapLabel>().FirstOrDefault(label => label.name == id)
-                : null;
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            var labels = UnityEngine.Object.FindObjectsOfType<MapLabel>(true)
+                .Where(label => label != null)
+                .ToArray();
+            var match = labels.FirstOrDefault(label => string.Equals(label.name, id, StringComparison.OrdinalIgnoreCase)) ??
+                        SingleMapLabel(labels, label => label.transform?.parent != null &&
+                                                       string.Equals(label.transform.parent.name, id, StringComparison.OrdinalIgnoreCase)) ??
+                        SingleMapLabel(labels, label => string.Equals(label.text, id, StringComparison.OrdinalIgnoreCase)) ??
+                        SingleMapLabel(labels, label =>
+                        {
+                            var text = label.GetComponentInChildren<TMP_Text>(true);
+                            return text != null && string.Equals(text.text, id, StringComparison.OrdinalIgnoreCase);
+                        });
+
+            if (match != null)
+            {
+                FuseMapLabelRuntimeIndex.Instance.Set(id, match);
+            }
+
+            return match;
         }
 
         public static IEnumerable<MapLabel> GetAllMapLabels()
         {
             return UnityEngine.Object.FindObjectsOfType<MapLabel>();
+        }
+
+        private static MapLabel SingleMapLabel(IEnumerable<MapLabel> labels, Func<MapLabel, bool> predicate)
+        {
+            var matches = labels
+                .Where(predicate)
+                .Take(2)
+                .ToArray();
+            return matches.Length == 1 ? matches[0] : null;
         }
 
         public static FuseMapLabel GetMapLabelDefinition(string id)

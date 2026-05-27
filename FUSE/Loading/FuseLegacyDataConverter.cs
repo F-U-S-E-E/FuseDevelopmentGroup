@@ -837,6 +837,16 @@ namespace FUSE.Loading
                     {
                         ((JObject)root["world"]["mapLabels"])[label.Name] = ConvertLabel(label.Name, labelObject);
                     }
+                    else
+                    {
+                        var text = label.Value.ToString().Trim();
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            ((JObject)root["world"]["mapLabels"])[label.Name] = ConvertLabel(
+                                label.Name,
+                                new JObject { ["text"] = text });
+                        }
+                    }
                 }
             }
 
