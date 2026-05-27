@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using AssetPack.Runtime;
 using HarmonyLib;
 using KeyValue.Runtime;
 using Model;
@@ -20,21 +21,80 @@ namespace FUSE.Patches
     [HarmonyPatch]
     public static class FusePrefabStoreWhistleDefinitionsPatch
     {
+        private static readonly FieldInfo StoresField = AccessTools.Field(typeof(PrefabStore), "_stores");
+        private static readonly HashSet<string> LoggedWhistleStoreFailures =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         public static MethodBase TargetMethod()
         {
             return AccessTools.Method(typeof(PrefabStore), "AllDefinitionInfosOfType")
                 ?.MakeGenericMethod(typeof(WhistleDefinition));
         }
 
-        public static void Postfix(ref IEnumerable<TypedContainerItem<WhistleDefinition>> __result)
+        public static bool Prefix(
+            PrefabStore __instance,
+            ref IEnumerable<TypedContainerItem<WhistleDefinition>> __result)
         {
-            if (!FuseAudioAPI.HasWhistles)
+            __result = SafeWhistleDefinitions(__instance);
+            return false;
+        }
+
+        internal static IEnumerable<TypedContainerItem<WhistleDefinition>> SafeWhistleDefinitions(PrefabStore prefabStore)
+        {
+            return EnumerateWhistleDefinitions(prefabStore)
+                .Concat(FuseAudioAPI.GetWhistleDefinitionItems());
+        }
+
+        private static IEnumerable<TypedContainerItem<WhistleDefinition>> EnumerateWhistleDefinitions(PrefabStore prefabStore)
+        {
+            if (prefabStore == null)
             {
-                return;
+                yield break;
             }
 
-            __result = (__result ?? Enumerable.Empty<TypedContainerItem<WhistleDefinition>>())
-                .Concat(FuseAudioAPI.GetWhistleDefinitionItems());
+            var stores = StoresField?.GetValue(prefabStore) as IEnumerable<AssetPackRuntimeStore>;
+            if (stores == null)
+            {
+                yield break;
+            }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var store in stores)
+            {
+                Container container;
+                try
+                {
+                    container = store?.Container();
+                }
+                catch (Exception ex)
+                {
+                    var storeId = store?.Identifier ?? "<unknown>";
+                    if (LoggedWhistleStoreFailures.Add(storeId))
+                    {
+                        FuseLog.Warning(
+                            $"FUSE skipped whistle definitions from asset store '{storeId}' " +
+                            $"because its definitions could not be inspected: {ex.GetBaseException().Message}");
+                    }
+
+                    continue;
+                }
+
+                foreach (var item in container?.Objects ?? Enumerable.Empty<ContainerItem>())
+                {
+                    var definition = item?.Definition as WhistleDefinition;
+                    if (definition == null || string.IsNullOrEmpty(item.Identifier) || !seen.Add(item.Identifier))
+                    {
+                        continue;
+                    }
+
+                    yield return new TypedContainerItem<WhistleDefinition>
+                    {
+                        Identifier = item.Identifier,
+                        Metadata = item.Metadata,
+                        Definition = definition
+                    };
+                }
+            }
         }
     }
 
@@ -114,15 +174,116 @@ namespace FUSE.Patches
     [HarmonyPatch(typeof(UI.CarCustomizeWindow.CarCustomizeWindow), "BuildSoundTab")]
     public static class FuseCarCustomizeSoundTabPatch
     {
-        public static void Postfix(UIPanelBuilder builder, Car ____car)
+        public static bool Prefix(UIPanelBuilder builder, Car ____car)
         {
-            if (____car == null || ____car.Definition?.Components == null)
+            try
+            {
+                if (____car == null || ____car.Definition?.Components == null)
+                {
+                    return false;
+                }
+
+                AddWhistleDropdown(builder, ____car);
+                AddHornDropdown(builder, ____car);
+                AddBellDropdown(builder, ____car);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE suppressed an exception while building the locomotive customize sound tab", ex);
+            }
+
+            return false;
+        }
+
+        private static void AddWhistleDropdown(UIPanelBuilder builder, Car car)
+        {
+            var whistleComponent = car.Definition.Components.OfType<WhistleComponent>().FirstOrDefault();
+            if (whistleComponent == null)
             {
                 return;
             }
 
-            AddHornDropdown(builder, ____car);
-            AddBellDropdown(builder, ____car);
+            builder.AddSection("Whistle", section =>
+            {
+                try
+                {
+                    AddWhistleDropdownField(section, car, whistleComponent);
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception(
+                        $"FUSE skipped whistle customization UI for car '{car.id ?? "<unknown>"}' " +
+                        "so the customize window can still open",
+                        ex);
+                }
+            }, 0f);
+        }
+
+        private static void AddWhistleDropdownField(UIPanelBuilder builder, Car car, WhistleComponent whistleComponent)
+        {
+            var settings = WhistleCustomizationSettings.FromPropertyValue(ReadWhistleCustomizationValue(car)) ??
+                           new WhistleCustomizationSettings(whistleComponent.DefaultWhistleIdentifier);
+            var whistleItems = FusePrefabStoreWhistleDefinitionsPatch
+                .SafeWhistleDefinitions(TrainController.Shared?.PrefabStore as PrefabStore)
+                .Where(item => item != null && !string.IsNullOrWhiteSpace(item.Identifier))
+                .GroupBy(item => item.Identifier, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(item => DisplayNameForWhistle(item), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var whistleIds = whistleItems.Select(item => item.Identifier).ToList();
+            var values = whistleItems.Select(DisplayNameForWhistle).ToList();
+            var currentIdentifier = settings.WhistleIdentifier ?? whistleComponent.DefaultWhistleIdentifier ?? string.Empty;
+            if (whistleIds.Count == 0 && !string.IsNullOrWhiteSpace(currentIdentifier))
+            {
+                whistleIds.Add(currentIdentifier);
+                values.Add(currentIdentifier);
+            }
+
+            var currentSelectedIndex = whistleIds.FindIndex(id =>
+                string.Equals(currentIdentifier, id, StringComparison.OrdinalIgnoreCase));
+            if (currentSelectedIndex < 0 && !string.IsNullOrWhiteSpace(currentIdentifier))
+            {
+                whistleIds.Insert(0, currentIdentifier);
+                values.Insert(0, currentIdentifier);
+                currentSelectedIndex = 0;
+            }
+
+            if (whistleIds.Count == 0)
+            {
+                return;
+            }
+
+            currentSelectedIndex = Math.Max(0, currentSelectedIndex);
+            builder.AddField("Whistle", builder.AddDropdown(values, currentSelectedIndex, index =>
+            {
+                if (index < 0 || index >= whistleIds.Count)
+                {
+                    return;
+                }
+
+                car.KeyValueObject[WhistleCustomizationSettings.ObjectKey] =
+                    new WhistleCustomizationSettings(whistleIds[index]).PropertyValue;
+            }));
+        }
+
+        private static Value ReadWhistleCustomizationValue(Car car)
+        {
+            try
+            {
+                return car?.KeyValueObject?[WhistleCustomizationSettings.ObjectKey] ?? Value.Null();
+            }
+            catch
+            {
+                return Value.Null();
+            }
+        }
+
+        private static string DisplayNameForWhistle(TypedContainerItem<WhistleDefinition> item)
+        {
+            return string.IsNullOrWhiteSpace(item?.Metadata?.Name)
+                ? item?.Identifier ?? string.Empty
+                : item.Metadata.Name;
         }
 
         private static void AddHornDropdown(UIPanelBuilder builder, Car car)

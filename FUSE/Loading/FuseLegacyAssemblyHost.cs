@@ -4,6 +4,8 @@ using System.Collections;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Remoting.Messaging;
+using System.Runtime.Remoting.Proxies;
 using FUSE.Infrastructure;
 using Newtonsoft.Json.Linq;
 using Railloader;
@@ -141,7 +143,7 @@ namespace FUSE.Loading
         /// </summary>
         internal readonly struct HostedPluginInfo
         {
-            public HostedPluginInfo(FuseLegacyAssemblyManifest manifest, Type type, LegacyPluginBase plugin)
+            public HostedPluginInfo(FuseLegacyAssemblyManifest manifest, Type type, object plugin)
             {
                 Manifest = manifest;
                 PluginType = type;
@@ -150,7 +152,7 @@ namespace FUSE.Loading
 
             public FuseLegacyAssemblyManifest Manifest { get; }
             public Type PluginType { get; }
-            public LegacyPluginBase Plugin { get; }
+            public object Plugin { get; }
         }
 
         /// <summary>
@@ -292,7 +294,7 @@ namespace FUSE.Loading
             {
                 try
                 {
-                    hosted.Plugin.OnDisable();
+                    InvokePluginLifecycleMethod(hosted.Plugin, nameof(LegacyPluginBase.OnDisable));
                     FuseLog.Info(
                         $"FUSE legacy support disabled hosted old-loader plugin '{hosted.Type.FullName}' from '{hosted.Manifest.Id}'.");
                 }
@@ -325,7 +327,7 @@ namespace FUSE.Loading
                 return false;
             }
 
-            LegacyPluginBase plugin;
+            object plugin;
             try
             {
                 plugin = CreatePluginInstance(pluginType, context, definition);
@@ -345,7 +347,7 @@ namespace FUSE.Loading
 
             try
             {
-                plugin.OnEnable();
+                InvokePluginLifecycleMethod(plugin, nameof(LegacyPluginBase.OnEnable));
                 HostedPlugins[key] = new HostedLegacyPlugin(manifest, pluginType, plugin);
                 FuseLog.Info(
                     $"FUSE legacy support enabled hosted old-loader plugin '{pluginType.FullName}' " +
@@ -361,23 +363,26 @@ namespace FUSE.Loading
             }
         }
 
-        private static LegacyPluginBase CreatePluginInstance(
+        private static object CreatePluginInstance(
             Type pluginType,
             FuseLegacyModdingContext context,
             FuseLegacyModDefinition definition)
         {
             var constructor = pluginType.GetConstructor(new[] { typeof(IModdingContext), typeof(IModDefinition) });
-            object instance;
             if (constructor != null)
             {
-                instance = constructor.Invoke(new object[] { context, definition });
-            }
-            else
-            {
-                instance = Activator.CreateInstance(pluginType);
+                return constructor.Invoke(new object[] { context, definition });
             }
 
-            return instance as LegacyPluginBase;
+            foreach (var candidate in pluginType.GetConstructors().OrderByDescending(c => c.GetParameters().Length))
+            {
+                if (TryBuildLegacyConstructorArguments(candidate, context, definition, out var arguments))
+                {
+                    return candidate.Invoke(arguments);
+                }
+            }
+
+            return Activator.CreateInstance(pluginType);
         }
 
         private static Assembly LoadOrFindAssembly(string assemblyPath)
@@ -403,7 +408,245 @@ namespace FUSE.Loading
             return type != null &&
                    type.IsClass &&
                    !type.IsAbstract &&
-                   typeof(LegacyPluginBase).IsAssignableFrom(type);
+                   (typeof(LegacyPluginBase).IsAssignableFrom(type) ||
+                    InheritsFromFullName(type, "Railloader.PluginBase"));
+        }
+
+        private static bool TryBuildLegacyConstructorArguments(
+            ConstructorInfo constructor,
+            FuseLegacyModdingContext context,
+            FuseLegacyModDefinition definition,
+            out object[] arguments)
+        {
+            arguments = null;
+            if (constructor == null)
+            {
+                return false;
+            }
+
+            var parameters = constructor.GetParameters();
+            arguments = new object[parameters.Length];
+            for (var i = 0; i < parameters.Length; i++)
+            {
+                var parameterType = parameters[i].ParameterType;
+                if (parameterType.IsInstanceOfType(context))
+                {
+                    arguments[i] = context;
+                    continue;
+                }
+
+                if (parameterType.IsInstanceOfType(definition))
+                {
+                    arguments[i] = definition;
+                    continue;
+                }
+
+                if (string.Equals(parameterType.FullName, "Railloader.IModdingContext", StringComparison.Ordinal))
+                {
+                    arguments[i] = CreateRealModdingContextProxy(parameterType, context);
+                    continue;
+                }
+
+                if (string.Equals(parameterType.FullName, "Railloader.IModDefinition", StringComparison.Ordinal) ||
+                    string.Equals(parameterType.FullName, "Railloader.IMod", StringComparison.Ordinal))
+                {
+                    arguments[i] = CreateRealModDefinitionProxy(parameterType, definition);
+                    continue;
+                }
+
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void InvokePluginLifecycleMethod(object plugin, string methodName)
+        {
+            if (plugin == null)
+            {
+                return;
+            }
+
+            if (plugin is LegacyPluginBase shimPlugin)
+            {
+                if (string.Equals(methodName, nameof(LegacyPluginBase.OnEnable), StringComparison.Ordinal))
+                {
+                    shimPlugin.OnEnable();
+                }
+                else if (string.Equals(methodName, nameof(LegacyPluginBase.OnDisable), StringComparison.Ordinal))
+                {
+                    shimPlugin.OnDisable();
+                }
+
+                return;
+            }
+
+            var method = plugin.GetType().GetMethod(
+                methodName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null,
+                Type.EmptyTypes,
+                null);
+            method?.Invoke(plugin, Array.Empty<object>());
+        }
+
+        private static bool InheritsFromFullName(Type type, string fullName)
+        {
+            try
+            {
+                for (var current = type?.BaseType; current != null; current = current.BaseType)
+                {
+                    if (string.Equals(current.FullName, fullName, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return false;
+        }
+
+        private static object CreateRealModDefinitionProxy(Type interfaceType, FuseLegacyModDefinition definition)
+        {
+            return new LegacyInterfaceProxy(interfaceType, (method, args) =>
+                InvokeRealModDefinition(definition, method)).GetTransparentProxy();
+        }
+
+        private static object CreateRealModdingContextProxy(Type interfaceType, FuseLegacyModdingContext context)
+        {
+            return new LegacyInterfaceProxy(interfaceType, (method, args) =>
+                InvokeRealModdingContext(context, method, args)).GetTransparentProxy();
+        }
+
+        private static object InvokeRealModDefinition(FuseLegacyModDefinition definition, MethodInfo method)
+        {
+            switch (method?.Name)
+            {
+                case "get_Id":
+                    return definition.Id;
+                case "get_Name":
+                    return definition.Name;
+                case "get_Version":
+                    return definition.Version;
+                case "get_Directory":
+                    return definition.Directory;
+                case "get_LoadBefore":
+                    return Array.Empty<string>();
+                case "get_LoadAfter":
+                case "get_Requires":
+                case "get_ConflictsWith":
+                case "get_Plugins":
+                    return CreateEmptyArrayForReturnType(method.ReturnType);
+                case "get_IsEnabled":
+                case "get_IsLoaded":
+                    return true;
+                case "get_IsFaulted":
+                    return false;
+                case "ToString":
+                    return definition.Id;
+                default:
+                    return DefaultValue(method?.ReturnType);
+            }
+        }
+
+        private static object InvokeRealModdingContext(FuseLegacyModdingContext context, MethodInfo method, object[] args)
+        {
+            switch (method?.Name)
+            {
+                case "get_RailloaderVersion":
+                    return context.RailloaderVersion;
+                case "get_ModsBaseDirectory":
+                    return context.ModsBaseDirectory;
+                case "get_Mods":
+                    return CreateEmptyArrayForReturnType(method.ReturnType);
+                case "RegisterConsoleCommand":
+                    if (args != null && args.Length > 0 && args[0] is IConsoleCommand command)
+                    {
+                        RegisterConsoleCommand(command);
+                    }
+                    return null;
+                case "LoadSettingsData":
+                    FuseLog.Warning($"FUSE legacy IModdingContext.{method.Name} called through real Railloader bridge; returning null.");
+                    return null;
+                case "SaveSettingsData":
+                    FuseLog.Warning($"FUSE legacy IModdingContext.{method.Name} called through real Railloader bridge; no-op.");
+                    return null;
+                case "GetMixintos":
+                    return CreateEmptyArrayForReturnType(method.ReturnType);
+                case "TryResolveFilePath":
+                    return TryResolveFilePathFromProxy(context, method, args);
+                case "RegisterSubTypeOverload":
+                case "RegisterComponent":
+                    return null;
+                case "ToString":
+                    return "FUSE legacy Railloader context bridge";
+                default:
+                    return DefaultValue(method?.ReturnType);
+            }
+        }
+
+        private static bool TryResolveFilePathFromProxy(FuseLegacyModdingContext context, MethodInfo method, object[] args)
+        {
+            if (args == null)
+            {
+                return false;
+            }
+
+            var parameters = method.GetParameters();
+            var outIndex = Array.FindIndex(parameters, p => p.ParameterType.IsByRef);
+            string resolved;
+            bool result;
+            if (parameters.Length == 4)
+            {
+                result = context.TryResolveFilePath(
+                    args[0] as string,
+                    args[1] as string,
+                    args.Length > 2 && args[2] is bool allow && allow,
+                    out resolved);
+            }
+            else if (parameters.Length == 5)
+            {
+                result = context.TryResolveFilePath(
+                    args[0] as string,
+                    args[1] as string,
+                    args[2] as string,
+                    args.Length > 3 && args[3] is bool allow && allow,
+                    out resolved);
+            }
+            else
+            {
+                resolved = null;
+                result = false;
+            }
+
+            if (outIndex >= 0 && outIndex < args.Length)
+            {
+                args[outIndex] = resolved;
+            }
+
+            return result;
+        }
+
+        private static Array CreateEmptyArrayForReturnType(Type returnType)
+        {
+            var elementType = returnType?.IsArray == true
+                ? returnType.GetElementType()
+                : returnType?.GetGenericArguments().FirstOrDefault();
+            return Array.CreateInstance(elementType ?? typeof(object), 0);
+        }
+
+        private static object DefaultValue(Type type)
+        {
+            if (type == null || type == typeof(void) || !type.IsValueType)
+            {
+                return null;
+            }
+
+            return Activator.CreateInstance(type);
         }
 
         private static IEnumerable<FuseLegacyAssemblyManifest> DiscoverLegacyManifests(string modsRoot)
@@ -853,7 +1096,7 @@ namespace FUSE.Loading
 
         private sealed class HostedLegacyPlugin
         {
-            public HostedLegacyPlugin(FuseLegacyAssemblyManifest manifest, Type type, LegacyPluginBase plugin)
+            public HostedLegacyPlugin(FuseLegacyAssemblyManifest manifest, Type type, object plugin)
             {
                 Manifest = manifest;
                 Type = type;
@@ -862,7 +1105,53 @@ namespace FUSE.Loading
 
             public FuseLegacyAssemblyManifest Manifest { get; }
             public Type Type { get; }
-            public LegacyPluginBase Plugin { get; }
+            public object Plugin { get; }
+        }
+
+        private sealed class LegacyInterfaceProxy : RealProxy
+        {
+            private readonly Func<MethodInfo, object[], object> _invoke;
+
+            public LegacyInterfaceProxy(Type interfaceType, Func<MethodInfo, object[], object> invoke)
+                : base(interfaceType)
+            {
+                _invoke = invoke ?? throw new ArgumentNullException(nameof(invoke));
+            }
+
+            public override IMessage Invoke(IMessage msg)
+            {
+                var call = (IMethodCallMessage)msg;
+                var args = call.Args != null
+                    ? (object[])call.Args.Clone()
+                    : Array.Empty<object>();
+
+                try
+                {
+                    var method = call.MethodBase as MethodInfo;
+                    var returnValue = _invoke(method, args);
+                    var outArgs = GetOutArguments(method, args);
+                    return new ReturnMessage(returnValue, outArgs, outArgs.Length, call.LogicalCallContext, call);
+                }
+                catch (Exception ex)
+                {
+                    return new ReturnMessage(ex.GetBaseException(), call);
+                }
+            }
+
+            private static object[] GetOutArguments(MethodInfo method, object[] args)
+            {
+                var parameters = method?.GetParameters() ?? Array.Empty<ParameterInfo>();
+                var values = new List<object>();
+                foreach (var parameter in parameters)
+                {
+                    if (parameter.ParameterType.IsByRef && parameter.Position >= 0 && parameter.Position < args.Length)
+                    {
+                        values.Add(args[parameter.Position]);
+                    }
+                }
+
+                return values.ToArray();
+            }
         }
     }
 

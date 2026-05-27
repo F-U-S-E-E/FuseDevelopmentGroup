@@ -28,7 +28,7 @@ namespace FUSE.Patches
     {
         private static void Postfix(PassengerStop __instance, bool value)
         {
-            if (!FuseSettings.VerboseApplyReportDetails)
+            if (!FuseSettings.VerboseApplyReportDetails || !FuseSettings.ShowAdvancedHealthDetails)
             {
                 return;
             }
@@ -65,6 +65,7 @@ namespace FUSE.Patches
             }
             catch
             {
+                return "<unavailable>";
             }
 
             return "<unavailable>";
@@ -76,7 +77,7 @@ namespace FUSE.Patches
     {
         private static void Postfix(Industry __instance, bool value)
         {
-            if (!FuseSettings.VerboseApplyReportDetails)
+            if (!FuseSettings.VerboseApplyReportDetails || !FuseSettings.ShowAdvancedHealthDetails)
             {
                 return;
             }
@@ -117,7 +118,7 @@ namespace FUSE.Patches
     {
         private static void Postfix(IndustryComponent __instance, bool value)
         {
-            if (!FuseSettings.VerboseApplyReportDetails)
+            if (!FuseSettings.VerboseApplyReportDetails || !FuseSettings.ShowAdvancedHealthDetails)
             {
                 return;
             }

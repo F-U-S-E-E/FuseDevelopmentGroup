@@ -180,7 +180,7 @@ namespace FUSE.Runtime.API
             var chosenDisabled = parentIndustry != null ? industryDisabled : componentDisabled;
             passengerStop.ProgressionDisabled = chosenDisabled;
 
-            if (FuseSettings.VerboseApplyReportDetails)
+            if (FuseSettings.VerboseApplyReportDetails && FuseSettings.ShowAdvancedHealthDetails)
             {
                 FuseLog.Info(
                     $"FUSE diag TryRefreshPassengerStop ProgressionDisabled decision id='{stopIdentifier}' " +
@@ -466,7 +466,7 @@ namespace FUSE.Runtime.API
             var previousValue = AllPassengerStopsField?.GetValue(null) as PassengerStop[];
             AllPassengerStopsField?.SetValue(null, stops);
 
-            if (FuseSettings.VerboseApplyReportDetails)
+            if (FuseSettings.VerboseApplyReportDetails && FuseSettings.ShowAdvancedHealthDetails)
             {
                 try
                 {
