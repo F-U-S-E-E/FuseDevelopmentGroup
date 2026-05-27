@@ -16,6 +16,7 @@ using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityModManagerNet;
 using FUSE.Editor;
+using FUSE.Interface.MenuWindow;
 
 namespace FUSE
 {
@@ -72,7 +73,7 @@ namespace FUSE
                 FuseConsoleRegistrar.TryRegisterAll();
 
                 FuseEditor.OnFuseLoad();
-                FuseHealthUi.Ensure();
+                FuseMenuWindow.Ensure();
                 FuseTrackDebugOverlay.Ensure();
                 FuseSceneryDebugOverlay.Ensure();
                 FuseWorldLabelsOverlay.Ensure();
@@ -194,7 +195,7 @@ namespace FUSE
             FuseLegacyAssemblyHost.Shutdown();
             FuseLegacySupportAssemblyShim.Shutdown();
             FuseRuntimeRebindService.Shutdown();
-            FuseHealthUi.Shutdown();
+            FuseMenuWindow.Shutdown();
             FuseTrackDebugOverlay.Shutdown();
             FuseSceneryDebugOverlay.Shutdown();
             FuseWorldLabelsOverlay.Shutdown();
