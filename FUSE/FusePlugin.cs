@@ -57,6 +57,7 @@ namespace FUSE
             try
             {
                 FuseLegacySupportAssemblyShim.Initialize();
+                WarnIfLegacyRailloaderInstallPresent();
                 LogStartupVersions(modEntry);
                 FuseSettings.Load(modEntry);
                 FuseAssetPackRegistry.MountAllAvailableAssetPacks();
@@ -118,6 +119,27 @@ namespace FUSE
             {
                 FuseLog.Exception($"FUSE startup version report failed", ex);
             }
+        }
+
+        private static void WarnIfLegacyRailloaderInstallPresent()
+        {
+            // Detection runs after the AssemblyResolve shim is wired so the
+            // loaded-assembly probe can identify a real Railloader assembly
+            // by exclusion from the shim assembly identity.
+            var conflicts = FuseLegacyInstallDetector.DetectConflictingFiles();
+            if (conflicts.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var path in conflicts)
+            {
+                FuseLog.Error(
+                    "FUSE detected a conflicting legacy Railloader file: " + path +
+                    ". Delete this file and restart Railroader.");
+            }
+
+            FuseLegacyInstallAlert.Ensure(conflicts);
         }
 
         private static string ReadInfoJsonString(string infoPath, string propertyName)
