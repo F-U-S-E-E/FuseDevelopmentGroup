@@ -20,6 +20,9 @@ using FUSE.Interface.MenuWindow;
 
 namespace FUSE
 {
+#if DEBUG
+    [EnableReloading]
+#endif
     public static class FusePlugin
     {
         private const string HarmonyId = "FUSE";
