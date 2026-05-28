@@ -386,8 +386,7 @@ namespace FUSE.Loading
         private static bool IsAssetPackFolder(string folderPath)
         {
             return File.Exists(Path.Combine(folderPath, "Bundle")) &&
-                   File.Exists(Path.Combine(folderPath, "Catalog.json")) &&
-                   File.Exists(Path.Combine(folderPath, "Definitions.json"));
+                   File.Exists(Path.Combine(folderPath, "Catalog.json"));
         }
 
         private static int MountAssetPackFolder(string sourcePath)
