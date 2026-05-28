@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using FUSE.Events;
 using FUSE.Loading;
 using Newtonsoft.Json;
 using UnityEngine;
@@ -96,8 +97,18 @@ namespace FUSE.Infrastructure
 
         public static string GetActiveSetPackageSummary()
         {
+            lock (Sync)
+            {
+                EnsureLoaded();
+                var set = FindSet(_store.ActiveSetId);
+                return GetSetPackageSummary(set);
+            }
+        }
+
+        public static string GetSetPackageSummary(FuseModSet set)
+        {
             var visible = GetVisibleUmmMods();
-            var enabled = visible.Count(IsModEnabledInActiveSet);
+            var enabled = visible.Count(m => IsModEnabledInSet(set, m));
             return $"{enabled}/{visible.Count} UMM-active mod(s) enabled by FUSE profile";
         }
 
@@ -139,6 +150,7 @@ namespace FUSE.Infrastructure
                 var set = CreateSetFromCurrentActiveModsNoLock();
                 Save();
                 _lastStatus = $"Created and selected mod set '{set.Name}'. It applies on the next package reload or map load.";
+                FuseEvents.RaiseModSetAdded(set.Id);
                 return set.Clone();
             }
         }
@@ -192,17 +204,13 @@ namespace FUSE.Infrastructure
 
                 Save();
                 _lastStatus = $"Deleted mod set '{set.Name}'.";
+                FuseEvents.RaiseModSetRemoved(setId);
                 return true;
             }
         }
 
         public static bool ToggleModInActiveSet(FuseUmmModInfo mod)
         {
-            if (mod == null)
-            {
-                return false;
-            }
-
             lock (Sync)
             {
                 EnsureLoaded();
@@ -211,6 +219,20 @@ namespace FUSE.Infrastructure
                 {
                     set = CreateSetFromCurrentActiveModsNoLock();
                 }
+                return ToggleModInSet(mod, set);
+            }
+        }
+
+        public static bool ToggleModInSet(FuseUmmModInfo mod, FuseModSet set)
+        {
+            if (mod == null || set == null)
+            {
+                return false;
+            }
+
+            lock (Sync)
+            {
+                EnsureLoaded();
 
                 var ids = ToMutableSet(set.EnabledModIds);
                 var folders = ToMutableSet(set.EnabledFolderNames);

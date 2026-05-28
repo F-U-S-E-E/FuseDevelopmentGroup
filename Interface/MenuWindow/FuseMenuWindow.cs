@@ -1,4 +1,5 @@
-﻿using FUSE.Infrastructure;
+﻿using FUSE.Events;
+using FUSE.Infrastructure;
 using System;
 using System.Collections;
 using System.IO;
@@ -22,6 +23,8 @@ namespace FUSE.Interface.MenuWindow
         private Window _window;
         private UIPanel _panel;
 
+        public static FuseMenuWindow Shared { get; private set; } = null;
+
         private Vector2Int DefaultSize => new(740, 660);
         private Vector2Int MaxSize => new(Screen.width, Screen.height);
         private Window.Sizing DefaultSizing => Window.Sizing.Resizable(DefaultSize, MaxSize);
@@ -30,6 +33,7 @@ namespace FUSE.Interface.MenuWindow
         private readonly UIState<string> _selectedTabState = new(null);
         private readonly UIState<string> _selectedStatusItem = new(null);
         private readonly UIState<string> _selectedModListItem = new(null);
+        private readonly UIState<string> _selectedProfileItem = new(null);
 
         private string _lastBuiltTab = TabIdStatus;
 
@@ -64,6 +68,45 @@ namespace FUSE.Interface.MenuWindow
             _iconSprite = null;
         }
 
+        protected void Awake()
+        {
+            Shared = this;
+        }
+
+        protected void OnDestroy()
+        {
+            Shared = null;
+        }
+
+        protected void OnEnable()
+        {
+            FuseEvents.ModSetAdded += OnModSetAdded;
+            FuseEvents.ModSetRemoved += OnModSetRemoved;
+        }
+
+        protected void OnDisable()
+        {
+            FuseEvents.ModSetAdded -= OnModSetAdded;
+            FuseEvents.ModSetRemoved -= OnModSetRemoved;
+        }
+
+        private void OnModSetAdded(string modSetId)
+        {
+            if (_selectedTabState.Value == TabIdProfiles)
+            {
+                SetSelectedProfile(modSetId);
+                RebuildWindow();
+            }
+        }
+
+        private void OnModSetRemoved(string modSetId)
+        {
+            if (_selectedTabState.Value == TabIdProfiles)
+            {
+                RebuildWindow();
+            }
+        }
+
         private void Start()
         {
             TryInstallHudButton();
@@ -88,6 +131,18 @@ namespace FUSE.Interface.MenuWindow
                 tabBuilder.AddTab("Mods", TabIdMods, b =>
                 {
                     ModsPanelBuilder.Build(b, _selectedModListItem);
+                });
+                tabBuilder.AddTab("Profiles", TabIdProfiles, b =>
+                {
+                    ProfilesPanelBuilder.Build(b, _selectedProfileItem);
+                });
+                tabBuilder.AddTab("Tools", TabIdTools, b =>
+                {
+
+                });
+                tabBuilder.AddTab("Settings", TabIdSettings, b =>
+                {
+
                 });
             });
         }
@@ -375,6 +430,11 @@ namespace FUSE.Interface.MenuWindow
             return scrollRects == null || scrollRects.Length == 0
                 ? null
                 : scrollRects[scrollRects.Length - 1];
+        }
+
+        public void SetSelectedProfile(string id)
+        {
+            _selectedProfileItem.Value = id;
         }
     }
 }
