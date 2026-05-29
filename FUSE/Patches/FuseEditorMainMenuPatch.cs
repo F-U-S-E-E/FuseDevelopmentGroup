@@ -47,6 +47,16 @@ namespace FUSE.Patches
                 return;
             }
 
+            // We're sitting on the main menu, so no editor session can
+            // legitimately be in flight. Clear any stale pending flag
+            // left over from a launch that was dispatched but never
+            // reached MapDidLoad (user backed out, launch silently
+            // aborted) — otherwise the NEXT normal sandbox session would
+            // spuriously open the editor. The button click below sets
+            // the flag fresh right before it launches away from here, so
+            // this clear never races a real pending session.
+            FuseEditorBridge.EditorSessionPending = false;
+
             // Optional editor: when FUSE.Editor.dll isn't deployed the
             // bridge has no lifecycle provider, so the button would
             // accomplish nothing. Skip injection in that case.

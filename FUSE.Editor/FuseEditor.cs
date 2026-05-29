@@ -92,6 +92,13 @@ namespace FUSE.Editor
         {
             if (_instance != null)
             {
+                // Drop the Messenger subscriptions registered in
+                // OnFuseLoad before destroying the host. Without this,
+                // a FUSE reload (UMM hot-reload) would leave the old
+                // recipient registered against a destroyed
+                // MonoBehaviour, and the next MapDidLoad / MapDidUnload
+                // would dispatch into a dead Unity object.
+                Messenger.Default.Unregister(_instance);
                 GameObject.Destroy(_instance.gameObject);
                 _instance = null;
             }
@@ -339,14 +346,12 @@ namespace FUSE.Editor
         {
             // Map unload during an active editor session is treated as an
             // implicit exit so EditorExited subscribers (the FUSE-side
-            // patch that calls ReturnToMainMenu) get a chance to clean up.
-            if (_screen != null)
-            {
-                FuseEditorBridge.NotifyEditorExited();
-                FuseEditorToolRegistry.Reset();
-                Destroy(_screen.gameObject);
-                _screen = null;
-            }
+            // patch that calls ReturnToMainMenu) get a chance to clean
+            // up. Routes through the same teardown as Exit() so bookmark
+            // flush + per-session state reset happen here too — the old
+            // inline version skipped them and could leak a dirty
+            // bookmark set across into the next mod's session.
+            TeardownEditorSession();
         }
 
         private void Update()
@@ -361,9 +366,9 @@ namespace FUSE.Editor
             // when the active tool's Tick is a no-op.
             FuseEditorToolRegistry.TickActive();
 
-            // Flush bookmark mutations to disk. The registry only writes
-            // when dirty so this is free in steady state.
-            FuseEditorBookmarkRegistry.SaveIfDirty();
+            // Flush bookmark mutations to disk, debounced so a held key
+            // in the rename field doesn't write JSON on every change.
+            TickBookmarkAutoSave();
 
             // Camera watchdog: while the post-entry window is open, if
             // anything re-engages FirstPerson, re-deselect the avatar
@@ -444,25 +449,79 @@ namespace FUSE.Editor
                 return;
             }
 
+            TeardownEditorSession();
+            FuseLog.Info("FUSE editor exited.");
+        }
+
+        /// <summary>
+        /// Single teardown path shared by the explicit <see cref="Exit"/>
+        /// and the implicit map-unload exit. Notifies EditorExited
+        /// subscribers, resets the tool registry, flushes + clears
+        /// per-session bookmark / save-tracker / watchdog state, and
+        /// destroys the screen. Idempotent: a null screen is a no-op.
+        /// </summary>
+        private void TeardownEditorSession()
+        {
+            if (_screen == null)
+            {
+                return;
+            }
+
             FuseEditorBridge.NotifyEditorExited();
             FuseEditorToolRegistry.Reset();
 
             // Flush any pending bookmark changes before tearing down the
             // registry; saves the user from losing recent additions on
-            // exit. Then clear state for the next session.
+            // exit / map unload. Then clear state for the next session.
             FuseEditorBookmarkRegistry.SaveIfDirty();
             FuseEditorBookmarkRegistry.Reset();
+            _lastBookmarkRevision = 0;
 
             // Drop the "Last saved" indicator so the next Enter starts
             // with the empty "—" placeholder rather than carrying a
             // stale timestamp from the previous session.
             FuseEditorSaveTracker.Reset();
 
+            // Stop the camera watchdog so it can't tick against a stale
+            // session if the host survives into the next map.
+            _strategyWatchdogFramesRemaining = 0;
+
             _screen.ExitRequested -= OnScreenExitRequested;
             Destroy(_screen.gameObject);
             _screen = null;
+        }
 
-            FuseLog.Info("FUSE editor exited.");
+        // Bookmark auto-save debounce. The registry marks itself dirty
+        // on every mutation and bumps its Revision; we wait for the
+        // revision to stop advancing for a short settle window before
+        // writing, so a held key in the rename field writes once rather
+        // than every keystroke. Teardown still flushes immediately, so
+        // nothing is lost on exit.
+        private const float BookmarkSaveDebounceSeconds = 0.4f;
+        private int _lastBookmarkRevision;
+        private float _bookmarkSettleDeadline;
+
+        private void TickBookmarkAutoSave()
+        {
+            if (!FuseEditorBookmarkRegistry.IsDirty)
+            {
+                return;
+            }
+
+            var revision = FuseEditorBookmarkRegistry.Revision;
+            if (revision != _lastBookmarkRevision)
+            {
+                // Still changing — push the settle deadline out and
+                // wait for the edits to stop before hitting disk.
+                _lastBookmarkRevision = revision;
+                _bookmarkSettleDeadline = Time.realtimeSinceStartup + BookmarkSaveDebounceSeconds;
+                return;
+            }
+
+            if (Time.realtimeSinceStartup >= _bookmarkSettleDeadline)
+            {
+                FuseEditorBookmarkRegistry.SaveIfDirty();
+            }
         }
 
         private void SpawnScreenIfNeeded()

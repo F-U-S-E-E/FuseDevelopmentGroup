@@ -38,9 +38,24 @@ namespace FUSE.Editor.Bookmarks
         private static int _activeIndex = -1;
         private static bool _dirty;
 
+        // Monotonic change token, bumped on every mutation. The UI tick
+        // uses it to debounce disk writes: it only flushes once the
+        // revision has stopped advancing for a short settle window, so
+        // holding a key in the rename field doesn't write JSON on every
+        // keystroke. Never reset (a wraparound is harmless — the tick
+        // compares for inequality, not ordering).
+        private static int _revision;
+
         public static IReadOnlyList<FuseEditorBookmark> All => Bookmarks;
 
         public static int ActiveIndex => _activeIndex;
+
+        /// <summary>
+        /// Change token incremented on every mutation. Used by the
+        /// editor's per-frame tick to detect "the user stopped editing"
+        /// and debounce the save.
+        /// </summary>
+        public static int Revision => _revision;
 
         public static FuseEditorBookmark Active =>
             _activeIndex >= 0 && _activeIndex < Bookmarks.Count ? Bookmarks[_activeIndex] : null;
@@ -121,7 +136,7 @@ namespace FUSE.Editor.Bookmarks
             }
 
             Bookmarks.Add(bookmark);
-            _dirty = true;
+            MarkDirty();
             return Bookmarks.Count - 1;
         }
 
@@ -133,7 +148,7 @@ namespace FUSE.Editor.Bookmarks
             }
 
             Bookmarks[index].Name = name;
-            _dirty = true;
+            MarkDirty();
             return true;
         }
 
@@ -153,7 +168,7 @@ namespace FUSE.Editor.Bookmarks
             {
                 _activeIndex--;
             }
-            _dirty = true;
+            MarkDirty();
             return true;
         }
 
@@ -170,7 +185,7 @@ namespace FUSE.Editor.Bookmarks
             }
 
             _activeIndex = index;
-            _dirty = true;
+            MarkDirty();
         }
 
         /// <summary>
@@ -179,6 +194,12 @@ namespace FUSE.Editor.Bookmarks
         /// indicator if it wants.
         /// </summary>
         public static bool IsDirty => _dirty;
+
+        private static void MarkDirty()
+        {
+            _dirty = true;
+            _revision++;
+        }
 
         /// <summary>
         /// Writes the current state to disk if dirty. Returns whether a

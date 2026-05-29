@@ -72,6 +72,34 @@ namespace FUSE.Tests.Editor
         }
 
         [Fact]
+        public void Revision_advances_on_each_mutation()
+        {
+            FuseEditorBookmarkRegistry.LoadForMod(_tempFolder);
+            var r0 = FuseEditorBookmarkRegistry.Revision;
+
+            FuseEditorBookmarkRegistry.Add(MakeBookmark("A", new Vector3(1, 2, 3)));
+            var r1 = FuseEditorBookmarkRegistry.Revision;
+            Assert.NotEqual(r0, r1);
+
+            FuseEditorBookmarkRegistry.Rename(0, "A2");
+            var r2 = FuseEditorBookmarkRegistry.Revision;
+            Assert.NotEqual(r1, r2);
+
+            FuseEditorBookmarkRegistry.SetActive(0);
+            var r3 = FuseEditorBookmarkRegistry.Revision;
+            Assert.NotEqual(r2, r3);
+
+            FuseEditorBookmarkRegistry.RemoveAt(0);
+            Assert.NotEqual(r3, FuseEditorBookmarkRegistry.Revision);
+
+            // A rejected mutation (out-of-range rename) must NOT advance
+            // the revision — the debounce relies on "no change == stable".
+            var stable = FuseEditorBookmarkRegistry.Revision;
+            Assert.False(FuseEditorBookmarkRegistry.Rename(99, "nope"));
+            Assert.Equal(stable, FuseEditorBookmarkRegistry.Revision);
+        }
+
+        [Fact]
         public void Add_with_empty_name_assigns_View_N_default()
         {
             FuseEditorBookmarkRegistry.LoadForMod(_tempFolder);

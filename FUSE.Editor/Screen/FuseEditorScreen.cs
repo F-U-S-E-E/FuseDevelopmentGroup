@@ -127,6 +127,13 @@ namespace FUSE.Editor.Screen
         private bool _settingsPanelOpen;
         private FuseEditorSettingsPanel.Options _settingsPanelOptions;
 
+        // Exit is requested from a menu item that fires mid-OnGUI (inside
+        // the submenu draw). Raising ExitRequested there would tear the
+        // screen down while the rest of OnGUI is still drawing against
+        // it. Instead we latch the request and raise it once the draw
+        // pass has fully unwound. See the tail of OnGUI.
+        private bool _exitRequestedPending;
+
         // Either side panel is "open" when its underlying registry
         // window kind is open. With tab strips, the panel collapses
         // only when ALL its tabs' kinds are off — that's rare in
@@ -183,7 +190,7 @@ namespace FUSE.Editor.Screen
                     new FuseEditorMenuBar.MenuItem("fuse.editor.menu.scenario.open", OnOpenModMenuClicked),
                     new FuseEditorMenuBar.MenuItem("fuse.editor.menu.scenario.save", OnSaveMenuClicked),
                     FuseEditorMenuBar.MenuItem.Separator(),
-                    new FuseEditorMenuBar.MenuItem("fuse.editor.menu.scenario.exit", () => ExitRequested?.Invoke()),
+                    new FuseEditorMenuBar.MenuItem("fuse.editor.menu.scenario.exit", RequestExit),
                 });
 
             var edit = new FuseEditorMenuBar.MenuItem(
@@ -654,12 +661,27 @@ namespace FUSE.Editor.Screen
                 // Tooltip pass goes last so it paints over every other
                 // panel. Reads GUI.tooltip captured by the most-recently-
                 // hovered GUIContent across the whole frame.
-                FuseEditorUiHelper.RenderHoverTooltip(FuseEditorTheme.TooltipBox);
+                FuseEditorUiHelper.RenderHoverTooltip(FuseEditorTheme.TooltipBox, screenRect);
             }
             finally
             {
                 GUI.matrix = prevMatrix;
             }
+
+            // Raise a latched Exit request only after the whole draw
+            // pass has unwound. Doing it here (rather than inline in the
+            // menu item) means the screen isn't destroyed mid-OnGUI
+            // while later regions are still drawing against it.
+            if (_exitRequestedPending)
+            {
+                _exitRequestedPending = false;
+                ExitRequested?.Invoke();
+            }
+        }
+
+        private void RequestExit()
+        {
+            _exitRequestedPending = true;
         }
 
         // -----------------------------------------------------------------

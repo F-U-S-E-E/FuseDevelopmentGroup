@@ -116,7 +116,16 @@ namespace FUSE.Editor.Screen.UI
         /// tooltip pill's background; pass <c>null</c> to use
         /// <see cref="GUI.skin.box"/>.
         /// </summary>
-        public static void RenderHoverTooltip(GUIStyle boxStyle = null)
+        /// <param name="logicalScreen">
+        /// The LOGICAL screen bounds (post-UI-scale) the editor draws
+        /// into. The mouse position IMGUI reports is in this same
+        /// logical space because the caller's <c>GUI.matrix</c> scale is
+        /// in effect, so the on-screen clamp must compare against these
+        /// logical dimensions — NOT <see cref="UnityEngine.Screen"/>'s
+        /// device pixels. Pass <c>default</c> to fall back to device
+        /// pixels (correct only at 1.0x UI scale).
+        /// </param>
+        public static void RenderHoverTooltip(GUIStyle boxStyle = null, Rect logicalScreen = default)
         {
             var tip = GUI.tooltip;
             if (string.IsNullOrEmpty(tip))
@@ -138,13 +147,19 @@ namespace FUSE.Editor.Screen.UI
             var x = mouse.x + 14f;
             var y = mouse.y + 18f;
 
+            // Clamp against the LOGICAL screen size when the caller
+            // supplied it (the mouse coords are logical under the UI-
+            // scale matrix); fall back to device pixels otherwise.
+            var boundsW = logicalScreen.width > 0f ? logicalScreen.width : UnityEngine.Screen.width;
+            var boundsH = logicalScreen.height > 0f ? logicalScreen.height : UnityEngine.Screen.height;
+
             // Keep the tooltip on screen — flip to the left / above the
             // cursor if it would clip the bottom-right corner.
-            if (x + width + padding > UnityEngine.Screen.width)
+            if (x + width + padding > boundsW)
             {
                 x = mouse.x - width - 8f;
             }
-            if (y + height + padding > UnityEngine.Screen.height)
+            if (y + height + padding > boundsH)
             {
                 y = mouse.y - height - 8f;
             }
