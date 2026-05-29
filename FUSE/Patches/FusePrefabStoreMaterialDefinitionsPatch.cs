@@ -1,52 +1,29 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using AssetPack.Runtime;
-using HarmonyLib;
 using Model.Definition;
 using Model.Definition.Data;
-using Model.Database;
 using FUSE.Infrastructure;
-using FUSE.Loading;
 
 namespace FUSE.Patches
 {
 
-    [HarmonyPatch]
     internal static class FusePrefabStoreMaterialDefinitionsPatch
     {
         private static readonly HashSet<string> WarnedNullFieldLists = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> WarnedNullFieldPairs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        private static MethodInfo TargetMethod()
-        {
-            return AccessTools.Method(typeof(PrefabStore), "AllDefinitionInfosOfType")
-                ?.MakeGenericMethod(typeof(MaterialDefinition));
-        }
-
-        private static void Postfix(ref IEnumerable<TypedContainerItem<MaterialDefinition>> __result)
-        {
-            __result = SanitizeMaterialDefinitions(__result);
-        }
-
-        private static IEnumerable<TypedContainerItem<MaterialDefinition>> SanitizeMaterialDefinitions(
-            IEnumerable<TypedContainerItem<MaterialDefinition>> items)
-        {
-            foreach (var item in items ?? Enumerable.Empty<TypedContainerItem<MaterialDefinition>>())
-            {
-                SanitizeMaterialDefinition(item);
-                yield return item;
-            }
-        }
-
         /// <summary>
         /// Pure-data sanitizer for a single
         /// <see cref="MaterialDefinition"/>: guarantees a non-null
         /// <see cref="MaterialDefinition.Fields"/> list and drops any
-        /// null entries inside it. Internal so the body unit tests
-        /// in FUSE.Tests can call it directly with crafted shapes
-        /// the upstream PrefabStore enumeration can produce
+        /// null entries inside it. This helper is deliberately not a
+        /// Harmony patch: patching
+        /// <c>PrefabStore.AllDefinitionInfosOfType&lt;T&gt;</c> for a
+        /// closed generic type can still corrupt other closed forms on
+        /// Mono's shared generic body, including the vanilla whistle
+        /// picker in the locomotive customize window. Internal so the
+        /// body unit tests in FUSE.Tests can call it directly with
+        /// crafted shapes the upstream PrefabStore enumeration can produce
         /// (null definition, null Fields list, mixed null/valid
         /// FieldPairs). Each fixup is logged at most once per
         /// material identifier so a single corrupted asset doesn't

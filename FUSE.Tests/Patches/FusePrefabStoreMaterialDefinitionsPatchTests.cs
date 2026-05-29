@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FUSE.Patches;
+using HarmonyLib;
 using Model.Definition;
 using Model.Definition.Data;
 using Xunit;
@@ -11,11 +13,12 @@ namespace FUSE.Tests.Patches
     /// Direct-invocation tests for
     /// <see cref="FusePrefabStoreMaterialDefinitionsPatch.SanitizeMaterialDefinition"/>.
     ///
-    /// This patch wraps
-    /// <c>PrefabStore.AllDefinitionInfosOfType&lt;MaterialDefinition&gt;</c>
-    /// and replaces the returned enumeration with one that sanitises
-    /// each <see cref="MaterialDefinition"/> in flight, guaranteeing
-    /// that downstream consumers (notably
+    /// This sanitizer used to wrap
+    /// <c>PrefabStore.AllDefinitionInfosOfType&lt;MaterialDefinition&gt;</c>,
+    /// but that generic Harmony hook can corrupt other closed generic
+    /// enumerations on Mono's shared generic body. It now runs only
+    /// from non-generic direct-container paths, guaranteeing that
+    /// downstream consumers (notably
     /// <see cref="FuseAggregateLoadModelMaterialFieldPatch.TryGetFieldSafely"/>
     /// once the prefix hands control to it) never see a null
     /// <see cref="MaterialDefinition.Fields"/> list or a null
@@ -55,6 +58,15 @@ namespace FUSE.Tests.Patches
                 Identifier = identifier,
                 Definition = definition
             };
+
+        [Fact]
+        public void MaterialSanitizer_IsNotHarmonyPatched()
+        {
+            var attributes = typeof(FusePrefabStoreMaterialDefinitionsPatch)
+                .GetCustomAttributes(typeof(HarmonyPatch), inherit: false);
+
+            Assert.Empty(attributes.Cast<object>());
+        }
 
         // ---- guard paths ----
 

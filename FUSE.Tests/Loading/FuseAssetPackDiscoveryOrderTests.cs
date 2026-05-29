@@ -58,11 +58,19 @@ namespace FUSE.Tests.Loading
         {
             var full = Path.Combine(_modsRoot, relative);
             Directory.CreateDirectory(full);
-            // Asset-pack discovery requires all three sentinel files to
-            // be present, mirroring what AssetPackRuntimeStore looks for.
+            // Definition-bearing packs include all three files.
             File.WriteAllText(Path.Combine(full, "Bundle"), "fake-bundle");
             File.WriteAllText(Path.Combine(full, "Catalog.json"), "{}");
             File.WriteAllText(Path.Combine(full, "Definitions.json"), "{}");
+            return full;
+        }
+
+        private string CreateModelOnlyPackFolder(string relative)
+        {
+            var full = Path.Combine(_modsRoot, relative);
+            Directory.CreateDirectory(full);
+            File.WriteAllText(Path.Combine(full, "Bundle"), "fake-bundle");
+            File.WriteAllText(Path.Combine(full, "Catalog.json"), "{}");
             return full;
         }
 
@@ -126,6 +134,22 @@ namespace FUSE.Tests.Loading
 
             Assert.Contains(Path.GetFullPath(pack1), folders);
             Assert.Contains(Path.GetFullPath(pack2), folders);
+        }
+
+        [Fact]
+        public void Discovery_yields_model_only_packs_without_definitions()
+        {
+            var modFolder = Path.Combine(_modsRoot, "WhistleModels");
+            Directory.CreateDirectory(modFolder);
+
+            var modelPack = CreateModelOnlyPackFolder(@"WhistleModels\TPPWhistleModels");
+
+            var folders = FuseAssetPackRegistry
+                .EnumerateFallbackAssetPackFolders(modFolder)
+                .Select(Path.GetFullPath)
+                .ToArray();
+
+            Assert.Contains(Path.GetFullPath(modelPack), folders);
         }
 
         [Fact]

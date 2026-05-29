@@ -10,7 +10,9 @@ using Model.Database;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using FUSE.Infrastructure;
+using FUSE.Patches;
 using UnityEngine;
+using Model.Definition.Data;
 
 namespace FUSE.Loading
 {
@@ -357,6 +359,7 @@ namespace FUSE.Loading
                 var sourceText = File.ReadAllText(definitionsPath);
                 var sanitizedText = SanitizeDefinitionsJson(sourceText, removedByKind);
                 container = DeserializeContainerBypassingPostfix(sanitizedText, store?.Identifier);
+                SanitizeDeserializedDirectContainer(container);
                 RuntimeStoreContainerField?.SetValue(store, container);
 
                 if (removedByKind.Count > 0 && SanitizedDirectContainerWarnings.Add(store.Identifier))
@@ -408,6 +411,31 @@ namespace FUSE.Loading
             }
 
             return ContainerSerialization.Deserialize(text);
+        }
+
+        private static void SanitizeDeserializedDirectContainer(Container container)
+        {
+            if (container?.Objects == null)
+            {
+                return;
+            }
+
+            foreach (var item in container.Objects)
+            {
+                var material = item?.Definition as MaterialDefinition;
+                if (material == null)
+                {
+                    continue;
+                }
+
+                FusePrefabStoreMaterialDefinitionsPatch.SanitizeMaterialDefinition(
+                    new TypedContainerItem<MaterialDefinition>
+                    {
+                        Identifier = item.Identifier,
+                        Metadata = item.Metadata,
+                        Definition = material
+                    });
+            }
         }
     }
 }

@@ -9,8 +9,8 @@ namespace FUSE.Tests.Loading
     /// <summary>
     /// Integration tests that exercise the collision registry against
     /// real on-disk pack-folder structures. We synthesize a tiny mods
-    /// folder (Catalog.json + Definitions.json + a sentinel Bundle file
-    /// per pack), run the scan, and check the recorded collisions.
+    /// folder (Catalog.json + a sentinel Bundle file per pack), run
+    /// the scan, and check the recorded collisions.
     ///
     /// <para>These tests catch path-normalization regressions the
     /// in-memory-only tests miss — anything that depends on
@@ -231,7 +231,9 @@ namespace FUSE.Tests.Loading
             // Synthesize minimal pack contents. Discovery does not parse
             // these files for the leaf-name detection path; they just need
             // to exist so IsAssetPackFolder() (and our enumerator) would
-            // accept the folder as a valid pack.
+            // accept the folder as a valid pack. Definitions.json is
+            // included here because these tests model definition-bearing
+            // packs, but model-only packs are valid too.
             File.WriteAllText(
                 Path.Combine(folder, "Catalog.json"),
                 "{\"identifier\":\"" + Path.GetFileName(folder) + "\",\"name\":\"" + Path.GetFileName(folder) + "\",\"assets\":{}}");
@@ -244,8 +246,8 @@ namespace FUSE.Tests.Loading
         private static string[] EnumeratePackFolders(string modsRoot)
         {
             // Mirror FuseAssetPackRegistry.IsAssetPackFolder semantics:
-            // any directory that contains Catalog.json + Definitions.json
-            // + Bundle counts as a pack.
+            // any directory that contains Catalog.json + Bundle counts
+            // as a pack. Definitions.json is optional for model-only packs.
             return Directory
                 .EnumerateDirectories(modsRoot, "*", SearchOption.AllDirectories)
                 .Where(IsPackFolder)
@@ -255,7 +257,6 @@ namespace FUSE.Tests.Loading
         private static bool IsPackFolder(string folder)
         {
             return File.Exists(Path.Combine(folder, "Catalog.json")) &&
-                   File.Exists(Path.Combine(folder, "Definitions.json")) &&
                    File.Exists(Path.Combine(folder, "Bundle"));
         }
 
