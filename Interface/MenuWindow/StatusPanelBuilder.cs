@@ -16,8 +16,7 @@ namespace FUSE.Interface.MenuWindow
         private enum PageId
         {
             Overview,
-            Issues,
-            Stats
+            Issues
         }
 
         private class Page
@@ -55,7 +54,6 @@ namespace FUSE.Interface.MenuWindow
             List<UIPanelBuilder.ListItem<Page>> list = [];
             list.Add(new UIPanelBuilder.ListItem<Page>("overview", new Page(PageId.Overview), "Status", "Overview"));
             list.Add(new UIPanelBuilder.ListItem<Page>("issues", new Page(PageId.Issues), "Status", "Issues"));
-            list.Add(new UIPanelBuilder.ListItem<Page>("stats", new Page(PageId.Stats), "Status", "Statistics"));
 
             builder.AddListDetail(list, selectedItem, delegate (UIPanelBuilder builder, Page page)
             {
@@ -76,9 +74,6 @@ namespace FUSE.Interface.MenuWindow
                                 break;
                             case PageId.Issues:
                                 BuildIssues(builder);
-                                break;
-                            case PageId.Stats:
-                                BuildStats(builder);
                                 break;
                             default:
                                 builder.AddLabel("Unknown page.");
@@ -194,33 +189,6 @@ namespace FUSE.Interface.MenuWindow
             return "Exported FUSE health JSON report: " + path;
         }
 
-        private static void BuildStats(UIPanelBuilder builder)
-        {
-            builder.AddSection("Runtime Objects");
-
-            builder.AddField("Track Nodes", SafeCount(() => TrackAPI.GetAllNodes().Count()).ToString());
-            builder.AddField("Track Segments", SafeCount(() => TrackAPI.GetAllSegments().Count()).ToString());
-            builder.AddField("Track Spans", SafeCount(() => TrackAPI.GetAllSpans().Count()).ToString());
-            builder.AddField("Areas", SafeCount(() => TrackAPI.GetAllAreas().Count()).ToString());
-            builder.AddField("Loads", SafeCount(() => LoadAPI.GetAllLoads().Count()).ToString());
-            builder.AddField("Industries", SafeCount(() => IndustryAPI.GetAllIndustries().Count()).ToString());
-            builder.AddField("Loaders", SafeCount(() => LoaderAPI.GetAllLoaders().Count()).ToString());
-            builder.AddField("Stations", SafeCount(() => StationAPI.GetAllStationAgents().Count()).ToString());
-            builder.AddField("Passenger Stops", SafeCount(() => StationAPI.GetAllPassengerStops().Count()).ToString());
-            builder.AddField("Turntables", SafeCount(() => TurntableAPI.GetAllTurntables().Count()).ToString());
-            builder.AddField("Scenery", SafeCount(() => SceneryAPI.GetAllScenery().Count()).ToString());
-            builder.AddField("Scene Clones", SafeCount(() => SceneCloneAPI.GetAllSceneClones().Count()).ToString());
-            builder.AddField("Splineys", SafeCount(() => SplineyAPI.GetAllSplineys().Count()).ToString());
-            builder.AddField("Map Labels", SafeCount(() => MapAPI.GetAllMapLabels().Count()).ToString());
-            builder.AddField("Map Masks", SafeCount(() => MapAPI.GetAllMapMasks().Count()).ToString());
-            builder.AddField("Progressions", SafeCount(() => ProgressionAPI.GetAllProgressions().Count()).ToString());
-            builder.AddField("Map Features", SafeCount(() => ProgressionAPI.GetAllMapFeatures().Count()).ToString());
-            builder.Spacer(6f);
-
-            builder.AddSection("Registry");
-            builder.AddField("Exclusive Claims", FUSE.Registry.FuseRegistry.ExclusiveClaimCount.ToString());
-            builder.AddField("Shared Claims", FUSE.Registry.FuseRegistry.SharedClaimCount.ToString());
-            builder.AddField("Conflicts", FUSE.Registry.FuseRegistry.Conflicts.Count.ToString());
-        }
+        
     }
 }
