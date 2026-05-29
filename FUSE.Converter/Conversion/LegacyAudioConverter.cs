@@ -54,6 +54,16 @@ namespace FUSE.Converter.Conversion
                 return result;
             }
 
+            // Never convert in place — see FuseLegacyConverter.ConvertMod.
+            if (LegacyAssetCopier.PathsOverlap(modFolder, outputFolder))
+            {
+                result.Success = false;
+                result.Report.Add(Report(FuseConversionReportLevel.Error,
+                    "Output folder overlaps the source folder; refusing to convert in place (it would overwrite the original mod).",
+                    modFolder, "audio-output-overlap"));
+                return result;
+            }
+
             try
             {
                 Directory.CreateDirectory(outputFolder);
@@ -419,11 +429,37 @@ namespace FUSE.Converter.Conversion
             var spec = specToken?.Type == JTokenType.String ? specToken.Value<string>() : null;
             var refValue = FileRefValue(spec);
             if (string.IsNullOrEmpty(refValue)) return string.Empty;
+            if (string.IsNullOrEmpty(sourceRoot)) return string.Empty;
+
+            // Security: a legacy clip reference is always relative to
+            // the mod folder. Reject absolute paths and '../' escapes —
+            // otherwise a crafted "clip": "file(../../../<secret>)" (or
+            // an absolute path) would have CopyAudio copy an arbitrary
+            // file off the user's disk into the converted output, which
+            // the user might then re-share. Returning empty makes the
+            // caller treat it as a missing file and skip it.
             if (Path.IsPathRooted(refValue))
             {
-                return Path.GetFullPath(refValue);
+                return string.Empty;
             }
-            return Path.GetFullPath(Path.Combine(sourceRoot ?? string.Empty, refValue));
+
+            string rootFull;
+            string combined;
+            try
+            {
+                rootFull = Path.GetFullPath(sourceRoot)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                combined = Path.GetFullPath(Path.Combine(rootFull, refValue));
+            }
+            catch
+            {
+                return string.Empty;
+            }
+
+            var contained = combined.Length > rootFull.Length
+                && combined.StartsWith(rootFull + Path.DirectorySeparatorChar,
+                                       StringComparison.OrdinalIgnoreCase);
+            return contained ? combined : string.Empty;
         }
 
         private static JArray ReadJsonArray(string path)
@@ -463,32 +499,25 @@ namespace FUSE.Converter.Conversion
 
         private static void CopyDirectoryExcludingInfo(string source, string dest)
         {
-            Directory.CreateDirectory(dest);
-            foreach (var dir in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
+            // Refuse to follow directory symlinks / junctions — see
+            // LegacyAssetCopier.CopyDirectory for the rationale (a
+            // crafted reparse point would otherwise pull arbitrary
+            // files into the output).
+            if (LegacyAssetCopier.IsReparsePoint(source))
             {
-                var rel = MakeRelative(source, dir);
-                Directory.CreateDirectory(Path.Combine(dest, rel));
+                return;
             }
-            foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+
+            Directory.CreateDirectory(dest);
+            foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.TopDirectoryOnly))
             {
                 if (string.Equals(Path.GetFileName(file), "Info.json", StringComparison.OrdinalIgnoreCase)) continue;
-                var rel = MakeRelative(source, file);
-                var target = Path.Combine(dest, rel);
-                Directory.CreateDirectory(Path.GetDirectoryName(target) ?? dest);
-                File.Copy(file, target, overwrite: true);
+                File.Copy(file, Path.Combine(dest, Path.GetFileName(file)), overwrite: true);
             }
-        }
-
-        private static string MakeRelative(string root, string path)
-        {
-            var rootFull = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var pathFull = Path.GetFullPath(path);
-            if (pathFull.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
+            foreach (var child in Directory.EnumerateDirectories(source, "*", SearchOption.TopDirectoryOnly))
             {
-                var sliced = pathFull.Substring(rootFull.Length);
-                return sliced.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                CopyDirectoryExcludingInfo(child, Path.Combine(dest, Path.GetFileName(child)));
             }
-            return Path.GetFileName(path);
         }
 
         public static string Slug(string raw, string fallback)

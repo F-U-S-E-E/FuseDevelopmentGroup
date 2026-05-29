@@ -109,18 +109,73 @@ namespace FUSE.Converter.Conversion
 
         private static void CopyDirectory(string source, string dest)
         {
-            Directory.CreateDirectory(dest);
-            foreach (var child in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
+            // Skip directory symlinks / junctions. The previous
+            // SearchOption.AllDirectories walk followed reparse points,
+            // so a crafted mod could drop a junction pointing at
+            // C:\Users\... and have its contents copied into the output.
+            // Recursing manually one level at a time lets us refuse to
+            // descend into reparse points — real asset packs never use
+            // them.
+            if (IsReparsePoint(source))
             {
-                var rel = MakeRelative(source, child);
-                Directory.CreateDirectory(Path.Combine(dest, rel));
+                return;
             }
-            foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+
+            Directory.CreateDirectory(dest);
+            foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.TopDirectoryOnly))
             {
-                var rel = MakeRelative(source, file);
-                var target = Path.Combine(dest, rel);
-                Directory.CreateDirectory(Path.GetDirectoryName(target) ?? dest);
-                File.Copy(file, target, overwrite: true);
+                File.Copy(file, Path.Combine(dest, Path.GetFileName(file)), overwrite: true);
+            }
+            foreach (var child in Directory.EnumerateDirectories(source, "*", SearchOption.TopDirectoryOnly))
+            {
+                CopyDirectory(child, Path.Combine(dest, Path.GetFileName(child)));
+            }
+        }
+
+        /// <summary>
+        /// Whether <paramref name="path"/> is a reparse point (symlink
+        /// / junction / mount). Used to refuse following links out of
+        /// the mod tree during recursive copies.
+        /// </summary>
+        internal static bool IsReparsePoint(string path)
+        {
+            try
+            {
+                return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Whether two paths refer to the same location or one contains
+        /// the other. Conversion refuses to run when the output folder
+        /// overlaps the source so it can never overwrite the original
+        /// mod in place.
+        /// </summary>
+        internal static bool PathsOverlap(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
+            {
+                return false;
+            }
+
+            try
+            {
+                var fa = Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var fb = Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (string.Equals(fa, fb, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+                return fa.StartsWith(fb + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                       || fb.StartsWith(fa + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
             }
         }
 

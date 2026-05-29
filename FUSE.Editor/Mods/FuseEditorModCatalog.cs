@@ -277,6 +277,18 @@ namespace FUSE.Editor.Mods
             }
 
             var folder = Path.Combine(modsRootPath, sanitized);
+
+            // Defense in depth: confirm the resolved folder is actually
+            // inside the mods root before creating or writing anything.
+            // SanitizeId already strips traversal sequences, but a
+            // belt-and-suspenders check here means a future sanitizer
+            // gap (or a symlinked mods root) can't escape the tree.
+            if (!IsInsideRoot(modsRootPath, folder))
+            {
+                FuseLog.Warning($"FUSE editor mod catalog: CreateNewMod rejected mod id '{modId}' — resolved path '{folder}' escapes the mods root.");
+                return null;
+            }
+
             if (Directory.Exists(folder))
             {
                 FuseLog.Warning($"FUSE editor mod catalog: CreateNewMod skipped because folder '{folder}' already exists.");
@@ -441,7 +453,39 @@ namespace FUSE.Editor.Mods
                 last = c;
             }
 
-            return collapsed.ToString().Trim('-');
+            // Trim leading/trailing dashes AND dots. Dots are kept in
+            // the interior (reverse-DNS ids like "alex.mymod" need
+            // them), but an id that is nothing but dots/dashes — "..",
+            // ".", "...", "-." — collapses to empty here. That matters
+            // for security: a surviving ".." segment fed to
+            // Path.Combine(modsRoot, id) would resolve to the PARENT of
+            // the mods root. Folding it to empty makes callers reject
+            // the id outright (they all guard on IsNullOrEmpty).
+            return collapsed.ToString().Trim('-', '.');
+        }
+
+        /// <summary>
+        /// Returns whether <paramref name="candidate"/> resolves to a
+        /// location strictly inside <paramref name="root"/>. Used as a
+        /// defense-in-depth guard before creating mod folders so a
+        /// crafted id can never escape the mods root even if
+        /// <see cref="SanitizeId"/> ever misses a traversal sequence.
+        /// </summary>
+        private static bool IsInsideRoot(string root, string candidate)
+        {
+            try
+            {
+                var rootFull = Path.GetFullPath(root)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var candidateFull = Path.GetFullPath(candidate);
+                return candidateFull.Length > rootFull.Length
+                       && candidateFull.StartsWith(rootFull + Path.DirectorySeparatorChar,
+                                                   StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

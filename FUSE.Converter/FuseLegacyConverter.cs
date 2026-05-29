@@ -47,6 +47,17 @@ namespace FUSE.Converter
                 return result;
             }
 
+            // Never convert in place. If the output overlaps the source
+            // (same folder, or one nested in the other), the fragment
+            // writes + asset copy would overwrite the original mod's
+            // files. Refuse rather than risk data loss.
+            if (LegacyAssetCopier.PathsOverlap(modFolder, outputFolder))
+            {
+                result.Success = false;
+                result.Report.Add(Error("Output folder overlaps the source folder; refusing to convert in place (it would overwrite the original mod).", modFolder));
+                return result;
+            }
+
             var manifest = LegacyManifestReader.Read(modFolder);
             result.ModId = manifest.Id;
             result.ModName = manifest.Name;
@@ -254,6 +265,13 @@ namespace FUSE.Converter
             {
                 OutputFolderPath = outputFolder,
             };
+
+            if (LegacyAssetCopier.PathsOverlap(modFolder, outputFolder))
+            {
+                result.Success = false;
+                result.Report.Add(Error("Output folder overlaps the source folder; refusing to convert in place (it would overwrite the original mod).", modFolder));
+                return result;
+            }
 
             var manifest = LegacyManifestReader.Read(modFolder);
             result.ModId = manifest.Id;

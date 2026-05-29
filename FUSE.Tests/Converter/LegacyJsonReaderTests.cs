@@ -69,6 +69,35 @@ namespace FUSE.Tests.Converter
             Assert.Equal(2, ((JArray)parsed["a"]).Count);
         }
 
+        [Fact]
+        public void RemoveTrailingCommas_preserves_comma_then_bracket_inside_string()
+        {
+            // A legitimate string value containing ", ]" or ", }" must
+            // NOT have its comma stripped — the regression a naive
+            // whole-document regex caused. Round-trip the value to be
+            // sure the content survives byte-for-byte.
+            var input = "{ \"label\": \"before, ] after\", \"other\": \"x, }\" }";
+            var fixedText = LegacyJsonReader.RemoveTrailingCommas(input);
+            var parsed = JObject.Parse(fixedText);
+            Assert.Equal("before, ] after", parsed.Value<string>("label"));
+            Assert.Equal("x, }", parsed.Value<string>("other"));
+        }
+
+        [Fact]
+        public void RemoveTrailingCommas_strips_outside_string_but_keeps_inside()
+        {
+            // Mixed case: a real trailing comma outside a string is
+            // dropped, while a comma-before-bracket inside a string is
+            // preserved in the same document.
+            var input = "{ \"items\": [\"a, ]\", \"b\",], }";
+            var fixedText = LegacyJsonReader.RemoveTrailingCommas(input);
+            var parsed = JObject.Parse(fixedText);
+            var items = (JArray)parsed["items"];
+            Assert.Equal(2, items.Count);
+            Assert.Equal("a, ]", items[0].Value<string>());
+            Assert.Equal("b", items[1].Value<string>());
+        }
+
         // ------------------------------------------------------------------
         // CloseUnbalancedJson
         // ------------------------------------------------------------------

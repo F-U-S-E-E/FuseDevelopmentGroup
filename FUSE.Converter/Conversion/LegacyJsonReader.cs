@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Text;
-using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 
 namespace FUSE.Converter.Conversion
@@ -116,15 +115,20 @@ namespace FUSE.Converter.Conversion
             return sb.ToString();
         }
 
-        private static readonly Regex TrailingCommaPattern =
-            new Regex(@",\s*([}\]])", RegexOptions.Compiled);
-
         /// <summary>
         /// Removes commas that sit immediately before a closing
         /// <c>}</c> or <c>]</c>. Iterates until the text stabilises
         /// because removing one trailing comma can expose another
         /// (legal in JSON; common in JSON5 source files).
         /// </summary>
+        /// <remarks>
+        /// String-aware: the scan tracks string literals (and their
+        /// escapes) so a comma inside a JSON string value — e.g.
+        /// <c>"label": "before, ] after"</c> — is never touched. A
+        /// naive regex over the whole document would silently corrupt
+        /// such values, so this walks the text the same way
+        /// <see cref="StripComments"/> does.
+        /// </remarks>
         public static string RemoveTrailingCommas(string text)
         {
             if (string.IsNullOrEmpty(text)) return text ?? string.Empty;
@@ -133,9 +137,56 @@ namespace FUSE.Converter.Conversion
             while (!ReferenceEquals(previous, current) && previous != current)
             {
                 previous = current;
-                current = TrailingCommaPattern.Replace(current, "$1");
+                current = RemoveTrailingCommasOnce(current);
             }
             return current;
+        }
+
+        private static string RemoveTrailingCommasOnce(string text)
+        {
+            var sb = new StringBuilder(text.Length);
+            bool inString = false;
+            bool escaped = false;
+            int length = text.Length;
+
+            for (int i = 0; i < length; i++)
+            {
+                char ch = text[i];
+
+                if (inString)
+                {
+                    sb.Append(ch);
+                    if (escaped) escaped = false;
+                    else if (ch == '\\') escaped = true;
+                    else if (ch == '"') inString = false;
+                    continue;
+                }
+
+                if (ch == '"')
+                {
+                    inString = true;
+                    sb.Append(ch);
+                    continue;
+                }
+
+                if (ch == ',')
+                {
+                    // Look ahead past whitespace for a closing bracket.
+                    // If the next structural char is } or ], this comma
+                    // is trailing — drop it. We're outside any string
+                    // here, so commas inside string values are safe.
+                    int j = i + 1;
+                    while (j < length && char.IsWhiteSpace(text[j])) j++;
+                    if (j < length && (text[j] == '}' || text[j] == ']'))
+                    {
+                        continue; // skip the comma
+                    }
+                }
+
+                sb.Append(ch);
+            }
+
+            return sb.ToString();
         }
 
         /// <summary>

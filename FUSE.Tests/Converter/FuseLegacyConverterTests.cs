@@ -75,6 +75,27 @@ namespace FUSE.Tests.Converter
         }
 
         [Fact]
+        public void ConvertMod_refuses_when_output_overlaps_source()
+        {
+            var modFolder = Path.Combine(_workspace, "inplace.mod");
+            Directory.CreateDirectory(modFolder);
+            File.WriteAllText(Path.Combine(modFolder, "tracks.json"),
+                "{ \"tracks\": { \"nodes\": { \"n\": { \"position\": { \"x\": 0, \"y\": 0, \"z\": 0 } } } } }");
+
+            // output == source: converting in place would overwrite the
+            // original files. Must refuse without writing anything.
+            var sameResult = FuseLegacyConverter.ConvertMod(modFolder, modFolder);
+            Assert.False(sameResult.Success);
+            Assert.False(File.Exists(Path.Combine(modFolder, "Info.json")));
+
+            // output nested inside source is equally unsafe.
+            var nested = Path.Combine(modFolder, "out");
+            var nestedResult = FuseLegacyConverter.ConvertMod(modFolder, nested);
+            Assert.False(nestedResult.Success);
+            Assert.False(Directory.Exists(nested));
+        }
+
+        [Fact]
         public void ConvertMod_handles_partial_segment_by_setting_preserve_flags()
         {
             var modFolder = Path.Combine(_workspace, "partial.mod");

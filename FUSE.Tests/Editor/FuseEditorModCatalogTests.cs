@@ -200,9 +200,43 @@ namespace FUSE.Tests.Editor
         [InlineData("dots.are.fine", "dots.are.fine")]
         [InlineData("under_scores_too", "under_scores_too")]
         [InlineData("@#$%^&*", "")]
+        // Path-traversal neutralisation: a bare ".." (or any all-dot
+        // run) collapses to empty so callers reject it; separators fold
+        // to dashes and edge dots are trimmed, so no surviving segment
+        // can escape the mods root via Path.Combine.
+        [InlineData("..", "")]
+        [InlineData(".", "")]
+        [InlineData("...", "")]
+        [InlineData("../etc", "etc")]
+        [InlineData("..\\..\\evil", "evil")]
+        [InlineData(".hidden", "hidden")]
         public void SanitizeId_normalises_to_filesystem_safe(string input, string expected)
         {
             Assert.Equal(expected, FuseEditorModCatalog.SanitizeId(input));
+        }
+
+        [Fact]
+        public void CreateNewMod_rejects_traversal_id_without_writing_outside_root()
+        {
+            // SanitizeId folds a bare ".." to empty (rejected at the
+            // empty-id gate), and the containment guard is the backstop.
+            // Nothing must be created OUTSIDE the mods root, and the
+            // sibling count of the root's parent must be unchanged.
+            var parent = Directory.GetParent(_modsRoot);
+            var before = parent.GetDirectories().Length;
+
+            Assert.Null(FuseEditorModCatalog.CreateNewMod(_modsRoot, "..", "Escape", "alex"));
+            Assert.Null(FuseEditorModCatalog.CreateNewMod(_modsRoot, "   ...   ", "Escape", "alex"));
+
+            Assert.Equal(before, parent.GetDirectories().Length);
+
+            // A traversal-flavoured id whose sanitised form is a safe
+            // single segment ("../etc" -> "etc") is allowed, but it
+            // lands INSIDE the root, never beside it.
+            var created = FuseEditorModCatalog.CreateNewMod(_modsRoot, "../etc", "Etc", "alex");
+            Assert.NotNull(created);
+            Assert.Equal(before, parent.GetDirectories().Length); // still no new sibling of root
+            Assert.True(Directory.Exists(Path.Combine(_modsRoot, "etc")));
         }
 
         // --- helpers ---
