@@ -309,6 +309,7 @@ namespace FUSE.Runtime.API
             // time using the (then-reliable) IsSandbox, so no pre-fill is
             // required for correctness.
             var initialized = InitializeMissingMapFeatureStates(manager);
+            var inferredIndustryIncludes = InferMapFeatureIndustryIncludes(manager, reason);
             var forcedFeatureState = ForceApplyCurrentMapFeatureState(manager, reason);
             var restoredTrackGroups = RestoreDisabledTrackGroups(manager, reason);
             var finalisedOrphans = RevokeTransientlyPreEnabledOrphanGroups(manager, reason);
@@ -316,7 +317,8 @@ namespace FUSE.Runtime.API
                 $"FUSE refreshed progression runtime state package='<all>' operation='refresh progression state' " +
                 $"kind='map features' id='<all>' reason='{reason ?? "unspecified"}' " +
                 $"currentProgressionRefreshed={invokedCurrentProgression} initializedFeatureStates={initialized} " +
-                $"forcedFeatureState={forcedFeatureState} restoredDisabledTrackGroups={restoredTrackGroups} " +
+                $"inferredIndustryIncludes={inferredIndustryIncludes} forcedFeatureState={forcedFeatureState} " +
+                $"restoredDisabledTrackGroups={restoredTrackGroups} " +
                 $"finalisedOrphanTrackGroups={finalisedOrphans}.");
 
             if (FuseSettings.VerboseApplyReportDetails)
