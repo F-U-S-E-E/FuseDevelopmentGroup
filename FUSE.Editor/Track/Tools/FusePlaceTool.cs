@@ -1,4 +1,5 @@
 using System;
+using FUSE.Editor.Screen;
 using FUSE.Editor.Screen.UI;
 using FUSE.Infrastructure;
 using UnityEngine;
@@ -58,6 +59,18 @@ namespace FUSE.Editor.Track.Tools
             // equivalent of Input.GetMouseButtonDown(0).
             var mouse = Mouse.current;
             if (mouse == null || !mouse.leftButton.wasPressedThisFrame)
+            {
+                return;
+            }
+
+            // Don't place behind a modal dialog. The settings panel /
+            // mod browser are IMGUI overlays, so a click on (or outside)
+            // them doesn't register as "over a GameObject" — without this
+            // gate, clicking the dimmed area to dismiss a dialog would
+            // also spawn a ghost node. This check reads the screen's
+            // shared latch rather than IMGUI event state because Tick
+            // runs from Update, not OnGUI.
+            if (FuseEditorScreen.IsModalOverlayOpen)
             {
                 return;
             }

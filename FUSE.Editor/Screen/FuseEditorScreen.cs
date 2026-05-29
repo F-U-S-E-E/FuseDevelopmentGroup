@@ -134,6 +134,14 @@ namespace FUSE.Editor.Screen
         // pass has fully unwound. See the tail of OnGUI.
         private bool _exitRequestedPending;
 
+        /// <summary>
+        /// True while a modal overlay (mod browser or settings panel) is
+        /// open. Lets non-IMGUI input consumers — e.g. tools reading
+        /// <c>Mouse.current</c> in their per-frame tick — refuse to act
+        /// behind a dialog. Reset to false when the screen is disabled.
+        /// </summary>
+        public static bool IsModalOverlayOpen { get; private set; }
+
         // Either side panel is "open" when its underlying registry
         // window kind is open. With tab strips, the panel collapses
         // only when ALL its tabs' kinds are off — that's rare in
@@ -589,6 +597,19 @@ namespace FUSE.Editor.Screen
                     UnityEngine.Screen.width / scale,
                     UnityEngine.Screen.height / scale);
 
+                // Publish modal state so input paths that don't go
+                // through IMGUI events (e.g. FusePlaceTool reading
+                // Mouse.current) can refuse to act while a dialog is up.
+                IsModalOverlayOpen = _modBrowserOpen || _settingsPanelOpen;
+
+                // Modal input gate. When an overlay is open, swallow
+                // mouse events that land OUTSIDE its panel so they never
+                // reach the chrome / viewport drawn below — IMGUI hands a
+                // MouseDown to the first control that contains it in draw
+                // order, so this MUST run before any chrome draws. Also
+                // dismisses the settings panel on an outside press.
+                HandleModalInputGate(screenRect);
+
                 // EDEN-style chrome (menu bar + icon toolbar) frames
                 // the entire surface. Side panels and bottom bar paint
                 // their own opaque backgrounds; the center viewport
@@ -682,6 +703,66 @@ namespace FUSE.Editor.Screen
         private void RequestExit()
         {
             _exitRequestedPending = true;
+        }
+
+        /// <summary>
+        /// Front-of-frame modal input gate. When the settings panel or
+        /// mod browser is open, any mouse event landing OUTSIDE that
+        /// panel is consumed so it never reaches the chrome / viewport
+        /// drawn afterward (IMGUI delivers a press to the first
+        /// containing control in draw order, so this must run first).
+        /// An outside press also dismisses the settings panel; the mod
+        /// browser keeps its explicit ✕ so an accidental click doesn't
+        /// discard a half-filled "New Mod" form.
+        /// </summary>
+        private void HandleModalInputGate(Rect screenRect)
+        {
+            if (!_settingsPanelOpen && !_modBrowserOpen)
+            {
+                return;
+            }
+
+            var e = Event.current;
+            if (e == null)
+            {
+                return;
+            }
+
+            var isMouse = e.type == EventType.MouseDown
+                          || e.type == EventType.MouseUp
+                          || e.type == EventType.MouseDrag
+                          || e.type == EventType.ScrollWheel;
+            if (!isMouse)
+            {
+                return;
+            }
+
+            // Settings panel takes precedence if somehow both are open.
+            var panel = _settingsPanelOpen
+                ? FuseEditorSettingsPanel.GetPanelRect(screenRect)
+                : GetModBrowserRect(screenRect);
+
+            if (panel.Contains(e.mousePosition))
+            {
+                // Inside the dialog — let its own controls handle it.
+                return;
+            }
+
+            if (_settingsPanelOpen && e.type == EventType.MouseDown)
+            {
+                _settingsPanelOpen = false;
+            }
+
+            // Block the event from reaching anything underneath.
+            e.Use();
+        }
+
+        private void OnDisable()
+        {
+            // Clear the shared modal latch when the screen goes away so a
+            // stale "true" can't make a tool refuse input in a later
+            // session (the screen is recreated per editor entry).
+            IsModalOverlayOpen = false;
         }
 
         // -----------------------------------------------------------------
@@ -1462,22 +1543,36 @@ namespace FUSE.Editor.Screen
                 _propertyLabelStyle);
         }
 
+        // Mod browser overlay dimensions. Centered inside the content
+        // area; the chrome (menu / toolbar / bottom bar) still renders
+        // full-width behind the dimmed backdrop.
+        private const float ModBrowserWidth = 760f;
+        private const float ModBrowserHeight = 440f;
+
+        /// <summary>
+        /// The centered mod-browser panel rect for the given LOGICAL
+        /// screen bounds. Shared by the draw path and the front-of-frame
+        /// modal input gate so both hit-test the same rectangle.
+        /// </summary>
+        private static Rect GetModBrowserRect(Rect screen)
+        {
+            var contentTop = ContentTop;
+            var contentBottom = screen.height - BottomBarHeight;
+            var contentHeight = contentBottom - contentTop;
+
+            return new Rect(
+                (screen.width - ModBrowserWidth) * 0.5f,
+                contentTop + Mathf.Max(0f, (contentHeight - ModBrowserHeight) * 0.5f),
+                ModBrowserWidth,
+                Mathf.Min(ModBrowserHeight, contentHeight - Padding * 2f));
+        }
+
         private void DrawModBrowser(Rect screen)
         {
             // Center a fixed-width panel inside the content area. The
             // bookmark bar / status bar still render their full widths;
             // only the mod-picker UI is centered for legibility.
-            const float browserWidth = 760f;
-            const float browserHeight = 440f;
-            var contentTop = ContentTop;
-            var contentBottom = screen.height - BottomBarHeight;
-            var contentHeight = contentBottom - contentTop;
-
-            var rect = new Rect(
-                (screen.width - browserWidth) * 0.5f,
-                contentTop + Mathf.Max(0f, (contentHeight - browserHeight) * 0.5f),
-                browserWidth,
-                Mathf.Min(browserHeight, contentHeight - Padding * 2f));
+            var rect = GetModBrowserRect(screen);
 
             GUI.Box(rect, GUIContent.none, _panelStyle);
 

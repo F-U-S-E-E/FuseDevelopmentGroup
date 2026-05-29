@@ -33,22 +33,32 @@ namespace FUSE.Editor.Screen.UI
             public System.Action OnClose { get; set; }
         }
 
+        /// <summary>
+        /// The centered panel rect for the given LOGICAL screen bounds
+        /// (post-UI-scale). Exposed so the screen's front-of-frame modal
+        /// input gate can hit-test against the same rectangle this draws.
+        /// </summary>
+        public static Rect GetPanelRect(Rect screen)
+        {
+            return new Rect(
+                (screen.width - PanelWidth) * 0.5f,
+                (screen.height - PanelHeight) * 0.5f,
+                PanelWidth, PanelHeight);
+        }
+
         public static void Draw(Rect screen, Options options)
         {
             options ??= new Options();
 
-            // Centered rect; screen here is the LOGICAL screen (i.e.,
-            // post-scale dimensions the caller supplied), so this
-            // math is in the same coordinate space as the rest of
-            // the editor chrome.
-            var panelRect = new Rect(
-                (screen.width - PanelWidth) * 0.5f,
-                (screen.height - PanelHeight) * 0.5f,
-                PanelWidth, PanelHeight);
+            var panelRect = GetPanelRect(screen);
 
             // Backdrop: subtle dim so the panel reads as modal-ish
-            // without fully blocking the world. Click-outside dismisses.
-            DrawBackdrop(screen, options);
+            // without fully blocking the world. Outside-click dismissal
+            // and blocking the chrome beneath are handled by the
+            // screen's front-of-frame input gate — it must run BEFORE
+            // the chrome draws to consume the event, so it can't live
+            // here. This method only paints the dim.
+            DrawBackdrop(screen);
 
             // Frame + body
             FuseEditorTheme.DrawSolid(panelRect, FuseEditorTheme.Palette.BorderStrong);
@@ -60,7 +70,7 @@ namespace FUSE.Editor.Screen.UI
             DrawBody(inner);
         }
 
-        private static void DrawBackdrop(Rect screen, Options options)
+        private static void DrawBackdrop(Rect screen)
         {
             // Half-transparent black covering the whole logical
             // screen; muted enough that the world stays visible.
@@ -68,23 +78,6 @@ namespace FUSE.Editor.Screen.UI
             GUI.color = new Color(0f, 0f, 0f, 0.35f);
             GUI.DrawTexture(screen, Texture2D.whiteTexture);
             GUI.color = prevColor;
-
-            // Click-outside dismissal — only the area outside the
-            // panel triggers close.
-            if (Event.current != null && Event.current.type == EventType.MouseDown)
-            {
-                var mouse = Event.current.mousePosition;
-                var panelLeft = (screen.width - PanelWidth) * 0.5f;
-                var panelTop = (screen.height - PanelHeight) * 0.5f;
-                var inPanel =
-                    mouse.x >= panelLeft && mouse.x <= panelLeft + PanelWidth &&
-                    mouse.y >= panelTop && mouse.y <= panelTop + PanelHeight;
-                if (!inPanel)
-                {
-                    options.OnClose?.Invoke();
-                    Event.current.Use();
-                }
-            }
         }
 
         private static void DrawTitleBar(Rect inner, Options options)

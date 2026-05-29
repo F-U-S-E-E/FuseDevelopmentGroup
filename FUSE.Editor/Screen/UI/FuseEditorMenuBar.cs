@@ -182,15 +182,18 @@ namespace FUSE.Editor.Screen.UI
                 itemY += SubmenuItemHeight;
             }
 
-            // Close on outside-click. Use the layout repaint so we
-            // don't fire during the same event the user clicked the
-            // top-level menu with.
+            // Close on outside-click. Consume the event so the click
+            // that dismisses the menu doesn't also fall through to a
+            // control beneath the popup (a tooltip overlay, the
+            // viewport, etc.). Clicks on the menu bar itself are left
+            // alone so DrawBar's hover-swap / toggle logic still runs.
             var mouse = Event.current?.mousePosition ?? Vector2.zero;
             var inMenuBar = mouse.y < menuBarBottomY;
             if (Event.current != null && Event.current.type == EventType.MouseDown
                 && !popupRect.Contains(mouse) && !inMenuBar)
             {
                 _openTopLevelIndex = -1;
+                Event.current.Use();
                 return;
             }
 
