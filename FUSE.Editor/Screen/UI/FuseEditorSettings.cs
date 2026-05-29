@@ -24,6 +24,14 @@ namespace FUSE.Editor.Screen.UI
         public const float MaxUiScale = 2.5f;
         public const float DefaultUiScale = 1.0f;
 
+        // No-op tolerance for the UiScale setter. float.Epsilon (~1.4e-45)
+        // is effectively exact equality, which never trips on real
+        // slider input and so re-serialised the JSON on every set. A
+        // 1e-4 band is far finer than any visible scale step (the slider
+        // moves in ~1e-3 increments) yet still skips redundant writes
+        // when a value round-trips to itself.
+        private const float UiScaleEpsilon = 1e-4f;
+
         // Settings filename + sub-folder. Kept under a FUSE.Editor/
         // subdirectory of persistentDataPath so a future settings
         // shape (panel positions, hotkey overrides, etc.) can co-
@@ -62,7 +70,7 @@ namespace FUSE.Editor.Screen.UI
             {
                 EnsureLoaded();
                 var clamped = Mathf.Clamp(value, MinUiScale, MaxUiScale);
-                if (Math.Abs(_state.UiScale - clamped) < float.Epsilon)
+                if (Math.Abs(_state.UiScale - clamped) < UiScaleEpsilon)
                 {
                     return;
                 }
