@@ -562,6 +562,19 @@ namespace FUSE.Runtime.API
                 return false;
             }
 
+            if (IsProgressionOnlyIndustry(industry))
+            {
+                if (FuseSettings.VerboseApplyReportDetails)
+                {
+                    FuseLog.Info(
+                        $"FUSE skipped progression industry inference industry='{industry.identifier}' " +
+                        $"feature='{feature.identifier}' reason='industry is progression-only; " +
+                        "active delivery phases are gated by Progression.UpdateSectionStates instead'.");
+                }
+
+                return false;
+            }
+
             if ((feature.unlockExcludeIndustries ?? Array.Empty<Industry>()).Any(existing => SameIndustry(existing, industry)))
             {
                 return false;
@@ -573,6 +586,27 @@ namespace FUSE.Runtime.API
             }
 
             return !FeatureAreasContainIndustry(feature, industry);
+        }
+
+        private static bool IsProgressionOnlyIndustry(Industry industry)
+        {
+            if (industry == null)
+            {
+                return false;
+            }
+
+            IndustryComponent[] components;
+            try
+            {
+                components = industry.GetComponentsInChildren<IndustryComponent>(true) ?? Array.Empty<IndustryComponent>();
+            }
+            catch
+            {
+                return false;
+            }
+
+            return components.Length > 0 &&
+                   components.All(component => component == null || component is ProgressionIndustryComponent);
         }
 
         private static bool AddInferredIndustryInclude(MapFeature feature, Industry industry)
