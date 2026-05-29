@@ -336,11 +336,48 @@ namespace FUSE.Runtime.API
                 return resolved;
             }
 
-            return UnityEngine.Object.FindObjectsOfType<Transform>(true)
-                .FirstOrDefault(transform =>
-                    string.Equals(transform.name, path, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(GetScenePath(transform), path, StringComparison.OrdinalIgnoreCase))
-                ?.gameObject;
+            var normalized = NormalizeScenePath(path);
+            var transforms = UnityEngine.Object.FindObjectsOfType<Transform>(true);
+            var exact = transforms.FirstOrDefault(transform =>
+                string.Equals(transform.name, path, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(NormalizeScenePath(GetScenePath(transform)), normalized, StringComparison.OrdinalIgnoreCase));
+            if (exact != null)
+            {
+                return exact.gameObject;
+            }
+
+            if (normalized.IndexOf('/') < 0)
+            {
+                return null;
+            }
+
+            var suffix = "/" + normalized.TrimStart('/');
+            var suffixMatches = transforms
+                .Where(transform => NormalizeScenePath(GetScenePath(transform)).EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                .Take(2)
+                .ToArray();
+            if (suffixMatches.Length == 1)
+            {
+                FuseLog.Info(
+                    $"FUSE resolved shortened scene path '{path}' to '{GetScenePath(suffixMatches[0])}'.");
+                return suffixMatches[0].gameObject;
+            }
+
+            if (suffixMatches.Length > 1)
+            {
+                FuseLog.Warning(
+                    $"FUSE could not resolve shortened scene path '{path}' because multiple scene objects match that suffix.");
+            }
+
+            return null;
+        }
+
+        private static string NormalizeScenePath(string path)
+        {
+            return (path ?? string.Empty)
+                .Trim()
+                .Replace('\\', '/')
+                .Trim('/');
         }
 
         private static bool ComponentMatchesId(IndustryComponent component, string id)

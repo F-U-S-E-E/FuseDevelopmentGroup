@@ -381,6 +381,463 @@ namespace FUSE.Runtime.API
             return unavailabled;
         }
 
+        private static int InferMapFeatureIndustryIncludes(MapFeatureManager manager, string reason)
+        {
+            if (manager == null)
+            {
+                return 0;
+            }
+
+            var features = (manager.AvailableFeatures ?? Enumerable.Empty<MapFeature>())
+                .Where(feature => feature != null && !string.IsNullOrWhiteSpace(feature.identifier))
+                .ToArray();
+            if (features.Length == 0)
+            {
+                return 0;
+            }
+
+            var trackGroupOwners = BuildTrackGroupOwnerMap(features);
+            var changed = 0;
+            foreach (var industry in UnityEngine.Object.FindObjectsOfType<Industry>(true))
+            {
+                if (industry == null || string.IsNullOrWhiteSpace(industry.identifier))
+                {
+                    continue;
+                }
+
+                var trackGroups = CollectIndustryTrackGroups(industry);
+                var feature = InferFeatureFromTrackGroups(trackGroupOwners, trackGroups, industry, reason);
+                var basis = "track-groups";
+                if (feature == null)
+                {
+                    feature = InferFeatureFromScenery(features, industry, reason);
+                    basis = "scenery";
+                }
+
+                if (feature == null || !CanAddInferredIndustryInclude(feature, industry))
+                {
+                    continue;
+                }
+
+                if (AddInferredIndustryInclude(feature, industry))
+                {
+                    changed++;
+                    FuseLog.Info(
+                        $"FUSE inferred progression industry include feature='{feature.identifier}' " +
+                        $"industry='{industry.identifier}' basis='{basis}' " +
+                        $"trackGroups=[{string.Join(",", trackGroups.OrderBy(group => group).ToArray())}] " +
+                        $"reason='{reason ?? "unspecified"}'.");
+                }
+            }
+
+            return changed;
+        }
+
+        private static Dictionary<string, List<MapFeature>> BuildTrackGroupOwnerMap(IEnumerable<MapFeature> features)
+        {
+            var owners = new Dictionary<string, List<MapFeature>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var feature in features ?? Enumerable.Empty<MapFeature>())
+            {
+                if (feature == null)
+                {
+                    continue;
+                }
+
+                foreach (var groupId in FeatureTrackGroups(feature))
+                {
+                    if (!owners.TryGetValue(groupId, out var groupOwners))
+                    {
+                        groupOwners = new List<MapFeature>();
+                        owners[groupId] = groupOwners;
+                    }
+
+                    if (!groupOwners.Any(existing => SameFeature(existing, feature)))
+                    {
+                        groupOwners.Add(feature);
+                    }
+                }
+            }
+
+            return owners;
+        }
+
+        private static MapFeature InferFeatureFromTrackGroups(
+            Dictionary<string, List<MapFeature>> trackGroupOwners,
+            HashSet<string> trackGroups,
+            Industry industry,
+            string reason)
+        {
+            if (trackGroupOwners == null || trackGroups == null || trackGroups.Count == 0)
+            {
+                return null;
+            }
+
+            var owners = new List<MapFeature>();
+            foreach (var groupId in trackGroups)
+            {
+                if (!trackGroupOwners.TryGetValue(groupId, out var groupOwners))
+                {
+                    continue;
+                }
+
+                foreach (var owner in groupOwners)
+                {
+                    if (owner != null && !owners.Any(existing => SameFeature(existing, owner)))
+                    {
+                        owners.Add(owner);
+                    }
+                }
+            }
+
+            if (owners.Count == 1)
+            {
+                return owners[0];
+            }
+
+            if (owners.Count > 1 && FuseSettings.VerboseApplyReportDetails)
+            {
+                FuseLog.Info(
+                    $"FUSE skipped progression industry inference industry='{industry?.identifier ?? "<unknown>"}' " +
+                    $"reason='{reason ?? "unspecified"}' message='track spans are claimed by multiple features' " +
+                    $"features=[{string.Join(",", owners.Select(feature => feature.identifier).OrderBy(id => id).ToArray())}] " +
+                    $"trackGroups=[{string.Join(",", trackGroups.OrderBy(group => group).ToArray())}].");
+            }
+
+            return null;
+        }
+
+        private static MapFeature InferFeatureFromScenery(IEnumerable<MapFeature> features, Industry industry, string reason)
+        {
+            if (industry == null || !industry.usesContract)
+            {
+                return null;
+            }
+
+            var aliases = BuildIndustrySearchAliases(industry);
+            if (aliases.Count == 0)
+            {
+                return null;
+            }
+
+            var matches = new List<MapFeature>();
+            foreach (var feature in features ?? Enumerable.Empty<MapFeature>())
+            {
+                if (feature == null)
+                {
+                    continue;
+                }
+
+                var sceneryKey = BuildFeatureScenerySearchKey(feature);
+                if (string.IsNullOrWhiteSpace(sceneryKey))
+                {
+                    continue;
+                }
+
+                if (aliases.Any(alias => sceneryKey.Contains(alias)))
+                {
+                    matches.Add(feature);
+                }
+            }
+
+            if (matches.Count == 1)
+            {
+                return matches[0];
+            }
+
+            if (matches.Count > 1 && FuseSettings.VerboseApplyReportDetails)
+            {
+                FuseLog.Info(
+                    $"FUSE skipped progression industry scenery inference industry='{industry.identifier}' " +
+                    $"reason='{reason ?? "unspecified"}' message='industry name matched multiple feature scenery paths' " +
+                    $"features=[{string.Join(",", matches.Select(feature => feature.identifier).OrderBy(id => id).ToArray())}].");
+            }
+
+            return null;
+        }
+
+        private static bool CanAddInferredIndustryInclude(MapFeature feature, Industry industry)
+        {
+            if (feature == null || industry == null)
+            {
+                return false;
+            }
+
+            if (IsProgressionOnlyIndustry(industry))
+            {
+                if (FuseSettings.VerboseApplyReportDetails)
+                {
+                    FuseLog.Info(
+                        $"FUSE skipped progression industry inference industry='{industry.identifier}' " +
+                        $"feature='{feature.identifier}' reason='industry is progression-only; " +
+                        "active delivery phases are gated by Progression.UpdateSectionStates instead'.");
+                }
+
+                return false;
+            }
+
+            if ((feature.unlockExcludeIndustries ?? Array.Empty<Industry>()).Any(existing => SameIndustry(existing, industry)))
+            {
+                return false;
+            }
+
+            if ((feature.unlockIncludeIndustries ?? Array.Empty<Industry>()).Any(existing => SameIndustry(existing, industry)))
+            {
+                return false;
+            }
+
+            return !FeatureAreasContainIndustry(feature, industry);
+        }
+
+        private static bool IsProgressionOnlyIndustry(Industry industry)
+        {
+            if (industry == null)
+            {
+                return false;
+            }
+
+            IndustryComponent[] components;
+            try
+            {
+                components = industry.GetComponentsInChildren<IndustryComponent>(true) ?? Array.Empty<IndustryComponent>();
+            }
+            catch
+            {
+                return false;
+            }
+
+            return components.Length > 0 &&
+                   components.All(component => component == null || component is ProgressionIndustryComponent);
+        }
+
+        private static bool AddInferredIndustryInclude(MapFeature feature, Industry industry)
+        {
+            var existing = feature.unlockIncludeIndustries ?? Array.Empty<Industry>();
+            if (existing.Any(candidate => SameIndustry(candidate, industry)))
+            {
+                return false;
+            }
+
+            var merged = existing
+                .Where(candidate => candidate != null)
+                .Concat(new[] { industry })
+                .GroupBy(candidate => string.IsNullOrWhiteSpace(candidate.identifier) ? candidate.GetInstanceID().ToString() : candidate.identifier,
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToArray();
+            feature.unlockIncludeIndustries = merged;
+            return true;
+        }
+
+        private static bool FeatureAreasContainIndustry(MapFeature feature, Industry industry)
+        {
+            foreach (var area in feature.areasEnableOnUnlock ?? Array.Empty<Area>())
+            {
+                if (area == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if ((area.Industries ?? Enumerable.Empty<Industry>()).Any(candidate => SameIndustry(candidate, industry)))
+                    {
+                        return true;
+                    }
+                }
+                catch
+                {
+                    // Best effort only; a feature's explicit include/exclude lists still apply above.
+                }
+            }
+
+            return false;
+        }
+
+        private static HashSet<string> CollectIndustryTrackGroups(Industry industry)
+        {
+            var groups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (industry == null)
+            {
+                return groups;
+            }
+
+            IndustryComponent[] components;
+            try
+            {
+                components = industry.GetComponentsInChildren<IndustryComponent>(true) ?? Array.Empty<IndustryComponent>();
+            }
+            catch
+            {
+                return groups;
+            }
+
+            foreach (var component in components)
+            {
+                if (component == null)
+                {
+                    continue;
+                }
+
+                IEnumerable<TrackSpan> spans;
+                try
+                {
+                    spans = component.TrackSpans ?? Enumerable.Empty<TrackSpan>();
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (var span in spans)
+                {
+                    AddTrackSpanGroupIds(span, groups);
+                }
+            }
+
+            return groups;
+        }
+
+        private static void AddTrackSpanGroupIds(TrackSpan span, ISet<string> groups)
+        {
+            if (span == null || groups == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var upper = span.upper;
+                if (upper.HasValue)
+                {
+                    AddTrackSegmentGroupId(upper.Value.segment, groups);
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                var lower = span.lower;
+                if (lower.HasValue)
+                {
+                    AddTrackSegmentGroupId(lower.Value.segment, groups);
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                foreach (var segment in span.GetSegments() ?? Enumerable.Empty<TrackSegment>())
+                {
+                    AddTrackSegmentGroupId(segment, groups);
+                }
+            }
+            catch
+            {
+                // Invalid spans should not block the rest of the inference pass.
+            }
+        }
+
+        private static void AddTrackSegmentGroupId(TrackSegment segment, ISet<string> groups)
+        {
+            if (segment == null || string.IsNullOrWhiteSpace(segment.groupId))
+            {
+                return;
+            }
+
+            groups.Add(segment.groupId);
+        }
+
+        private static List<string> BuildIndustrySearchAliases(Industry industry)
+        {
+            var aliases = new List<string>();
+            AddSearchAlias(aliases, industry?.identifier);
+            AddSearchAlias(aliases, industry?.name);
+            return aliases;
+        }
+
+        private static void AddSearchAlias(List<string> aliases, string value)
+        {
+            var compact = CompactSearchKey(value);
+            if (compact.Length < 8 || aliases.Contains(compact))
+            {
+                return;
+            }
+
+            aliases.Add(compact);
+        }
+
+        private static string BuildFeatureScenerySearchKey(MapFeature feature)
+        {
+            if (feature == null)
+            {
+                return string.Empty;
+            }
+
+            var parts = new List<string>();
+            foreach (var gameObject in feature.gameObjectsEnableOnUnlock ?? Array.Empty<GameObject>())
+            {
+                if (gameObject == null)
+                {
+                    continue;
+                }
+
+                parts.Add(gameObject.name);
+                parts.Add(GetGameObjectPath(gameObject));
+            }
+
+            return CompactSearchKey(string.Join(" ", parts.ToArray()));
+        }
+
+        private static string CompactSearchKey(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var chars = new char[value.Length];
+            var count = 0;
+            foreach (var ch in value)
+            {
+                if (!char.IsLetterOrDigit(ch))
+                {
+                    continue;
+                }
+
+                chars[count++] = char.ToLowerInvariant(ch);
+            }
+
+            return count == 0 ? string.Empty : new string(chars, 0, count);
+        }
+
+        private static bool SameFeature(MapFeature left, MapFeature right)
+        {
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            return left == right ||
+                   (!string.IsNullOrWhiteSpace(left.identifier) &&
+                    string.Equals(left.identifier, right.identifier, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool SameIndustry(Industry left, Industry right)
+        {
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            return left == right ||
+                   (!string.IsNullOrWhiteSpace(left.identifier) &&
+                    string.Equals(left.identifier, right.identifier, StringComparison.OrdinalIgnoreCase));
+        }
+
         private static bool IsFeatureEnabled(MapFeature feature, IDictionary<string, bool> states)
         {
             if (feature == null || string.IsNullOrWhiteSpace(feature.identifier))
