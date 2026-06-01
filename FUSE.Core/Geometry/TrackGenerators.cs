@@ -206,7 +206,7 @@ namespace Fuse.Core.Geometry
         /// </summary>
         public static List<GeneratedTrack> Parallel(
             GeneratedTrack source, double separation, int nTracks = 1, ParallelSide side = ParallelSide.Right,
-            string trackClass = "main", string style = "standard", int speedLimit = 0)
+            string trackClass = null, string style = null, int speedLimit = 0)
         {
             var offsets = new List<double>();
             switch (side)

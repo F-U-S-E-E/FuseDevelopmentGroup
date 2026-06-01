@@ -43,7 +43,22 @@ public static class NlcdLandcover
     /// </summary>
     public static (byte[] Veg, bool[] Water) BuildVegWater(byte[] rgb, int fetchRes, int outRes, int gutter, double blurSigma)
     {
+        if (rgb is null)
+        {
+            throw new System.ArgumentNullException(nameof(rgb));
+        }
+
+        if (fetchRes <= 0 || outRes <= 0 || gutter < 0 || fetchRes != outRes + (2 * gutter))
+        {
+            throw new System.ArgumentException("fetchRes must be positive and equal outRes + 2*gutter.");
+        }
+
         var n = fetchRes * fetchRes;
+        if (rgb.Length < n * 3)
+        {
+            throw new System.ArgumentException("RGB buffer must have at least fetchRes*fetchRes*3 entries.", nameof(rgb));
+        }
+
         var vegRaw = new byte[n];
         var waterRaw = new float[n];
         for (var i = 0; i < n; i++)

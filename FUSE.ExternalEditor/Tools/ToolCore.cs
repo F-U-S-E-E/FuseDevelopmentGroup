@@ -73,10 +73,19 @@ public sealed class ToolHost
 
     public ToolHost(IReadOnlyList<ITool> tools)
     {
+        System.ArgumentNullException.ThrowIfNull(tools);
+        if (tools.Count == 0)
+        {
+            throw new System.ArgumentException("At least one tool must be registered.", nameof(tools));
+        }
+
         Tools = tools;
         foreach (var t in tools)
         {
-            _byId[t.Id] = t;
+            if (!_byId.TryAdd(t.Id, t))
+            {
+                throw new System.ArgumentException($"Duplicate tool id '{t.Id}'.", nameof(tools));
+            }
         }
 
         Active = tools[0];

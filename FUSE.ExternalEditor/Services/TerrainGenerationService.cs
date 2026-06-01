@@ -61,6 +61,10 @@ public sealed class TerrainGenerationService : ITerrainGenerationService
             {
                 throw;
             }
+            catch (OperationCanceledException)
+            {
+                throw; // honor cancellation instead of treating it as a recoverable NLCD failure
+            }
             catch
             {
                 veg = null; // NLCD failure → veg 0 (matches the reference's fallback)

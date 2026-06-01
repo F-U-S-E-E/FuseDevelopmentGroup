@@ -31,7 +31,12 @@ public sealed partial class TerrainTileService : ITerrainTileService
         var ty = int.Parse(match.Groups[2].Value);
 
         using var image = Image.Load<Rgba32>(path);
-        var res = System.Math.Min(image.Width, image.Height);
+        if (image.Width != image.Height)
+        {
+            throw new InvalidDataException($"Terrain tile '{path}' must be square; got {image.Width}x{image.Height}.");
+        }
+
+        var res = image.Width;
         var count = res * res;
         var r = new byte[count];
         var g = new byte[count];

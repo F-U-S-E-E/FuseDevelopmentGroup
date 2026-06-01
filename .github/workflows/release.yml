@@ -131,6 +131,8 @@ jobs:
           if (Test-Path $stagingRoot) { Remove-Item $stagingRoot -Recurse -Force }
           New-Item -ItemType Directory -Path $modFolder | Out-Null
           Copy-Item "FUSE.LiveBridge\bin\Release\net48\FUSE.LiveBridge.dll" $modFolder
+          # FUSE.Core.dll is a runtime dependency of the bridge (ProjectReference); ship it too.
+          Copy-Item "FUSE.LiveBridge\bin\Release\net48\FUSE.Core.dll" $modFolder
           Copy-Item "FUSE.LiveBridge\bin\Release\net48\Info.json" $modFolder
           $zip = "FUSE.LiveBridge-v$version.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }

@@ -31,10 +31,12 @@ namespace FUSE.LiveBridge
         private int _appliedCount;
         private bool _lastOk = true;
         private string _lastError;
+        private int _pid;
 
         public void Configure(string modPath)
         {
             _ownDir = modPath;
+            _pid = Process.GetCurrentProcess().Id; // invariant; resolve once (avoids leaking a Process handle per heartbeat)
             try
             {
                 _modsDir = Directory.GetParent(modPath)?.FullName ?? modPath;
@@ -60,12 +62,30 @@ namespace FUSE.LiveBridge
                 _watcher.Changed += OnCommandFileEvent;
                 _watcher.Created += OnCommandFileEvent;
                 _watcher.Renamed += OnCommandFileRenamed;
+                _watcher.Error += OnWatcherError;
                 _watcher.EnableRaisingEvents = true;
             }
             catch (Exception ex)
             {
                 Main.ModEntry?.Logger.Warning("FUSE.LiveBridge watcher setup failed: " + ex.Message);
             }
+        }
+
+        // The recursive watcher's internal buffer can overflow; when it does the Error
+        // event fires and delivery can stop. Log it and re-arm the watcher so reload survives.
+        private void OnWatcherError(object sender, ErrorEventArgs e)
+        {
+            Main.ModEntry?.Logger.Warning("FUSE.LiveBridge watcher error (re-arming): " + e.GetException()?.Message);
+            try
+            {
+                _watcher?.Dispose();
+            }
+            catch
+            {
+                // ignore
+            }
+
+            SetupWatcher();
         }
 
         private void OnCommandFileEvent(object sender, FileSystemEventArgs e) => Enqueue(e.FullPath);
@@ -140,7 +160,7 @@ namespace FUSE.LiveBridge
             {
                 var state = new BridgeState
                 {
-                    Pid = Process.GetCurrentProcess().Id,
+                    Pid = _pid,
                     GameVersion = Application.version,
                     FuseVersion = string.Empty,
                     HeartbeatUtc = DateTime.UtcNow.ToString("o"),

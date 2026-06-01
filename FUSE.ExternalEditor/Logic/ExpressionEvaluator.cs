@@ -48,14 +48,14 @@ public static class ExpressionEvaluator
 
     private static double ParseTerm(string s, ref int p)
     {
-        var v = ParseFactor(s, ref p);
+        var v = ParseUnary(s, ref p);
         while (true)
         {
             SkipWhitespace(s, ref p);
             if (p < s.Length && (s[p] == '*' || s[p] == '/'))
             {
                 var op = s[p++];
-                var r = ParseFactor(s, ref p);
+                var r = ParseUnary(s, ref p);
                 v = op == '*' ? v * r : v / r;
             }
             else
@@ -65,20 +65,7 @@ public static class ExpressionEvaluator
         }
     }
 
-    private static double ParseFactor(string s, ref int p)
-    {
-        var b = ParseUnary(s, ref p);
-        SkipWhitespace(s, ref p);
-        if (p < s.Length && s[p] == '^')
-        {
-            p++;
-            var e = ParseFactor(s, ref p); // right-associative
-            return Math.Pow(b, e);
-        }
-
-        return b;
-    }
-
+    // Unary binds looser than '^' so that -2^2 == -(2^2) == -4.
     private static double ParseUnary(string s, ref int p)
     {
         SkipWhitespace(s, ref p);
@@ -94,7 +81,21 @@ public static class ExpressionEvaluator
             return ParseUnary(s, ref p);
         }
 
-        return ParsePrimary(s, ref p);
+        return ParsePower(s, ref p);
+    }
+
+    private static double ParsePower(string s, ref int p)
+    {
+        var b = ParsePrimary(s, ref p);
+        SkipWhitespace(s, ref p);
+        if (p < s.Length && s[p] == '^')
+        {
+            p++;
+            var e = ParseUnary(s, ref p); // right-associative; allows a signed exponent (2^-3)
+            return Math.Pow(b, e);
+        }
+
+        return b;
     }
 
     private static double ParsePrimary(string s, ref int p)

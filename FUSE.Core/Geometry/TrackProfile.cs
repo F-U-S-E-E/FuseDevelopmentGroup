@@ -38,6 +38,11 @@ namespace Fuse.Core.Geometry
         public static IReadOnlyList<ProfilePoint> Build(
             FuseTrackDefinition tracks, IReadOnlyList<string> nodeIds, Func<double, double, double?> terrainSampler = null)
         {
+            if (tracks == null)
+            {
+                throw new ArgumentNullException(nameof(tracks));
+            }
+
             var result = new List<ProfilePoint>();
             if (nodeIds == null || nodeIds.Count == 0)
             {

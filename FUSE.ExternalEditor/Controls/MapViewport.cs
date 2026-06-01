@@ -132,7 +132,7 @@ public sealed class MapViewport : Control
         var hasTracks = tracks is not null && tracks.Nodes.Count > 0;
         var hasWorld = world is not null && (world.Splineys.Count > 0 || world.Scenery.Count > 0);
         var preview = ActiveTool?.Preview;
-        if (!hasTerrain && !hasTracks && !hasWorld && preview is null)
+        if (!hasTerrain && !hasTracks && !hasWorld && preview is null && OsmOverlay is null)
         {
             return;
         }

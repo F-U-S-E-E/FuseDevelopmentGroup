@@ -33,9 +33,24 @@ public sealed class TerrainTile
 
     public TerrainTile(int x, int y, int res, byte[] r, byte[] g, byte[] a, string? path = null)
     {
-        if (r is null || g is null || a is null)
+        if (r is null)
         {
-            throw new ArgumentNullException(nameof(r), "Tile channels are required.");
+            throw new ArgumentNullException(nameof(r));
+        }
+
+        if (g is null)
+        {
+            throw new ArgumentNullException(nameof(g));
+        }
+
+        if (a is null)
+        {
+            throw new ArgumentNullException(nameof(a));
+        }
+
+        if (res <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(res), "Resolution must be > 0.");
         }
 
         var n = res * res;

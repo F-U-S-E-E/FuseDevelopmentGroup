@@ -6,8 +6,6 @@ using Fuse.ExternalEditor.ViewModels;
 using Fuse.ExternalEditor.Views;
 using Xunit;
 
-// Helper to build a MainWindowViewModel with its dependencies for tests.
-
 namespace Fuse.ExternalEditor.UiTests;
 
 /// <summary>
@@ -21,8 +19,8 @@ public class MainWindowUiTests
     private static string ExamplePath =>
         Path.Combine(AppContext.BaseDirectory, "fuse-mod.example.json");
 
-    [AvaloniaFact]
-    public void MainWindow_Binds_Title_From_ViewModel()
+    // Builds the full MainWindowViewModel dependency graph for these headless smoke tests.
+    private static MainWindowViewModel BuildViewModel()
     {
         var viewport = new ViewportViewModel(new TerrainTileService());
         var undo = new Fuse.Core.Authoring.UndoService();
@@ -30,7 +28,13 @@ public class MainWindowUiTests
         var gen = new GenerationViewModel(new TerrainGenerationService(new System.Net.Http.HttpClient(), new TerrainTileService()), viewport);
         var osm = new OsmOverlayViewModel(new OsmTileService(new System.Net.Http.HttpClient()), viewport);
         var profile = new ProfileViewModel(trackGraph, viewport, undo);
-        var viewModel = new MainWindowViewModel(new ProjectService(), viewport, trackGraph, new TerrainEditViewModel(new TerrainTileService(), viewport, undo), new EntityTreeViewModel(), new LegacyImportService(), gen, osm, profile);
+        return new MainWindowViewModel(new ProjectService(), viewport, trackGraph, new TerrainEditViewModel(new TerrainTileService(), viewport, undo), new EntityTreeViewModel(), new LegacyImportService(), gen, osm, profile);
+    }
+
+    [AvaloniaFact]
+    public void MainWindow_Binds_Title_From_ViewModel()
+    {
+        var viewModel = BuildViewModel();
         var window = new MainWindow { DataContext = viewModel };
 
         window.Show();
@@ -43,13 +47,7 @@ public class MainWindowUiTests
     [AvaloniaFact]
     public void Loading_Example_Updates_ViewModel_Summary()
     {
-        var viewport = new ViewportViewModel(new TerrainTileService());
-        var undo = new Fuse.Core.Authoring.UndoService();
-        var trackGraph = new TrackGraphViewModel(new ProjectService(), new LiveBridgeService(), undo);
-        var gen = new GenerationViewModel(new TerrainGenerationService(new System.Net.Http.HttpClient(), new TerrainTileService()), viewport);
-        var osm = new OsmOverlayViewModel(new OsmTileService(new System.Net.Http.HttpClient()), viewport);
-        var profile = new ProfileViewModel(trackGraph, viewport, undo);
-        var viewModel = new MainWindowViewModel(new ProjectService(), viewport, trackGraph, new TerrainEditViewModel(new TerrainTileService(), viewport, undo), new EntityTreeViewModel(), new LegacyImportService(), gen, osm, profile);
+        var viewModel = BuildViewModel();
         var window = new MainWindow { DataContext = viewModel };
         window.Show();
 

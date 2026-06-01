@@ -66,7 +66,7 @@ public sealed class OsmTileService : IOsmTileService
     private async Task<byte[]> FetchTileAsync(string url, CancellationToken ct)
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.TryAddWithoutValidation("User-Agent", "FUSE.ExternalEditor (https://github.com/)");
+        req.Headers.TryAddWithoutValidation("User-Agent", "FUSE.ExternalEditor/1.0 (+https://github.com/F-U-S-E-E/FuseDevelopmentGroup)");
         using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
         resp.EnsureSuccessStatusCode();
         var bytes = await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);

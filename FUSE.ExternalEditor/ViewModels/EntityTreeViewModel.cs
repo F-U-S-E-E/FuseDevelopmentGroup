@@ -40,6 +40,8 @@ public partial class EntityTreeViewModel : ViewModelBase
 
     public void Build(FuseModDefinition definition)
     {
+        System.ArgumentNullException.ThrowIfNull(definition);
+
         var roots = new ObservableCollection<EntityNode>();
 
         var tracks = definition.Tracks;

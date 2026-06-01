@@ -49,6 +49,7 @@ public class Dialogs8bTests
     [InlineData("2^3^2", 512.0)] // right-associative
     [InlineData("-5+3", -2.0)]
     [InlineData("10/4", 2.5)]
+    [InlineData("-2^2", -4.0)] // exponent binds tighter than unary minus
     public void Evaluator_Respects_Precedence(string expr, double expected)
     {
         Assert.Equal(expected, ExpressionEvaluator.Evaluate(expr), 9);

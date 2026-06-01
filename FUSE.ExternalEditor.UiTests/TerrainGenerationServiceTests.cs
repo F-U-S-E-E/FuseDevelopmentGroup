@@ -25,15 +25,21 @@ public class TerrainGenerationServiceTests
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder;
         private int _concurrent;
+        private int _maxConcurrent;
 
         public FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) => _responder = responder;
 
-        public int MaxConcurrent { get; private set; }
+        public int MaxConcurrent => Volatile.Read(ref _maxConcurrent);
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var c = Interlocked.Increment(ref _concurrent);
-            MaxConcurrent = Math.Max(MaxConcurrent, c);
+            int observed;
+            do
+            {
+                observed = Volatile.Read(ref _maxConcurrent);
+            }
+            while (c > observed && Interlocked.CompareExchange(ref _maxConcurrent, c, observed) != observed);
             try
             {
                 await Task.Delay(5, cancellationToken);

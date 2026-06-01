@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
@@ -34,7 +35,14 @@ public partial class MainWindow : Window
 
         if (folders.Count > 0)
         {
-            vm.Viewport.LoadFolder(folders[0].Path.LocalPath);
+            try
+            {
+                vm.Viewport.LoadFolder(folders[0].Path.LocalPath);
+            }
+            catch (Exception ex)
+            {
+                vm.Status = "Open terrain failed: " + ex.Message;
+            }
         }
     }
 
@@ -55,7 +63,14 @@ public partial class MainWindow : Window
 
         if (files.Count > 0)
         {
-            vm.TrackGraph.OpenProject(files[0].Path.LocalPath);
+            try
+            {
+                vm.TrackGraph.OpenProject(files[0].Path.LocalPath);
+            }
+            catch (Exception ex)
+            {
+                vm.Status = "Open mod failed: " + ex.Message;
+            }
         }
     }
 
@@ -77,7 +92,14 @@ public partial class MainWindow : Window
 
         if (file is not null)
         {
-            vm.TrackGraph.Save(file.Path.LocalPath);
+            try
+            {
+                vm.TrackGraph.Save(file.Path.LocalPath);
+            }
+            catch (Exception ex)
+            {
+                vm.Status = "Save failed: " + ex.Message;
+            }
         }
     }
 
@@ -85,7 +107,14 @@ public partial class MainWindow : Window
     {
         if (DataContext is MainWindowViewModel vm)
         {
-            await vm.NewModAsync(new AvaloniaDialogService(this));
+            try
+            {
+                await vm.NewModAsync(new AvaloniaDialogService(this));
+            }
+            catch (Exception ex)
+            {
+                vm.Status = "New mod failed: " + ex.Message;
+            }
         }
     }
 
@@ -105,7 +134,14 @@ public partial class MainWindow : Window
 
         if (folders.Count > 0)
         {
-            vm.ImportLegacyMod(folders[0].Path.LocalPath);
+            try
+            {
+                vm.ImportLegacyMod(folders[0].Path.LocalPath);
+            }
+            catch (Exception ex)
+            {
+                vm.Status = "Legacy import failed: " + ex.Message;
+            }
         }
     }
 
