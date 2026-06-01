@@ -296,3 +296,58 @@ jobs:
             3. Launch Railroader; verify with `/fuse.report`
 
             > Artifact retention: 30 days. This comment refreshes automatically on each push to the PR.
+
+  # Cross-platform editor lane. Builds the game-free net10 projects (FUSE.Core,
+  # FUSE.ExternalEditor, the converter's net10 facet) on a STOCK GitHub runner —
+  # no Unity/UMM DLLs, no GameDir/Paths.user — and runs the net10 test suites.
+  # This is what proves the standalone Avalonia editor builds + tests anywhere,
+  # independent of the self-hosted Railroader runner above.
+  build-net10:
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build FUSE.Core (net10)
+        run: dotnet build FUSE.Core/FUSE.Core.csproj -c Release -f net10.0
+
+      - name: Build FUSE.ExternalEditor
+        run: dotnet build FUSE.ExternalEditor/FUSE.ExternalEditor.csproj -c Release
+
+      - name: Test FUSE.Core.Tests (net10)
+        run: dotnet test FUSE.Core.Tests/FUSE.Core.Tests.csproj -c Release --logger "trx;LogFileName=core-tests.trx" --results-directory TestResults
+
+      - name: Test FUSE.ExternalEditor.UiTests (headless)
+        run: dotnet test FUSE.ExternalEditor.UiTests/FUSE.ExternalEditor.UiTests.csproj -c Release --logger "trx;LogFileName=ui-tests.trx" --results-directory TestResults
+
+      # Per-RID publish smoke (framework-dependent to keep CI artifacts small;
+      # release.yml builds the self-contained per-OS bundles for distribution).
+      - name: Publish editor per-RID
+        run: |
+          for rid in win-x64 linux-x64 osx-x64; do
+            dotnet publish FUSE.ExternalEditor/FUSE.ExternalEditor.csproj -c Release -r $rid --self-contained false -o publish/$rid
+          done
+
+      - name: Upload editor publish artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuse-external-editor
+          path: publish/
+          retention-days: 14
+
+      - name: Upload net10 test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: net10-test-results
+          path: TestResults/*.trx
+          retention-days: 7

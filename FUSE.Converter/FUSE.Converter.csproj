@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
+    <TargetFrameworks>net48;net10.0</TargetFrameworks>
     <AssemblyName>FUSE.Converter</AssemblyName>
     <RootNamespace>FUSE.Converter</RootNamespace>
     <LangVersion>latest</LangVersion>
@@ -31,6 +31,7 @@
          internal types to drive conversion without exposing a wide API. -->
     <InternalsVisibleTo Include="FUSE.Tests" />
     <InternalsVisibleTo Include="FUSE.Editor" />
+    <InternalsVisibleTo Include="FUSE.ExternalEditor" />
   </ItemGroup>
 
 </Project>
