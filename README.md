@@ -1,8 +1,6 @@
 # FUSE
 
-FUSE is a Unity Mod Manager modding layer for Railroader. It loads FUSE data packages for route extensions, asset packs, audio packs, track graph changes, world scenery, operations, progression data, and compatibility imports from the legacy AMM, Strange Customs, and RailLoader ecosystem.
-
-This repository is currently targeting a beta release.
+FUSE is a Unity Mod Manager modding layer for Railroader. It loads FUSE data packages — route extensions, asset packs, audio packs, track graph changes, world scenery, operations, and progression data — and provides drop-in compatibility for legacy Railloader, Strange Customs, ConfusingSupplements, For Your Convenience, and Alina's Map Mod packages.
 
 ## Supported Game Version
 
@@ -15,7 +13,7 @@ FUSE logs its version report at startup in `FUSE.log`.
 
 ## Supported Package Types
 
-FUSE beta supports these package categories:
+FUSE supports these package categories:
 
 - Route/data packages with `*.fuse.json` files
 - Map tile overlays
@@ -28,10 +26,10 @@ FUSE beta supports these package categories:
 
 The FUSE JSON schema lives at `schemas/fuse-mod.schema.json`. The hand-written schema notes live at `schemas/FUSE_JSON_SCHEMA.md`.
 
-## Not Supported In This Beta
+## Not Supported
 
 - Full public in-game editor workflow
-- Multiplayer is compatibility-mode only for beta. FUSE does not sync package contents over the network; instead every host/client applies its own local package stack, matching the legacy RailLoader expectation that everyone has the same mods installed. Non-host clients log a warning the first time they apply runtime world changes. Servers that want strict client blocking can set `Settings.BlockNonHostMultiplayerClientWorldApply` to `true`.
+- Multiplayer is compatibility-mode only. FUSE does not sync package contents over the network; instead every host/client applies its own local package stack, matching the legacy Railloader expectation that everyone has the same mods installed. Non-host clients log a warning the first time they apply runtime world changes. Servers that want strict client blocking can set `Settings.BlockNonHostMultiplayerClientWorldApply` to `true`.
 - Arbitrary legacy script mods that are not data, asset, audio, or supported runtime component packages
 - Rolling stock and locomotive/car mods, except audio definitions that FUSE can import
 - Mid-session scene-path suppression re-enable
@@ -67,9 +65,9 @@ Do not mix legacy and converted FUSE copies of the same route unless you are del
 4. Restore the previous mod folders and save backup if needed.
 5. Start the game and verify the legacy stack or vanilla game loads normally.
 
-## Beta Support Policy
+## Support Policy
 
-When reporting a beta issue, include:
+When reporting an issue, include:
 
 - `FUSE.log`
 - `Player.log`
@@ -79,7 +77,7 @@ When reporting a beta issue, include:
 - The converter `conversion-report.json` and `conversion-report.md` for the affected package
 - Screenshots and the exact mod/package list
 
-The current supported test stack is the converted corpus under `C:\Railroader mods\Installed\Map` plus the asset packs required by those packages. Public support priority goes to issues reproducible with that stack or with a minimal converted package.
+Support priority goes to issues reproducible with a minimal converted package or against a documented legacy route covered by the converter.
 
 ## Runtime Diagnostics
 
@@ -104,7 +102,7 @@ Experimental commands:
 - `/fuse.reapply`
 - `/fuse.restore`
 
-Experimental commands should not be used during normal beta play unless testing recovery.
+Experimental commands should not be used during normal play unless testing recovery.
 
 ## Known Limitations
 
