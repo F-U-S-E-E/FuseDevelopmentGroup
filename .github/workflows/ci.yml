@@ -48,11 +48,13 @@ jobs:
       # Pass a non-default ModVersion so the InjectModVersionIntoInfoJson
       # target runs (it is gated on '$(ModVersion)' != '0.0.0'). This catches
       # regressions in the post-build PowerShell that stamps Info.json.
+      # Build FUSE.Editor.csproj since it ProjectReferences FUSE.csproj —
+      # MSBuild builds FUSE.dll first, FUSE.Editor.dll second.
       - name: Build (Debug)
-        run: dotnet build FUSE/FUSE.csproj -c Debug -p:ModVersion=0.0.1-ci
+        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Debug -p:ModVersion=0.0.1-ci
 
       - name: Build (Release)
-        run: dotnet build FUSE/FUSE.csproj -c Release -p:ModVersion=0.0.1-ci
+        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Release -p:ModVersion=0.0.1-ci
 
       - name: Verify Info.json stamped with version
         shell: powershell
@@ -228,7 +230,7 @@ jobs:
           "short_sha=$sha" >> $env:GITHUB_OUTPUT
 
       - name: Rebuild Release with stamped version
-        run: dotnet build FUSE/FUSE.csproj -c Release -p:ModVersion=${{ steps.build_id.outputs.version }}
+        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Release -p:ModVersion=${{ steps.build_id.outputs.version }}
 
       - name: Package mod zip
         shell: powershell
@@ -245,6 +247,14 @@ jobs:
 
           Copy-Item "FUSE\bin\Release\net48\FUSE.dll" $modFolder
           Copy-Item "FUSE\bin\Release\net48\Info.json" $modFolder
+          # FUSE.Editor.dll ships side-by-side with FUSE.dll; FUSE loads it
+          # lazily from this folder via Assembly.LoadFrom after UMM boots.
+          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Editor.dll" $modFolder
+          # FUSE.Converter.dll is referenced by the editor's Convert
+          # button. Project-reference flows it to FUSE.Editor's output
+          # naturally; the deploy step explicitly copies it so the
+          # zipped mod folder is self-contained.
+          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Converter.dll" $modFolder
           Copy-Item -Recurse "schemas" $modFolder
           Copy-Item "tools\assets\fuse_converter_icon.png" (Join-Path $modFolder 'assets\fuse_icon.png')
 

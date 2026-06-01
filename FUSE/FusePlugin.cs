@@ -72,7 +72,8 @@ namespace FUSE
                 // re-attempts registration on the first map load.
                 FuseConsoleRegistrar.TryRegisterAll();
 
-                FuseEditor.OnFuseLoad();
+                FuseEditorAssemblyLoader.TryInitialize(modEntry.Path);
+                FuseEditorBridge.NotifyFuseLoaded();
                 FuseHealthUi.Ensure();
                 FuseOrphanedCarWindow.Ensure();
                 FuseTrackDebugOverlay.Ensure();
@@ -224,7 +225,7 @@ namespace FUSE
 
             if (_isLoaded)
             {
-                FuseEditor.OnFuseUnload();
+                FuseEditorBridge.NotifyFuseUnloaded();
                 FuseEvents.RaiseFuseUnloaded();
                 FuseLog.Info("FUSE unloaded.");
             }

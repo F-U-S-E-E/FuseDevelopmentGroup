@@ -53,7 +53,9 @@ jobs:
 
       - name: Build FUSE mod (Release)
         shell: powershell
-        run: dotnet build FUSE/FUSE.csproj -c Release -p:ModVersion=${{ steps.version.outputs.version }}
+        # Build FUSE.Editor.csproj: it ProjectReferences FUSE.csproj, so
+        # MSBuild builds FUSE.dll first and FUSE.Editor.dll second.
+        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Release -p:ModVersion=${{ steps.version.outputs.version }}
 
       - name: Package UMM mod zip
         id: package
@@ -77,6 +79,14 @@ jobs:
           # rewrite is what ships.
           Copy-Item "FUSE\bin\Release\net48\FUSE.dll" $modFolder
           Copy-Item "FUSE\bin\Release\net48\Info.json" $modFolder
+          # FUSE.Editor.dll ships side-by-side with FUSE.dll; FUSE loads it
+          # lazily from this folder via Assembly.LoadFrom after UMM boots.
+          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Editor.dll" $modFolder
+          # FUSE.Converter.dll is referenced by the editor's Convert
+          # button. Project-reference flows it to FUSE.Editor's output
+          # naturally; the release step explicitly copies it so the
+          # release zip is self-contained.
+          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Converter.dll" $modFolder
 
           # Schemas are referenced by FUSE.csproj and copied into bin. We re-copy
           # from source to avoid picking up any stale files left over in bin
