@@ -1,0 +1,69 @@
+name: Sync Info.json to latest release
+
+# Keeps the source FUSE/Info.json "Version" field in step with the latest
+# published GitHub release. Skipped for GitHub pre-releases (incl. the
+# 0.x series treated as pre-release by release.yml) and for any tag that
+# isn't a plain v<MAJOR>.<MINOR>.<PATCH>. The release artifact itself is
+# already correctly stamped by the build (see InjectModVersionIntoInfoJson
+# in Directory.Build.targets); this workflow only updates the in-repo
+# manifest so the source-of-truth tracks the latest GA release.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: ${{ github.event.release.prerelease == false }}
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          # Default GITHUB_TOKEN can push back to main; branch protections
+          # that require PRs will block this and need a separate token.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Parse semantic version from release tag
+        id: version
+        shell: powershell
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          if ($tag -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$') {
+            Write-Host "Release tag '$tag' is not a 3-part GA semver; skipping sync."
+            "skip=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          "version=$($Matches.version)" >> $env:GITHUB_OUTPUT
+          "skip=false" >> $env:GITHUB_OUTPUT
+
+      - name: Stamp FUSE/Info.json
+        if: steps.version.outputs.skip == 'false'
+        shell: powershell
+        run: |
+          .\scripts\stamp-info-version.ps1 -Path FUSE\Info.json -Version ${{ steps.version.outputs.version }}
+
+      - name: Commit and push
+        if: steps.version.outputs.skip == 'false'
+        shell: powershell
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          $status = git status --porcelain FUSE/Info.json
+          if (-not $status) {
+            Write-Host "FUSE/Info.json already at v${{ steps.version.outputs.version }}; nothing to commit."
+            exit 0
+          }
+
+          git add FUSE/Info.json
+          # [skip ci] keeps this metadata bump from re-running the full CI
+          # build matrix; the verify-stamping check is exercised on every
+          # other push so we don't lose coverage.
+          git commit -m "Sync FUSE/Info.json Version to ${{ steps.version.outputs.version }} [skip ci]"
+          git push origin main
