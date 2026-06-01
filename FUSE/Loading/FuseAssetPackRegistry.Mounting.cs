@@ -422,19 +422,19 @@ namespace FUSE.Loading
                     Directory.CreateDirectory(destinationDirectory);
                 }
 
-                copiedCount += CopyAssetPackFileIfChanged(sourcePath, sourceFile, destinationFile);
+                copiedCount += CopyAssetPackFileIfChanged(sourceFile, destinationFile);
             }
 
             return copiedCount;
         }
 
-        private static int CopyAssetPackFileIfChanged(string assetPackRoot, string sourceFile, string destinationFile)
+        private static int CopyAssetPackFileIfChanged(string sourceFile, string destinationFile)
         {
-            if (string.Equals(Path.GetFileName(sourceFile), "Definitions.json", StringComparison.OrdinalIgnoreCase))
-            {
-                return CopySanitizedDefinitionsFile(assetPackRoot, sourceFile, destinationFile);
-            }
-
+            // Definitions.json is copied verbatim like any other pack file. FUSE no
+            // longer pre-strips "unsupported" component kinds here: the game's native
+            // loader (which reads these mirrored files) binds every kind its loaded mods
+            // register, and the default direct-store path quarantines only genuinely
+            // unbindable components at load time (see TryLoadSanitizedDirectContainer).
             if (!NeedsCopy(sourceFile, destinationFile))
             {
                 return 0;

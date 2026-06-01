@@ -90,8 +90,17 @@ namespace FUSE.Loading
             var relative = GetRelativePath(packagePath, assetPackFolder).Replace(Path.DirectorySeparatorChar, '/');
             if (!string.IsNullOrWhiteSpace(packageId) && !string.IsNullOrWhiteSpace(relative))
             {
-                AddLegacyAssetPackAlias(aliases, $"zsc://{packageId}/{relative}", resolved);
-                AddLegacyAssetPackAlias(aliases, $"zsc://{Path.GetFileName(packagePath)}/{relative}", resolved);
+                // Register the base-game-native "<owner>/<pack-relative-path>" reference
+                // form, keyed by both the declared package id and the on-disk folder name.
+                // The game composes an AssetReference's pack identifier this way (e.g.
+                // "RLW RSP-4 Goldfinch Class/rlw-g3-bc"), and the declared id often differs
+                // from the folder (hyphen vs space, etc.), so registering both lets a pack's
+                // own components (PrefabModelComponent sub-prefabs, ComponentGroup parts, ...)
+                // resolve to this direct store instead of a literal, non-existent bundle path.
+                // Older scheme-prefixed references collapse onto these same keys via
+                // NormalizeLegacyAssetPackIdentifier, so existing content keeps resolving.
+                AddLegacyAssetPackAlias(aliases, $"{packageId}/{relative}", resolved);
+                AddLegacyAssetPackAlias(aliases, $"{Path.GetFileName(packagePath)}/{relative}", resolved);
             }
 
             RegisterCatalogAliases(aliases, assetPackFolder, resolved);
@@ -139,9 +148,28 @@ namespace FUSE.Loading
             }
         }
 
-        private static string NormalizeLegacyAssetPackIdentifier(string identifier)
+        internal static string NormalizeLegacyAssetPackIdentifier(string identifier)
         {
-            return (identifier ?? string.Empty).Trim().Replace('\\', '/').TrimEnd('/');
+            var normalized = (identifier ?? string.Empty).Trim().Replace('\\', '/').TrimEnd('/');
+
+            // Preserve FUSE's own direct-store scheme verbatim — those identifiers must
+            // keep resolving to themselves.
+            if (normalized.Length == 0 ||
+                normalized.StartsWith(DirectStorePrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return normalized;
+            }
+
+            // Tolerate older "<scheme>://<owner>/<pack>" asset-pack references (legacy
+            // loaders mounted packs under a scheme-prefixed identifier) WITHOUT binding FUSE
+            // to any specific legacy scheme name: drop a leading "<scheme>://" so the
+            // reference collapses onto the base-game-native "<owner>/<pack>" aliases. This
+            // keeps existing scheme-prefixed content resolving while FUSE's own source
+            // references only its own scheme and the base-game form.
+            var schemeIndex = normalized.IndexOf("://", StringComparison.Ordinal);
+            return schemeIndex >= 0
+                ? normalized.Substring(schemeIndex + 3)
+                : normalized;
         }
     }
 }
