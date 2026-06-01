@@ -43,10 +43,7 @@ public static class NlcdLandcover
     /// </summary>
     public static (byte[] Veg, bool[] Water) BuildVegWater(byte[] rgb, int fetchRes, int outRes, int gutter, double blurSigma)
     {
-        if (rgb is null)
-        {
-            throw new System.ArgumentNullException(nameof(rgb));
-        }
+        System.ArgumentNullException.ThrowIfNull(rgb);
 
         if (fetchRes <= 0 || outRes <= 0 || gutter < 0 || fetchRes != outRes + (2 * gutter))
         {

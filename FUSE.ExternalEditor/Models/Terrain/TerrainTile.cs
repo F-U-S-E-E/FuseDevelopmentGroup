@@ -33,25 +33,10 @@ public sealed class TerrainTile
 
     public TerrainTile(int x, int y, int res, byte[] r, byte[] g, byte[] a, string? path = null)
     {
-        if (r is null)
-        {
-            throw new ArgumentNullException(nameof(r));
-        }
-
-        if (g is null)
-        {
-            throw new ArgumentNullException(nameof(g));
-        }
-
-        if (a is null)
-        {
-            throw new ArgumentNullException(nameof(a));
-        }
-
-        if (res <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(res), "Resolution must be > 0.");
-        }
+        ArgumentNullException.ThrowIfNull(r);
+        ArgumentNullException.ThrowIfNull(g);
+        ArgumentNullException.ThrowIfNull(a);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(res);
 
         var n = res * res;
         if (r.Length < n || g.Length < n || a.Length < n)

@@ -41,6 +41,10 @@ public partial class EntityTreeViewModel : ViewModelBase
     public void Build(FuseModDefinition definition)
     {
         System.ArgumentNullException.ThrowIfNull(definition);
+        if (definition.Tracks is null || definition.World is null || definition.Operations is null)
+        {
+            throw new System.ArgumentException("FuseModDefinition is missing required sections.", nameof(definition));
+        }
 
         var roots = new ObservableCollection<EntityNode>();
 
