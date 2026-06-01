@@ -357,8 +357,7 @@ namespace FUSE.Loading
 
                 var removedByKind = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 var sourceText = File.ReadAllText(definitionsPath);
-                var sanitizedText = SanitizeDefinitionsJson(sourceText, removedByKind);
-                container = DeserializeContainerBypassingPostfix(sanitizedText, store?.Identifier);
+                container = LoadResilientDirectContainer(sourceText, store?.Identifier, removedByKind);
                 SanitizeDeserializedDirectContainer(container);
                 RuntimeStoreContainerField?.SetValue(store, container);
 
@@ -368,8 +367,8 @@ namespace FUSE.Loading
                     var summary = string.Join(", ", removedByKind.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
                         .Select(item => $"{item.Key}={item.Value}"));
                     FuseLog.Info(
-                        $"FUSE sanitized direct asset pack '{packId}' Definitions.json in memory by removing unsupported component kind(s): {summary}. " +
-                        "The source mod files were not modified.");
+                        $"FUSE dropped unbindable component(s) from direct asset pack '{packId}' Definitions.json in memory: {summary}. " +
+                        "Their defining library mod is likely missing or disabled; the source mod files were not modified.");
                 }
 
                 return true;
@@ -385,16 +384,83 @@ namespace FUSE.Loading
         private static readonly HashSet<string> DeserializeBypassFallbackWarnings =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        private static Container LoadResilientDirectContainer(string sourceText, string storeIdentifier, IDictionary<string, int> droppedByKind)
+        {
+            // No reflection-based strict bypass available (rare): defer to the legacy
+            // deserialize path, which itself falls back to ContainerSerialization.Deserialize.
+            if (ContainerSerializerSettingsMethod == null)
+            {
+                return DeserializeContainerBypassingPostfix(sourceText, storeIdentifier);
+            }
+
+            try
+            {
+                // Happy path: with the defining library mods loaded, the game's
+                // JsonSubtypes converter binds every component kind — including the
+                // runtime-registered customization kinds (MaterialColorizerComponent,
+                // DefaultLivelryComponent, ComponentGroup, ...) the old static
+                // allow-list used to strip. The whole pack deserializes verbatim.
+                return BypassDeserialize(sourceText);
+            }
+            catch (Exception)
+            {
+                // A component kind could not be bound — almost always because the
+                // mod that defines it is absent or disabled. Drop ONLY the unbindable
+                // components (never the whole pack) and retry, so every bindable
+                // component still reaches the game. If the failure was not a component
+                // kind (so nothing is dropped), the retry throws again and the caller
+                // falls through to the game's native loader.
+                var filtered = FilterUnbindableComponents(sourceText, droppedByKind, CanBindComponent);
+                return BypassDeserialize(filtered);
+            }
+        }
+
+        /// <summary>
+        /// Deserializes a <see cref="Container"/> from Definitions.json text using the
+        /// same serializer settings the game's own loader uses, but WITHOUT routing
+        /// through the public <c>ContainerSerialization.Deserialize</c> (whose legacy
+        /// Harmony postfixes double-apply edits — see <see cref="ContainerSerializerSettingsMethod"/>).
+        /// Throws if any component kind cannot be bound.
+        /// </summary>
+        private static Container BypassDeserialize(string text)
+        {
+            var settings = (JsonSerializerSettings)ContainerSerializerSettingsMethod.Invoke(null, null);
+            var container = JsonConvert.DeserializeObject<Container>(text, settings);
+            container?.Awake();
+            return container;
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> when the supplied component JSON binds to a concrete
+        /// <see cref="Model.Definition.Component"/> subtype under the game's live JsonSubtypes
+        /// registry (which loaded mods extend at runtime). Used only on the resilient retry
+        /// path to single out the components whose defining mod is missing.
+        /// </summary>
+        private static bool CanBindComponent(JObject componentJson)
+        {
+            if (componentJson == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var settings = (JsonSerializerSettings)ContainerSerializerSettingsMethod.Invoke(null, null);
+                return JsonConvert.DeserializeObject<Model.Definition.Component>(componentJson.ToString(), settings) != null;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         private static Container DeserializeContainerBypassingPostfix(string text, string storeIdentifier)
         {
             if (ContainerSerializerSettingsMethod != null)
             {
                 try
                 {
-                    var settings = (JsonSerializerSettings)ContainerSerializerSettingsMethod.Invoke(null, null);
-                    var container = JsonConvert.DeserializeObject<Container>(text, settings);
-                    container?.Awake();
-                    return container;
+                    return BypassDeserialize(text);
                 }
                 catch (Exception ex)
                 {

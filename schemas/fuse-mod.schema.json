@@ -432,6 +432,36 @@
                 },
                 "tags": {
                     "$ref": "#/$defs/stringArray"
+                },
+                "partial": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, this entry patches an existing runtime segment; the preserve* flags select which fields keep their current runtime value instead of being overwritten."
+                },
+                "preserveStyle": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "In a partial patch, keep the existing segment style instead of overwriting it."
+                },
+                "preserveTrackClass": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "In a partial patch, keep the existing trackClass instead of overwriting it."
+                },
+                "preserveSpeedLimit": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "In a partial patch, keep the existing speedLimit instead of overwriting it."
+                },
+                "preservePriority": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "In a partial patch, keep the existing priority instead of overwriting it."
+                },
+                "preserveGroupId": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "In a partial patch, keep the existing groupId instead of overwriting it."
                 }
             }
         },
@@ -729,6 +759,11 @@
                     "default": false,
                     "description": "When true, component entries patch existing runtime components and do not remove components omitted from this definition. Intended for compatibility-converted fragments."
                 },
+                "replaceComponents": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, components is the complete intended set for this industry and any pre-existing runtime sub-components not listed here are removed. Set by the legacy converter when a mod uses the \"$replace\" directive at the top of its source components dictionary."
+                },
                 "components": {
                     "allOf": [
                         {
@@ -750,13 +785,27 @@
             "allOf": [
                 {
                     "if": {
-                        "properties": {
-                            "partial": {
-                                "const": true
+                        "anyOf": [
+                            {
+                                "properties": {
+                                    "partial": {
+                                        "const": true
+                                    }
+                                },
+                                "required": [
+                                    "partial"
+                                ]
+                            },
+                            {
+                                "properties": {
+                                    "remove": {
+                                        "const": true
+                                    }
+                                },
+                                "required": [
+                                    "remove"
+                                ]
                             }
-                        },
-                        "required": [
-                            "partial"
                         ]
                     },
                     "else": {
@@ -768,6 +817,11 @@
                 }
             ],
             "properties": {
+                "remove": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, this entry is a deletion request for an existing runtime component rather than an add/update, and may omit type/name. Emitted by the legacy converter for the Strange Customs \"<name>\": null component-removal idiom."
+                },
                 "partial": {
                     "type": "boolean",
                     "default": false,
@@ -1113,6 +1167,28 @@
                         "y": 1,
                         "z": 1
                     }
+                },
+                "bridgeTrackEnabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether the rotating bridge carries a drivable track segment. Defaults to true."
+                },
+                "bridgeTrackGauge": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "default": 1.435,
+                    "description": "Gauge of the bridge track in meters. Defaults to 1.435 (standard gauge)."
+                },
+                "bridgeTrackLength": {
+                    "type": "number",
+                    "minimum": 0,
+                    "default": 0,
+                    "description": "Length of the bridge track. Defaults to 0, in which case it is derived from the turntable radius."
+                },
+                "bridgeTrackYOffset": {
+                    "type": "number",
+                    "default": 0.08,
+                    "description": "Vertical offset applied to the bridge track. Defaults to 0.08."
                 },
                 "controllerType": {
                     "type": "string",
@@ -1635,6 +1711,10 @@
                 "center": {
                     "$ref": "#/$defs/vec3"
                 },
+                "rotation": {
+                    "$ref": "#/$defs/vec3",
+                    "description": "Always emitted by the serializer because every mask shares one model shape. Unused for circles; defaults to {0,0,0}."
+                },
                 "radius": {
                     "type": "number",
                     "exclusiveMinimum": 0
@@ -1724,6 +1804,14 @@
             "properties": {
                 "type": {
                     "const": "curve"
+                },
+                "center": {
+                    "$ref": "#/$defs/vec3",
+                    "description": "Always emitted by the serializer because every mask shares one model shape. Unused for curves (the path is defined by points); defaults to {0,0,0}."
+                },
+                "rotation": {
+                    "$ref": "#/$defs/vec3",
+                    "description": "Always emitted by the serializer because every mask shares one model shape. Unused for curves; defaults to {0,0,0}."
                 },
                 "width": {
                     "type": "number",

@@ -13,11 +13,20 @@ namespace FUSE.Tests.Editor
     /// </summary>
     public sealed class FuseEditorModCatalogTests : IDisposable
     {
+        // Private parent dir, unique to this fixture instance. _modsRoot
+        // is nested one level inside it so the parent's only child is
+        // "mods" — this keeps the sibling-count assertions in
+        // CreateNewMod_rejects_traversal_id_without_writing_outside_root
+        // deterministic. (If _modsRoot lived directly under the shared
+        // system temp dir, parallel test collections creating their own
+        // temp dirs there would race the count.)
+        private readonly string _root;
         private readonly string _modsRoot;
 
         public FuseEditorModCatalogTests()
         {
-            _modsRoot = Path.Combine(Path.GetTempPath(), "FuseEditorModCatalogTests-" + Guid.NewGuid().ToString("N"));
+            _root = Path.Combine(Path.GetTempPath(), "FuseEditorModCatalogTests-" + Guid.NewGuid().ToString("N"));
+            _modsRoot = Path.Combine(_root, "mods");
             Directory.CreateDirectory(_modsRoot);
         }
 
@@ -25,9 +34,9 @@ namespace FUSE.Tests.Editor
         {
             try
             {
-                if (Directory.Exists(_modsRoot))
+                if (Directory.Exists(_root))
                 {
-                    Directory.Delete(_modsRoot, recursive: true);
+                    Directory.Delete(_root, recursive: true);
                 }
             }
             catch
@@ -222,6 +231,9 @@ namespace FUSE.Tests.Editor
             // empty-id gate), and the containment guard is the backstop.
             // Nothing must be created OUTSIDE the mods root, and the
             // sibling count of the root's parent must be unchanged.
+            // The parent here is the fixture's private _root (whose only
+            // child is "mods"), so the count is unperturbed by parallel
+            // test collections and the assertions are deterministic.
             var parent = Directory.GetParent(_modsRoot);
             var before = parent.GetDirectories().Length;
 

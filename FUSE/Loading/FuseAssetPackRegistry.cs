@@ -19,41 +19,6 @@ namespace FUSE.Loading
         private const string FuseAssetPacksProperty = "FuseAssetPacks";
         private const string DirectStorePrefix = "fuseasset://";
 
-        private static readonly HashSet<string> SupportedDefinitionComponentKinds =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "AggregateLoadModel",
-                "Bell",
-                "PrefabControl",
-                "FireboxEffect",
-                "Chuff",
-                "ClassLight",
-                "Colorizer",
-                "Compressor",
-                "CylinderCock",
-                "Decal",
-                "DetailModel",
-                "DieselExhaust",
-                "Dynamo",
-                "Gauge",
-                "Headlight",
-                "Horn",
-                "Ladder",
-                "LightFixture",
-                "LoadAnimation",
-                "LoadModel",
-                "LoadTarget",
-                "MapMask",
-                "RectangleMapMask",
-                "CircleMapMask",
-                "MarkerLight",
-                "RadialControl",
-                "Seat",
-                "ToggleAnimation",
-                "ToggleControl",
-                "Whistle"
-            };
-
         private static bool _mountComplete;
         private static readonly Dictionary<string, string> MountedAssetPackSourcesById =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
