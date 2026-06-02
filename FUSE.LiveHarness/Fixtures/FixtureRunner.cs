@@ -83,7 +83,12 @@ public sealed class FixtureRunner
 
         if (!string.IsNullOrEmpty(manifest.SaveName))
         {
-            await _client.SendAsync(new TestRequest { Verb = BridgeProtocol.TestVerbLoadSave, Arg = manifest.SaveName }, ct);
+            var load = await _client.SendAsync(new TestRequest { Verb = BridgeProtocol.TestVerbLoadSave, Arg = manifest.SaveName }, ct);
+            if (!load.Ok)
+            {
+                return FixtureRunResult.Error($"failed to load save '{manifest.SaveName}': {load.Error}");
+            }
+
             if (!await _client.WaitReadyAsync(ct: ct))
             {
                 return FixtureRunResult.Error($"session not ready after loading save '{manifest.SaveName}'.");
@@ -94,7 +99,11 @@ public sealed class FixtureRunner
             return FixtureRunResult.Error("no map loaded — load a save first or set saveName in the fixture.");
         }
 
-        await _client.SendAsync(new TestRequest { Verb = BridgeProtocol.TestVerbReload, Reason = manifest.Reason }, ct);
+        var reload = await _client.SendAsync(new TestRequest { Verb = BridgeProtocol.TestVerbReload, Reason = manifest.Reason }, ct);
+        if (!reload.Ok)
+        {
+            return FixtureRunResult.Error($"reload failed: {reload.Error}");
+        }
 
         var baselineDir = Path.Combine(fixtureDir, "baselines");
         Directory.CreateDirectory(baselineDir);
@@ -104,12 +113,20 @@ public sealed class FixtureRunner
         if (manifest.CaptureReport)
         {
             var report = await _client.SendAsync(new TestRequest { Verb = BridgeProtocol.TestVerbReport, Arg = "json" }, ct);
-            captures.Add(Capture("report", report.Text ?? string.Empty, baselineDir, updateBaselines));
+            captures.Add(report.Ok
+                ? Capture("report", report.Text ?? string.Empty, baselineDir, updateBaselines)
+                : new CaptureResult("report", false, Array.Empty<JsonDelta>(), $"request failed: {report.Error}"));
         }
 
         foreach (var dump in manifest.Dumps ?? Array.Empty<string>())
         {
             var result = await _client.SendAsync(new TestRequest { Verb = BridgeProtocol.TestVerbDump, Arg = dump }, ct);
+            if (!result.Ok)
+            {
+                captures.Add(new CaptureResult(dump, false, Array.Empty<JsonDelta>(), $"request failed: {result.Error}"));
+                continue;
+            }
+
             var json = result.ArtifactPath is not null && File.Exists(result.ArtifactPath)
                 ? File.ReadAllText(result.ArtifactPath)
                 : result.Text ?? string.Empty;
@@ -139,7 +156,16 @@ public sealed class FixtureRunner
             return new CaptureResult(name, true, Array.Empty<JsonDelta>(), existed ? "baseline updated" : "baseline created");
         }
 
-        var baseline = _normalizer.Normalize(JToken.Parse(File.ReadAllText(baselinePath)));
+        JToken baseline;
+        try
+        {
+            baseline = _normalizer.Normalize(JToken.Parse(File.ReadAllText(baselinePath)));
+        }
+        catch (JsonException ex)
+        {
+            return new CaptureResult(name, false, Array.Empty<JsonDelta>(), $"could not parse baseline: {ex.Message}");
+        }
+
         var deltas = JsonDiff.Compare(baseline, current);
         return new CaptureResult(name, deltas.Count == 0, deltas, deltas.Count == 0 ? "match" : $"{deltas.Count} delta(s)");
     }

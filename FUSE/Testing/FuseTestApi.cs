@@ -111,6 +111,20 @@ namespace FUSE.Testing
             var stem = SanitizeStem(name);
             var absolutePath = Path.Combine(dir, stem + ".png");
 
+            // Remove any stale same-named file so the host's File.Exists poll observes the NEW
+            // capture, not a prior one (Unity writes the PNG a frame later).
+            try
+            {
+                if (File.Exists(absolutePath))
+                {
+                    File.Delete(absolutePath);
+                }
+            }
+            catch
+            {
+                // best-effort; if it can't be removed the host times out rather than returning stale data
+            }
+
             var screenCapture = Type.GetType("UnityEngine.ScreenCapture, UnityEngine.ScreenCaptureModule")
                 ?? Type.GetType("UnityEngine.ScreenCapture, UnityEngine.CoreModule");
             var capture = screenCapture?.GetMethod("CaptureScreenshot", new[] { typeof(string) });

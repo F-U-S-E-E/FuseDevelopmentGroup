@@ -9,7 +9,7 @@ in CI.)
 
 ## Layout
 
-```
+```text
 tests/live/fixtures/<id>/
   fixture.json            # the manifest (see example/)
   packages/               # optional: the *.FUSE package stack this fixture expects (provision into Mods/)
@@ -30,6 +30,7 @@ diffs the live capture against it and fails on any delta, pointing at the exact 
 | `id` | Fixture identifier (matches the folder name). |
 | `gameVersion` | Expected `Application.version`; a mismatch **skips** (baselines are version-pinned). |
 | `saveName` | Save to load into the running session before capturing (empty = use the loaded session). |
+| `multiplayerRole` | Expected role; informational/reserved. Runs assume single-player host (the harness requires `canApply`). |
 | `reason` | Reason passed to reload (kept fixed so it does not perturb the report). |
 | `captureReport` | Capture + diff `/fuse.report json`. |
 | `dumps` | Dump captures to diff: any of `graph`, `runtimegraph`, `mandelas`, `progression`. |

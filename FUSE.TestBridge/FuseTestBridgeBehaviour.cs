@@ -288,6 +288,7 @@ namespace FUSE.TestBridge
                         Error = ex.GetBaseException().Message,
                     },
                     requestPath);
+                Flag(); // re-arm: ProcessOldestRequest returned early, so pick up anything queued behind this
             }
         }
 
