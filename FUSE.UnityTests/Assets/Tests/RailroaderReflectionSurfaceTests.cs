@@ -658,6 +658,18 @@ namespace FUSE.UnityTests
             return type;
         }
 
+        // -----------------------------------------------------------------
+        // MenuManager — FuseTestApi.LoadSave (dev-only test bridge) reflects
+        // the private StartGameSinglePlayer(GameSetup) to cold-boot a save
+        // from the main menu, mirroring what the Load Game menu UI does.
+        // -----------------------------------------------------------------
+
+        [Test]
+        public void MenuManager_StartGameSinglePlayer_InstanceMethod()
+        {
+            AssertMethod("UI.Menu.MenuManager", "StartGameSinglePlayer", InstanceNonPublic);
+        }
+
         private static void AssertField(string typeFullName, string memberName, BindingFlags flags)
         {
             var type = RequireType(typeFullName);

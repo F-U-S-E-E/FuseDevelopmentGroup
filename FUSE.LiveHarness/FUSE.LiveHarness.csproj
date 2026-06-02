@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>FUSE.LiveHarness</AssemblyName>
+    <RootNamespace>Fuse.LiveHarness</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Pure net10 harness logic (bridge client, JSON normalize/diff, fixture runner);
+         no game/Unity DLLs. Shares the bridge DTOs from FUSE.Core. Sets its own version. -->
+    <FuseIsGameFree>true</FuseIsGameFree>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FUSE.Core\FUSE.Core.csproj" />
+  </ItemGroup>
+</Project>
