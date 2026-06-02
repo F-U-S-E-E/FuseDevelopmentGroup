@@ -574,7 +574,9 @@ namespace FUSE.UnityTests
         // -----------------------------------------------------------------
         // SceneryAssetInstance — FuseSceneryBenchmark reads _wantsLoaded and
         // _model to count in-flight scenery loads (settle detection); the
-        // scenery-animation patch also reflects _model. Issue #76 tooling.
+        // scenery-animation patch also reflects _model. The load throttle
+        // (FuseSceneryLoadThrottlePatch) reads _wantsLoaded and re-drives the
+        // private SetLoaded(bool) from its pump. Issue #76 tooling.
         // -----------------------------------------------------------------
 
         [Test]
@@ -587,6 +589,15 @@ namespace FUSE.UnityTests
         public void SceneryAssetInstance_model_InstanceField()
         {
             AssertField("Helpers.SceneryAssetInstance", "_model", InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_SetLoaded_InstanceMethod()
+        {
+            // FuseSceneryLoadThrottlePatch both Harmony-patches and reflectively
+            // re-invokes this private method to release deferred loads from its
+            // pump; a rename detaches the patch AND breaks the pump's re-drive.
+            AssertMethod("Helpers.SceneryAssetInstance", "SetLoaded", InstanceNonPublic);
         }
 
         // -----------------------------------------------------------------
