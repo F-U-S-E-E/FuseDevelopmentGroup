@@ -39,6 +39,7 @@ namespace FUSE.Interface
         private UIPanel _panel;
         private Page _activePage = Page.Health;
         private Page _lastBuiltPage = Page.Health;
+        private string _lastBenchmarkStatus;
         private string _lastAction = "No runtime action has been run from this page.";
         private float _fpsElapsed;
         private int _fpsFrames;
@@ -104,6 +105,16 @@ namespace FUSE.Interface
             if (_button == null)
             {
                 TryInstallHudButton();
+            }
+
+            // Live-refresh the Advanced page while a benchmark reports progress (phase
+            // changes + final result) so the status updates without hitting Refresh.
+            // _lastBenchmarkStatus is set to the rendered value in BuildAdvancedContent,
+            // so this only rebuilds when the status actually changes.
+            if (_activePage == Page.Advanced && _window != null && _window.IsShown &&
+                FuseSceneryBenchmark.Status != _lastBenchmarkStatus)
+            {
+                RebuildWindow();
             }
         }
 
