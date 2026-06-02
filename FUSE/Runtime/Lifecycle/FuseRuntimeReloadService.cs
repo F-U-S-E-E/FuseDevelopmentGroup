@@ -5,6 +5,7 @@ using FUSE.Runtime.API;
 using FUSE.Runtime.Cache;
 using FUSE.Infrastructure;
 using FUSE.Loading;
+using UnityEngine;
 
 namespace FUSE.Runtime.Lifecycle
 {
@@ -13,6 +14,14 @@ namespace FUSE.Runtime.Lifecycle
         private static readonly MethodInfo MapManagerRebuildAll =
             Type.GetType("Map.Runtime.MapManager, Map.Runtime")
                 ?.GetMethod("RebuildAll", BindingFlags.Instance | BindingFlags.Public);
+
+        // Private void Invalidate(Bounds) — re-bakes only the tiles overlapping the
+        // given world bounds (vs RebuildAll's full teardown+reload). Used by the
+        // opt-in targeted-invalidation path; null-checked so a rename just falls back
+        // to the full rebuild. Covered by the reflection-surface canary test.
+        private static readonly MethodInfo MapManagerInvalidateBounds =
+            Type.GetType("Map.Runtime.MapManager, Map.Runtime")
+                ?.GetMethod("Invalidate", BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof(Bounds) }, null);
 
         private static readonly PropertyInfo MapManagerInstance =
             Type.GetType("Map.Runtime.MapManager, Map.Runtime")
@@ -75,8 +84,41 @@ namespace FUSE.Runtime.Lifecycle
                     return false;
                 }
 
+                // Targeted invalidation (#4, opt-in): if we captured an ACCURATE,
+                // complete footprint of what FUSE touched during this apply, re-bake
+                // just those tiles instead of tearing down and re-streaming the whole
+                // map. Default off, and we fall back to the full rebuild whenever the
+                // toggle is off, the method didn't resolve, the footprint is incomplete
+                // (e.g. masks still streaming in — see MapAPI.RefreshAttachedMapMasks),
+                // or nothing was captured (e.g. a manual reload).
+                if (FuseSettings.EnableTargetedTerrainInvalidation &&
+                    MapManagerInvalidateBounds != null &&
+                    FuseTerrainRefreshScope.BoundsComplete &&
+                    FuseTerrainRefreshScope.TryGetAccumulatedBounds(out var bounds))
+                {
+                    try
+                    {
+                        MapManagerInvalidateBounds.Invoke(instance, new object[] { bounds });
+                        FuseLog.Info(
+                            $"FUSE terrain reload (targeted invalidation) operation='{operation}' " +
+                            $"bounds.center={bounds.center} bounds.size={bounds.size} " +
+                            $"deferredRefreshCalls={FuseTerrainRefreshScope.DeferredRefreshCalls} elapsedMs={stopwatch.ElapsedMilliseconds}.");
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        // A failed optimization must not become a missed refresh: fall
+                        // through to the full rebuild rather than leaving terrain stale.
+                        FuseLog.Warning(
+                            $"FUSE terrain reload targeted invalidation failed operation='{operation}': " +
+                            $"{ex.GetBaseException().Message}; falling back to full rebuild.");
+                    }
+                }
+
                 MapManagerRebuildAll.Invoke(instance, null);
-                FuseLog.Info($"FUSE terrain reload completed operation='{operation}' elapsedMs={stopwatch.ElapsedMilliseconds}.");
+                FuseLog.Info(
+                    $"FUSE terrain reload (full rebuild) operation='{operation}' " +
+                    $"deferredRefreshCalls={FuseTerrainRefreshScope.DeferredRefreshCalls} elapsedMs={stopwatch.ElapsedMilliseconds}.");
                 return true;
             }
             catch (Exception ex)

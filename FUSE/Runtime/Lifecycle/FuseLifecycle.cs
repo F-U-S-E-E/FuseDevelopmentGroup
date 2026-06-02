@@ -53,8 +53,16 @@ namespace FUSE.Runtime.Lifecycle
             var canMutateWorld = FuseMultiplayerGuard.CanApplyWorldMutations("map load");
             FuseLoadReport.ResetMapLoad();
 
+            // Defer per-object map-mask refresh across the whole apply: the single
+            // trailing terrain rebuild (below) re-evaluates every live mask at once,
+            // so the per-object GetComponentsInChildren + modifier churn during apply
+            // is redundant. Also accumulates the footprint FUSE touched for the opt-in
+            // targeted invalidation. Closed in the finally around the terrain rebuild.
+            IDisposable terrainScope = null;
+
             try
             {
+                terrainScope = FuseTerrainRefreshScope.Begin();
                 FuseLegacyAssemblyHost.LoadAllAvailableAssemblies("map load fallback");
                 var cacheStopwatch = Stopwatch.StartNew();
                 FuseCacheRegistry.RebuildAll();
@@ -133,22 +141,40 @@ namespace FUSE.Runtime.Lifecycle
             // Calling MapManager.RebuildAll() here mirrors what AlinasMapMod's
             // "Rebuild Map" button does and forces the terrain to re-bake with the
             // now-live mask components.
-            if (canMutateWorld)
+            try
             {
-                var mapRebuildStopwatch = Stopwatch.StartNew();
-                FuseRuntimeReloadService.ReloadTerrain("map-load map-mask rebuild");
-                FusePerformanceMetrics.RecordTiming("map mask rebuild", mapRebuildStopwatch.ElapsedMilliseconds);
-                FuseLog.Info($"FUSE load timing phase='map mask rebuild' elapsedMs={mapRebuildStopwatch.ElapsedMilliseconds}.");
+                if (canMutateWorld)
+                {
+                    var mapRebuildStopwatch = Stopwatch.StartNew();
+                    FuseRuntimeReloadService.ReloadTerrain("map-load map-mask rebuild");
+                    FusePerformanceMetrics.RecordTiming("map mask rebuild", mapRebuildStopwatch.ElapsedMilliseconds);
+                    FuseLog.Info($"FUSE load timing phase='map mask rebuild' elapsedMs={mapRebuildStopwatch.ElapsedMilliseconds}.");
 
-                // The terrain bake has now run with all eager (mask-bearing) scenery
-                // live, so start the post-load activation wave for the deferred static
-                // scenery. It activates over subsequent frames, nearest the player
-                // first, off the loading-screen critical path.
-                FuseDeferredSceneryActivator.BeginDrain("map load");
+                    // The terrain bake has now run with all eager (mask-bearing)
+                    // scenery live, so start the post-load activation wave for the
+                    // deferred static scenery. It activates over subsequent frames,
+                    // nearest the player first, off the loading-screen critical path.
+                    FuseDeferredSceneryActivator.BeginDrain("map load");
+                }
+                else
+                {
+                    FuseLog.Info("FUSE skipped map mask rebuild on non-host multiplayer client.");
+                }
             }
-            else
+            finally
             {
-                FuseLog.Info("FUSE skipped map mask rebuild on non-host multiplayer client.");
+                // Close the deferral scope only AFTER the terrain rebuild has read the
+                // accumulated footprint. Report how much per-object refresh work the
+                // single trailing rebuild absorbed (measurement for the #3 win).
+                var deferredRefreshes = FuseTerrainRefreshScope.DeferredRefreshCalls;
+                terrainScope?.Dispose();
+                if (deferredRefreshes > 0)
+                {
+                    FusePerformanceMetrics.RecordCount("map-load deferred mask refreshes", deferredRefreshes);
+                    FuseLog.Info(
+                        $"FUSE map-load deferred {deferredRefreshes} per-object map-mask refresh call(s); " +
+                        "the single trailing terrain rebuild covered them.");
+                }
             }
 
             // Console handler is created during scene activation, so we re-attempt
@@ -187,7 +213,13 @@ namespace FUSE.Runtime.Lifecycle
         {
             try
             {
-                FuseCacheRegistry.RebuildAll();
+                // A graph rebuild changes track topology only — the scene-scanning
+                // indexes (industry, scenery, station, …) are kept current
+                // incrementally by the APIs that mutate them, so refresh just the
+                // graph-derived indexes (node/segment/span) here instead of re-running
+                // all ~13 FindObjectsOfType scans on every graph rebuild. Falls back to
+                // a full rebuild automatically if the caches were never built.
+                FuseCacheRegistry.RebuildGraphIndexes();
                 FuseWorldSuppressor.ApplyTrackGroupSuppressionsAfterGraphLoad("graph rebuild");
                 TrackAPI.ScrubCtcSignalReferences("graph rebuild");
                 FuseEvents.RaiseGraphRebuilt();
