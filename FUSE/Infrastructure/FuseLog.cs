@@ -66,6 +66,12 @@ namespace FUSE.Infrastructure
 
         private static void InitializeFileLog()
         {
+            // Tracks the writer until ownership transfers to the session so the catch
+            // can dispose it (and its file handle) if WriteLine/Flush throws after
+            // creation — otherwise a failed init leaks the handle and blocks a clean
+            // retry. Kept DISTINCT from the lambda-captured 'writer' local below,
+            // which must NOT be nulled (the worker thread closes over it).
+            StreamWriter pendingWriter = null;
             try
             {
                 var directory = Application.persistentDataPath;
@@ -98,6 +104,7 @@ namespace FUSE.Infrastructure
                 // behind the producer; an idle logger still persists promptly.
                 var stream = new FileStream(_logFilePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
                 var writer = new StreamWriter(stream) { AutoFlush = false };
+                pendingWriter = writer;
                 writer.WriteLine($"FUSE log started {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff zzz}");
                 writer.Flush();
 
@@ -115,6 +122,11 @@ namespace FUSE.Infrastructure
                 };
                 _worker.Start();
 
+                // Ownership transferred to the session (statics + the worker, which
+                // closes over 'writer'); stop tracking it for failure disposal so the
+                // catch below leaves the live writer alone.
+                pendingWriter = null;
+
                 _fileLoggingAvailable = true;
                 // Idempotent: Shutdown resets _fileLoggingAvailable, so a later
                 // re-init would otherwise stack a second handler on Application.quitting.
@@ -124,6 +136,17 @@ namespace FUSE.Infrastructure
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
+                // Dispose the half-initialized writer (and its file handle) so a
+                // failed init doesn't leak the handle and block a later retry.
+                try
+                {
+                    pendingWriter?.Dispose();
+                }
+                catch
+                {
+                    // Best effort.
+                }
+
                 _fileLoggingAvailable = false;
                 _logger?.Warning($"FUSE could not initialize FUSE.log: {ex.Message}");
             }
@@ -298,7 +321,24 @@ namespace FUSE.Infrastructure
             }
             finally
             {
-                _writer = null;
+                // Only clear a static if it still points at the instance this
+                // shutdown owns, so a re-init that swapped it isn't clobbered.
+                // (Init/shutdown are sequential on the main thread today, so this is
+                // defensive — but it keeps the ownership contract explicit.)
+                if (ReferenceEquals(_writer, writer))
+                {
+                    _writer = null;
+                }
+
+                if (ReferenceEquals(_queue, queue))
+                {
+                    _queue = null;
+                }
+
+                if (ReferenceEquals(_worker, worker))
+                {
+                    _worker = null;
+                }
             }
         }
     }
