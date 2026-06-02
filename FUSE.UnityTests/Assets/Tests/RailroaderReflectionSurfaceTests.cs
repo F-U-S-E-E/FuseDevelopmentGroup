@@ -251,6 +251,26 @@ namespace FUSE.UnityTests
         }
 
         [Test]
+        public void MapManager_InvalidateBounds_InstanceMethod()
+        {
+            // FuseRuntimeReloadService's opt-in targeted terrain invalidation
+            // (EnableTargetedTerrainInvalidation) invokes the private
+            // Invalidate(Bounds) overload to re-bake only the tiles FUSE
+            // touched instead of a full RebuildAll. A rename detaches the
+            // fast path and it silently falls back to the full rebuild — this
+            // canary surfaces that so the fast path can be re-bound.
+            var type = RequireType("Map.Runtime.MapManager");
+            var method = type.GetMethod(
+                "Invalidate",
+                InstanceNonPublic,
+                null,
+                new[] { typeof(UnityEngine.Bounds) },
+                null);
+            Assert.NotNull(method,
+                "Map.Runtime.MapManager.Invalidate(Bounds) not found — targeted terrain invalidation will always fall back to the full rebuild.");
+        }
+
+        [Test]
         public void MapManager_Instance_StaticPublicProperty()
         {
             AssertProperty("Map.Runtime.MapManager", "Instance", BindingFlags.Static | BindingFlags.Public);
@@ -574,7 +594,9 @@ namespace FUSE.UnityTests
         // -----------------------------------------------------------------
         // SceneryAssetInstance — FuseSceneryBenchmark reads _wantsLoaded and
         // _model to count in-flight scenery loads (settle detection); the
-        // scenery-animation patch also reflects _model. Issue #76 tooling.
+        // scenery-animation patch also reflects _model. The load throttle
+        // (FuseSceneryLoadThrottlePatch) reads _wantsLoaded and re-drives the
+        // private SetLoaded(bool) from its pump. Issue #76 tooling.
         // -----------------------------------------------------------------
 
         [Test]
@@ -587,6 +609,15 @@ namespace FUSE.UnityTests
         public void SceneryAssetInstance_model_InstanceField()
         {
             AssertField("Helpers.SceneryAssetInstance", "_model", InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_SetLoaded_InstanceMethod()
+        {
+            // FuseSceneryLoadThrottlePatch both Harmony-patches and reflectively
+            // re-invokes this private method to release deferred loads from its
+            // pump; a rename detaches the patch AND breaks the pump's re-drive.
+            AssertMethod("Helpers.SceneryAssetInstance", "SetLoaded", InstanceNonPublic);
         }
 
         // -----------------------------------------------------------------
@@ -625,6 +656,18 @@ namespace FUSE.UnityTests
                 "that contains it into Assets/Plugins/, or this test's expected namespace is wrong " +
                 "(check the FUSE source's actual reflection call site for the canonical name).");
             return type;
+        }
+
+        // -----------------------------------------------------------------
+        // MenuManager — FuseTestApi.LoadSave (dev-only test bridge) reflects
+        // the private StartGameSinglePlayer(GameSetup) to cold-boot a save
+        // from the main menu, mirroring what the Load Game menu UI does.
+        // -----------------------------------------------------------------
+
+        [Test]
+        public void MenuManager_StartGameSinglePlayer_InstanceMethod()
+        {
+            AssertMethod("UI.Menu.MenuManager", "StartGameSinglePlayer", InstanceNonPublic);
         }
 
         private static void AssertField(string typeFullName, string memberName, BindingFlags flags)

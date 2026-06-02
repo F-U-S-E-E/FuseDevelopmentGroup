@@ -170,7 +170,7 @@ jobs:
       #   - variable NEXUS_FILE_GROUP_ID (from "API Info" on the mod's Files tab)
       - name: Upload to Nexus Mods
         if: ${{ vars.NEXUS_FILE_GROUP_ID != '' }}
-        uses: Nexus-Mods/upload-action@a746f1867153abc77beed950bf7526ece1a9f8c4 # v1.0.0-beta.5
+        uses: Nexus-Mods/upload-action@0bf670d75d46988c176c9bfacc94ca0144e0fe3f # v1.0.0-beta.7
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}
           file_group_id: ${{ vars.NEXUS_FILE_GROUP_ID }}

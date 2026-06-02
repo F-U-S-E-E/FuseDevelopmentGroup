@@ -311,6 +311,79 @@ namespace FUSE.Runtime.API
             return pruned;
         }
 
+        internal static int RemoveTrackSpanReferences(TrackSpan removedSpan, string source)
+        {
+            if (removedSpan == null)
+            {
+                return 0;
+            }
+
+            var removedSpanId = SafeTrackSpanId(removedSpan);
+            var pruned = 0;
+            foreach (var component in UnityEngine.Object.FindObjectsOfType<IndustryComponent>(true))
+            {
+                if (!IsLiveIndustryComponent(component) || component.trackSpans == null || component.trackSpans.Length == 0)
+                {
+                    continue;
+                }
+
+                var retained = new List<TrackSpan>(component.trackSpans.Length);
+                var removed = 0;
+                foreach (var span in component.trackSpans)
+                {
+                    if (TrackSpanReferencesRemovedInstance(span, removedSpan))
+                    {
+                        removed++;
+                        continue;
+                    }
+
+                    retained.Add(span);
+                }
+
+                if (removed == 0)
+                {
+                    continue;
+                }
+
+                component.trackSpans = retained.ToArray();
+                pruned += removed;
+                FuseLog.Warning(
+                    $"FUSE removed industry component reference(s) to removed TrackSpan component='{DescribeComponent(component)}' " +
+                    $"spanId='{removedSpanId}' removed={removed} reason='{source ?? "unspecified"}'.");
+            }
+
+            if (pruned > 0)
+            {
+                FuseLog.Warning(
+                    $"FUSE removed {pruned} industry component reference(s) to removed TrackSpan " +
+                    $"spanId='{removedSpanId}' after '{source ?? "unspecified"}'.");
+            }
+
+            return pruned;
+        }
+
+        private static bool TrackSpanReferencesRemovedInstance(TrackSpan candidate, TrackSpan removedSpan)
+        {
+            if (ReferenceEquals(candidate, removedSpan))
+            {
+                return true;
+            }
+
+            if (candidate == null || removedSpan == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return candidate == removedSpan;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static bool ShouldDisableOrphanedBaseGameIndustry(Industry industry)
         {
             if (!IsLiveIndustry(industry) || !industry.gameObject.activeSelf)
@@ -357,6 +430,23 @@ namespace FUSE.Runtime.API
             catch
             {
                 return false;
+            }
+        }
+
+        private static string SafeTrackSpanId(TrackSpan span)
+        {
+            if (span == null)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return span.id ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 
