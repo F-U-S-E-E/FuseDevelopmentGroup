@@ -13,6 +13,7 @@ namespace FUSE.Infrastructure
         public const bool DefaultMirrorAssetPacksToLocalLow = false;
         public const bool DefaultVerboseApplyReportDetails = false;
         public const bool DefaultEnableSceneryCullingDiagnostics = false;
+        public const bool DefaultEnableTargetedTerrainInvalidation = false;
         public const bool DefaultBlockNonHostMultiplayerClientWorldApply = false;
         public const bool DefaultShowAdvancedHealthDetails = false;
         public const bool DefaultShowTrackDebugOverlay = false;
@@ -43,6 +44,13 @@ namespace FUSE.Infrastructure
         public static bool VerboseApplyReportDetails { get; private set; } = DefaultVerboseApplyReportDetails;
 
         public static bool EnableSceneryCullingDiagnostics { get; private set; } = DefaultEnableSceneryCullingDiagnostics;
+
+        // Experimental (issue #76 follow-up): when on, the post-apply terrain rebuild
+        // is narrowed to the tiles FUSE actually touched (MapManager.Invalidate) instead
+        // of a full MapManager.RebuildAll teardown+reload. Big load-time win but timing-
+        // sensitive (masks load async); default OFF until validated in-game. Falls back
+        // to the full rebuild whenever no footprint was captured.
+        public static bool EnableTargetedTerrainInvalidation { get; private set; } = DefaultEnableTargetedTerrainInvalidation;
 
         public static bool BlockNonHostMultiplayerClientWorldApply { get; private set; } =
             DefaultBlockNonHostMultiplayerClientWorldApply;
@@ -78,6 +86,7 @@ namespace FUSE.Infrastructure
             MirrorAssetPacksToLocalLow = DefaultMirrorAssetPacksToLocalLow;
             VerboseApplyReportDetails = DefaultVerboseApplyReportDetails;
             EnableSceneryCullingDiagnostics = DefaultEnableSceneryCullingDiagnostics;
+            EnableTargetedTerrainInvalidation = DefaultEnableTargetedTerrainInvalidation;
             BlockNonHostMultiplayerClientWorldApply = DefaultBlockNonHostMultiplayerClientWorldApply;
             ShowAdvancedHealthDetails = DefaultShowAdvancedHealthDetails;
             ShowTrackDebugOverlay = DefaultShowTrackDebugOverlay;
@@ -114,6 +123,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "VerboseApplyReportDetails", DefaultVerboseApplyReportDetails);
                 EnableSceneryCullingDiagnostics =
                     ReadBool(settings, "EnableSceneryCullingDiagnostics", DefaultEnableSceneryCullingDiagnostics);
+                EnableTargetedTerrainInvalidation =
+                    ReadBool(settings, "EnableTargetedTerrainInvalidation", DefaultEnableTargetedTerrainInvalidation);
                 BlockNonHostMultiplayerClientWorldApply =
                     ReadBool(settings, "BlockNonHostMultiplayerClientWorldApply", DefaultBlockNonHostMultiplayerClientWorldApply);
                 ShowAdvancedHealthDetails =
@@ -150,6 +161,7 @@ namespace FUSE.Infrastructure
                     $"MirrorAssetPacksToLocalLow={MirrorAssetPacksToLocalLow} " +
                     $"VerboseApplyReportDetails={VerboseApplyReportDetails} " +
                     $"EnableSceneryCullingDiagnostics={EnableSceneryCullingDiagnostics} " +
+                    $"EnableTargetedTerrainInvalidation={EnableTargetedTerrainInvalidation} " +
                     $"BlockNonHostMultiplayerClientWorldApply={BlockNonHostMultiplayerClientWorldApply} " +
                     $"ShowAdvancedHealthDetails={ShowAdvancedHealthDetails} " +
                     $"ShowTrackDebugOverlay={ShowTrackDebugOverlay} " +
@@ -172,6 +184,7 @@ namespace FUSE.Infrastructure
                 MirrorAssetPacksToLocalLow = DefaultMirrorAssetPacksToLocalLow;
                 VerboseApplyReportDetails = DefaultVerboseApplyReportDetails;
                 EnableSceneryCullingDiagnostics = DefaultEnableSceneryCullingDiagnostics;
+                EnableTargetedTerrainInvalidation = DefaultEnableTargetedTerrainInvalidation;
                 BlockNonHostMultiplayerClientWorldApply = DefaultBlockNonHostMultiplayerClientWorldApply;
                 ShowAdvancedHealthDetails = DefaultShowAdvancedHealthDetails;
                 ShowTrackDebugOverlay = DefaultShowTrackDebugOverlay;
@@ -210,6 +223,15 @@ namespace FUSE.Infrastructure
         internal static void SetSceneryCullingDiagnosticsTransient(bool enabled)
         {
             EnableSceneryCullingDiagnostics = enabled;
+        }
+
+        public static void SetEnableTargetedTerrainInvalidation(bool enabled)
+        {
+            EnableTargetedTerrainInvalidation = enabled;
+            SaveUserOverride(nameof(EnableTargetedTerrainInvalidation), enabled);
+            FuseLog.Warning(
+                $"FUSE experimental setting changed: {nameof(EnableTargetedTerrainInvalidation)}={enabled}. " +
+                "Takes effect on the next map load / terrain reload.");
         }
 
         public static void SetBlockNonHostMultiplayerClientWorldApply(bool enabled)
@@ -349,6 +371,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(VerboseApplyReportDetails), VerboseApplyReportDetails);
                 EnableSceneryCullingDiagnostics =
                     ReadBool(settings, nameof(EnableSceneryCullingDiagnostics), EnableSceneryCullingDiagnostics);
+                EnableTargetedTerrainInvalidation =
+                    ReadBool(settings, nameof(EnableTargetedTerrainInvalidation), EnableTargetedTerrainInvalidation);
                 BlockNonHostMultiplayerClientWorldApply =
                     ReadBool(settings, nameof(BlockNonHostMultiplayerClientWorldApply), BlockNonHostMultiplayerClientWorldApply);
                 ShowAdvancedHealthDetails =
