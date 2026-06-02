@@ -100,5 +100,45 @@ namespace FUSE.Tests.Infrastructure
             Assert.True(union.max.x >= 101f - 0.001f);
             token.Dispose();
         }
+
+        [Fact]
+        public void BoundsComplete_TrueOnlyWithBoundsAndNoIncompleteFlag()
+        {
+            var token = FuseTerrainRefreshScope.Begin();
+            Assert.False(FuseTerrainRefreshScope.BoundsComplete); // nothing recorded yet
+
+            FuseTerrainRefreshScope.RecordBounds(new Bounds(Vector3.zero, Vector3.one));
+            Assert.True(FuseTerrainRefreshScope.BoundsComplete); // bounds present, not flagged
+            token.Dispose();
+        }
+
+        [Fact]
+        public void MarkBoundsIncomplete_ForcesIncomplete_EvenWhenSomeBoundsRecorded()
+        {
+            var token = FuseTerrainRefreshScope.Begin();
+            FuseTerrainRefreshScope.RecordBounds(new Bounds(Vector3.zero, Vector3.one));
+            FuseTerrainRefreshScope.MarkBoundsIncomplete();
+
+            // The footprint is still readable, but it's known-incomplete, so targeted
+            // invalidation must NOT trust it (the reload falls back to a full rebuild).
+            Assert.True(FuseTerrainRefreshScope.TryGetAccumulatedBounds(out _));
+            Assert.False(FuseTerrainRefreshScope.BoundsComplete);
+            token.Dispose();
+        }
+
+        [Fact]
+        public void Begin_Outermost_ResetsIncompleteFlag()
+        {
+            var first = FuseTerrainRefreshScope.Begin();
+            FuseTerrainRefreshScope.RecordBounds(new Bounds(Vector3.zero, Vector3.one));
+            FuseTerrainRefreshScope.MarkBoundsIncomplete();
+            Assert.False(FuseTerrainRefreshScope.BoundsComplete);
+            first.Dispose();
+
+            var second = FuseTerrainRefreshScope.Begin();
+            FuseTerrainRefreshScope.RecordBounds(new Bounds(Vector3.zero, Vector3.one));
+            Assert.True(FuseTerrainRefreshScope.BoundsComplete); // incomplete flag cleared on a fresh scope
+            second.Dispose();
+        }
     }
 }

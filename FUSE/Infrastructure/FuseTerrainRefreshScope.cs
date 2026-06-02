@@ -30,6 +30,7 @@ namespace FUSE.Infrastructure
         private static int _deferredRefreshCalls;
         private static int _deferredMaskComponents;
         private static bool _haveBounds;
+        private static bool _boundsIncomplete;
         private static Bounds _bounds;
 
         /// <summary>True while a bulk-apply scope is open (mask refresh is deferred).</summary>
@@ -40,6 +41,15 @@ namespace FUSE.Infrastructure
 
         /// <summary>Mask components deferred during the current/last scope.</summary>
         internal static int DeferredMaskComponents => _deferredMaskComponents;
+
+        /// <summary>
+        /// True only when an accurate footprint was captured for <em>every</em> deferred
+        /// object — i.e. some bounds were recorded and nothing was flagged unbounded.
+        /// Targeted terrain invalidation may run only when this holds; otherwise the
+        /// trailing reload must do a full rebuild, since narrowing to a footprint that
+        /// doesn't actually cover a mask would leave dark, uncut terrain.
+        /// </summary>
+        internal static bool BoundsComplete => _haveBounds && !_boundsIncomplete;
 
         /// <summary>
         /// Opens a deferral scope. The outermost <see cref="Begin"/> resets the
@@ -53,6 +63,7 @@ namespace FUSE.Infrastructure
                 _deferredRefreshCalls = 0;
                 _deferredMaskComponents = 0;
                 _haveBounds = false;
+                _boundsIncomplete = false;
                 _bounds = default(Bounds);
             }
 
@@ -82,6 +93,16 @@ namespace FUSE.Infrastructure
                 _bounds = worldBounds;
                 _haveBounds = true;
             }
+        }
+
+        /// <summary>
+        /// Flags that a deferred object's footprint could not be measured accurately
+        /// (e.g. its model/masks haven't streamed in yet). Forces the trailing reload
+        /// back to a full rebuild — see <see cref="BoundsComplete"/>.
+        /// </summary>
+        internal static void MarkBoundsIncomplete()
+        {
+            _boundsIncomplete = true;
         }
 
         /// <summary>Returns the accumulated world-space footprint touched during apply, if any (#4).</summary>

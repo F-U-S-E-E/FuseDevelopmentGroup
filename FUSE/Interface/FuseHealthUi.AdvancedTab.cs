@@ -291,7 +291,7 @@ namespace FUSE.Interface
             AddWrappedField(
                 builder,
                 "Terrain Rebuild",
-                "EXPERIMENTAL. After applying packages, FUSE re-bakes terrain so placed map-masks cut in. Off = full MapManager.RebuildAll (re-streams the whole map; safe). On = invalidate only the tiles FUSE touched (much faster, but if a mask's footprint is missed you'll see dark uncut terrain patches). Validate on your maps before relying on it; check FUSE.log for 'terrain reload (targeted invalidation)'.",
+                "EXPERIMENTAL. After applying packages, FUSE re-bakes terrain so placed map-masks cut in. Off = full MapManager.RebuildAll (re-streams the whole map; safe). On = invalidate only the tiles FUSE touched, BUT only when their footprint can be measured accurately; if any mask can't be bounded (e.g. scenery still streaming in at apply time) it safely falls back to the full rebuild rather than risk dark uncut terrain. Check FUSE.log for 'terrain reload (targeted invalidation)' vs '(full rebuild)'.",
                 120f);
             AddWrappedField(
                 builder,

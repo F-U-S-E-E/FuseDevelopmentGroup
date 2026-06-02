@@ -170,8 +170,12 @@ namespace FUSE.Patches
                     return true; // under budget — start the load this frame.
                 }
 
-                Enqueue(__instance);
+                // Create the pump BEFORE recording the pending id: if EnsurePump threw
+                // after Enqueue, the catch below fails open (this load proceeds) but the
+                // stale PendingIds entry would block every future SetLoaded(true) for
+                // this object with nothing draining it.
                 EnsurePump();
+                Enqueue(__instance);
                 return false; // over budget — defer to the pump.
             }
             catch (Exception ex)

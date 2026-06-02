@@ -84,13 +84,16 @@ namespace FUSE.Runtime.Lifecycle
                     return false;
                 }
 
-                // Targeted invalidation (#4, opt-in): if we captured the footprint of
-                // what FUSE touched during this apply, re-bake just those tiles instead
-                // of tearing down and re-streaming the whole map. Default off, and we
-                // fall back to the full rebuild whenever the toggle is off, the method
-                // didn't resolve, or no footprint was captured (e.g. a manual reload).
+                // Targeted invalidation (#4, opt-in): if we captured an ACCURATE,
+                // complete footprint of what FUSE touched during this apply, re-bake
+                // just those tiles instead of tearing down and re-streaming the whole
+                // map. Default off, and we fall back to the full rebuild whenever the
+                // toggle is off, the method didn't resolve, the footprint is incomplete
+                // (e.g. masks still streaming in — see MapAPI.RefreshAttachedMapMasks),
+                // or nothing was captured (e.g. a manual reload).
                 if (FuseSettings.EnableTargetedTerrainInvalidation &&
                     MapManagerInvalidateBounds != null &&
+                    FuseTerrainRefreshScope.BoundsComplete &&
                     FuseTerrainRefreshScope.TryGetAccumulatedBounds(out var bounds))
                 {
                     MapManagerInvalidateBounds.Invoke(instance, new object[] { bounds });

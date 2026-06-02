@@ -63,6 +63,11 @@ namespace FUSE.Interface
         private static bool _running;
         private static string _status = "idle";
 
+        // The sampler for the run currently in progress, so a scenario's movement can
+        // reset the per-run latency/load window at a measurement boundary (e.g. the
+        // sweep resets after the one-time cold load). Set while a run is active.
+        private static RunSampler _activeSampler;
+
         internal static string Status => _status;
         internal static bool IsRunning => _running;
 
@@ -217,6 +222,7 @@ namespace FUSE.Interface
                 // load latency, memory). Runs as its own coroutine so it samples even
                 // while the movement is inside a nested wait.
                 sampler = new RunSampler(scenario.Name, label);
+                _activeSampler = sampler;
                 BenchmarkRunner.Instance.StartCoroutine(sampler.Loop());
 
                 var startTime = Time.realtimeSinceStartup;
@@ -285,6 +291,7 @@ namespace FUSE.Interface
             finally
             {
                 sampler?.Finish();
+                _activeSampler = null;
                 FuseSceneryCullingDebouncePatch.BenchmarkDebounceOverride = null;
                 FuseSceneryLoadThrottlePatch.BenchmarkThrottleOverride = null;
                 FuseSettings.SetSceneryCullingDiagnosticsTransient(prevDiagnostics);
@@ -308,10 +315,14 @@ namespace FUSE.Interface
             Teleport(target, rotation);
             yield return WaitForLoadAndSettle(TargetTimeoutSeconds, null);
 
-            // Measure only the sweep flaps: reset here so the harness's end-snapshot
-            // reflects boundary churn, not the one-time cold load.
+            // Measure only the sweep flaps: reset ALL benchmarked counters here — churn,
+            // throttle (deferred/released/peak-queue), and the sampler's per-run latency/
+            // load window — so the end-snapshot and CSV reflect boundary churn, not the
+            // one-time cold load that just finished.
             FuseSceneryCullingDiagnosticPatch.ResetCounters();
             FuseSceneryCullingDebouncePatch.ResetSuppressedUnloads();
+            FuseSceneryLoadThrottlePatch.ResetStats();
+            _activeSampler?.ResetLatencyWindow();
 
             _status = "[sweep] sweeping — measuring churn…";
             var sweepFar = target + new Vector3(SweepDistanceMeters, 0f, 0f);
@@ -806,6 +817,19 @@ namespace FUSE.Interface
                 }
 
                 _writer = null;
+            }
+
+            // Resets the per-run latency/load aggregates so a scenario can measure only
+            // the phase after a boundary (the sweep's post-cold-load oscillation), not
+            // the one-time cold load. CSV rows keep streaming; only the run-level
+            // PeakInFlight / Avg / MaxLoadMs reported in the JSON summary restart.
+            internal void ResetLatencyWindow()
+            {
+                _runLatencySum = 0f;
+                _runLatencyCount = 0;
+                _runMaxLoadMs = 0f;
+                _loadStart.Clear();
+                PeakInFlight = 0;
             }
 
             private void Frame()
