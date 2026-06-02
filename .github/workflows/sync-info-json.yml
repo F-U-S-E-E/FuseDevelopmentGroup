@@ -3,7 +3,7 @@ name: Sync Info.json to latest release
 # Keeps the source FUSE/Info.json "Version" field in step with the latest
 # published GitHub release. Skipped for GitHub pre-releases (incl. the
 # 0.x series treated as pre-release by release.yml) and for any tag that
-# isn't a plain v<MAJOR>.<MINOR>.<PATCH>. The release artifact itself is
+# isn't a plain mod-v<MAJOR>.<MINOR>.<PATCH>. The release artifact itself is
 # already correctly stamped by the build (see InjectModVersionIntoInfoJson
 # in Directory.Build.targets); this workflow only updates the in-repo
 # manifest so the source-of-truth tracks the latest GA release.
@@ -34,8 +34,8 @@ jobs:
         shell: powershell
         run: |
           $tag = "${{ github.event.release.tag_name }}"
-          if ($tag -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$') {
-            Write-Host "Release tag '$tag' is not a 3-part GA semver; skipping sync."
+          if ($tag -notmatch '^mod-v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$') {
+            Write-Host "Release tag '$tag' is not a 3-part GA mod-v semver; skipping sync."
             "skip=true" >> $env:GITHUB_OUTPUT
             exit 0
           }

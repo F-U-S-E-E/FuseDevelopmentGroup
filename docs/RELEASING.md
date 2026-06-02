@@ -4,10 +4,10 @@ FUSE ships in two independent lanes, each driven by a git tag. Pushing the tag
 is the only trigger — the matching workflow does the build, packaging, and
 GitHub Release.
 
-## Mod release — `v<semver>`
+## Mod release — `mod-v<semver>`
 
-Tag: `v0.13.0`, `v1.0.0-rc.1`, ... (must match `v<major>.<minor>.<patch>` with an
-optional `-prerelease` suffix).
+Tag: `mod-v0.13.0`, `mod-v1.0.0-rc.1`, ... (must match
+`mod-v<major>.<minor>.<patch>` with an optional `-prerelease` suffix).
 
 Runs [`.github/workflows/release.yml`](../.github/workflows/release.yml) on the
 **self-hosted** Railroader runner (it needs the game's Unity/UMM reference
@@ -23,13 +23,16 @@ and `Info.json` (see `Directory.Build.targets`). On a non-prerelease (GA) tag,
 [`sync-info-json.yml`](../.github/workflows/sync-info-json.yml) commits the
 matching `FUSE/Info.json` version back to `main`.
 
-This lane does **not** ship the standalone editor — that moved to its own lane.
+This lane does **not** ship the standalone editor — that has its own lane.
 
-## Editor release — `editor-v<semver>`
+## External editor release — `externaleditor-v<semver>`
 
-Tag: `editor-v0.2.0`, `editor-v1.0.0-rc.1`, ...
+Tag: `externaleditor-v0.2.0`, `externaleditor-v1.0.0-rc.1`, ...
 
-Runs [`.github/workflows/release-editor.yml`](../.github/workflows/release-editor.yml)
+The prefix is `externaleditor-` (not `editor-`) to distinguish the standalone
+desktop editor from the in-game editor, which ships inside the mod.
+
+Runs [`.github/workflows/release-externaleditor.yml`](../.github/workflows/release-externaleditor.yml)
 on a **GitHub-hosted** `ubuntu-latest` runner — the standalone editor is
 game-free (`FuseIsGameFree=true`), so it needs no Railroader DLLs and builds in
 the same environment CI's `build-net10` job already proves. Produces and
@@ -39,16 +42,18 @@ attaches the self-contained, per-OS bundles:
 - `FUSE.ExternalEditor-v<ver>-linux-x64.zip`
 - `FUSE.ExternalEditor-v<ver>-osx-x64.zip`
 
-The editor version flows in via `-p:EditorVersion=<ver>` (see
+The version flows in via `-p:ExternalEditorVersion=<ver>` (see
 `FUSE.ExternalEditor/FUSE.ExternalEditor.csproj`); local/CI builds without it
-fall back to the dev floor in that csproj. The editor and mod version numbers
-are independent — bump and tag them separately.
+fall back to the dev floor in that csproj. The mod and external-editor version
+numbers are independent — bump and tag them separately.
 
 ## Notes
 
 - Both lanes treat the `0.x` series or any `-prerelease` suffix as a GitHub
   pre-release (FUSE is pre-1.0).
-- The tag prefixes don't collide: `editor-v*` does not match `release.yml`'s
-  `v*` trigger, and `sync-info-json.yml`'s `^v...` parse skips editor tags.
-- To dry-run a lane, push a throwaway pre-release tag (e.g. `editor-v0.2.0-rc.1`),
-  confirm the release and its assets, then delete the tag and release.
+- The tag prefixes don't collide: `mod-v*`, `externaleditor-v*`, and the
+  existing `tools-v*` are disjoint globs, and `sync-info-json.yml`'s
+  `^mod-v...` parse only ever stamps `Info.json` from a mod release.
+- To dry-run a lane, push a throwaway pre-release tag (e.g.
+  `externaleditor-v0.2.0-rc.1`), confirm the release and its assets, then
+  delete the tag and release.

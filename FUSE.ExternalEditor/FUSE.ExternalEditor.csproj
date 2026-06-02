@@ -15,19 +15,19 @@
          its own version instead of the net48 mod-version stamp (see
          Directory.Build.targets). -->
     <FuseIsGameFree>true</FuseIsGameFree>
-    <!-- Editor version is tag-driven: release-editor.yml passes
-         -p:EditorVersion=<semver from the editor-v* tag>. Local/CI builds fall
-         back to the dev floor below. Full semver feeds Version/Informational;
-         AssemblyVersion/FileVersion take the numeric core only (those can't
-         hold a prerelease suffix). Mirrors the ModVersion split in
-         Directory.Build.targets. -->
-    <EditorVersion Condition="'$(EditorVersion)' == ''">0.1.0</EditorVersion>
-    <EditorVersionCore>$([System.Text.RegularExpressions.Regex]::Match('$(EditorVersion)', '^[0-9]+\.[0-9]+\.[0-9]+').Value)</EditorVersionCore>
-    <EditorVersionCore Condition="'$(EditorVersionCore)' == ''">0.1.0</EditorVersionCore>
-    <Version>$(EditorVersion)</Version>
-    <AssemblyVersion>$(EditorVersionCore).0</AssemblyVersion>
-    <FileVersion>$(EditorVersionCore).0</FileVersion>
-    <InformationalVersion>$(EditorVersion)</InformationalVersion>
+    <!-- Version is tag-driven: release-externaleditor.yml passes
+         -p:ExternalEditorVersion=<semver from the externaleditor-v* tag>.
+         Local/CI builds fall back to the dev floor below. Full semver feeds
+         Version/Informational; AssemblyVersion/FileVersion take the numeric
+         core only (those can't hold a prerelease suffix). Mirrors the
+         ModVersion split in Directory.Build.targets. -->
+    <ExternalEditorVersion Condition="'$(ExternalEditorVersion)' == ''">0.1.0</ExternalEditorVersion>
+    <ExternalEditorVersionCore>$([System.Text.RegularExpressions.Regex]::Match('$(ExternalEditorVersion)', '^[0-9]+\.[0-9]+\.[0-9]+').Value)</ExternalEditorVersionCore>
+    <ExternalEditorVersionCore Condition="'$(ExternalEditorVersionCore)' == ''">0.1.0</ExternalEditorVersionCore>
+    <Version>$(ExternalEditorVersion)</Version>
+    <AssemblyVersion>$(ExternalEditorVersionCore).0</AssemblyVersion>
+    <FileVersion>$(ExternalEditorVersionCore).0</FileVersion>
+    <InformationalVersion>$(ExternalEditorVersion)</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

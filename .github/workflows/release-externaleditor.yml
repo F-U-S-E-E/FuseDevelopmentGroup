@@ -1,12 +1,14 @@
-name: Release Editor
+name: Release External Editor
 
 # Independent release lane for the standalone FUSE.ExternalEditor (Avalonia,
-# net10, game-free). Triggered by editor-v<semver> tags so the editor ships on
-# its own cadence, decoupled from the mod's v<semver> release (release.yml).
+# net10, game-free). Triggered by externaleditor-v<semver> tags so the external
+# editor ships on its own cadence, decoupled from the mod's mod-v<semver>
+# release (release.yml). The prefix is externaleditor- (not editor-) to keep it
+# distinct from the in-game editor, which ships inside the mod.
 on:
   push:
     tags:
-      - "editor-v*"
+      - "externaleditor-v*"
 
 permissions:
   contents: write
@@ -35,8 +37,8 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ github.ref_name }}"
-          if ($tag -notmatch '^editor-v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
-            throw "Tag '$tag' must match editor-v<semver>, e.g. editor-v0.2.0 or editor-v1.0.0-rc.1."
+          if ($tag -notmatch '^externaleditor-v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
+            throw "Tag '$tag' must match externaleditor-v<semver>, e.g. externaleditor-v0.2.0 or externaleditor-v1.0.0-rc.1."
           }
 
           $version = $Matches.version
@@ -52,17 +54,17 @@ jobs:
           }
 
       # Self-contained per-OS bundles (no .NET runtime required on the user's
-      # machine). The editor's version comes from the tag via -p:EditorVersion,
+      # machine). The version comes from the tag via -p:ExternalEditorVersion,
       # not the mod's ModVersion stamp (see FUSE.ExternalEditor.csproj).
       - name: Publish FUSE.ExternalEditor (per-OS, self-contained)
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.version }}"
           foreach ($rid in @('win-x64', 'linux-x64', 'osx-x64')) {
-            $out = "publish/editor-$rid"
+            $out = "publish/externaleditor-$rid"
             dotnet publish FUSE.ExternalEditor/FUSE.ExternalEditor.csproj `
               -c Release -r $rid --self-contained true `
-              -p:EditorVersion=$version -o $out
+              -p:ExternalEditorVersion=$version -o $out
             if ($LASTEXITCODE -ne 0) { throw "publish failed for $rid" }
             $zip = "FUSE.ExternalEditor-v$version-$rid.zip"
             if (Test-Path $zip) { Remove-Item $zip -Force }

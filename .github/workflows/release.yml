@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "mod-v*"
 
 permissions:
   contents: write
@@ -34,8 +34,8 @@ jobs:
         shell: powershell
         run: |
           $tag = "${{ github.ref_name }}"
-          if ($tag -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
-            throw "Tag '$tag' must match v<semver>, e.g. v0.10.0 or v1.0.0-rc.1."
+          if ($tag -notmatch '^mod-v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
+            throw "Tag '$tag' must match mod-v<semver>, e.g. mod-v0.13.0 or mod-v1.0.0-rc.1."
           }
 
           $version = $Matches.version
@@ -104,9 +104,10 @@ jobs:
           "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
           "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
 
-      # The standalone editor ships in its own release lane (editor-v* tags,
-      # .github/workflows/release-editor.yml) so it can be versioned and shipped
-      # independently of the mod. It is intentionally NOT packaged here.
+      # The standalone editor ships in its own release lane (externaleditor-v*
+      # tags, .github/workflows/release-externaleditor.yml) so it can be
+      # versioned and shipped independently of the mod. Intentionally NOT
+      # packaged here.
 
       # FUSE.LiveBridge is an optional in-game mod (net48) that hot-reloads the
       # editor's saves; it ships as its own UMM mod zip.
