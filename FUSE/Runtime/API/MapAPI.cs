@@ -359,6 +359,24 @@ namespace FUSE.Runtime.API
                 return;
             }
 
+            // During a bulk apply that ends in a single terrain rebuild, this
+            // per-object refresh is redundant: the trailing rebuild re-evaluates every
+            // live mask component at once, and mask components also self-apply on
+            // OnEnable. Skip the GetComponentsInChildren + Rebuild churn here.
+            //
+            // We deliberately do NOT record an approximate footprint for the opt-in
+            // targeted invalidation: at apply time the scenery model (and its mask
+            // components) hasn't streamed in yet, so there is nothing to measure, and a
+            // fixed-size box would under-cover large rectangle/curve masks and leave
+            // dark, uncut terrain. Flag the footprint incomplete instead so the trailing
+            // reload falls back to a full rebuild (FuseTerrainRefreshScope.BoundsComplete).
+            if (FuseTerrainRefreshScope.IsDeferringMaskRefresh)
+            {
+                FuseTerrainRefreshScope.NoteDeferredRefresh(0);
+                FuseTerrainRefreshScope.MarkBoundsIncomplete();
+                return;
+            }
+
             var refreshed = 0;
             foreach (var component in root.GetComponentsInChildren<MaskComponentBase>(true))
             {

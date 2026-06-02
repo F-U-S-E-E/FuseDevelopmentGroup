@@ -215,6 +215,7 @@ namespace FUSE
                 _lifecycle = null;
             }
 
+            FuseSceneryLoadThrottlePatch.Shutdown();
             FuseLegacyAssemblyHost.Shutdown();
             FuseLegacySupportAssemblyShim.Shutdown();
             FuseRuntimeRebindService.Shutdown();

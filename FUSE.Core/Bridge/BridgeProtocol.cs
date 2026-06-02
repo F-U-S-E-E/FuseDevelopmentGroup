@@ -19,6 +19,33 @@ namespace Fuse.Core.Bridge
 
         public const string ReloadCommand = "reload";
         public const string ReloadTerrainCommand = "reloadTerrain";
+
+        // --- Dev-only test bridge (FUSE.TestBridge mod) ---
+        // A point-to-point RPC channel: the driver (CLI) drops a request into the
+        // test bridge mod's own folder, the in-game mod executes it on the Unity
+        // main thread and writes a result alongside, plus a ~1s heartbeat.
+
+        /// <summary>The dev-only test bridge mod's folder under <c>Mods/</c>; request/result/heartbeat files live here.</summary>
+        public const string TestBridgeModFolderName = "FUSE.TestBridge";
+        // Per-request files (correlated by RequestId) so a slow/aborted request never clobbers the next.
+        public const string TestRequestPrefix = "test_request_";
+        public const string TestResultPrefix = "test_result_";
+        public const string TestRequestPattern = "test_request_*.json";
+        public const string TestStateFileName = "test_state.json";
+
+        // Test bridge verbs (TestRequest.Verb).
+        public const string TestVerbReload = "reload";
+        public const string TestVerbReloadTerrain = "reloadTerrain";
+        public const string TestVerbConsole = "console";
+        public const string TestVerbReport = "report";
+        public const string TestVerbScreenshot = "screenshot";
+        public const string TestVerbDump = "dump";
+        public const string TestVerbLoadSave = "loadSave";
+        public const string TestVerbSaves = "saves";
+        public const string TestVerbSave = "save";
+        public const string TestVerbUmm = "umm";
+        public const string TestVerbNewGame = "newGame";
+        public const string TestVerbCleanup = "cleanup";
     }
 
     /// <summary>Editor → game: "re-read packages from disk and re-apply".</summary>
@@ -48,5 +75,33 @@ namespace Fuse.Core.Bridge
         public int AppliedCount { get; set; }
         public bool Ok { get; set; }
         public string Error { get; set; }
+
+        /// <summary>Absolute path to the active FUSE.log (test bridge only; lets the driver tail it without a round trip).</summary>
+        public string LogPath { get; set; }
+    }
+
+    /// <summary>Driver → game: a single test-bridge RPC. <see cref="Verb"/> selects the action;
+    /// <see cref="CommandLine"/> carries the console command for <c>console</c>, <see cref="Arg"/> a generic argument.</summary>
+    public sealed class TestRequest
+    {
+        public int Schema { get; set; } = BridgeProtocol.Schema;
+        public string RequestId { get; set; }
+        public string Verb { get; set; }
+        public string CommandLine { get; set; }
+        public string Arg { get; set; }
+        public string Reason { get; set; }
+        public string IssuedUtc { get; set; }
+    }
+
+    /// <summary>Game → driver: the result of a single <see cref="TestRequest"/>, correlated by <see cref="RequestId"/>.</summary>
+    public sealed class TestResult
+    {
+        public int Schema { get; set; } = BridgeProtocol.Schema;
+        public string RequestId { get; set; }
+        public bool Ok { get; set; }
+        public string Text { get; set; }
+        public string Error { get; set; }
+        public string ArtifactPath { get; set; }
+        public string CompletedUtc { get; set; }
     }
 }

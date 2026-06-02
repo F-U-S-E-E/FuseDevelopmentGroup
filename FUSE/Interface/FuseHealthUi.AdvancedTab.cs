@@ -227,6 +227,46 @@ namespace FUSE.Interface
             }
             builder.Spacer(4f);
 
+            builder.AddSection("Performance Diagnostics");
+            AddSettingToggle(
+                builder,
+                "Scenery Cull Log",
+                FuseSettings.EnableSceneryCullingDiagnostics ? "logging all scenery (FUSE + vanilla) load/unload to FUSE.log" : "disabled",
+                FuseSettings.EnableSceneryCullingDiagnostics ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetEnableSceneryCullingDiagnostics(!FuseSettings.EnableSceneryCullingDiagnostics);
+                    RebuildWindow();
+                });
+            AddWrappedField(
+                builder,
+                "Usage",
+                "Toggle on, teleport into the heavy scene, then off. Each scenery load/unload flip is written to FUSE.log as 'scenery-cull' (fuse=true|false). Hot, repeating flips on the same object during the test point at culling churn (issue #76).",
+                58f);
+            builder.Spacer(4f);
+
+            builder.AddSection("Scenery Load Benchmark");
+            AddWrappedField(
+                builder,
+                "How",
+                "Reproducible culling/streaming tests (issue #76). CORRIDOR teleports between Bryson and Sylva a few times, then drives the camera up and down the track between them at a set pace. SWEEP A/B is the quick local test (oscillates across the cull boundary at your current view). The DEBOUNCE A/B (Corridor/Sweep A/B) toggles culling hysteresis off vs on (churn). The THROTTLE A/B toggles the per-frame load cap off vs on (batch-load stall) — compare minFps and maxLoadMs. Be in the overview camera. Each run appends a summary to FUSE-scenery-benchmark.json and writes a per-frame CSV (FUSE-bench-*.csv: FPS, object counts, churn, defer/release, load latency, memory); live progress prints to FUSE.log.",
+                150f);
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Run Corridor", () => RunAction("run corridor benchmark", FuseSceneryBenchmark.RunCorridor));
+                row.AddButtonCompact("Corridor A/B", () => RunAction("run corridor debounce A/B benchmark", FuseSceneryBenchmark.RunCorridorAb));
+                row.AddButtonCompact("Sweep A/B", () => RunAction("run sweep debounce A/B benchmark", FuseSceneryBenchmark.RunSweepAb));
+            }, 6f).Height(32f);
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Corridor Throttle A/B", () => RunAction("run corridor throttle A/B benchmark", FuseSceneryBenchmark.RunCorridorThrottleAb));
+                row.AddButtonCompact("Sweep Throttle A/B", () => RunAction("run sweep throttle A/B benchmark", FuseSceneryBenchmark.RunSweepThrottleAb));
+                row.AddButtonCompact("Refresh", RebuildWindow);
+            }, 6f).Height(32f);
+            _lastBenchmarkStatus = FuseSceneryBenchmark.Status;
+            AddWrappedLabel(builder, "Benchmark: " + _lastBenchmarkStatus, 48f);
+            builder.Spacer(4f);
+
             builder.AddSection("Experimental");
             AddSettingToggle(
                 builder,
@@ -238,6 +278,21 @@ namespace FUSE.Interface
                     FuseSettings.SetEnableExperimentalEarlyScenePathSuppression(!FuseSettings.EnableExperimentalEarlyScenePathSuppression);
                     RebuildWindow();
                 });
+            AddSettingToggle(
+                builder,
+                "Targeted Terrain Rebuild",
+                FuseSettings.EnableTargetedTerrainInvalidation ? "enabled next map load" : "disabled (full terrain rebuild)",
+                FuseSettings.EnableTargetedTerrainInvalidation ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetEnableTargetedTerrainInvalidation(!FuseSettings.EnableTargetedTerrainInvalidation);
+                    RebuildWindow();
+                });
+            AddWrappedField(
+                builder,
+                "Terrain Rebuild",
+                "EXPERIMENTAL. After applying packages, FUSE re-bakes terrain so placed map-masks cut in. Off = full MapManager.RebuildAll (re-streams the whole map; safe). On = invalidate only the tiles FUSE touched, BUT only when their footprint can be measured accurately; if any mask can't be bounded (e.g. scenery still streaming in at apply time) it safely falls back to the full rebuild rather than risk dark uncut terrain. Check FUSE.log for 'terrain reload (targeted invalidation)' vs '(full rebuild)'.",
+                120f);
             AddWrappedField(
                 builder,
                 "Inspector Roadmap",
