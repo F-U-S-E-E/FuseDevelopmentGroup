@@ -64,6 +64,13 @@ namespace FUSE.Runtime.API
         private static int _industryApplyBatchDepth;
         private static bool _industryRefreshPending;
         private static Transform _fallbackRoot;
+        // Batch-scoped snapshot of the scene's industries, captured once per apply
+        // batch so the per-industry existence check doesn't FindObjectsOfType the
+        // whole scene each time. Industries added during the batch are found via
+        // FuseIndustryRuntimeIndex (checked first in GetIndustry), so this only needs
+        // the INITIAL scene state and is never updated mid-batch. Cleared in
+        // EndIndustryApplyBatch.
+        private static Industry[] _batchIndustrySnapshot;
 
         public static Industry AddIndustry(string id, FuseIndustry definition)
         {
@@ -244,6 +251,24 @@ namespace FUSE.Runtime.API
             }
         }
 
+        // Returns the scene's industries for GetIndustry's existence / legacy-match
+        // fallback. During an apply batch it reuses a single snapshot (see
+        // _batchIndustrySnapshot); outside a batch it scans live (unchanged behavior).
+        private static Industry[] GetIndustrySceneSnapshot()
+        {
+            if (_industryApplyBatchDepth <= 0)
+            {
+                return UnityEngine.Object.FindObjectsOfType<Industry>(true);
+            }
+
+            if (_batchIndustrySnapshot == null)
+            {
+                _batchIndustrySnapshot = UnityEngine.Object.FindObjectsOfType<Industry>(true);
+            }
+
+            return _batchIndustrySnapshot;
+        }
+
         public static Industry GetIndustry(string id)
         {
             if (FuseIndustryRuntimeIndex.Instance.TryGetValue(id, out var cached) && cached != null)
@@ -253,7 +278,7 @@ namespace FUSE.Runtime.API
 
             if (!string.IsNullOrWhiteSpace(id))
             {
-                var sceneMatch = UnityEngine.Object.FindObjectsOfType<Industry>(true)
+                var sceneMatch = GetIndustrySceneSnapshot()
                     .FirstOrDefault(industry => industry != null && string.Equals(industry.identifier, id, StringComparison.OrdinalIgnoreCase));
                 if (sceneMatch != null)
                 {
@@ -264,7 +289,7 @@ namespace FUSE.Runtime.API
                 var legacyAlias = NormalizeLegacyIndustryReference(id);
                 if (!string.Equals(legacyAlias, id, StringComparison.OrdinalIgnoreCase))
                 {
-                    sceneMatch = UnityEngine.Object.FindObjectsOfType<Industry>(true)
+                    sceneMatch = GetIndustrySceneSnapshot()
                         .FirstOrDefault(industry => industry != null && string.Equals(industry.identifier, legacyAlias, StringComparison.OrdinalIgnoreCase));
                     if (sceneMatch != null)
                     {
@@ -273,7 +298,7 @@ namespace FUSE.Runtime.API
                     }
                 }
 
-                sceneMatch = UnityEngine.Object.FindObjectsOfType<Industry>(true)
+                sceneMatch = GetIndustrySceneSnapshot()
                     .FirstOrDefault(industry => IndustryMatchesLegacyReference(industry, id));
                 if (sceneMatch != null)
                 {
@@ -293,7 +318,7 @@ namespace FUSE.Runtime.API
             }
 
             return FuseCacheRegistry.IsReady && !string.IsNullOrWhiteSpace(id)
-                ? UnityEngine.Object.FindObjectsOfType<Industry>(true).FirstOrDefault(industry =>
+                ? GetIndustrySceneSnapshot().FirstOrDefault(industry =>
                     string.Equals(industry.identifier, id, StringComparison.OrdinalIgnoreCase))
                 : null;
         }
@@ -451,10 +476,19 @@ namespace FUSE.Runtime.API
 
         private static Transform GetIndustryRoot(FuseIndustry definition)
         {
-            var areas = UnityEngine.Object.FindObjectsOfType<Area>(true);
             if (!string.IsNullOrWhiteSpace(definition?.AreaId))
             {
-                var matchedArea = TrackAPI.GetArea(definition.AreaId) ?? areas.FirstOrDefault(area =>
+                // Fast path: resolve via the cached area index without scanning the
+                // scene. Only fall back to FindObjectsOfType<Area> on a cache miss
+                // (rare), avoiding a full-scene scan per industry during apply.
+                var cachedArea = TrackAPI.GetArea(definition.AreaId);
+                if (cachedArea != null)
+                {
+                    return cachedArea.transform;
+                }
+
+                var areas = UnityEngine.Object.FindObjectsOfType<Area>(true);
+                var matchedArea = areas.FirstOrDefault(area =>
                     area != null &&
                     (string.Equals(area.identifier, definition.AreaId, StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(area.name, definition.AreaId, StringComparison.OrdinalIgnoreCase)));
@@ -476,7 +510,7 @@ namespace FUSE.Runtime.API
             }
             else
             {
-                var firstArea = areas.FirstOrDefault(area => area != null);
+                var firstArea = UnityEngine.Object.FindObjectsOfType<Area>(true).FirstOrDefault(area => area != null);
                 if (firstArea != null)
                 {
                     return firstArea.transform;
