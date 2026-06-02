@@ -92,12 +92,14 @@ namespace FUSE.Infrastructure
                 // trigger — blocked the loading screen. Now callers just enqueue a
                 // formatted string and the worker drains _queue to disk off the
                 // main thread. FileShare.ReadWrite keeps the file tailable and
-                // readable by the in-game Logs tab; AutoFlush flushes each line as
-                // the worker writes it, so a crash loses at most the handful of
-                // lines still sitting in the queue.
+                // readable by the in-game Logs tab. The worker flushes when the
+                // queue drains and at least every FlushEveryLines lines (not per
+                // line), so a heavy burst amortizes I/O and the consumer can't fall
+                // behind the producer; an idle logger still persists promptly.
                 var stream = new FileStream(_logFilePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
-                _writer = new StreamWriter(stream) { AutoFlush = true };
+                _writer = new StreamWriter(stream) { AutoFlush = false };
                 _writer.WriteLine($"FUSE log started {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff zzz}");
+                _writer.Flush();
 
                 _queue = new BlockingCollection<string>();
                 _worker = new Thread(ProcessQueue)
@@ -108,6 +110,9 @@ namespace FUSE.Infrastructure
                 _worker.Start();
 
                 _fileLoggingAvailable = true;
+                // Idempotent: Shutdown resets _fileLoggingAvailable, so a later
+                // re-init would otherwise stack a second handler on Application.quitting.
+                Application.quitting -= Shutdown;
                 Application.quitting += Shutdown;
                 _logger?.Log($"FUSE file log: {_logFilePath}");
             }
@@ -207,11 +212,18 @@ namespace FUSE.Infrastructure
             }
         }
 
+        // Flush at least this often during a sustained burst so the crash-loss
+        // window stays bounded even when the queue never momentarily drains.
+        private const int FlushEveryLines = 64;
+
         // Drains the queue to disk on a dedicated background thread. A single
-        // consumer keeps lines in FIFO order; AutoFlush on the writer makes each
-        // line durable as soon as it is written.
+        // consumer keeps lines in FIFO order. The writer is not AutoFlush: we flush
+        // whenever the queue drains (prompt persistence when idle) and every
+        // FlushEveryLines lines (bounded loss under a sustained burst), so a per-line
+        // flush can't let the consumer fall behind the producer.
         private static void ProcessQueue()
         {
+            var sinceFlush = 0;
             try
             {
                 foreach (var line in _queue.GetConsumingEnumerable())
@@ -219,6 +231,12 @@ namespace FUSE.Infrastructure
                     try
                     {
                         _writer.WriteLine(line);
+                        sinceFlush++;
+                        if (_queue.Count == 0 || sinceFlush >= FlushEveryLines)
+                        {
+                            _writer.Flush();
+                            sinceFlush = 0;
+                        }
                     }
                     catch
                     {
@@ -233,11 +251,24 @@ namespace FUSE.Infrastructure
                 // against unexpected enumeration failures so the worker thread
                 // exits cleanly instead of crashing.
             }
+            finally
+            {
+                // Final flush so the tail written since the last periodic flush
+                // reaches disk when the queue completes on shutdown.
+                try
+                {
+                    _writer?.Flush();
+                }
+                catch
+                {
+                    // Best effort on the way out.
+                }
+            }
         }
 
         // Flushes any queued lines on a clean application quit. Not guaranteed to
-        // run on a hard crash, which is why the worker flushes every line as it
-        // goes — at worst a crash loses the few lines still in the queue.
+        // run on a hard crash, which is why the worker also flushes as it drains —
+        // at worst a crash loses the lines written since the last periodic flush.
         private static void Shutdown()
         {
             try
