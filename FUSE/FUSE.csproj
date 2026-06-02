@@ -110,6 +110,10 @@
       <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine" Condition="Exists('$(UnityManagedDir)\UnityEngine.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.AssetBundleModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll</HintPath>
       <Private>false</Private>
@@ -179,6 +183,7 @@
     <Error Condition="!Exists('$(UnityManagedDir)\Map.Runtime.dll')" Text="Map.Runtime.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\SimpleGraph.Runtime.dll')" Text="SimpleGraph.Runtime.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\Unity.TextMeshPro.dll')" Text="Unity.TextMeshPro.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.dll')" Text="UnityEngine.dll was not found in the Railroader Managed folder. This shim assembly is required for UnityEngine.AssetBundle compile-time references." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')" Text="UnityEngine.IMGUIModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll')" Text="UnityEngine.ImageConversionModule.dll was not found in the Railroader Managed folder." />

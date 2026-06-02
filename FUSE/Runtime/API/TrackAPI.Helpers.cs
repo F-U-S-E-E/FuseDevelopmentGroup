@@ -163,6 +163,12 @@ namespace FUSE.Runtime.API
                 return;
             }
 
+            var trackSpan = component as TrackSpan;
+            if (trackSpan != null)
+            {
+                IndustryAPI.RemoveTrackSpanReferences(trackSpan, "TrackAPI.RemoveRuntimeObject");
+            }
+
             if (component is TrackSpan && component.gameObject.GetComponentCount() > 2)
             {
                 UnityEngine.Object.Destroy(component);
