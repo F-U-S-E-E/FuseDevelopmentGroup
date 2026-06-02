@@ -29,6 +29,17 @@ namespace FUSE.Runtime.Lifecycle
     /// activation, so a deferral problem can never leave scenery invisible or wedge
     /// a load. Only the initial map-load wave defers; reapply/live-reload stay
     /// synchronous.
+    ///
+    /// FLAGGED — measured impact is modest (heavy 38-package install, 2026-06):
+    /// loading screen ~110s -> ~96s (~13%); only ~14s of scenery activation moved
+    /// off the critical path into a ~33s post-load "pop-in" tail (~2,200 objects).
+    /// Two limitations to revisit if scenery load becomes a focus again: (1) only
+    /// SetActive is deferred — the per-scenery RESERVE work in SceneryAPI.AddScenery
+    /// (new GameObject + AddComponent + ApplyDefinition) is still synchronous and is
+    /// itself a meaningful slice of apply-world-objects; (2) the dominant map-load
+    /// cost is apply-operations (industries), NOT scenery, so this is a secondary
+    /// win. Watch the post-load tail for visible pop-in; if it's objectionable, tune
+    /// the frame budget or reconsider the approach.
     /// </summary>
     internal static class FuseDeferredSceneryActivator
     {
@@ -270,6 +281,12 @@ namespace FUSE.Runtime.Lifecycle
 
             var elapsedMs = (long)((Time.realtimeSinceStartup - _waveStart) * 1000f);
             FusePerformanceMetrics.RecordTiming("deferred scenery activation wave", elapsedMs);
+            // NOTE: 'failed' counts every item ActivateOne could not activate, which
+            // is usually BENIGN — most are scenery destroyed/removed by a later apply
+            // step (world removals/suppressions) before the wave ran, not errors.
+            // Genuine activation errors are logged separately via FuseLog.Exception in
+            // ActivateOne. A small non-zero 'failed' is expected. (TODO: split into
+            // 'skipped' vs 'errored' if this metric ever causes confusion.)
             FuseLog.Info(
                 $"FUSE load timing phase='deferred scenery activation wave' elapsedMs={elapsedMs} " +
                 $"reason='{reason ?? "map load"}' activated={activated} failed={failed} processed={processed}.");
@@ -283,7 +300,10 @@ namespace FUSE.Runtime.Lifecycle
             }
 
             var instance = item.Instance;
-            // Unity's overloaded equality reports a destroyed object as null.
+            // Unity's overloaded equality reports a destroyed object as null. This is
+            // the common "failed" case and is benign: the scenery was removed/replaced
+            // by a later apply step before the wave reached it (see the 'failed' note
+            // in OnDrainComplete) — not an error.
             if (instance == null)
             {
                 return false;
