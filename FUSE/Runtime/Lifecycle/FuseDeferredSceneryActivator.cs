@@ -25,10 +25,11 @@ namespace FUSE.Runtime.Lifecycle
     ///
     /// Only plain static/visual scenery is deferred (see
     /// <see cref="FuseSceneryDeferralClassifier"/>); mask-bearing and stateful
-    /// scenery stay eager. Experimental and default-off. Every failure path falls
-    /// back to today's synchronous behavior, so logging can never wedge a load.
+    /// scenery stay eager. Every failure path falls back to inline (synchronous)
+    /// activation, so a deferral problem can never leave scenery invisible or wedge
+    /// a load. Only the initial map-load wave defers; reapply/live-reload stay
+    /// synchronous.
     /// </summary>
-    [Experimental("Deferred scenery activation moves scenery instantiation off the loading-screen critical path; distant scenery streams in after the map appears.")]
     internal static class FuseDeferredSceneryActivator
     {
         private static readonly List<DeferredScenery> Queue = new List<DeferredScenery>();
@@ -42,6 +43,13 @@ namespace FUSE.Runtime.Lifecycle
         // so nearest-first ordering has a real anchor and the game's distance bands
         // resolve against a live camera rather than the null-camera "nearest" band.
         private const float CameraWaitSeconds = 2f;
+
+        // Activation-wave tuning: per-frame time budget, the hard wave timeout after
+        // which any remaining scenery is activated inline, and a per-frame item cap so
+        // a burst of sub-millisecond activations can't spike GC in one frame.
+        private const float FrameBudgetMilliseconds = 6f;
+        private const float WaveTimeoutSeconds = 30f;
+        private const int MaxItemsPerFrame = 64;
 
         internal static bool IsDraining => _coroutine != null;
 
@@ -66,9 +74,7 @@ namespace FUSE.Runtime.Lifecycle
         /// </summary>
         internal static bool TryDefer(SceneryAssetInstance scenery, string id, string assetIdentifier, Action onActivated)
         {
-            if (!FuseSettings.EnableExperimentalDeferredScenery ||
-                !_initialMapLoadWaveOpen ||
-                scenery == null)
+            if (!_initialMapLoadWaveOpen || scenery == null)
             {
                 return false;
             }
@@ -77,10 +83,6 @@ namespace FUSE.Runtime.Lifecycle
             {
                 return false;
             }
-
-            FuseExperimentalLog.WarnFirstUse(
-                "FUSE.Runtime.Lifecycle.FuseDeferredSceneryActivator",
-                "deferred scenery activation");
 
             Queue.Add(new DeferredScenery
             {
@@ -102,14 +104,6 @@ namespace FUSE.Runtime.Lifecycle
 
             if (Queue.Count == 0)
             {
-                return;
-            }
-
-            if (!FuseSettings.EnableExperimentalDeferredScenery)
-            {
-                // Flag flipped off mid-wave: realize everything now rather than leave
-                // scenery inactive.
-                FlushSynchronously("deferred scenery disabled");
                 return;
             }
 
@@ -207,8 +201,8 @@ namespace FUSE.Runtime.Lifecycle
 
             SortByDistance(ResolveAnchor());
 
-            var budgetSeconds = Mathf.Max(0.001f, FuseSettings.DeferredSceneryFrameBudgetMilliseconds / 1000f);
-            var maxPerFrame = Mathf.Max(1, FuseSettings.DefaultDeferredSceneryMaxItemsPerFrame);
+            var budgetSeconds = Mathf.Max(0.001f, FrameBudgetMilliseconds / 1000f);
+            var maxPerFrame = Mathf.Max(1, MaxItemsPerFrame);
 
             var index = 0;
             var processed = 0;
@@ -240,10 +234,10 @@ namespace FUSE.Runtime.Lifecycle
                     processed++;
                 }
 
-                if (Time.realtimeSinceStartup - _waveStart >= FuseSettings.DeferredSceneryWaveTimeoutSeconds)
+                if (Time.realtimeSinceStartup - _waveStart >= WaveTimeoutSeconds)
                 {
                     FuseLog.Warning(
-                        $"FUSE deferred scenery wave exceeded {FuseSettings.DeferredSceneryWaveTimeoutSeconds:0}s; " +
+                        $"FUSE deferred scenery wave exceeded {WaveTimeoutSeconds:0}s; " +
                         $"activating the remaining {Queue.Count - index} item(s) inline.");
                     while (index < Queue.Count)
                     {
