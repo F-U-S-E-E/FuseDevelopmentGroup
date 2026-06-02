@@ -12,6 +12,7 @@ namespace FUSE.Infrastructure
         public const bool DefaultMirrorInfoToPlayerLog = false;
         public const bool DefaultMirrorAssetPacksToLocalLow = false;
         public const bool DefaultVerboseApplyReportDetails = false;
+        public const bool DefaultEnableSceneryCullingDiagnostics = false;
         public const bool DefaultBlockNonHostMultiplayerClientWorldApply = false;
         public const bool DefaultShowAdvancedHealthDetails = false;
         public const bool DefaultShowTrackDebugOverlay = false;
@@ -40,6 +41,8 @@ namespace FUSE.Infrastructure
         public static bool MirrorAssetPacksToLocalLow { get; private set; } = DefaultMirrorAssetPacksToLocalLow;
 
         public static bool VerboseApplyReportDetails { get; private set; } = DefaultVerboseApplyReportDetails;
+
+        public static bool EnableSceneryCullingDiagnostics { get; private set; } = DefaultEnableSceneryCullingDiagnostics;
 
         public static bool BlockNonHostMultiplayerClientWorldApply { get; private set; } =
             DefaultBlockNonHostMultiplayerClientWorldApply;
@@ -74,6 +77,7 @@ namespace FUSE.Infrastructure
             MirrorInfoToPlayerLog = DefaultMirrorInfoToPlayerLog;
             MirrorAssetPacksToLocalLow = DefaultMirrorAssetPacksToLocalLow;
             VerboseApplyReportDetails = DefaultVerboseApplyReportDetails;
+            EnableSceneryCullingDiagnostics = DefaultEnableSceneryCullingDiagnostics;
             BlockNonHostMultiplayerClientWorldApply = DefaultBlockNonHostMultiplayerClientWorldApply;
             ShowAdvancedHealthDetails = DefaultShowAdvancedHealthDetails;
             ShowTrackDebugOverlay = DefaultShowTrackDebugOverlay;
@@ -108,6 +112,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "MirrorAssetPacksToLocalLow", DefaultMirrorAssetPacksToLocalLow);
                 VerboseApplyReportDetails =
                     ReadBool(settings, "VerboseApplyReportDetails", DefaultVerboseApplyReportDetails);
+                EnableSceneryCullingDiagnostics =
+                    ReadBool(settings, "EnableSceneryCullingDiagnostics", DefaultEnableSceneryCullingDiagnostics);
                 BlockNonHostMultiplayerClientWorldApply =
                     ReadBool(settings, "BlockNonHostMultiplayerClientWorldApply", DefaultBlockNonHostMultiplayerClientWorldApply);
                 ShowAdvancedHealthDetails =
@@ -143,6 +149,7 @@ namespace FUSE.Infrastructure
                     $"MirrorInfoToPlayerLog={MirrorInfoToPlayerLog} " +
                     $"MirrorAssetPacksToLocalLow={MirrorAssetPacksToLocalLow} " +
                     $"VerboseApplyReportDetails={VerboseApplyReportDetails} " +
+                    $"EnableSceneryCullingDiagnostics={EnableSceneryCullingDiagnostics} " +
                     $"BlockNonHostMultiplayerClientWorldApply={BlockNonHostMultiplayerClientWorldApply} " +
                     $"ShowAdvancedHealthDetails={ShowAdvancedHealthDetails} " +
                     $"ShowTrackDebugOverlay={ShowTrackDebugOverlay} " +
@@ -164,6 +171,7 @@ namespace FUSE.Infrastructure
                 MirrorInfoToPlayerLog = DefaultMirrorInfoToPlayerLog;
                 MirrorAssetPacksToLocalLow = DefaultMirrorAssetPacksToLocalLow;
                 VerboseApplyReportDetails = DefaultVerboseApplyReportDetails;
+                EnableSceneryCullingDiagnostics = DefaultEnableSceneryCullingDiagnostics;
                 BlockNonHostMultiplayerClientWorldApply = DefaultBlockNonHostMultiplayerClientWorldApply;
                 ShowAdvancedHealthDetails = DefaultShowAdvancedHealthDetails;
                 ShowTrackDebugOverlay = DefaultShowTrackDebugOverlay;
@@ -187,6 +195,21 @@ namespace FUSE.Infrastructure
             VerboseApplyReportDetails = enabled;
             SaveUserOverride(nameof(VerboseApplyReportDetails), enabled);
             FuseLog.Info($"FUSE setting changed: {nameof(VerboseApplyReportDetails)}={enabled}.");
+        }
+
+        public static void SetEnableSceneryCullingDiagnostics(bool enabled)
+        {
+            EnableSceneryCullingDiagnostics = enabled;
+            SaveUserOverride(nameof(EnableSceneryCullingDiagnostics), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(EnableSceneryCullingDiagnostics)}={enabled}.");
+        }
+
+        // Transient (non-persisting) toggle used by FuseSceneryBenchmark to capture
+        // scenery churn counts during a run without writing a user override. The
+        // benchmark restores the prior value when the run finishes.
+        internal static void SetSceneryCullingDiagnosticsTransient(bool enabled)
+        {
+            EnableSceneryCullingDiagnostics = enabled;
         }
 
         public static void SetBlockNonHostMultiplayerClientWorldApply(bool enabled)
@@ -324,6 +347,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(EnableExperimentalEarlyScenePathSuppression), EnableExperimentalEarlyScenePathSuppression);
                 VerboseApplyReportDetails =
                     ReadBool(settings, nameof(VerboseApplyReportDetails), VerboseApplyReportDetails);
+                EnableSceneryCullingDiagnostics =
+                    ReadBool(settings, nameof(EnableSceneryCullingDiagnostics), EnableSceneryCullingDiagnostics);
                 BlockNonHostMultiplayerClientWorldApply =
                     ReadBool(settings, nameof(BlockNonHostMultiplayerClientWorldApply), BlockNonHostMultiplayerClientWorldApply);
                 ShowAdvancedHealthDetails =

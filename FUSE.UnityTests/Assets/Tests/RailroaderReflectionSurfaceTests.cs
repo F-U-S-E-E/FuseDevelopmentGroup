@@ -572,6 +572,24 @@ namespace FUSE.UnityTests
         }
 
         // -----------------------------------------------------------------
+        // SceneryAssetInstance — FuseSceneryBenchmark reads _wantsLoaded and
+        // _model to count in-flight scenery loads (settle detection); the
+        // scenery-animation patch also reflects _model. Issue #76 tooling.
+        // -----------------------------------------------------------------
+
+        [Test]
+        public void SceneryAssetInstance_wantsLoaded_InstanceField()
+        {
+            AssertField("Helpers.SceneryAssetInstance", "_wantsLoaded", InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_model_InstanceField()
+        {
+            AssertField("Helpers.SceneryAssetInstance", "_model", InstanceNonPublic);
+        }
+
+        // -----------------------------------------------------------------
         // Helpers
         // -----------------------------------------------------------------
 
