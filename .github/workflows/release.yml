@@ -104,6 +104,40 @@ jobs:
           "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
           "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
 
+      # Standalone cross-platform editor: self-contained per-OS bundles (no .NET
+      # runtime required on the user's machine). Built from the game-free net10
+      # projects, so no Unity/UMM DLLs are involved.
+      - name: Publish FUSE.ExternalEditor (per-OS)
+        shell: powershell
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          foreach ($rid in @('win-x64', 'linux-x64', 'osx-x64')) {
+            $out = "publish/editor-$rid"
+            dotnet publish FUSE.ExternalEditor/FUSE.ExternalEditor.csproj -c Release -r $rid --self-contained true -o $out
+            $zip = "FUSE.ExternalEditor-v$version-$rid.zip"
+            if (Test-Path $zip) { Remove-Item $zip -Force }
+            Compress-Archive -Path "$out/*" -DestinationPath $zip -CompressionLevel Optimal
+          }
+
+      # FUSE.LiveBridge is an optional in-game mod (net48) that hot-reloads the
+      # editor's saves; it ships as its own UMM mod zip.
+      - name: Package FUSE.LiveBridge mod zip
+        shell: powershell
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          dotnet build FUSE.LiveBridge/FUSE.LiveBridge.csproj -c Release -p:ModVersion=$version -p:EnableModDeploy=false
+          $stagingRoot = Join-Path $PWD "staging-livebridge"
+          $modFolder = Join-Path $stagingRoot "FUSE.LiveBridge"
+          if (Test-Path $stagingRoot) { Remove-Item $stagingRoot -Recurse -Force }
+          New-Item -ItemType Directory -Path $modFolder | Out-Null
+          Copy-Item "FUSE.LiveBridge\bin\Release\net48\FUSE.LiveBridge.dll" $modFolder
+          # FUSE.Core.dll is a runtime dependency of the bridge (ProjectReference); ship it too.
+          Copy-Item "FUSE.LiveBridge\bin\Release\net48\FUSE.Core.dll" $modFolder
+          Copy-Item "FUSE.LiveBridge\bin\Release\net48\Info.json" $modFolder
+          $zip = "FUSE.LiveBridge-v$version.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path $modFolder -DestinationPath $zip -CompressionLevel Optimal
+
       - name: Install PyInstaller
         run: python -m pip install --upgrade pip pyinstaller
 
@@ -130,6 +164,10 @@ jobs:
             dist/FUSE-Converter.exe
             dist/FUSE-Installer.exe
             dist/FUSEConvertFolder.pyz
+            FUSE.ExternalEditor-v${{ steps.version.outputs.version }}-win-x64.zip
+            FUSE.ExternalEditor-v${{ steps.version.outputs.version }}-linux-x64.zip
+            FUSE.ExternalEditor-v${{ steps.version.outputs.version }}-osx-x64.zip
+            FUSE.LiveBridge-v${{ steps.version.outputs.version }}.zip
 
       # Uploads the same archive to the mod's Nexus Mods page.
       # Skipped automatically until the repo variable NEXUS_FILE_GROUP_ID is set.
@@ -138,7 +176,7 @@ jobs:
       #   - variable NEXUS_FILE_GROUP_ID (from "API Info" on the mod's Files tab)
       - name: Upload to Nexus Mods
         if: ${{ vars.NEXUS_FILE_GROUP_ID != '' }}
-        uses: Nexus-Mods/upload-action@v1.0.0-beta.5
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.7
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}
           file_group_id: ${{ vars.NEXUS_FILE_GROUP_ID }}

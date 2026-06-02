@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Optional in-game mod: watches Mods/ for the external editor's reload
+       command and hot-applies via FUSE's public FuseLiveReloadApi. net48 +
+       Unity. Paths.user supplies $(GameDir) via Directory.Build.props. -->
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>FUSE.LiveBridge</AssemblyName>
+    <RootNamespace>FUSE.LiveBridge</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <Platforms>AnyCPU</Platforms>
+    <NoWarn>$(NoWarn);0618</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GameDir Condition="'$(GameDir)' == ''">C:\Steam\steamapps\common\Railroader</GameDir>
+    <UnityManagedDir Condition="'$(UnityManagedDir)' == ''">$(GameDir)\Railroader_Data\Managed</UnityManagedDir>
+    <UnityModManagerDir Condition="'$(UnityModManagerDir)' == ''">$(UnityManagedDir)\UnityModManager</UnityModManagerDir>
+    <ModDeployDir Condition="'$(ModDeployDir)' == ''">$(GameDir)\Mods\FUSE.LiveBridge</ModDeployDir>
+    <EnableModDeploy Condition="'$(EnableModDeploy)' == ''">false</EnableModDeploy>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FUSE\FUSE.csproj" />
+    <ProjectReference Include="..\FUSE.Core\FUSE.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">$(UnityModManagerDir)\UnityModManagerNet.dll</UnityModManagerAssemblyPath>
+    <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManager.dll')">$(UnityModManagerDir)\UnityModManager.dll</UnityModManagerAssemblyPath>
+    <UnityModManagerReferenceName Condition="'$(UnityModManagerReferenceName)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">UnityModManagerNet</UnityModManagerReferenceName>
+    <UnityModManagerReferenceName Condition="'$(UnityModManagerReferenceName)' == '' and Exists('$(UnityModManagerDir)\UnityModManager.dll')">UnityModManager</UnityModManagerReferenceName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="$(UnityModManagerReferenceName)" Condition="Exists('$(UnityModManagerAssemblyPath)')">
+      <HintPath>$(UnityModManagerAssemblyPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json" Condition="Exists('$(UnityManagedDir)\Newtonsoft.Json.dll')">
+      <HintPath>$(UnityManagedDir)\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="ValidateUnityReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(UnityModManagerAssemblyPath)')" Text="UnityModManagerNet.dll or UnityModManager.dll not found. Set UnityModManagerDir or GameDir (Paths.user)." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll not found in the Railroader Managed folder." />
+  </Target>
+
+  <ItemGroup>
+    <Content Include="Info.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="DeployFuseLiveBridge" AfterTargets="Build" Condition="'$(EnableModDeploy)' == 'true'">
+    <MakeDir Directories="$(ModDeployDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\Info.json" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" />
+    <!-- FUSE.Core.dll travels with the bridge (FUSE.dll is provided by the FUSE mod). -->
+    <Copy SourceFiles="$(TargetDir)FUSE.Core.dll" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)FUSE.Core.dll')" />
+  </Target>
+</Project>
