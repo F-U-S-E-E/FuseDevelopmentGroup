@@ -10,8 +10,16 @@ on:
     tags:
       - "externaleditor-v*"
 
+# A release lane only needs to write repository Contents (create the release and
+# upload the per-OS bundles); no other scopes are required.
 permissions:
   contents: write
+
+# Serialize editor releases so two runs never race on GitHub-release creation or
+# asset uploads. Never cancel an in-flight release.
+concurrency:
+  group: release-externaleditor
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
@@ -26,6 +34,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          # This lane never pushes back to the repo, so don't leave the
+          # checkout token persisted in .git/config on the runner.
+          persist-credentials: false
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -35,8 +47,12 @@ jobs:
       - name: Parse semantic version from tag
         id: version
         shell: pwsh
+        env:
+          # Pass the tag via the environment, not template expansion, so a
+          # crafted tag name can't inject into the script before validation.
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:TAG_NAME
           if ($tag -notmatch '^externaleditor-v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
             throw "Tag '$tag' must match externaleditor-v<semver>, e.g. externaleditor-v0.2.0 or externaleditor-v1.0.0-rc.1."
           }
@@ -58,8 +74,10 @@ jobs:
       # not the mod's ModVersion stamp (see FUSE.ExternalEditor.csproj).
       - name: Publish FUSE.ExternalEditor (per-OS, self-contained)
         shell: pwsh
+        env:
+          EDITOR_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $version = "${{ steps.version.outputs.version }}"
+          $version = $env:EDITOR_VERSION
           foreach ($rid in @('win-x64', 'linux-x64', 'osx-x64')) {
             $out = "publish/externaleditor-$rid"
             dotnet publish FUSE.ExternalEditor/FUSE.ExternalEditor.csproj `

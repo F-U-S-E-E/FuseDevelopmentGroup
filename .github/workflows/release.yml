@@ -8,6 +8,13 @@ on:
 permissions:
   contents: write
 
+# Serialize mod releases: the job reuses fixed working directories (staging,
+# staging-livebridge) on the self-hosted runner, so overlapping runs could race
+# and ship a corrupted archive. Never cancel an in-flight release.
+concurrency:
+  group: release-mod
+  cancel-in-progress: false
+
 jobs:
   build-and-release:
     runs-on: self-hosted

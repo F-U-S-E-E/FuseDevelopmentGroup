@@ -49,11 +49,11 @@ numbers are independent — bump and tag them separately.
 
 ## Notes
 
-- Both lanes treat the `0.x` series or any `-prerelease` suffix as a GitHub
-  pre-release (FUSE is pre-1.0).
+- Both lanes treat the `0.x` series or any prerelease suffix (e.g. `-rc.1`) as a
+  GitHub prerelease (FUSE is pre-1.0).
 - The tag prefixes don't collide: `mod-v*`, `externaleditor-v*`, and the
   existing `tools-v*` are disjoint globs, and `sync-info-json.yml`'s
   `^mod-v...` parse only ever stamps `Info.json` from a mod release.
-- To dry-run a lane, push a throwaway pre-release tag (e.g.
+- To dry-run a lane, push a throwaway prerelease tag (e.g.
   `externaleditor-v0.2.0-rc.1`), confirm the release and its assets, then
   delete the tag and release.
