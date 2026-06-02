@@ -39,8 +39,13 @@ jobs:
       - name: Parse semantic version from tag
         id: version
         shell: powershell
+        env:
+          # Pass the tag via the environment, not template expansion, so a
+          # crafted tag name can't inject into the script before validation.
+          # This step runs on the self-hosted runner, so the hardening matters.
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:TAG_NAME
           if ($tag -notmatch '^mod-v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
             throw "Tag '$tag' must match mod-v<semver>, e.g. mod-v0.13.0 or mod-v1.0.0-rc.1."
           }
