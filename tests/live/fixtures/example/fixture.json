@@ -1,0 +1,10 @@
+{
+  "id": "example",
+  "description": "Template fixture. Create the clean save once with 'fuse-test newgame clean' + 'fuse-test save fuse-test-clean', then capture baselines with: fuse-test run-fixture example --update. Copy this folder for new fixtures.",
+  "gameVersion": "2025.1.0",
+  "saveName": "fuse-test-clean",
+  "multiplayerRole": "host",
+  "reason": "fixture run",
+  "captureReport": true,
+  "dumps": ["runtimegraph", "mandelas"]
+}

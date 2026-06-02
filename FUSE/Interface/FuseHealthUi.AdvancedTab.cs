@@ -227,6 +227,44 @@ namespace FUSE.Interface
             }
             builder.Spacer(4f);
 
+            builder.AddSection("Performance Diagnostics");
+            AddSettingToggle(
+                builder,
+                "Scenery Cull Log",
+                FuseSettings.EnableSceneryCullingDiagnostics ? "logging all scenery (FUSE + vanilla) load/unload to FUSE.log" : "disabled",
+                FuseSettings.EnableSceneryCullingDiagnostics ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetEnableSceneryCullingDiagnostics(!FuseSettings.EnableSceneryCullingDiagnostics);
+                    RebuildWindow();
+                });
+            AddWrappedField(
+                builder,
+                "Usage",
+                "Toggle on, teleport into the heavy scene, then off. Each scenery load/unload flip is written to FUSE.log as 'scenery-cull' (fuse=true|false). Hot, repeating flips on the same object during the test point at culling churn (issue #76).",
+                58f);
+            builder.Spacer(4f);
+
+            builder.AddSection("Scenery Load Benchmark");
+            AddWrappedField(
+                builder,
+                "How",
+                "Reproducible culling/streaming tests (issue #76), measured debounce off vs on. CORRIDOR teleports between Bryson and Sylva a few times, then drives the camera up and down the track between them at a set pace. SWEEP A/B is the quick local test (oscillates across the cull boundary at your current view). Be in the overview camera. Each run appends a summary to FUSE-scenery-benchmark.json and writes a per-frame CSV (FUSE-bench-*.csv: FPS, object counts, churn, load latency, memory); live progress prints to FUSE.log.",
+                120f);
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Run Corridor", () => RunAction("run corridor benchmark", FuseSceneryBenchmark.RunCorridor));
+                row.AddButtonCompact("Corridor A/B", () => RunAction("run corridor A/B benchmark", FuseSceneryBenchmark.RunCorridorAb));
+            }, 6f).Height(32f);
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Sweep A/B", () => RunAction("run sweep A/B benchmark", FuseSceneryBenchmark.RunSweepAb));
+                row.AddButtonCompact("Refresh", RebuildWindow);
+            }, 6f).Height(32f);
+            _lastBenchmarkStatus = FuseSceneryBenchmark.Status;
+            AddWrappedLabel(builder, "Benchmark: " + _lastBenchmarkStatus, 48f);
+            builder.Spacer(4f);
+
             builder.AddSection("Experimental");
             AddSettingToggle(
                 builder,

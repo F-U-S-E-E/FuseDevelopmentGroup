@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>FUSE.TestCli</AssemblyName>
+    <RootNamespace>Fuse.TestCli</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Dev-only driver Claude invokes via Bash: no game/Unity DLLs; shares the bridge
+         DTOs from FUSE.Core (net10.0 TFM). Sets its own version, not the net48 mod stamp. -->
+    <FuseIsGameFree>true</FuseIsGameFree>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FUSE.Core\FUSE.Core.csproj" />
+    <ProjectReference Include="..\FUSE.LiveHarness\FUSE.LiveHarness.csproj" />
+  </ItemGroup>
+</Project>

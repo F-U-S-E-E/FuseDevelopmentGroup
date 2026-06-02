@@ -572,6 +572,24 @@ namespace FUSE.UnityTests
         }
 
         // -----------------------------------------------------------------
+        // SceneryAssetInstance — FuseSceneryBenchmark reads _wantsLoaded and
+        // _model to count in-flight scenery loads (settle detection); the
+        // scenery-animation patch also reflects _model. Issue #76 tooling.
+        // -----------------------------------------------------------------
+
+        [Test]
+        public void SceneryAssetInstance_wantsLoaded_InstanceField()
+        {
+            AssertField("Helpers.SceneryAssetInstance", "_wantsLoaded", InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_model_InstanceField()
+        {
+            AssertField("Helpers.SceneryAssetInstance", "_model", InstanceNonPublic);
+        }
+
+        // -----------------------------------------------------------------
         // Helpers
         // -----------------------------------------------------------------
 
@@ -607,6 +625,18 @@ namespace FUSE.UnityTests
                 "that contains it into Assets/Plugins/, or this test's expected namespace is wrong " +
                 "(check the FUSE source's actual reflection call site for the canonical name).");
             return type;
+        }
+
+        // -----------------------------------------------------------------
+        // MenuManager — FuseTestApi.LoadSave (dev-only test bridge) reflects
+        // the private StartGameSinglePlayer(GameSetup) to cold-boot a save
+        // from the main menu, mirroring what the Load Game menu UI does.
+        // -----------------------------------------------------------------
+
+        [Test]
+        public void MenuManager_StartGameSinglePlayer_InstanceMethod()
+        {
+            AssertMethod("UI.Menu.MenuManager", "StartGameSinglePlayer", InstanceNonPublic);
         }
 
         private static void AssertField(string typeFullName, string memberName, BindingFlags flags)

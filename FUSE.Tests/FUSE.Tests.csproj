@@ -44,6 +44,17 @@
          they're not directly tested here. -->
     <ProjectReference Include="..\FUSE.Editor\FUSE.Editor.csproj" />
     <ProjectReference Include="..\FUSE.Converter\FUSE.Converter.csproj" />
+    <!-- Unity-free core, referenced for the cross-serializer contract test that
+         proves FUSE.ExternalEditor output is read identically by the shipping
+         (Unity) FuseSerializer. -->
+    <ProjectReference Include="..\FUSE.Core\FUSE.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Example fixture for the cross-serializer contract test. -->
+    <None Include="..\schemas\fuse-mod.example.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!-- The main FUSE project references game-shipped assemblies with <Private>false</Private>

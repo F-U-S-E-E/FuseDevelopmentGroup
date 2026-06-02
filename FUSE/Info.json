@@ -12,6 +12,7 @@
     "EnableExperimentalEarlyScenePathSuppression": false,
     "MirrorAssetPacksToLocalLow": false,
     "VerboseApplyReportDetails": false,
+    "EnableSceneryCullingDiagnostics": false,
     "BlockNonHostMultiplayerClientWorldApply": false,
     "ShowAdvancedHealthDetails": false,
     "ShowLegacyModsInUmm": true
