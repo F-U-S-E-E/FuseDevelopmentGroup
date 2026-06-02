@@ -49,6 +49,9 @@ namespace FUSE.Loading
                 "MarkerLight",
                 "RadialControl",
                 "Seat",
+                "ToolshedFlowOrigin",
+                "ToolshedServiceLoadPoint",
+                "ToolshedServiceStorage",
                 "ToggleAnimation",
                 "ToggleControl",
                 "Whistle"

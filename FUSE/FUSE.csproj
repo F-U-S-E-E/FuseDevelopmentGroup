@@ -110,6 +110,10 @@
       <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine" Condition="Exists('$(UnityManagedDir)\UnityEngine.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.AssetBundleModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll</HintPath>
       <Private>false</Private>

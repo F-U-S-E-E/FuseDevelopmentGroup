@@ -25,6 +25,9 @@ namespace FUSE.Runtime.API
         private const float StationMapIconHeight = 42f;
         private const float StationMapIconGraphicOffset = 24f;
         private const float StationMapIconRotationOffsetDegrees = 90f;
+        private static readonly Vector3 EmptyStationPickVolumeSize = new Vector3(3.2f, 2.3f, 0.9f);
+        private static readonly Vector3 EmptyStationPickVolumeCenter = new Vector3(0f, 1.35f, 0f);
+        private const float EmptyStationPickVolumeFaceOffset = 0.85f;
         private static Transform _fallbackRoot;
         private static Sprite _stationIconSprite;
         private static Material _stationIconMaterial;
@@ -166,11 +169,33 @@ namespace FUSE.Runtime.API
 
             if (current != null || stopArea == null || !stopIsOnlyPassengerStopInArea)
             {
+                if (current == null && stopArea != null && StationAgentAreaMatchesStop(agent, stopId, stopArea))
+                {
+                    return true;
+                }
+
                 return false;
             }
 
             var agentArea = AreaField?.GetValue(agent) as Area;
             return ReferenceEquals(agentArea, stopArea);
+        }
+
+        private static bool StationAgentAreaMatchesStop(StationAgent agent, string stopId, Area stopArea)
+        {
+            if (agent == null || stopArea == null || string.IsNullOrWhiteSpace(stopId))
+            {
+                return false;
+            }
+
+            var agentArea = AreaField?.GetValue(agent) as Area;
+            if (!ReferenceEquals(agentArea, stopArea))
+            {
+                return false;
+            }
+
+            return string.Equals(agentArea.identifier, stopId, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(agentArea.name, stopId, StringComparison.OrdinalIgnoreCase);
         }
 
         private static PassengerStop GetStationPassengerStop(StationAgent agent)
@@ -280,10 +305,16 @@ namespace FUSE.Runtime.API
             root.transform.localPosition = definition.Position;
             root.transform.localRotation = Quaternion.Euler(definition.Rotation);
 
-            var prefab = FusePrefabResolver.Resolve(definition.Prefab);
-            if (prefab == null)
+            var stationPrefab = string.IsNullOrWhiteSpace(definition.Prefab) ? "empty://" : definition.Prefab.Trim();
+            var useEmptyPrefab = IsEmptyPrefabUri(stationPrefab);
+            GameObject prefab = null;
+            if (!useEmptyPrefab)
             {
-                throw new InvalidOperationException($"Station prefab '{definition.Prefab}' was not found.");
+                prefab = FusePrefabResolver.Resolve(stationPrefab);
+                if (prefab == null)
+                {
+                    throw new InvalidOperationException($"Station prefab '{stationPrefab}' was not found.");
+                }
             }
 
             var stop = GetPassengerStop(definition.PassengerStopId);
@@ -297,7 +328,9 @@ namespace FUSE.Runtime.API
                 UnityEngine.Object.Destroy(root.transform.GetChild(index).gameObject);
             }
 
-            var instance = UnityEngine.Object.Instantiate(prefab, root.transform);
+            var instance = useEmptyPrefab
+                ? CreateEmptyStationAgentInstance(root.transform, id)
+                : UnityEngine.Object.Instantiate(prefab, root.transform);
             instance.name = "prefab";
             instance.transform.localPosition = Vector3.zero;
             instance.transform.localEulerAngles = Vector3.zero;
@@ -308,15 +341,12 @@ namespace FUSE.Runtime.API
             var stationAgent = instance.GetComponentInChildren<StationAgent>(true);
             if (stationAgent == null)
             {
-                throw new InvalidOperationException($"Station prefab '{definition.Prefab}' does not contain a StationAgent.");
+                throw new InvalidOperationException($"Station prefab '{stationPrefab}' does not contain a StationAgent.");
             }
 
             stationAgent.name = id;
             var area = stop.GetComponentInParent<Area>(true);
-            AreaField?.SetValue(stationAgent, area);
-            PassengerStopField?.SetValue(stationAgent, stop);
-            var secondaryAreas = SecondaryAreasField?.GetValue(stationAgent) as IList<Area>;
-            secondaryAreas?.Clear();
+            BindStationAgent(stationAgent, area, stop);
 
             var stationLabel = area != null ? area.name : stop.TimetableName;
             if (!string.IsNullOrWhiteSpace(stationLabel))
@@ -341,13 +371,88 @@ namespace FUSE.Runtime.API
 
             root.SetActive(true);
             instance.SetActive(true);
-            ApplyStationRendererState(instance, id, definition.Prefab);
-            ConfigureMapIcons(instance, stop, root.transform, id, definition.Prefab);
+            ApplyStationRendererState(instance, id, stationPrefab);
+            ConfigureMapIcons(instance, stop, root.transform, id, stationPrefab);
             FuseStationRuntimeIndex.Instance.Set(id, stationAgent);
             MapAPI.RefreshAttachedMapMasks(root, $"station '{id}' apply");
             FusePrefabSanitizer.SanitizeStation(root, id, stationAgent, area, stop).Log($"FUSE station '{id}'");
             FusePrefabSanitizer.ValidateStationPostBind(root, id, stationAgent, area, stop).Log($"FUSE station '{id}' post-bind");
             return stationAgent;
+        }
+
+        private static bool IsEmptyPrefabUri(string prefab)
+        {
+            return prefab != null && prefab.StartsWith("empty://", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static GameObject CreateEmptyStationAgentInstance(Transform parent, string id)
+        {
+            var instance = new GameObject("prefab");
+            instance.transform.SetParent(parent, false);
+
+            var agentObject = new GameObject("StationAgent");
+            agentObject.transform.SetParent(instance.transform, false);
+            agentObject.transform.localPosition = Vector3.zero;
+            agentObject.transform.localEulerAngles = Vector3.zero;
+            agentObject.transform.localScale = Vector3.one;
+            agentObject.AddComponent<StationAgent>();
+            AddEmptyStationPickCollider(agentObject, id);
+
+            FuseLog.Info($"FUSE station '{id}' using invisible empty:// StationAgent prefab.");
+            return instance;
+        }
+
+        private static void BindStationAgent(StationAgent stationAgent, Area area, PassengerStop stop)
+        {
+            AreaField?.SetValue(stationAgent, area);
+            PassengerStopField?.SetValue(stationAgent, stop);
+
+            if (SecondaryAreasField == null)
+            {
+                return;
+            }
+
+            var secondaryAreas = SecondaryAreasField.GetValue(stationAgent) as IList<Area>;
+            if (secondaryAreas == null)
+            {
+                secondaryAreas = new List<Area>();
+                SecondaryAreasField.SetValue(stationAgent, secondaryAreas);
+            }
+            else
+            {
+                secondaryAreas.Clear();
+            }
+        }
+
+        private static void AddEmptyStationPickCollider(GameObject target, string id)
+        {
+            var clickableLayer = Layers.Clickable;
+            if (clickableLayer >= 0)
+            {
+                target.layer = clickableLayer;
+            }
+            else
+            {
+                FuseLog.Warning($"FUSE station '{id}' empty:// pick volume could not find Unity layer 'Clickable'; hover/click may fail.");
+            }
+
+            var boxColliderType = Type.GetType("UnityEngine.BoxCollider, UnityEngine.PhysicsModule");
+            if (boxColliderType == null)
+            {
+                FuseLog.Warning($"FUSE station '{id}' empty:// pick volume could not be created because UnityEngine.PhysicsModule was not available.");
+                return;
+            }
+
+            AddEmptyStationPickBox(target, boxColliderType, EmptyStationPickVolumeCenter + new Vector3(0f, 0f, EmptyStationPickVolumeFaceOffset));
+            AddEmptyStationPickBox(target, boxColliderType, EmptyStationPickVolumeCenter + new Vector3(0f, 0f, -EmptyStationPickVolumeFaceOffset));
+        }
+
+        private static void AddEmptyStationPickBox(GameObject target, Type boxColliderType, Vector3 center)
+        {
+            var collider = target.AddComponent(boxColliderType);
+            boxColliderType.GetProperty("size")?.SetValue(collider, EmptyStationPickVolumeSize, null);
+            boxColliderType.GetProperty("center")?.SetValue(collider, center, null);
+            boxColliderType.GetProperty("isTrigger")?.SetValue(collider, false, null);
         }
 
         private static void ApplyStationRendererState(GameObject instance, string id, string prefab)
