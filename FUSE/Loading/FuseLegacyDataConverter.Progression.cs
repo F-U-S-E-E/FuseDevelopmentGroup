@@ -97,6 +97,12 @@ namespace FUSE.Loading
                 }
                 else
                 {
+                    if (string.Equals(targetKey, "deliveryPhases", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result[targetKey] = NormalizeDeliveryPhases(property.Value);
+                        continue;
+                    }
+
                     // We deliberately do NOT pre-collapse boolean-dictionary
                     // fields here (the SC convention: <c>{ "foo": true,
                     // "bar": false }</c> on tracksEnable / tracksAvail /
@@ -134,6 +140,35 @@ namespace FUSE.Loading
             }
 
             return CleanObject(result);
+        }
+
+        private static JToken NormalizeDeliveryPhases(JToken value)
+        {
+            if (!(value is JArray array))
+            {
+                return NormalizeProgressionValue(value);
+            }
+
+            var result = new JArray();
+            foreach (var item in array)
+            {
+                var normalized = NormalizeProgressionValue(item);
+                if (normalized is JObject phase && !phase.HasValues)
+                {
+                    // Legacy progressions use `{}` as a valid free phase:
+                    // zero cost, no deliveries. The generic cleaner treats an
+                    // empty object as absent, which collapses `[{}]` into zero
+                    // phases and crashes the vanilla milestones UI.
+                    phase["cost"] = 0;
+                }
+
+                if (normalized != null && normalized.Type != JTokenType.Null)
+                {
+                    result.Add(normalized);
+                }
+            }
+
+            return result;
         }
 
         private static string NormalizeProgressionKey(string key)

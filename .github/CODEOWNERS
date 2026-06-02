@@ -1,4 +1,4 @@
 # Members of the F-U-S-E-E org (https://github.com/F-U-S-E-E) review all changes.
-# Advisory only until branch protection is enabled (requires GitHub Team plan
-# on a private repo, or making the repo public).
+# Enforced by branch protection on `main`: every PR needs an approving review
+# from a code owner below before it can merge (Settings > Branches > main).
 * @Alex6511 @Hrogers-Rog

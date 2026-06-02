@@ -1,0 +1,189 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Paths.user is imported by Directory.Build.props so that $(GameDir) is
+       available to the property defaults below. -->
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>FUSE.Editor</AssemblyName>
+    <RootNamespace>FUSE.Editor</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <Platforms>AnyCPU</Platforms>
+    <NoWarn>$(NoWarn);0618</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GameDir Condition="'$(GameDir)' == ''">C:\Steam\steamapps\common\Railroader</GameDir>
+    <UnityManagedDir Condition="'$(UnityManagedDir)' == ''">$(GameDir)\Railroader_Data\Managed</UnityManagedDir>
+    <UnityModManagerDir Condition="'$(UnityModManagerDir)' == ''">$(UnityManagedDir)\UnityModManager</UnityModManagerDir>
+    <ModDeployDir Condition="'$(ModDeployDir)' == ''">$(GameDir)\Mods\FUSE</ModDeployDir>
+    <EnableModDeploy Condition="'$(EnableModDeploy)' == ''">false</EnableModDeploy>
+  </PropertyGroup>
+
+  <!-- FUSE.Editor ships inside the FUSE mod folder; it has no Info.json of its
+       own. FUSE.csproj is the UMM entry point and loads FUSE.Editor.dll lazily
+       from the same folder via Assembly.LoadFrom once the mod has booted. -->
+  <ItemGroup>
+    <ProjectReference Include="..\FUSE\FUSE.csproj" />
+    <!-- FUSE.Converter is the legacy-to-FUSE conversion engine the
+         editor's Convert button drives. Plain managed code; no Unity
+         coupling so it can be reused from a CLI later. -->
+    <ProjectReference Include="..\FUSE.Converter\FUSE.Converter.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pure-logic types like FuseEditorWindowRegistry are testable from
+         FUSE.Tests via this grant. Unity-coupled types stay un-tested at
+         the xUnit layer and live in the in-game harness. -->
+    <InternalsVisibleTo Include="FUSE.Tests" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">$(UnityModManagerDir)\UnityModManagerNet.dll</UnityModManagerAssemblyPath>
+    <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManager.dll')">$(UnityModManagerDir)\UnityModManager.dll</UnityModManagerAssemblyPath>
+    <UnityModManagerReferenceName Condition="'$(UnityModManagerReferenceName)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">UnityModManagerNet</UnityModManagerReferenceName>
+    <UnityModManagerReferenceName Condition="'$(UnityModManagerReferenceName)' == '' and Exists('$(UnityModManagerDir)\UnityModManager.dll')">UnityModManager</UnityModManagerReferenceName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="0Harmony" Condition="Exists('$(UnityModManagerDir)\0Harmony.dll')">
+      <HintPath>$(UnityModManagerDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony" Condition="!Exists('$(UnityModManagerDir)\0Harmony.dll') and Exists('$(UnityManagedDir)\0Harmony.dll')">
+      <HintPath>$(UnityManagedDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(UnityModManagerReferenceName)" Condition="Exists('$(UnityModManagerAssemblyPath)')">
+      <HintPath>$(UnityModManagerAssemblyPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json" Condition="Exists('$(UnityManagedDir)\Newtonsoft.Json.dll')">
+      <HintPath>$(UnityManagedDir)\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp" Condition="Exists('$(UnityManagedDir)\Assembly-CSharp.dll')">
+      <HintPath>$(UnityManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Core" Condition="Exists('$(UnityManagedDir)\Core.dll')">
+      <HintPath>$(UnityManagedDir)\Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Definition" Condition="Exists('$(UnityManagedDir)\Definition.dll')">
+      <HintPath>$(UnityManagedDir)\Definition.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="KeyValue.Runtime" Condition="Exists('$(UnityManagedDir)\KeyValue.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\KeyValue.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Map.Runtime" Condition="Exists('$(UnityManagedDir)\Map.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\Map.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="SimpleGraph.Runtime" Condition="Exists('$(UnityManagedDir)\SimpleGraph.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\SimpleGraph.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- RuntimeLevelDesign hosts the in-game gizmo system (RTGizmosEngine,
+         ObjectTransformGizmo, TransformGizmoListenerRepeater) the node editor
+         uses to drive move/rotate handles on selected TrackNodes. -->
+    <Reference Include="RuntimeLevelDesign.Runtime" Condition="Exists('$(UnityManagedDir)\RuntimeLevelDesign.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\RuntimeLevelDesign.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.Mathematics" Condition="Exists('$(UnityManagedDir)\Unity.Mathematics.dll')">
+      <HintPath>$(UnityManagedDir)\Unity.Mathematics.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro" Condition="Exists('$(UnityManagedDir)\Unity.TextMeshPro.dll')">
+      <HintPath>$(UnityManagedDir)\Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.InputSystem" Condition="Exists('$(UnityManagedDir)\Unity.InputSystem.dll')">
+      <HintPath>$(UnityManagedDir)\Unity.InputSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.PhysicsModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.TextRenderingModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.UIModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI" Condition="Exists('$(UnityManagedDir)\UnityEngine.UI.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="ValidateUnityReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(UnityModManagerAssemblyPath)')" Text="UnityModManagerNet.dll or UnityModManager.dll was not found. Set UnityModManagerDir or GameDir to your installed Railroader + UMM location." />
+    <Error Condition="!Exists('$(UnityModManagerDir)\0Harmony.dll') and !Exists('$(UnityManagedDir)\0Harmony.dll')" Text="0Harmony.dll was not found. Set UnityModManagerDir or GameDir to your installed Railroader + UMM location." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Newtonsoft.Json.dll')" Text="Newtonsoft.Json.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Assembly-CSharp.dll')" Text="Assembly-CSharp.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Core.dll')" Text="Core.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Unity.InputSystem.dll')" Text="Unity.InputSystem.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found in the Railroader Managed folder." />
+  </Target>
+
+  <!-- FUSE.Editor.dll deploys into the same Mods/FUSE/ folder as FUSE.dll.
+       FUSE.csproj's deploy target already creates that directory; build order
+       (FUSE.Editor depends on FUSE) means FUSE has already deployed by the
+       time this target fires. -->
+  <!-- Icons folder: loose PNGs the runtime loads via File.ReadAllBytes +
+       Texture2D.LoadImage. Each <FuseEditorIconKind>.png is optional —
+       FuseEditorIcons falls back to a Unicode glyph when a file is
+       missing — so this glob picks up zero or more files. Marked as
+       Content + CopyToOutputDirectory so the same files travel into
+       the deploy folder via the Copy step below. -->
+  <ItemGroup>
+    <Content Include="Resources\Icons\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Icons\%(Filename)%(Extension)</Link>
+    </Content>
+    <Content Include="Resources\Icons\README.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Icons\%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="DeployFuseEditorToUnityModManagerFolder" AfterTargets="Build" Condition="'$(EnableModDeploy)' == 'true'">
+    <MakeDir Directories="$(ModDeployDir)" />
+    <MakeDir Directories="$(ModDeployDir)\Icons" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" Condition="Exists('$(TargetDir)$(TargetName).pdb') and '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' " />
+    <!-- FUSE.Converter.dll comes in via the ProjectReference; .NET's
+         assembly resolver wants it side-by-side with FUSE.Editor.dll
+         since the editor's Convert button consumes the converter at
+         runtime. Match the pdb pattern of FUSE.Editor itself. -->
+    <Copy SourceFiles="$(TargetDir)FUSE.Converter.dll" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)FUSE.Converter.dll')" />
+    <Copy SourceFiles="$(TargetDir)FUSE.Converter.pdb" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" Condition="Exists('$(TargetDir)FUSE.Converter.pdb') and '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' " />
+    <!-- Icon PNGs land alongside the DLL so FuseEditorIcons can find
+         them via Assembly.GetExecutingAssembly().Location + /Icons/. -->
+    <ItemGroup>
+      <FuseIconFiles Include="$(TargetDir)Icons\*.png" />
+      <FuseIconFiles Include="$(TargetDir)Icons\README.md" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FuseIconFiles)" DestinationFolder="$(ModDeployDir)\Icons" SkipUnchangedFiles="true" Condition="@(FuseIconFiles->Count()) &gt; 0" />
+  </Target>
+</Project>

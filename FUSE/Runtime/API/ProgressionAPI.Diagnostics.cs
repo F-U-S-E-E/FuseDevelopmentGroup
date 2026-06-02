@@ -129,8 +129,192 @@ namespace FUSE.Runtime.API
                     prerequisiteSectionIds = ListSectionIds(section.prerequisiteSections),
                     enableFeaturesOnUnlock = ListFeatureIds(section.enableFeaturesOnUnlock),
                     deliveryPhaseCount = section.deliveryPhases?.Length ?? 0,
+                    deliveryPhases = BuildSectionDeliveryPhasePayloads(section),
                 })
                 .ToArray();
+        }
+
+        private static object[] BuildSectionDeliveryPhasePayloads(Section section)
+        {
+            if (section?.deliveryPhases == null || section.deliveryPhases.Length == 0)
+            {
+                return Array.Empty<object>();
+            }
+
+            return section.deliveryPhases
+                .Select((phase, phaseIndex) =>
+                {
+                    var component = phase?.industryComponent;
+                    var receivedCounts = ReadProgressionReceivedCounts(component);
+                    var spans = (component?.TrackSpans ?? Enumerable.Empty<TrackSpan>())
+                        .Where(span => span != null)
+                        .ToArray();
+
+                    return (object)new
+                    {
+                        index = phaseIndex,
+                        cost = phase?.cost ?? 0,
+                        industryComponentId = component != null ? component.Identifier : null,
+                        industryComponentProgressionDisabled = component != null ? (bool?)component.ProgressionDisabled : null,
+                        industryComponentActiveInHierarchy = component != null ? (bool?)component.gameObject.activeInHierarchy : null,
+                        trackSpanCount = spans.Length,
+                        trackSpans = spans
+                            .Select(span => new
+                            {
+                                id = span.id ?? span.name,
+                                lowerSegmentId = span.lower?.segment?.id,
+                                upperSegmentId = span.upper?.segment?.id,
+                            })
+                            .ToArray(),
+                        deliveries = BuildDeliveryPayloads(section, phase, phaseIndex, receivedCounts),
+                        carsAtComponent = BuildProgressionComponentCarPayloads(component),
+                    };
+                })
+                .ToArray();
+        }
+
+        private static object[] BuildDeliveryPayloads(
+            Section section,
+            Section.DeliveryPhase phase,
+            int phaseIndex,
+            Dictionary<string, int> receivedCounts)
+        {
+            if (phase?.deliveries == null || phase.deliveries.Length == 0)
+            {
+                return Array.Empty<object>();
+            }
+
+            return phase.deliveries
+                .Select((delivery, deliveryIndex) =>
+                {
+                    var tag = ProgressionDeliveryTag(section, phaseIndex, deliveryIndex);
+                    var receivedCount = 0;
+                    receivedCounts?.TryGetValue(tag, out receivedCount);
+                    var load = delivery?.load;
+                    return (object)new
+                    {
+                        index = deliveryIndex,
+                        tag,
+                        carTypeFilter = delivery?.carTypeFilter?.ToString(),
+                        count = delivery?.count ?? 0,
+                        receivedCount,
+                        loadId = load != null ? load.id : null,
+                        loadName = load != null ? load.description : null,
+                        loadUnits = load != null ? load.units.ToString() : null,
+                        loadImportable = load != null ? (bool?)load.importable : null,
+                        loadNominalQuantityPerCar = load != null ? (float?)load.NominalQuantityPerCarLoad : null,
+                        direction = delivery?.direction.ToString(),
+                    };
+                })
+                .ToArray();
+        }
+
+        private static string ProgressionDeliveryTag(Section section, int phaseIndex, int deliveryIndex)
+        {
+            return $"{section?.identifier ?? string.Empty}.{phaseIndex}.{deliveryIndex}";
+        }
+
+        private static Dictionary<string, int> ReadProgressionReceivedCounts(ProgressionIndustryComponent component)
+        {
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (component == null)
+            {
+                return counts;
+            }
+
+            try
+            {
+                var field = typeof(ProgressionIndustryComponent).GetField("_keyValueObject", BindingFlags.Instance | BindingFlags.NonPublic);
+                var keyValueObject = field?.GetValue(component) as IKeyValueObject;
+                if (keyValueObject == null)
+                {
+                    return counts;
+                }
+
+                var value = keyValueObject["indRecv"];
+                if (value.Type != KeyValue.Runtime.ValueType.Dictionary)
+                {
+                    return counts;
+                }
+
+                foreach (var pair in value.DictionaryValue)
+                {
+                    if (!string.IsNullOrWhiteSpace(pair.Key))
+                    {
+                        counts[pair.Key] = pair.Value.IntValue;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return counts;
+        }
+
+        private static object[] BuildProgressionComponentCarPayloads(ProgressionIndustryComponent component)
+        {
+            var ops = OpsController.Shared;
+            if (component == null || ops == null)
+            {
+                return Array.Empty<object>();
+            }
+
+            try
+            {
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                return ops.CarsAtPosition(component)
+                    .Where(car => car != null && seen.Add(car.id ?? string.Empty))
+                    .OrderBy(car => car.DisplayName ?? car.id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                    .Select(car =>
+                    {
+                        var waybill = car.Waybill;
+                        return (object)new
+                        {
+                            id = car.id,
+                            displayName = car.DisplayName,
+                            carType = car.CarType,
+                            componentCarTypeAccepted = component.carTypeFilter?.Matches(car.CarType) ?? false,
+                            velocity = car.velocity,
+                            waybillDestinationId = waybill != null ? waybill.Value.Destination.Identifier : null,
+                            waybillTag = waybill != null ? waybill.Value.Tag : null,
+                            waybillCompleted = waybill != null ? (bool?)waybill.Value.Completed : null,
+                            loads = BuildCarLoadPayloads(car),
+                        };
+                    })
+                    .ToArray();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FUSE progression dump payload cars for component '{component.Identifier}' failed", ex);
+                return Array.Empty<object>();
+            }
+        }
+
+        private static object[] BuildCarLoadPayloads(Car car)
+        {
+            if (car?.Definition?.LoadSlots == null)
+            {
+                return Array.Empty<object>();
+            }
+
+            var loads = new List<object>();
+            for (var slotIndex = 0; slotIndex < car.Definition.LoadSlots.Count; slotIndex++)
+            {
+                var slot = car.Definition.LoadSlots[slotIndex];
+                var loadInfo = car.GetLoadInfo(slotIndex);
+                loads.Add(new
+                {
+                    slot = slotIndex,
+                    loadId = loadInfo != null ? loadInfo.Value.LoadId : null,
+                    quantity = loadInfo != null ? (float?)loadInfo.Value.Quantity : null,
+                    maximumCapacity = slot?.MaximumCapacity,
+                    loadUnits = slot?.LoadUnits.ToString(),
+                    requiredLoadIdentifier = slot?.RequiredLoadIdentifier,
+                });
+            }
+
+            return loads.ToArray();
         }
 
         // Build the union of groups referenced by a MapFeature with

@@ -279,25 +279,7 @@ namespace FUSE.Runtime.API
             RefreshMapFeatureManager(manager);
             RefreshProgressionManager();
 
-            var invokedCurrentProgression = false;
-            try
-            {
-                var progressionManager = UnityEngine.Object.FindObjectOfType<ProgressionManager>();
-                var current = progressionManager != null
-                    ? ManagerCurrentProgressionField?.GetValue(progressionManager) as Progression
-                    : null;
-                if (current != null && ProgressionUpdateSectionStatesMethod != null)
-                {
-                    ProgressionUpdateSectionStatesMethod.Invoke(current, Array.Empty<object>());
-                    invokedCurrentProgression = true;
-                }
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Warning(
-                    $"FUSE progression refresh package='<all>' operation='refresh progression state' " +
-                    $"kind='progression' id='<current>' reason='{reason ?? "unspecified"}' message='{ex.Message}'.");
-            }
+            var invokedCurrentProgressionBeforeFeatureState = TryRefreshCurrentProgression(reason, "before map feature replay");
 
             // NOTE: InitializeMissingMapFeatureStates now intentionally returns 0
             // and writes nothing — it remains only as a diagnostic logger. Writing
@@ -309,20 +291,50 @@ namespace FUSE.Runtime.API
             // time using the (then-reliable) IsSandbox, so no pre-fill is
             // required for correctness.
             var initialized = InitializeMissingMapFeatureStates(manager);
+            var inferredIndustryIncludes = InferMapFeatureIndustryIncludes(manager, reason);
             var forcedFeatureState = ForceApplyCurrentMapFeatureState(manager, reason);
+            var invokedCurrentProgressionAfterFeatureState = TryRefreshCurrentProgression(reason, "after map feature replay");
             var restoredTrackGroups = RestoreDisabledTrackGroups(manager, reason);
             var finalisedOrphans = RevokeTransientlyPreEnabledOrphanGroups(manager, reason);
             FuseLog.Info(
                 $"FUSE refreshed progression runtime state package='<all>' operation='refresh progression state' " +
                 $"kind='map features' id='<all>' reason='{reason ?? "unspecified"}' " +
-                $"currentProgressionRefreshed={invokedCurrentProgression} initializedFeatureStates={initialized} " +
-                $"forcedFeatureState={forcedFeatureState} restoredDisabledTrackGroups={restoredTrackGroups} " +
+                $"currentProgressionRefreshedBeforeFeatureState={invokedCurrentProgressionBeforeFeatureState} " +
+                $"currentProgressionRefreshedAfterFeatureState={invokedCurrentProgressionAfterFeatureState} " +
+                $"initializedFeatureStates={initialized} " +
+                $"inferredIndustryIncludes={inferredIndustryIncludes} forcedFeatureState={forcedFeatureState} " +
+                $"restoredDisabledTrackGroups={restoredTrackGroups} " +
                 $"finalisedOrphanTrackGroups={finalisedOrphans}.");
 
             if (FuseSettings.VerboseApplyReportDetails)
             {
                 DumpProgressionStateForDiagnostics(manager, reason);
             }
+        }
+
+        private static bool TryRefreshCurrentProgression(string reason, string stage)
+        {
+            try
+            {
+                var progressionManager = UnityEngine.Object.FindObjectOfType<ProgressionManager>();
+                var current = progressionManager != null
+                    ? ManagerCurrentProgressionField?.GetValue(progressionManager) as Progression
+                    : null;
+                if (current != null && ProgressionUpdateSectionStatesMethod != null)
+                {
+                    ProgressionUpdateSectionStatesMethod.Invoke(current, Array.Empty<object>());
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE progression refresh package='<all>' operation='refresh progression state' " +
+                    $"kind='progression' id='<current>' stage='{stage ?? "unspecified"}' " +
+                    $"reason='{reason ?? "unspecified"}' message='{ex.Message}'.");
+            }
+
+            return false;
         }
     }
 }
