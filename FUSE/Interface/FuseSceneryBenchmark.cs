@@ -63,18 +63,35 @@ namespace FUSE.Interface
         private static bool _running;
         private static string _status = "idle";
 
+        // The sampler for the run currently in progress, so a scenario's movement can
+        // reset the per-run latency/load window at a measurement boundary (e.g. the
+        // sweep resets after the one-time cold load). Set while a run is active.
+        private static RunSampler _activeSampler;
+
         internal static string Status => _status;
         internal static bool IsRunning => _running;
 
         // ---- Entry points (Advanced panel) ----
 
-        internal static string RunCorridor() => StartScenario(BuildCorridorScenario(), ab: false);
+        internal static string RunCorridor() => StartScenario(BuildCorridorScenario(), AbMode.Single);
 
-        internal static string RunCorridorAb() => StartScenario(BuildCorridorScenario(), ab: true);
+        internal static string RunCorridorAb() => StartScenario(BuildCorridorScenario(), AbMode.Debounce);
 
-        internal static string RunSweepAb() => StartScenario(BuildSweepScenario(), ab: true);
+        internal static string RunSweepAb() => StartScenario(BuildSweepScenario(), AbMode.Debounce);
 
-        private static string StartScenario(Scenario scenario, bool ab)
+        internal static string RunCorridorThrottleAb() => StartScenario(BuildCorridorScenario(), AbMode.Throttle);
+
+        internal static string RunSweepThrottleAb() => StartScenario(BuildSweepScenario(), AbMode.Throttle);
+
+        // Which lever (if any) an A/B run toggles between its baseline and fix passes.
+        private enum AbMode
+        {
+            Single,
+            Debounce,
+            Throttle
+        }
+
+        private static string StartScenario(Scenario scenario, AbMode mode)
         {
             if (_running)
             {
@@ -96,8 +113,11 @@ namespace FUSE.Interface
                 return _status = "No camera available — load a map first.";
             }
 
-            BenchmarkRunner.Instance.StartCoroutine(ab ? RunAbRoutine(scenario) : RunSingleRoutine(scenario));
-            return _status = $"{scenario.Name} {(ab ? "A/B " : string.Empty)}started — watch the status line / FUSE.log.";
+            var routine = mode == AbMode.Single ? RunSingleRoutine(scenario) : RunAbRoutine(scenario, mode);
+            BenchmarkRunner.Instance.StartCoroutine(routine);
+            var suffix = mode == AbMode.Single ? string.Empty
+                : mode == AbMode.Throttle ? "throttle A/B " : "A/B ";
+            return _status = $"{scenario.Name} {suffix}started — watch the status line / FUSE.log.";
         }
 
         // ---- Scenario definitions ----
@@ -133,33 +153,58 @@ namespace FUSE.Interface
         private static IEnumerator RunSingleRoutine(Scenario scenario)
         {
             _running = true;
-            yield return RunScenarioOnce(scenario, null, "single", null);
+            yield return RunScenarioOnce(scenario, null, null, "single", null);
             _running = false;
         }
 
-        private static IEnumerator RunAbRoutine(Scenario scenario)
+        private static IEnumerator RunAbRoutine(Scenario scenario, AbMode mode)
         {
             _running = true;
             JObject baseline = null;
             JObject fixedRun = null;
-            yield return RunScenarioOnce(scenario, false, "baseline-no-debounce", r => baseline = r);
-            yield return RunScenarioOnce(scenario, true, "fix-debounce", r => fixedRun = r);
+            if (mode == AbMode.Throttle)
+            {
+                // Debounce stays default-on; toggle only the load throttle so the delta
+                // isolates batch-load throughput from churn.
+                yield return RunScenarioOnce(scenario, null, false, "baseline-no-throttle", r => baseline = r);
+                yield return RunScenarioOnce(scenario, null, true, "fix-throttle", r => fixedRun = r);
+            }
+            else
+            {
+                yield return RunScenarioOnce(scenario, false, null, "baseline-no-debounce", r => baseline = r);
+                yield return RunScenarioOnce(scenario, true, null, "fix-debounce", r => fixedRun = r);
+            }
+
             _running = false;
 
             if (baseline != null && fixedRun != null)
             {
-                _status =
-                    $"{scenario.Name} A/B — churn base {baseline.Value<long>("fuseLoads")}L/{baseline.Value<long>("fuseUnloads")}U " +
-                    $"vs fix {fixedRun.Value<long>("fuseLoads")}L/{fixedRun.Value<long>("fuseUnloads")}U " +
-                    $"(held {fixedRun.Value<long>("suppressedUnloads")}). " +
-                    $"minFps base={baseline.Value<double>("minFps"):0} fix={fixedRun.Value<double>("minFps"):0}. " +
-                    $"duration base={baseline.Value<double>("durationMs"):0}ms fix={fixedRun.Value<double>("durationMs"):0}ms.";
+                if (mode == AbMode.Throttle)
+                {
+                    _status =
+                        $"{scenario.Name} throttle A/B — minFps base={baseline.Value<double>("minFps"):0} fix={fixedRun.Value<double>("minFps"):0}; " +
+                        $"peakInFlight base={baseline.Value<long>("peakInFlight")} fix={fixedRun.Value<long>("peakInFlight")}; " +
+                        $"maxLoadMs base={baseline.Value<double>("maxLoadMs"):0} fix={fixedRun.Value<double>("maxLoadMs"):0} " +
+                        $"(deferred {fixedRun.Value<long>("deferredLoads")}, peakQueue {fixedRun.Value<int>("peakQueueDepth")}). " +
+                        $"duration base={baseline.Value<double>("durationMs"):0}ms fix={fixedRun.Value<double>("durationMs"):0}ms.";
+                }
+                else
+                {
+                    _status =
+                        $"{scenario.Name} A/B — churn base {baseline.Value<long>("fuseLoads")}L/{baseline.Value<long>("fuseUnloads")}U " +
+                        $"vs fix {fixedRun.Value<long>("fuseLoads")}L/{fixedRun.Value<long>("fuseUnloads")}U " +
+                        $"(held {fixedRun.Value<long>("suppressedUnloads")}). " +
+                        $"minFps base={baseline.Value<double>("minFps"):0} fix={fixedRun.Value<double>("minFps"):0}. " +
+                        $"duration base={baseline.Value<double>("durationMs"):0}ms fix={fixedRun.Value<double>("durationMs"):0}ms.";
+                }
+
                 FuseLog.Info("FUSE benchmark A/B: " + _status);
             }
         }
 
         // try/finally (no catch around yields) guarantees the overrides are cleared.
-        private static IEnumerator RunScenarioOnce(Scenario scenario, bool? debounceOverride, string label, Action<JObject> onResult)
+        private static IEnumerator RunScenarioOnce(
+            Scenario scenario, bool? debounceOverride, bool? throttleOverride, string label, Action<JObject> onResult)
         {
             var prevDiagnostics = FuseSettings.EnableSceneryCullingDiagnostics;
             JObject result = null;
@@ -168,13 +213,16 @@ namespace FUSE.Interface
             {
                 FuseSettings.SetSceneryCullingDiagnosticsTransient(true);
                 FuseSceneryCullingDebouncePatch.BenchmarkDebounceOverride = debounceOverride;
+                FuseSceneryLoadThrottlePatch.BenchmarkThrottleOverride = throttleOverride;
                 FuseSceneryCullingDiagnosticPatch.ResetCounters();
                 FuseSceneryCullingDebouncePatch.ResetSuppressedUnloads();
+                FuseSceneryLoadThrottlePatch.ResetStats();
 
                 // Parallel per-frame sampler -> time-series CSV (FPS, counts, churn,
                 // load latency, memory). Runs as its own coroutine so it samples even
                 // while the movement is inside a nested wait.
                 sampler = new RunSampler(scenario.Name, label);
+                _activeSampler = sampler;
                 BenchmarkRunner.Instance.StartCoroutine(sampler.Loop());
 
                 var startTime = Time.realtimeSinceStartup;
@@ -220,19 +268,32 @@ namespace FUSE.Interface
                     ["vanillaLoads"] = FuseSceneryCullingDiagnosticPatch.VanillaLoads,
                     ["vanillaUnloads"] = FuseSceneryCullingDiagnosticPatch.VanillaUnloads,
                     ["suppressedUnloads"] = FuseSceneryCullingDebouncePatch.SuppressedUnloads,
+                    ["throttle"] = throttleOverride.HasValue
+                        ? (throttleOverride.Value ? "forced-on" : "forced-off")
+                        : "default-on",
+                    ["maxLoadsPerFrame"] = FuseSceneryLoadThrottlePatch.MaxLoadsPerFrame,
+                    ["deferredLoads"] = FuseSceneryLoadThrottlePatch.DeferredLoads,
+                    ["releasedLoads"] = FuseSceneryLoadThrottlePatch.ReleasedLoads,
+                    ["droppedStaleLoads"] = FuseSceneryLoadThrottlePatch.DroppedStaleLoads,
+                    ["peakQueueDepth"] = FuseSceneryLoadThrottlePatch.PeakQueueDepth,
+                    ["avgLoadMs"] = Math.Round(sampler.AvgLoadMs, 0),
+                    ["maxLoadMs"] = Math.Round(sampler.MaxLoadMs, 0),
                     ["csv"] = sampler.FileName
                 };
                 AppendResult(result);
                 _status =
                     $"[{scenario.Name}/{label}] done {durationMs:0}ms; loads={FuseSceneryCullingDiagnosticPatch.FuseLoads} " +
                     $"unloads={FuseSceneryCullingDiagnosticPatch.FuseUnloads} suppressed={FuseSceneryCullingDebouncePatch.SuppressedUnloads} " +
-                    $"minFps={sampler.MinFps:0} peak={sampler.PeakInFlight}. CSV: {sampler.FileName}";
+                    $"deferred={FuseSceneryLoadThrottlePatch.DeferredLoads} peakQueue={FuseSceneryLoadThrottlePatch.PeakQueueDepth} " +
+                    $"minFps={sampler.MinFps:0} peak={sampler.PeakInFlight} maxLoadMs={sampler.MaxLoadMs:0}. CSV: {sampler.FileName}";
                 FuseLog.Info("FUSE benchmark " + _status);
             }
             finally
             {
                 sampler?.Finish();
+                _activeSampler = null;
                 FuseSceneryCullingDebouncePatch.BenchmarkDebounceOverride = null;
+                FuseSceneryLoadThrottlePatch.BenchmarkThrottleOverride = null;
                 FuseSettings.SetSceneryCullingDiagnosticsTransient(prevDiagnostics);
                 onResult?.Invoke(result);
             }
@@ -254,10 +315,14 @@ namespace FUSE.Interface
             Teleport(target, rotation);
             yield return WaitForLoadAndSettle(TargetTimeoutSeconds, null);
 
-            // Measure only the sweep flaps: reset here so the harness's end-snapshot
-            // reflects boundary churn, not the one-time cold load.
+            // Measure only the sweep flaps: reset ALL benchmarked counters here — churn,
+            // throttle (deferred/released/peak-queue), and the sampler's per-run latency/
+            // load window — so the end-snapshot and CSV reflect boundary churn, not the
+            // one-time cold load that just finished.
             FuseSceneryCullingDiagnosticPatch.ResetCounters();
             FuseSceneryCullingDebouncePatch.ResetSuppressedUnloads();
+            FuseSceneryLoadThrottlePatch.ResetStats();
+            _activeSampler?.ResetLatencyWindow();
 
             _status = "[sweep] sweeping — measuring churn…";
             var sweepFar = target + new Vector3(SweepDistanceMeters, 0f, 0f);
@@ -684,13 +749,22 @@ namespace FUSE.Interface
             private long _lastLoads;
             private long _lastUnloads;
             private long _lastSuppressed;
+            private long _lastDeferred;
+            private long _lastReleased;
             private float _fpsSum;
             private float _fpsMin = float.MaxValue;
             private int _fpsCount;
+            private float _runLatencySum;
+            private int _runLatencyCount;
+            private float _runMaxLoadMs;
 
             internal int PeakInFlight { get; private set; }
             internal float AvgFps => _fpsCount > 0 ? _fpsSum / _fpsCount : 0f;
             internal float MinFps => _fpsCount > 0 ? _fpsMin : 0f;
+            // Run-level per-object load latency (load start -> model present), the key
+            // batch-load-throughput signal the throttle targets.
+            internal float AvgLoadMs => _runLatencyCount > 0 ? _runLatencySum / _runLatencyCount : 0f;
+            internal float MaxLoadMs => _runMaxLoadMs;
             internal string FileName => _fileName;
 
             internal RunSampler(string scenario, string label)
@@ -704,7 +778,7 @@ namespace FUSE.Interface
                     _writer = new StreamWriter(path, false) { AutoFlush = true };
                     _writer.WriteLine(
                         "elapsedSec,fps,frameMs,inFlight,loaded,loadsDelta,unloadsDelta,suppressedDelta," +
-                        "loadsCompleted,avgLoadMs,maxLoadMs,managedMB,unityMB,phase");
+                        "deferredDelta,releasedDelta,queueDepth,loadsCompleted,avgLoadMs,maxLoadMs,managedMB,unityMB,phase");
                 }
                 catch (Exception ex)
                 {
@@ -743,6 +817,29 @@ namespace FUSE.Interface
                 }
 
                 _writer = null;
+            }
+
+            // Resets the per-run latency/load aggregates so a scenario can measure only
+            // the phase after a boundary (the sweep's post-cold-load oscillation), not
+            // the one-time cold load. CSV rows keep streaming; only the run-level
+            // PeakInFlight / Avg / MaxLoadMs reported in the JSON summary restart.
+            internal void ResetLatencyWindow()
+            {
+                _runLatencySum = 0f;
+                _runLatencyCount = 0;
+                _runMaxLoadMs = 0f;
+                _loadStart.Clear();
+                PeakInFlight = 0;
+
+                // Rebase the per-sample delta baselines too: the caller (SweepMovement)
+                // zeroes the global churn/throttle counters at this same boundary, so
+                // without this the next CSV row would report large NEGATIVE deltas
+                // (small post-reset counter minus the stale pre-reset baseline).
+                _lastLoads = FuseSceneryCullingDiagnosticPatch.FuseLoads + FuseSceneryCullingDiagnosticPatch.VanillaLoads;
+                _lastUnloads = FuseSceneryCullingDiagnosticPatch.FuseUnloads + FuseSceneryCullingDiagnosticPatch.VanillaUnloads;
+                _lastSuppressed = FuseSceneryCullingDebouncePatch.SuppressedUnloads;
+                _lastDeferred = FuseSceneryLoadThrottlePatch.DeferredLoads;
+                _lastReleased = FuseSceneryLoadThrottlePatch.ReleasedLoads;
             }
 
             private void Frame()
@@ -806,15 +903,29 @@ namespace FUSE.Interface
                     PeakInFlight = inFlight;
                 }
 
+                // Run-level latency aggregates feed the JSON summary / throttle A/B.
+                _runLatencySum += latencySum;
+                _runLatencyCount += completed;
+                if (latencyMax > _runMaxLoadMs)
+                {
+                    _runMaxLoadMs = latencyMax;
+                }
+
                 var totalLoads = FuseSceneryCullingDiagnosticPatch.FuseLoads + FuseSceneryCullingDiagnosticPatch.VanillaLoads;
                 var totalUnloads = FuseSceneryCullingDiagnosticPatch.FuseUnloads + FuseSceneryCullingDiagnosticPatch.VanillaUnloads;
                 var suppressed = FuseSceneryCullingDebouncePatch.SuppressedUnloads;
+                var deferred = FuseSceneryLoadThrottlePatch.DeferredLoads;
+                var released = FuseSceneryLoadThrottlePatch.ReleasedLoads;
                 var loadsDelta = totalLoads - _lastLoads;
                 var unloadsDelta = totalUnloads - _lastUnloads;
                 var suppressedDelta = suppressed - _lastSuppressed;
+                var deferredDelta = deferred - _lastDeferred;
+                var releasedDelta = released - _lastReleased;
                 _lastLoads = totalLoads;
                 _lastUnloads = totalUnloads;
                 _lastSuppressed = suppressed;
+                _lastDeferred = deferred;
+                _lastReleased = released;
 
                 var managedMb = GC.GetTotalMemory(false) / 1048576f;
                 var unityMb = SafeUnityMemory() / 1048576f;
@@ -822,7 +933,8 @@ namespace FUSE.Interface
 
                 _writer?.WriteLine(
                     $"{now - _startTime:0.00},{fps:0.0},{frameMs:0.0},{inFlight},{loaded}," +
-                    $"{loadsDelta},{unloadsDelta},{suppressedDelta},{completed},{avgLoadMs:0},{latencyMax:0}," +
+                    $"{loadsDelta},{unloadsDelta},{suppressedDelta},{deferredDelta},{releasedDelta}," +
+                    $"{FuseSceneryLoadThrottlePatch.QueueDepth},{completed},{avgLoadMs:0},{latencyMax:0}," +
                     $"{managedMb:0.0},{unityMb:0.0},\"{CsvPhase()}\"");
 
                 _lastSampleTime = now;
