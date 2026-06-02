@@ -29,6 +29,19 @@ namespace Fuse.Core.Bridge
         public static string HeartbeatPath(string gameModsDir) =>
             Path.Combine(gameModsDir, BridgeProtocol.BridgeModFolderName, BridgeProtocol.StateFileName);
 
+        /// <summary>The dev-only test bridge channel directory under a game Mods directory: <c>Mods/FUSE.TestBridge</c>.</summary>
+        public static string TestChannelDir(string gameModsDir) =>
+            Path.Combine(gameModsDir, BridgeProtocol.TestBridgeModFolderName);
+
+        public static string TestRequestPath(string gameModsDir, string requestId) =>
+            Path.Combine(TestChannelDir(gameModsDir), BridgeProtocol.TestRequestPrefix + requestId + ".json");
+
+        public static string TestResultPath(string gameModsDir, string requestId) =>
+            Path.Combine(TestChannelDir(gameModsDir), BridgeProtocol.TestResultPrefix + requestId + ".json");
+
+        public static string TestStatePath(string gameModsDir) =>
+            Path.Combine(TestChannelDir(gameModsDir), BridgeProtocol.TestStateFileName);
+
         public static void WriteAtomic(string path, object value)
         {
             var dir = Path.GetDirectoryName(path);
