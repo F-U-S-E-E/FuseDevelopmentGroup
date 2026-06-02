@@ -97,12 +97,18 @@ namespace FUSE.Infrastructure
                 // line), so a heavy burst amortizes I/O and the consumer can't fall
                 // behind the producer; an idle logger still persists promptly.
                 var stream = new FileStream(_logFilePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
-                _writer = new StreamWriter(stream) { AutoFlush = false };
-                _writer.WriteLine($"FUSE log started {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff zzz}");
-                _writer.Flush();
+                var writer = new StreamWriter(stream) { AutoFlush = false };
+                writer.WriteLine($"FUSE log started {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff zzz}");
+                writer.Flush();
 
-                _queue = new BlockingCollection<string>();
-                _worker = new Thread(ProcessQueue)
+                var queue = new BlockingCollection<string>();
+                _writer = writer;
+                _queue = queue;
+                // Bind the worker to the instances created here (passed as arguments)
+                // rather than the mutable statics, so a later re-init that swaps
+                // _queue/_writer can never make this worker read or write a different
+                // session's queue/writer.
+                _worker = new Thread(() => ProcessQueue(queue, writer))
                 {
                     IsBackground = true,
                     Name = "FUSE.LogWriter"
@@ -220,19 +226,11 @@ namespace FUSE.Infrastructure
         // consumer keeps lines in FIFO order. The writer is not AutoFlush: we flush
         // whenever the queue drains (prompt persistence when idle) and every
         // FlushEveryLines lines (bounded loss under a sustained burst), so a per-line
-        // flush can't let the consumer fall behind the producer.
-        private static void ProcessQueue()
+        // flush can't let the consumer fall behind the producer. The queue/writer are
+        // passed in (bound at thread creation) so this worker is never affected by a
+        // later re-init swapping the statics.
+        private static void ProcessQueue(BlockingCollection<string> queue, StreamWriter writer)
         {
-            // Capture the queue/writer this worker owns. A re-init after Shutdown
-            // can swap the statics, so binding to locals keeps this worker from ever
-            // reading a different queue or writing into a different writer.
-            var queue = _queue;
-            var writer = _writer;
-            if (queue == null || writer == null)
-            {
-                return;
-            }
-
             var sinceFlush = 0;
             try
             {
@@ -281,13 +279,18 @@ namespace FUSE.Infrastructure
         // at worst a crash loses the lines written since the last periodic flush.
         private static void Shutdown()
         {
+            // Capture the instances this session owns so we complete/join/dispose the
+            // same queue and writer the worker holds, never a re-init's swapped ones.
+            var queue = _queue;
+            var worker = _worker;
+            var writer = _writer;
             try
             {
                 _fileLoggingAvailable = false;
-                _queue?.CompleteAdding();
-                _worker?.Join(TimeSpan.FromSeconds(2));
-                _writer?.Flush();
-                _writer?.Dispose();
+                queue?.CompleteAdding();
+                worker?.Join(TimeSpan.FromSeconds(2));
+                writer?.Flush();
+                writer?.Dispose();
             }
             catch
             {
