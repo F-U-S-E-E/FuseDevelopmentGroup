@@ -830,6 +830,16 @@ namespace FUSE.Interface
                 _runMaxLoadMs = 0f;
                 _loadStart.Clear();
                 PeakInFlight = 0;
+
+                // Rebase the per-sample delta baselines too: the caller (SweepMovement)
+                // zeroes the global churn/throttle counters at this same boundary, so
+                // without this the next CSV row would report large NEGATIVE deltas
+                // (small post-reset counter minus the stale pre-reset baseline).
+                _lastLoads = FuseSceneryCullingDiagnosticPatch.FuseLoads + FuseSceneryCullingDiagnosticPatch.VanillaLoads;
+                _lastUnloads = FuseSceneryCullingDiagnosticPatch.FuseUnloads + FuseSceneryCullingDiagnosticPatch.VanillaUnloads;
+                _lastSuppressed = FuseSceneryCullingDebouncePatch.SuppressedUnloads;
+                _lastDeferred = FuseSceneryLoadThrottlePatch.DeferredLoads;
+                _lastReleased = FuseSceneryLoadThrottlePatch.ReleasedLoads;
             }
 
             private void Frame()

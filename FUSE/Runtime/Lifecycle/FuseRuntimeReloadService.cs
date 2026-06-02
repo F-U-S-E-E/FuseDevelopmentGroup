@@ -96,12 +96,23 @@ namespace FUSE.Runtime.Lifecycle
                     FuseTerrainRefreshScope.BoundsComplete &&
                     FuseTerrainRefreshScope.TryGetAccumulatedBounds(out var bounds))
                 {
-                    MapManagerInvalidateBounds.Invoke(instance, new object[] { bounds });
-                    FuseLog.Info(
-                        $"FUSE terrain reload (targeted invalidation) operation='{operation}' " +
-                        $"bounds.center={bounds.center} bounds.size={bounds.size} " +
-                        $"deferredRefreshCalls={FuseTerrainRefreshScope.DeferredRefreshCalls} elapsedMs={stopwatch.ElapsedMilliseconds}.");
-                    return true;
+                    try
+                    {
+                        MapManagerInvalidateBounds.Invoke(instance, new object[] { bounds });
+                        FuseLog.Info(
+                            $"FUSE terrain reload (targeted invalidation) operation='{operation}' " +
+                            $"bounds.center={bounds.center} bounds.size={bounds.size} " +
+                            $"deferredRefreshCalls={FuseTerrainRefreshScope.DeferredRefreshCalls} elapsedMs={stopwatch.ElapsedMilliseconds}.");
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        // A failed optimization must not become a missed refresh: fall
+                        // through to the full rebuild rather than leaving terrain stale.
+                        FuseLog.Warning(
+                            $"FUSE terrain reload targeted invalidation failed operation='{operation}': " +
+                            $"{ex.GetBaseException().Message}; falling back to full rebuild.");
+                    }
                 }
 
                 MapManagerRebuildAll.Invoke(instance, null);
