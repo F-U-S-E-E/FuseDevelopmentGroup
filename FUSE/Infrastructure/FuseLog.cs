@@ -223,18 +223,28 @@ namespace FUSE.Infrastructure
         // flush can't let the consumer fall behind the producer.
         private static void ProcessQueue()
         {
+            // Capture the queue/writer this worker owns. A re-init after Shutdown
+            // can swap the statics, so binding to locals keeps this worker from ever
+            // reading a different queue or writing into a different writer.
+            var queue = _queue;
+            var writer = _writer;
+            if (queue == null || writer == null)
+            {
+                return;
+            }
+
             var sinceFlush = 0;
             try
             {
-                foreach (var line in _queue.GetConsumingEnumerable())
+                foreach (var line in queue.GetConsumingEnumerable())
                 {
                     try
                     {
-                        _writer.WriteLine(line);
+                        writer.WriteLine(line);
                         sinceFlush++;
-                        if (_queue.Count == 0 || sinceFlush >= FlushEveryLines)
+                        if (queue.Count == 0 || sinceFlush >= FlushEveryLines)
                         {
-                            _writer.Flush();
+                            writer.Flush();
                             sinceFlush = 0;
                         }
                     }
@@ -257,7 +267,7 @@ namespace FUSE.Infrastructure
                 // reaches disk when the queue completes on shutdown.
                 try
                 {
-                    _writer?.Flush();
+                    writer.Flush();
                 }
                 catch
                 {
