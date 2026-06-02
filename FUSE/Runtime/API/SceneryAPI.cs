@@ -6,6 +6,7 @@ using Model.Definition.Data;
 using FUSE.Runtime.Cache;
 using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
+using FUSE.Runtime.Lifecycle;
 using Track;
 using UnityEngine;
 
@@ -32,7 +33,7 @@ namespace FUSE.Runtime.API
                 "rlw Spen"
             };
 
-        public static SceneryAssetInstance AddScenery(string id, FuseScenery definition)
+        public static SceneryAssetInstance AddScenery(string id, FuseScenery definition, Action onDeferredActivated = null)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -77,8 +78,16 @@ namespace FUSE.Runtime.API
             marker.Id = id;
             ApplyDefinition(scenery, definition, assetIdentifier);
 
-            gameObject.SetActive(true);
-            MapAPI.RefreshAttachedMapMasks(gameObject, $"scenery '{id}' add");
+            // Activate inline unless the deferred activator takes ownership of this
+            // scenery (it leaves the GameObject inactive and flips it on after the
+            // loading screen). Index registration and definition recording always run
+            // now so GetScenery(id) resolves immediately, even while deferred.
+            if (!FuseDeferredSceneryActivator.TryDefer(scenery, id, assetIdentifier, onDeferredActivated))
+            {
+                gameObject.SetActive(true);
+                MapAPI.RefreshAttachedMapMasks(gameObject, $"scenery '{id}' add");
+            }
+
             FuseSceneryRuntimeIndex.Instance.Set(id, scenery);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Scenery, id, definition);
             return scenery;

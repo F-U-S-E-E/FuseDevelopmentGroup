@@ -9,6 +9,7 @@ namespace FUSE.Infrastructure
     public static class FuseSettings
     {
         public const bool DefaultEnableExperimentalEarlyScenePathSuppression = false;
+        public const bool DefaultEnableExperimentalDeferredScenery = false;
         public const bool DefaultMirrorInfoToPlayerLog = false;
         public const bool DefaultMirrorAssetPacksToLocalLow = false;
         public const bool DefaultVerboseApplyReportDetails = false;
@@ -31,9 +32,20 @@ namespace FUSE.Infrastructure
         public const bool DefaultWorldLabelsShowTrackSegments = false;
         public const bool DefaultShowLegacyModsInUmm = true;
         public const float ExperimentalEarlyScenePathSuppressionTimeoutSeconds = 8f;
+        // Deferred scenery activation tuning. The post-load activation wave
+        // budgets this many milliseconds of work per frame, gives up (and
+        // activates everything remaining inline) after the wave timeout, and
+        // caps how many items it activates in a single frame so a burst of
+        // sub-millisecond activations can't spike GC.
+        public const float DeferredSceneryFrameBudgetMilliseconds = 6f;
+        public const float DeferredSceneryWaveTimeoutSeconds = 30f;
+        public const int DefaultDeferredSceneryMaxItemsPerFrame = 64;
 
         public static bool EnableExperimentalEarlyScenePathSuppression { get; private set; } =
             DefaultEnableExperimentalEarlyScenePathSuppression;
+
+        public static bool EnableExperimentalDeferredScenery { get; private set; } =
+            DefaultEnableExperimentalDeferredScenery;
 
         public static bool MirrorInfoToPlayerLog { get; private set; } = DefaultMirrorInfoToPlayerLog;
 
@@ -71,6 +83,7 @@ namespace FUSE.Infrastructure
         public static void Load(UnityModManager.ModEntry modEntry)
         {
             EnableExperimentalEarlyScenePathSuppression = DefaultEnableExperimentalEarlyScenePathSuppression;
+            EnableExperimentalDeferredScenery = DefaultEnableExperimentalDeferredScenery;
             MirrorInfoToPlayerLog = DefaultMirrorInfoToPlayerLog;
             MirrorAssetPacksToLocalLow = DefaultMirrorAssetPacksToLocalLow;
             VerboseApplyReportDetails = DefaultVerboseApplyReportDetails;
@@ -102,6 +115,8 @@ namespace FUSE.Infrastructure
                 var settings = info["Settings"];
                 EnableExperimentalEarlyScenePathSuppression =
                     ReadBool(settings, "EnableExperimentalEarlyScenePathSuppression", DefaultEnableExperimentalEarlyScenePathSuppression);
+                EnableExperimentalDeferredScenery =
+                    ReadBool(settings, "EnableExperimentalDeferredScenery", DefaultEnableExperimentalDeferredScenery);
                 MirrorInfoToPlayerLog =
                     ReadBool(settings, "MirrorInfoToPlayerLog", DefaultMirrorInfoToPlayerLog);
                 MirrorAssetPacksToLocalLow =
@@ -140,6 +155,7 @@ namespace FUSE.Infrastructure
                 FuseLog.Info(
                     "FUSE settings loaded: " +
                     $"EnableExperimentalEarlyScenePathSuppression={EnableExperimentalEarlyScenePathSuppression} " +
+                    $"EnableExperimentalDeferredScenery={EnableExperimentalDeferredScenery} " +
                     $"MirrorInfoToPlayerLog={MirrorInfoToPlayerLog} " +
                     $"MirrorAssetPacksToLocalLow={MirrorAssetPacksToLocalLow} " +
                     $"VerboseApplyReportDetails={VerboseApplyReportDetails} " +
@@ -161,6 +177,7 @@ namespace FUSE.Infrastructure
             catch (Exception ex)
             {
                 EnableExperimentalEarlyScenePathSuppression = DefaultEnableExperimentalEarlyScenePathSuppression;
+                EnableExperimentalDeferredScenery = DefaultEnableExperimentalDeferredScenery;
                 MirrorInfoToPlayerLog = DefaultMirrorInfoToPlayerLog;
                 MirrorAssetPacksToLocalLow = DefaultMirrorAssetPacksToLocalLow;
                 VerboseApplyReportDetails = DefaultVerboseApplyReportDetails;
@@ -202,6 +219,15 @@ namespace FUSE.Infrastructure
             SaveUserOverride(nameof(EnableExperimentalEarlyScenePathSuppression), enabled);
             FuseLog.Warning(
                 $"FUSE experimental setting changed: {nameof(EnableExperimentalEarlyScenePathSuppression)}={enabled}. " +
+                "This takes effect on the next map load.");
+        }
+
+        public static void SetEnableExperimentalDeferredScenery(bool enabled)
+        {
+            EnableExperimentalDeferredScenery = enabled;
+            SaveUserOverride(nameof(EnableExperimentalDeferredScenery), enabled);
+            FuseLog.Warning(
+                $"FUSE experimental setting changed: {nameof(EnableExperimentalDeferredScenery)}={enabled}. " +
                 "This takes effect on the next map load.");
         }
 
@@ -322,6 +348,8 @@ namespace FUSE.Infrastructure
                 var settings = JObject.Parse(File.ReadAllText(path));
                 EnableExperimentalEarlyScenePathSuppression =
                     ReadBool(settings, nameof(EnableExperimentalEarlyScenePathSuppression), EnableExperimentalEarlyScenePathSuppression);
+                EnableExperimentalDeferredScenery =
+                    ReadBool(settings, nameof(EnableExperimentalDeferredScenery), EnableExperimentalDeferredScenery);
                 VerboseApplyReportDetails =
                     ReadBool(settings, nameof(VerboseApplyReportDetails), VerboseApplyReportDetails);
                 BlockNonHostMultiplayerClientWorldApply =
