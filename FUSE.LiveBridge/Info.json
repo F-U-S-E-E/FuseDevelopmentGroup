@@ -1,0 +1,12 @@
+{
+  "Id": "FUSE.LiveBridge",
+  "DisplayName": "FUSE Live Bridge",
+  "Author": "FUSE Team",
+  "Version": "0.1.0",
+  "ManagerVersion": "0.27.10",
+  "GameVersion": "2025.1",
+  "AssemblyName": "FUSE.LiveBridge.dll",
+  "EntryMethod": "FUSE.LiveBridge.Main.Load",
+  "Requirements": ["FUSE"],
+  "LoadAfter": ["FUSE"]
+}
