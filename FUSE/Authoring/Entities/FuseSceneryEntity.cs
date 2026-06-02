@@ -107,7 +107,7 @@ namespace FUSE.Authoring.Entities
             RuntimeScenery = SceneryAPI.GetScenery(Id);
             if (RuntimeScenery == null)
             {
-                RuntimeScenery = SceneryAPI.AddScenery(Id, definition);
+                RuntimeScenery = SceneryAPI.AddScenery(Id, definition, RefreshRuntimeBoundsAfterDeferredActivation);
             }
             else
             {
@@ -147,6 +147,16 @@ namespace FUSE.Authoring.Entities
         public static IEnumerable<string> GetAvailableModels()
         {
             return SceneryAPI.GetAvailableSceneryModels();
+        }
+
+        /// <summary>
+        /// Re-computes runtime bounds after the deferred scenery activator finally
+        /// activates this scenery; its renderers do not exist until activation. No-op
+        /// for scenery that was activated inline (bounds were already computed).
+        /// </summary>
+        internal void RefreshRuntimeBoundsAfterDeferredActivation()
+        {
+            UpdateRuntimeBounds();
         }
 
         private void UpdateRuntimeBounds()

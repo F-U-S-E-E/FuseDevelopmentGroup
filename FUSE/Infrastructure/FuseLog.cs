@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Threading;
 using UnityEngine;
 using UnityModManagerNet;
 
@@ -14,10 +16,16 @@ namespace FUSE.Infrastructure
         // FUSE-5 is dropped on rotation.
         private const int LogArchiveCount = 5;
 
-        private static readonly object FileLock = new object();
         private static UnityModManager.ModEntry.ModLogger _logger;
         private static string _logFilePath;
-        private static bool _fileLoggingAvailable;
+        private static volatile bool _fileLoggingAvailable;
+        // The log file is opened once and written only by the background worker
+        // thread below. Callers never touch the file: they format a line, hand it
+        // to _queue, and return immediately, so logging adds no file I/O to
+        // Unity's main thread during a map load. See InitializeFileLog.
+        private static StreamWriter _writer;
+        private static BlockingCollection<string> _queue;
+        private static Thread _worker;
 
         public static bool MirrorInfoToPlayerLog { get; set; }
 
@@ -58,6 +66,12 @@ namespace FUSE.Infrastructure
 
         private static void InitializeFileLog()
         {
+            // Tracks the writer until ownership transfers to the session so the catch
+            // can dispose it (and its file handle) if WriteLine/Flush throws after
+            // creation — otherwise a failed init leaks the handle and blocks a clean
+            // retry. Kept DISTINCT from the lambda-captured 'writer' local below,
+            // which must NOT be nulled (the worker thread closes over it).
+            StreamWriter pendingWriter = null;
             try
             {
                 var directory = Application.persistentDataPath;
@@ -66,17 +80,73 @@ namespace FUSE.Infrastructure
                     directory = AppDomain.CurrentDomain.BaseDirectory;
                 }
 
+                if (_fileLoggingAvailable)
+                {
+                    // Already initialized; don't open a second handle or start a
+                    // second worker thread.
+                    return;
+                }
+
                 Directory.CreateDirectory(directory);
                 _logFilePath = Path.Combine(directory, "FUSE.log");
                 RotateExistingLogs(directory);
-                File.WriteAllText(
-                    _logFilePath,
-                    $"FUSE log started {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff zzz}{Environment.NewLine}");
+
+                // Open the session log once and write it only from a dedicated
+                // background thread. The previous implementation wrote on the
+                // calling (main) thread; a heavy map load emits tens of thousands
+                // of lines, and each file write — plus the antivirus scan it can
+                // trigger — blocked the loading screen. Now callers just enqueue a
+                // formatted string and the worker drains _queue to disk off the
+                // main thread. FileShare.ReadWrite keeps the file tailable and
+                // readable by the in-game Logs tab. The worker flushes when the
+                // queue drains and at least every FlushEveryLines lines (not per
+                // line), so a heavy burst amortizes I/O and the consumer can't fall
+                // behind the producer; an idle logger still persists promptly.
+                var stream = new FileStream(_logFilePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+                var writer = new StreamWriter(stream) { AutoFlush = false };
+                pendingWriter = writer;
+                writer.WriteLine($"FUSE log started {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff zzz}");
+                writer.Flush();
+
+                var queue = new BlockingCollection<string>();
+                _writer = writer;
+                _queue = queue;
+                // Bind the worker to the instances created here (passed as arguments)
+                // rather than the mutable statics, so a later re-init that swaps
+                // _queue/_writer can never make this worker read or write a different
+                // session's queue/writer.
+                _worker = new Thread(() => ProcessQueue(queue, writer))
+                {
+                    IsBackground = true,
+                    Name = "FUSE.LogWriter"
+                };
+                _worker.Start();
+
+                // Ownership transferred to the session (statics + the worker, which
+                // closes over 'writer'); stop tracking it for failure disposal so the
+                // catch below leaves the live writer alone.
+                pendingWriter = null;
+
                 _fileLoggingAvailable = true;
+                // Idempotent: Shutdown resets _fileLoggingAvailable, so a later
+                // re-init would otherwise stack a second handler on Application.quitting.
+                Application.quitting -= Shutdown;
+                Application.quitting += Shutdown;
                 _logger?.Log($"FUSE file log: {_logFilePath}");
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
+                // Dispose the half-initialized writer (and its file handle) so a
+                // failed init doesn't leak the handle and block a later retry.
+                try
+                {
+                    pendingWriter?.Dispose();
+                }
+                catch
+                {
+                    // Best effort.
+                }
+
                 _fileLoggingAvailable = false;
                 _logger?.Warning($"FUSE could not initialize FUSE.log: {ex.Message}");
             }
@@ -145,23 +215,130 @@ namespace FUSE.Infrastructure
 
         private static void WriteFile(string level, string message)
         {
-            if (!_fileLoggingAvailable || string.IsNullOrWhiteSpace(_logFilePath))
+            if (!_fileLoggingAvailable)
             {
                 return;
             }
 
+            var queue = _queue;
+            if (queue == null || queue.IsAddingCompleted)
+            {
+                return;
+            }
+
+            // Format on the calling thread so the timestamp reflects when the
+            // event happened, then hand the line to the worker. Add() on an
+            // unbounded BlockingCollection is a short, lock-protected enqueue —
+            // no file I/O runs on the caller.
             try
             {
-                lock (FileLock)
+                queue.Add($"[{DateTime.Now:HH:mm:ss.fff}] [{level}] {message ?? string.Empty}");
+            }
+            catch (InvalidOperationException)
+            {
+                // The queue was completed (shutdown) between the check above and
+                // the Add; drop the line rather than throw on the caller.
+            }
+        }
+
+        // Flush at least this often during a sustained burst so the crash-loss
+        // window stays bounded even when the queue never momentarily drains.
+        private const int FlushEveryLines = 64;
+
+        // Drains the queue to disk on a dedicated background thread. A single
+        // consumer keeps lines in FIFO order. The writer is not AutoFlush: we flush
+        // whenever the queue drains (prompt persistence when idle) and every
+        // FlushEveryLines lines (bounded loss under a sustained burst), so a per-line
+        // flush can't let the consumer fall behind the producer. The queue/writer are
+        // passed in (bound at thread creation) so this worker is never affected by a
+        // later re-init swapping the statics.
+        private static void ProcessQueue(BlockingCollection<string> queue, StreamWriter writer)
+        {
+            var sinceFlush = 0;
+            try
+            {
+                foreach (var line in queue.GetConsumingEnumerable())
                 {
-                    File.AppendAllText(
-                        _logFilePath,
-                        $"[{DateTime.Now:HH:mm:ss.fff}] [{level}] {message ?? string.Empty}{Environment.NewLine}");
+                    try
+                    {
+                        writer.WriteLine(line);
+                        sinceFlush++;
+                        if (queue.Count == 0 || sinceFlush >= FlushEveryLines)
+                        {
+                            writer.Flush();
+                            sinceFlush = 0;
+                        }
+                    }
+                    catch
+                    {
+                        // Swallow a single failed write so one bad line doesn't
+                        // tear down logging for the rest of the session.
+                    }
                 }
             }
             catch
             {
+                // GetConsumingEnumerable only ends via CompleteAdding; guard
+                // against unexpected enumeration failures so the worker thread
+                // exits cleanly instead of crashing.
+            }
+            finally
+            {
+                // Final flush so the tail written since the last periodic flush
+                // reaches disk when the queue completes on shutdown.
+                try
+                {
+                    writer.Flush();
+                }
+                catch
+                {
+                    // Best effort on the way out.
+                }
+            }
+        }
+
+        // Flushes any queued lines on a clean application quit. Not guaranteed to
+        // run on a hard crash, which is why the worker also flushes as it drains —
+        // at worst a crash loses the lines written since the last periodic flush.
+        private static void Shutdown()
+        {
+            // Capture the instances this session owns so we complete/join/dispose the
+            // same queue and writer the worker holds, never a re-init's swapped ones.
+            var queue = _queue;
+            var worker = _worker;
+            var writer = _writer;
+            try
+            {
                 _fileLoggingAvailable = false;
+                queue?.CompleteAdding();
+                worker?.Join(TimeSpan.FromSeconds(2));
+                writer?.Flush();
+                writer?.Dispose();
+            }
+            catch
+            {
+                // Best-effort flush on quit; never throw out of a shutdown hook.
+            }
+            finally
+            {
+                // Only clear a static if it still points at the instance this
+                // shutdown owns, so a re-init that swapped it isn't clobbered.
+                // (Init/shutdown are sequential on the main thread today, so this is
+                // defensive — but it keeps the ownership contract explicit.)
+                if (ReferenceEquals(_writer, writer))
+                {
+                    _writer = null;
+                }
+
+                if (ReferenceEquals(_queue, queue))
+                {
+                    _queue = null;
+                }
+
+                if (ReferenceEquals(_worker, worker))
+                {
+                    _worker = null;
+                }
             }
         }
     }

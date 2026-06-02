@@ -523,10 +523,17 @@ namespace FUSE.Runtime.API
                 _industryApplyBatchDepth--;
             }
 
-            if (_industryApplyBatchDepth == 0 && _industryRefreshPending)
+            if (_industryApplyBatchDepth == 0)
             {
-                _industryRefreshPending = false;
-                RefreshIndustriesAfterBatch(source ?? "industry apply batch");
+                // Batch finished: drop the scene snapshot so the next apply rebuilds
+                // it from the then-current scene.
+                _batchIndustrySnapshot = null;
+
+                if (_industryRefreshPending)
+                {
+                    _industryRefreshPending = false;
+                    RefreshIndustriesAfterBatch(source ?? "industry apply batch");
+                }
             }
         }
 
