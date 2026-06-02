@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using FUSE.Infrastructure;
+using FUSE.Runtime.Lifecycle;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -232,6 +233,10 @@ namespace FUSE.Loading
                 return 0;
             }
 
+            // If a deferred scenery wave from the initial map load is still in flight,
+            // realize it now so this apply (e.g. a live reapply) operates on
+            // fully-activated scenery rather than racing the wave.
+            FuseDeferredSceneryActivator.FlushSynchronously(reason ?? "apply");
             var appliedCount = FuseModLoader.ApplyLoadedDefinitions(reason);
             FuseLog.Info($"FUSE applied {appliedCount} resident definition(s) to runtime for '{reason ?? "unspecified"}'.");
             FusePerformanceMetrics.RecordTiming("apply resident definitions", stopwatch.ElapsedMilliseconds);

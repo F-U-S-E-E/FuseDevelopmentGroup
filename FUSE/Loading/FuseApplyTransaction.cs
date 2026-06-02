@@ -109,6 +109,13 @@ namespace FUSE.Loading
 
     public sealed class FuseApplyTransaction
     {
+        // Apply phases faster than this aren't load-time-relevant. In
+        // non-verbose mode we skip logging them so a normal map load doesn't
+        // emit thousands of "completed in 0 ms" lines on the main thread during
+        // the loading screen. The timing is still recorded in
+        // FusePerformanceMetrics regardless of whether the line is logged.
+        private const long QuietPhaseLogThresholdMilliseconds = 25;
+
         public FuseApplyTransaction(string definitionId, string reason, bool isReapply)
         {
             Report = new FuseApplyReport(definitionId, reason, isReapply);
@@ -128,13 +135,30 @@ namespace FUSE.Loading
             var previousPhase = CurrentPhase;
             CurrentPhase = string.IsNullOrWhiteSpace(phase) ? "unknown" : phase;
             var stopwatch = Stopwatch.StartNew();
-            FuseLog.Info($"FUSE apply phase package='{Report.DefinitionId}' operation='{CurrentPhase}' started.");
+
+            // The per-phase "started" line is only useful for tracing a phase
+            // that hangs without ever completing; emit it only in verbose mode
+            // so a normal load doesn't pay for one trace line per phase per
+            // package.
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                FuseLog.Info($"FUSE apply phase package='{Report.DefinitionId}' operation='{CurrentPhase}' started.");
+            }
+
             try
             {
                 action?.Invoke();
                 stopwatch.Stop();
                 FusePerformanceMetrics.RecordApplyPhase(Report.DefinitionId, CurrentPhase, stopwatch.ElapsedMilliseconds);
-                FuseLog.Info($"FUSE apply phase package='{Report.DefinitionId}' operation='{CurrentPhase}' completed in {stopwatch.ElapsedMilliseconds} ms.");
+
+                // Always surface slow phases — they are the signal for load-time
+                // diagnosis — but suppress the flood of sub-threshold phases
+                // unless verbose logging is on.
+                if (FuseSettings.VerboseApplyReportDetails ||
+                    stopwatch.ElapsedMilliseconds >= QuietPhaseLogThresholdMilliseconds)
+                {
+                    FuseLog.Info($"FUSE apply phase package='{Report.DefinitionId}' operation='{CurrentPhase}' completed in {stopwatch.ElapsedMilliseconds} ms.");
+                }
             }
             catch (Exception ex)
             {

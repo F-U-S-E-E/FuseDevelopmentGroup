@@ -72,6 +72,10 @@ namespace FUSE.Runtime.Lifecycle
                 loadedCount = FuseDataPackageDiscovery.LoadPackagesFromDisk(false);
                 if (canMutateWorld)
                 {
+                    // Open the deferred-scenery window so eligible static scenery
+                    // created during apply is queued for post-load activation instead
+                    // of being activated inline on the loading-screen critical path.
+                    FuseDeferredSceneryActivator.OpenInitialMapLoadWave();
                     appliedCount = FuseDataPackageDiscovery.ApplyLoadedPackages("map load");
                     // Run the cleanup cluster inside one batch so the rebuild
                     // RemoveInvalidTrackSpans requests folds together with any
@@ -145,6 +149,12 @@ namespace FUSE.Runtime.Lifecycle
                     FuseRuntimeReloadService.ReloadTerrain("map-load map-mask rebuild");
                     FusePerformanceMetrics.RecordTiming("map mask rebuild", mapRebuildStopwatch.ElapsedMilliseconds);
                     FuseLog.Info($"FUSE load timing phase='map mask rebuild' elapsedMs={mapRebuildStopwatch.ElapsedMilliseconds}.");
+
+                    // The terrain bake has now run with all eager (mask-bearing)
+                    // scenery live, so start the post-load activation wave for the
+                    // deferred static scenery. It activates over subsequent frames,
+                    // nearest the player first, off the loading-screen critical path.
+                    FuseDeferredSceneryActivator.BeginDrain("map load");
                 }
                 else
                 {
@@ -224,6 +234,9 @@ namespace FUSE.Runtime.Lifecycle
         {
             try
             {
+                // Cancel any in-flight deferred scenery wave before the scenery
+                // GameObjects it references are destroyed below.
+                FuseDeferredSceneryActivator.CancelAndClear("map unload");
                 FuseWorldSuppressor.RestoreAll("map unload");
                 FuseEarlyLoader.RestoreOnMapUnload();
                 FuseModLoader.UnloadAll(resetDiscovery: true, restoreTrackSnapshots: false);
