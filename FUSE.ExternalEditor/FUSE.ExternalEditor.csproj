@@ -11,10 +11,23 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <!-- Standalone cross-platform desktop app: no game/Unity DLLs, sets its
-         own version (not the net48 mod-version stamp). See Directory.Build.targets. -->
+    <!-- Standalone cross-platform desktop app: no game/Unity DLLs, so it sets
+         its own version instead of the net48 mod-version stamp (see
+         Directory.Build.targets). -->
     <FuseIsGameFree>true</FuseIsGameFree>
-    <Version>0.1.0</Version>
+    <!-- Editor version is tag-driven: release-editor.yml passes
+         -p:EditorVersion=<semver from the editor-v* tag>. Local/CI builds fall
+         back to the dev floor below. Full semver feeds Version/Informational;
+         AssemblyVersion/FileVersion take the numeric core only (those can't
+         hold a prerelease suffix). Mirrors the ModVersion split in
+         Directory.Build.targets. -->
+    <EditorVersion Condition="'$(EditorVersion)' == ''">0.1.0</EditorVersion>
+    <EditorVersionCore>$([System.Text.RegularExpressions.Regex]::Match('$(EditorVersion)', '^[0-9]+\.[0-9]+\.[0-9]+').Value)</EditorVersionCore>
+    <EditorVersionCore Condition="'$(EditorVersionCore)' == ''">0.1.0</EditorVersionCore>
+    <Version>$(EditorVersion)</Version>
+    <AssemblyVersion>$(EditorVersionCore).0</AssemblyVersion>
+    <FileVersion>$(EditorVersionCore).0</FileVersion>
+    <InformationalVersion>$(EditorVersion)</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
