@@ -3,10 +3,17 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "mod-v*"
 
 permissions:
   contents: write
+
+# Serialize mod releases: the job reuses fixed working directories (staging,
+# staging-livebridge) on the self-hosted runner, so overlapping runs could race
+# and ship a corrupted archive. Never cancel an in-flight release.
+concurrency:
+  group: release-mod
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
@@ -17,25 +24,30 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5
         with:
           dotnet-version: "10.0.x"
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.12"
 
       - name: Parse semantic version from tag
         id: version
         shell: powershell
+        env:
+          # Pass the tag via the environment, not template expansion, so a
+          # crafted tag name can't inject into the script before validation.
+          # This step runs on the self-hosted runner, so the hardening matters.
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          if ($tag -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
-            throw "Tag '$tag' must match v<semver>, e.g. v0.10.0 or v1.0.0-rc.1."
+          $tag = $env:TAG_NAME
+          if ($tag -notmatch '^mod-v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
+            throw "Tag '$tag' must match mod-v<semver>, e.g. mod-v0.13.0 or mod-v1.0.0-rc.1."
           }
 
           $version = $Matches.version
@@ -104,20 +116,10 @@ jobs:
           "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
           "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
 
-      # Standalone cross-platform editor: self-contained per-OS bundles (no .NET
-      # runtime required on the user's machine). Built from the game-free net10
-      # projects, so no Unity/UMM DLLs are involved.
-      - name: Publish FUSE.ExternalEditor (per-OS)
-        shell: powershell
-        run: |
-          $version = "${{ steps.version.outputs.version }}"
-          foreach ($rid in @('win-x64', 'linux-x64', 'osx-x64')) {
-            $out = "publish/editor-$rid"
-            dotnet publish FUSE.ExternalEditor/FUSE.ExternalEditor.csproj -c Release -r $rid --self-contained true -o $out
-            $zip = "FUSE.ExternalEditor-v$version-$rid.zip"
-            if (Test-Path $zip) { Remove-Item $zip -Force }
-            Compress-Archive -Path "$out/*" -DestinationPath $zip -CompressionLevel Optimal
-          }
+      # The standalone editor ships in its own release lane (externaleditor-v*
+      # tags, .github/workflows/release-externaleditor.yml) so it can be
+      # versioned and shipped independently of the mod. Intentionally NOT
+      # packaged here.
 
       # FUSE.LiveBridge is an optional in-game mod (net48) that hot-reloads the
       # editor's saves; it ships as its own UMM mod zip.
@@ -153,7 +155,7 @@ jobs:
         run: python tools/build_folder_converter_pyz.py
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
           tag_name: ${{ github.ref_name }}
           name: FUSE v${{ steps.version.outputs.version }}
@@ -164,9 +166,6 @@ jobs:
             dist/FUSE-Converter.exe
             dist/FUSE-Installer.exe
             dist/FUSEConvertFolder.pyz
-            FUSE.ExternalEditor-v${{ steps.version.outputs.version }}-win-x64.zip
-            FUSE.ExternalEditor-v${{ steps.version.outputs.version }}-linux-x64.zip
-            FUSE.ExternalEditor-v${{ steps.version.outputs.version }}-osx-x64.zip
             FUSE.LiveBridge-v${{ steps.version.outputs.version }}.zip
 
       # Uploads the same archive to the mod's Nexus Mods page.
@@ -176,7 +175,7 @@ jobs:
       #   - variable NEXUS_FILE_GROUP_ID (from "API Info" on the mod's Files tab)
       - name: Upload to Nexus Mods
         if: ${{ vars.NEXUS_FILE_GROUP_ID != '' }}
-        uses: Nexus-Mods/upload-action@v1.0.0-beta.7
+        uses: Nexus-Mods/upload-action@0bf670d75d46988c176c9bfacc94ca0144e0fe3f # v1.0.0-beta.7
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}
           file_group_id: ${{ vars.NEXUS_FILE_GROUP_ID }}
