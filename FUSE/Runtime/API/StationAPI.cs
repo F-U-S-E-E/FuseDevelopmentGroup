@@ -162,7 +162,7 @@ namespace FUSE.Runtime.API
                 return string.Equals(definition.PassengerStopId, stopId, StringComparison.OrdinalIgnoreCase);
             }
 
-            if (PassengerStopHasIdentifier(current, stopId))
+            if (PassengerStopMatchesStopId(current, stopId))
             {
                 return true;
             }
@@ -211,7 +211,7 @@ namespace FUSE.Runtime.API
             }
         }
 
-        private static bool PassengerStopHasIdentifier(PassengerStop stop, string stopId)
+        private static bool PassengerStopMatchesStopId(PassengerStop stop, string stopId)
         {
             if (stop == null || string.IsNullOrWhiteSpace(stopId))
             {
@@ -220,7 +220,8 @@ namespace FUSE.Runtime.API
 
             try
             {
-                return string.Equals(stop.identifier, stopId, StringComparison.OrdinalIgnoreCase);
+                return string.Equals(stop.identifier, stopId, StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(stop.name, stopId, StringComparison.OrdinalIgnoreCase);
             }
             catch (MissingReferenceException)
             {
