@@ -352,10 +352,32 @@ namespace FUSE.Runtime.API
             return definition;
         }
 
+        // Footprint full size (meters) recorded per deferred object for the opt-in
+        // targeted terrain invalidation (#4). Map tiles are 500m; a 512m box re-bakes
+        // the object's own tile plus any neighbor it straddles, covering typical
+        // building-sized mask cuts. Only consulted when targeted invalidation is on.
+        private const float DeferredMaskFootprintSize = 512f;
+
         public static void RefreshAttachedMapMasks(GameObject root, string reason = null)
         {
             if (root == null)
             {
+                return;
+            }
+
+            // During a bulk apply that ends in a single terrain rebuild, this
+            // per-object refresh is redundant: the trailing rebuild re-evaluates every
+            // live mask component at once, and mask components also self-apply on
+            // OnEnable. Skip the GetComponentsInChildren + Rebuild churn here and just
+            // record the footprint so the (opt-in) targeted invalidation can scope the
+            // trailing rebuild to the affected tiles.
+            if (FuseTerrainRefreshScope.IsDeferringMaskRefresh)
+            {
+                FuseTerrainRefreshScope.NoteDeferredRefresh(0);
+                FuseTerrainRefreshScope.RecordBounds(
+                    new Bounds(
+                        root.transform.position,
+                        new Vector3(DeferredMaskFootprintSize, DeferredMaskFootprintSize, DeferredMaskFootprintSize)));
                 return;
             }
 

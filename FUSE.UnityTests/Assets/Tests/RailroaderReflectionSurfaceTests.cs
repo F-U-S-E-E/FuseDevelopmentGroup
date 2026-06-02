@@ -251,6 +251,26 @@ namespace FUSE.UnityTests
         }
 
         [Test]
+        public void MapManager_InvalidateBounds_InstanceMethod()
+        {
+            // FuseRuntimeReloadService's opt-in targeted terrain invalidation
+            // (EnableTargetedTerrainInvalidation) invokes the private
+            // Invalidate(Bounds) overload to re-bake only the tiles FUSE
+            // touched instead of a full RebuildAll. A rename detaches the
+            // fast path and it silently falls back to the full rebuild — this
+            // canary surfaces that so the fast path can be re-bound.
+            var type = RequireType("Map.Runtime.MapManager");
+            var method = type.GetMethod(
+                "Invalidate",
+                InstanceNonPublic,
+                null,
+                new[] { typeof(UnityEngine.Bounds) },
+                null);
+            Assert.NotNull(method,
+                "Map.Runtime.MapManager.Invalidate(Bounds) not found — targeted terrain invalidation will always fall back to the full rebuild.");
+        }
+
+        [Test]
         public void MapManager_Instance_StaticPublicProperty()
         {
             AssertProperty("Map.Runtime.MapManager", "Instance", BindingFlags.Static | BindingFlags.Public);

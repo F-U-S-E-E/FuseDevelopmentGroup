@@ -278,6 +278,21 @@ namespace FUSE.Interface
                     FuseSettings.SetEnableExperimentalEarlyScenePathSuppression(!FuseSettings.EnableExperimentalEarlyScenePathSuppression);
                     RebuildWindow();
                 });
+            AddSettingToggle(
+                builder,
+                "Targeted Terrain Rebuild",
+                FuseSettings.EnableTargetedTerrainInvalidation ? "enabled next map load" : "disabled (full terrain rebuild)",
+                FuseSettings.EnableTargetedTerrainInvalidation ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetEnableTargetedTerrainInvalidation(!FuseSettings.EnableTargetedTerrainInvalidation);
+                    RebuildWindow();
+                });
+            AddWrappedField(
+                builder,
+                "Terrain Rebuild",
+                "EXPERIMENTAL. After applying packages, FUSE re-bakes terrain so placed map-masks cut in. Off = full MapManager.RebuildAll (re-streams the whole map; safe). On = invalidate only the tiles FUSE touched (much faster, but if a mask's footprint is missed you'll see dark uncut terrain patches). Validate on your maps before relying on it; check FUSE.log for 'terrain reload (targeted invalidation)'.",
+                120f);
             AddWrappedField(
                 builder,
                 "Inspector Roadmap",
