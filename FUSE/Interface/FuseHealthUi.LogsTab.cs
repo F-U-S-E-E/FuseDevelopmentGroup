@@ -90,12 +90,32 @@ namespace FUSE.Interface
                     return Array.Empty<string>();
                 }
 
-                var lines = File.ReadAllLines(path);
+                // FuseLog holds the log file open for writing for the whole
+                // session, so a default read (FileShare.Read) would hit a
+                // sharing violation. Open with FileShare.ReadWrite to read
+                // alongside the live writer.
+                var lines = ReadAllLinesShared(path);
                 return lines.Skip(Math.Max(0, lines.Length - Math.Max(1, maxLines))).ToArray();
             }
             catch (Exception ex)
             {
                 return new[] { "Could not read FUSE.log: " + ex.GetBaseException().Message };
+            }
+        }
+
+        private static string[] ReadAllLinesShared(string path)
+        {
+            using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var reader = new StreamReader(stream))
+            {
+                var lines = new List<string>();
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    lines.Add(line);
+                }
+
+                return lines.ToArray();
             }
         }
     }
