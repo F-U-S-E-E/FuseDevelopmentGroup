@@ -87,6 +87,9 @@ namespace FUSE.Patches
         // that call through instead of re-deferring it.
         private static bool _pumping;
 
+        // Camera.main, refreshed via ResolveActiveCamera when it is destroyed or merely
+        // disabled, so the pump's deadband drop check can't strand a queued load on a
+        // stale camera position after a camera-mode or scene transition.
         private static Camera _camera;
         private static FuseSceneryLoadThrottlePump _pump;
 
@@ -213,10 +216,7 @@ namespace FUSE.Patches
             try
             {
                 Budget.BeginFrame(Time.frameCount);
-                if (_camera == null)
-                {
-                    _camera = Camera.main;
-                }
+                var camera = ResolveActiveCamera();
 
                 // The queue only shrinks inside this loop, so a count snapshot bounds
                 // the work even though null/stale entries are skipped for free.
@@ -240,9 +240,11 @@ namespace FUSE.Patches
 
                     // Left the resident deadband while queued: don't force-load scenery
                     // the camera has moved away from (consistent with the debounce).
-                    if (_camera != null &&
+                    // Uses a freshly-resolved camera so a stale reference can't drop a
+                    // load the player is actually next to.
+                    if (camera != null &&
                         !FuseSceneryCullingDebouncePatch.ShouldHoldResident(
-                            _camera.transform.position, instance.transform.position))
+                            camera.transform.position, instance.transform.position))
                     {
                         _droppedStaleLoads++;
                         continue;
@@ -318,6 +320,19 @@ namespace FUSE.Patches
             _camera = null;
             _pumping = false;
             ResetStats();
+        }
+
+        // Camera.main, refreshed when the cached one is destroyed or merely disabled
+        // (a camera-mode or scene transition leaves the old gameplay camera disabled
+        // but not destroyed, so a == null check alone would keep a stale reference).
+        private static Camera ResolveActiveCamera()
+        {
+            if (_camera == null || !_camera.isActiveAndEnabled)
+            {
+                _camera = Camera.main;
+            }
+
+            return _camera;
         }
 
         private static AccessTools.FieldRef<SceneryAssetInstance, bool> BuildWantsLoadedRef()
