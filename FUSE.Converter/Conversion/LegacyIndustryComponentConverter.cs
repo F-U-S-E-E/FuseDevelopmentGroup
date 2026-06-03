@@ -118,10 +118,18 @@ namespace FUSE.Converter.Conversion
             return LegacyLoadOperationKeys.Any(k => item.ContainsKey(k));
         }
 
+        // Only real track-span keys make a component a standalone load
+        // operation. A bare loadId is NOT a binding: a spanless load-op
+        // block (e.g. a Production-Tweaks patch that only adjusts
+        // storageChangeRate/maxStorage/carTransferRate on an existing
+        // base-game loader) is a partial field-merge onto the component
+        // that already owns the spans, not a brand-new loader. Counting
+        // loadId here forces such patches to convert as full loaders,
+        // which then fail the "loader requires at least one track span"
+        // validation rule and fault the whole package.
         private static readonly string[] LoadComponentBindingKeys =
         {
             "trackSpanIds", "trackSpans", "spans",
-            "loadId", "LoadId", "load",
         };
 
         public static bool HasLoadComponentBindingShape(JObject item)

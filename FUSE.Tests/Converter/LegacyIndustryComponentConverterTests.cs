@@ -77,13 +77,20 @@ namespace FUSE.Tests.Converter
         [Fact]
         public void ShouldConvertComponentAsPartial_returns_true_for_legacy_load_op_without_binding()
         {
-            // Has load-op shape (loadId), but no binding (spans/trackSpans);
-            // converter treats this as a partial update to an existing
-            // component rather than a full definition.
+            // A load-op block that names track spans is a full, standalone
+            // loader definition → NOT partial.
             Assert.False(LegacyIndustryComponentConverter.ShouldConvertComponentAsPartial(
                 JObject.Parse("{ \"loadId\": \"oil\", \"trackSpanIds\": [\"s1\"] }")));
+
+            // A load-op block with NO track spans is a partial field-merge
+            // onto an existing component (which already owns the spans) →
+            // partial. A bare loadId must NOT defeat this. Regression for
+            // Nexus 1326 "Production Tweaks", whose l1/lp1/l23 patch
+            // base-game loader rates by id with a loadId but no spans.
             Assert.True(LegacyIndustryComponentConverter.ShouldConvertComponentAsPartial(
                 JObject.Parse("{ \"maxStorage\": 100 }")));
+            Assert.True(LegacyIndustryComponentConverter.ShouldConvertComponentAsPartial(
+                JObject.Parse("{ \"loadId\": \"logs\", \"storageChangeRate\": 72, \"maxStorage\": 72, \"carTransferRate\": 144 }")));
         }
 
         // ------------------------------------------------------------------
@@ -267,6 +274,30 @@ namespace FUSE.Tests.Converter
             var fields = converted["fields"] as JObject;
             Assert.NotNull(fields);
             Assert.Equal(7, fields.Value<int>("weird"));
+        }
+
+        [Fact]
+        public void ConvertComponent_marks_spanless_loadId_rate_patch_as_partial()
+        {
+            // Regression — Nexus 1326 "Woodys ... Production Tweaks": the
+            // mod patches the production rates of an existing base-game
+            // logging-camp loader (l1) by id — a loadId plus rate fields,
+            // but no track spans. This must convert as a partial field-merge
+            // (which the apply path layers onto the existing loader), NOT as
+            // a full loader — a full loader with no spans trips
+            // "loader requires at least one track span".
+            var converted = LegacyIndustryComponentConverter.ConvertComponent(
+                "l1",
+                JObject.Parse("{ \"carTypeFilter\": \"FL\", \"loadId\": \"logs\", \"storageChangeRate\": 72, \"maxStorage\": 72, \"carTransferRate\": 144 }"),
+                context: null);
+
+            Assert.True(converted.Value<bool>("partial"));
+            Assert.Null(converted["type"]);
+            // No spans were invented for the patch.
+            Assert.Null(converted["trackSpanIds"]);
+            // The rate fields the mod actually wants to change survive.
+            Assert.Equal(72, converted.Value<int>("storageChangeRate"));
+            Assert.Equal("logs", converted.Value<string>("loadId"));
         }
 
         // ------------------------------------------------------------------
