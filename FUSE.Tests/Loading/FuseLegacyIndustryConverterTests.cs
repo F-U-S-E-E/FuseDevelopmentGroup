@@ -1,4 +1,5 @@
 using FUSE.Authoring.Serialization;
+using FUSE.Authoring.Validation;
 using FUSE.Loading;
 using Newtonsoft.Json.Linq;
 using Xunit;
@@ -176,6 +177,107 @@ namespace FUSE.Tests.Loading
                 Assert.Equal(0f, industry.Position.Value.x);
                 Assert.Equal(0f, industry.Position.Value.y);
                 Assert.Equal(0f, industry.Position.Value.z);
+            }
+        }
+
+        public class SpanlessLoaderRatePatch
+        {
+            // Regression — Nexus 1326 "Woodys Upper Walker Pulpwood and
+            // Production Tweaks". The mod patches the production rates of
+            // three existing base-game logging-camp loaders (l1/lp1/l23) by
+            // id — each a loadId plus rate fields with no track spans — and
+            // adds one genuinely new loader (lp2) that does declare spans.
+            // Before the fix the converter counted a bare loadId as a load
+            // binding, so the spanless rate patches converted as full
+            // loaders; each then tripped "loader requires at least one track
+            // span" (fuse.operations.component.trackSpanIds) and the whole
+            // .FUSE package faulted at deserialization.
+            private static JObject MakeSource() => new JObject
+            {
+                ["areas"] = new JObject
+                {
+                    ["bryson-above"] = new JObject
+                    {
+                        ["industries"] = new JObject
+                        {
+                            ["logcamp1"] = new JObject
+                            {
+                                ["components"] = new JObject
+                                {
+                                    ["l1"] = new JObject
+                                    {
+                                        ["carTypeFilter"] = "FL",
+                                        ["loadId"] = "logs",
+                                        ["storageChangeRate"] = 72,
+                                        ["maxStorage"] = 72,
+                                        ["carTransferRate"] = 144
+                                    },
+                                    ["lp1"] = new JObject
+                                    {
+                                        ["carTypeFilter"] = "FB",
+                                        ["loadId"] = "pulpwood",
+                                        ["storageChangeRate"] = 4000000.0,
+                                        ["maxStorage"] = 4000000.0,
+                                        ["carTransferRate"] = 3000000.0
+                                    },
+                                    ["l23"] = new JObject
+                                    {
+                                        ["carTypeFilter"] = "FL",
+                                        ["loadId"] = "logs",
+                                        ["storageChangeRate"] = 120,
+                                        ["maxStorage"] = 120,
+                                        ["carTransferRate"] = 240
+                                    },
+                                    ["lp2"] = new JObject
+                                    {
+                                        ["type"] = "Model.Ops.IndustryLoader",
+                                        ["name"] = "Walker Upper Pulpwood",
+                                        ["trackSpans"] = new JArray("WD_Upper_Pulp1", "WD_Upper_Pulp2"),
+                                        ["carTypeFilter"] = "FB",
+                                        ["sharedStorage"] = false,
+                                        ["loadId"] = "pulpwood",
+                                        ["storageChangeRate"] = 6000000.0,
+                                        ["maxStorage"] = 6000000.0,
+                                        ["carTransferRate"] = 3000000.0
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            [Fact]
+            public void SpanlessRatePatches_ConvertAsPartial_NewLoaderStaysFull()
+            {
+                var (_, industries) = FuseLegacyIndustryConverterTests.ConvertIndustries(MakeSource());
+                var components = (JObject)industries["logcamp1"]["components"];
+
+                foreach (var id in new[] { "l1", "lp1", "l23" })
+                {
+                    var c = (JObject)components[id];
+                    Assert.True(c.Value<bool>("partial"), $"{id} should convert as a partial field-merge patch");
+                    Assert.Null(c["type"]);
+                    // The rate fields the mod actually wants to change survive.
+                    Assert.NotNull(c["storageChangeRate"]);
+                }
+
+                // The genuinely new loader keeps its full shape and its spans.
+                var lp2 = (JObject)components["lp2"];
+                Assert.Null(lp2["partial"]);
+                Assert.False(string.IsNullOrEmpty(lp2.Value<string>("type")));
+                Assert.NotNull(lp2["trackSpanIds"]);
+            }
+
+            [Fact]
+            public void ConvertedDefinition_PassesValidation_NoTrackSpanError()
+            {
+                var (root, _) = FuseLegacyIndustryConverterTests.ConvertIndustries(MakeSource());
+                var definition = FuseSerializer.FromJson(root.ToString());
+
+                var result = new FuseDefinitionValidator().Validate(definition);
+
+                Assert.DoesNotContain(result.Errors, e => e.Code == "fuse.operations.component.trackSpanIds");
             }
         }
 

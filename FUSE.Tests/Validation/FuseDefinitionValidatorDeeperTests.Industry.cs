@@ -79,6 +79,26 @@ namespace FUSE.Tests.Validation
             }
 
             [Fact]
+            public void PartialComponent_WithoutTrackSpans_IsAccepted()
+            {
+                // A partial field-merge patch (e.g. a Production-Tweaks rate
+                // change on an existing base-game loader) carries no spans of
+                // its own — the base component already owns them. The span
+                // requirement must not apply to partial components, which is
+                // what lets the legacy converter emit spanless loadId+rate
+                // patches without faulting the package (Nexus 1326).
+                var result = NewValidator().Validate(WithComponent(new FuseIndustryComponent
+                {
+                    Partial = true,
+                    LoadId = "logs",
+                    StorageChangeRate = 72f,
+                    TrackSpanIds = null
+                }));
+
+                Assert.DoesNotContain(result.Errors, e => e.Code == "fuse.operations.component.trackSpanIds");
+            }
+
+            [Fact]
             public void LoaderType_WithoutLoadId_EmitsWarning()
             {
                 var result = NewValidator().Validate(WithComponent(new FuseIndustryComponent
