@@ -59,10 +59,6 @@ namespace FUSE.Patches
         // force ON. Set transiently by FuseSceneryBenchmark and cleared after a run.
         internal static bool? BenchmarkDebounceOverride;
 
-        // Cached camera (the culler's distance reference is the active camera). Cheap
-        // to reuse; re-fetched only when it goes null (scene swap / teardown).
-        private static Camera _camera;
-
         private static long _suppressedUnloads;
 
         /// <summary>Unloads suppressed (objects held resident) since the last reset.</summary>
@@ -81,6 +77,18 @@ namespace FUSE.Patches
             return (cameraPos - objectPos).sqrMagnitude < UnloadDistanceSqr;
         }
 
+        /// <summary>
+        /// Full hold decision (pure, unit-testable): hold a band-3 FUSE object
+        /// resident only when its model load has already been requested
+        /// (<paramref name="modelLoadRequested"/>) AND it is inside the deadband. The
+        /// load-requested gate keeps the debounce to its anti-flap purpose and stops
+        /// it from force-loading the whole deadband sphere on a teleport.
+        /// </summary>
+        internal static bool ShouldHold(bool modelLoadRequested, Vector3 cameraPos, Vector3 objectPos)
+        {
+            return modelLoadRequested && ShouldHoldResident(cameraPos, objectPos);
+        }
+
         private static void Prefix(SceneryAssetInstance __instance, ref int distanceBand)
         {
             // Only the unload band is in scope; in-range bands keep vanilla behavior.
@@ -97,25 +105,30 @@ namespace FUSE.Patches
                     return; // FUSE-owned scenery only; vanilla culls normally.
                 }
 
-                if (_camera == null)
-                {
-                    _camera = Camera.main;
-                }
-
-                if (_camera == null)
+                var camera = FuseSceneryCameraRef.Resolve();
+                if (camera == null)
                 {
                     return; // No reference to measure against: let the game unload.
                 }
 
-                // transform.position and the camera are in the same (floating-origin
-                // shifted) space, so the delta is correct regardless of world shifts.
-                if (!ShouldHoldResident(_camera.transform.position, __instance.transform.position))
+                // Anti-flap only: hold scenery the game has ALREADY loaded. A
+                // not-yet-loaded object inside the deadband isn't flapping — leaving it
+                // unloaded keeps the post-teleport working set to the game's real load
+                // band instead of force-streaming the whole deadband sphere through the
+                // throttle. transform.position and the camera are in the same
+                // (floating-origin shifted) space, so the delta is world-shift safe.
+                // Route through ShouldHold so the production decision is exactly the
+                // unit-tested one; fail-open (binding unavailable) holds any in-range
+                // scenery, the prior behavior.
+                var modelLoadRequested = !FuseSceneryModelState.Available
+                    || FuseSceneryModelState.IsLoadRequested(__instance);
+                if (!ShouldHold(modelLoadRequested, camera.transform.position, __instance.transform.position))
                 {
-                    return; // Genuinely far: let band 3 through so the game unloads it.
+                    return; // Not loaded, or genuinely far: let band 3 through.
                 }
 
-                // Inside the deadband: hold it resident so the ~1500m boundary can't
-                // thrash load/unload.
+                // Inside the deadband and already loaded: hold it resident so the
+                // ~1500m boundary can't thrash load/unload.
                 distanceBand = ResidentBandCeiling;
                 _suppressedUnloads++;
                 if (FuseSettings.EnableSceneryCullingDiagnostics && _suppressedUnloads % 1000 == 0)

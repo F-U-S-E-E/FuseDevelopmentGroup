@@ -62,5 +62,38 @@ namespace FUSE.UnityTests
             Assert.IsTrue(FuseSceneryCullingDebouncePatch.ShouldHoldResident(camera, near));
             Assert.IsFalse(FuseSceneryCullingDebouncePatch.ShouldHoldResident(camera, far));
         }
+
+        // Issue #76 follow-up (fix #2): the debounce holds ONLY already-loaded scenery.
+        // Force-holding a not-yet-loaded object inside the deadband would clamp band
+        // 3 -> 2 and stream it in, inflating the post-teleport working set to the whole
+        // ~3km sphere (~8x the game's load volume) and feeding it through the throttle.
+        // ShouldHold gates ShouldHoldResident on the model already being requested.
+
+        [Test]
+        public void ShouldHold_NotYetLoaded_DoesNotHold()
+        {
+            var near = new Vector3(0f, 0f, Deadband * 0.5f);
+            Assert.IsFalse(
+                FuseSceneryCullingDebouncePatch.ShouldHold(modelLoadRequested: false, Vector3.zero, near),
+                "Unloaded scenery inside the deadband must not be force-held (it would force a load, inflating the set).");
+        }
+
+        [Test]
+        public void ShouldHold_Loaded_WithinDeadband_Holds()
+        {
+            var near = new Vector3(0f, 0f, Deadband * 0.5f);
+            Assert.IsTrue(
+                FuseSceneryCullingDebouncePatch.ShouldHold(modelLoadRequested: true, Vector3.zero, near),
+                "Already-loaded scenery inside the deadband must be held to absorb boundary jitter (anti-flap).");
+        }
+
+        [Test]
+        public void ShouldHold_Loaded_BeyondDeadband_Releases()
+        {
+            var far = new Vector3(0f, 0f, Deadband * 2f);
+            Assert.IsFalse(
+                FuseSceneryCullingDebouncePatch.ShouldHold(modelLoadRequested: true, Vector3.zero, far),
+                "Loaded scenery beyond the deadband must be released so the game unloads it (culling still works).");
+        }
     }
 }

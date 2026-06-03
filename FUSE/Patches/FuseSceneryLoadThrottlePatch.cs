@@ -70,12 +70,6 @@ namespace FUSE.Patches
         private static readonly Queue<PendingLoad> Pending = new Queue<PendingLoad>();
         private static readonly HashSet<int> PendingIds = new HashSet<int>();
 
-        // Fast typed accessor for the private load-state flag (also covered by the
-        // reflection-surface canary test). Null only if the game renamed the field, in
-        // which case we fail open and never throttle.
-        private static readonly AccessTools.FieldRef<SceneryAssetInstance, bool> WantsLoadedRef =
-            BuildWantsLoadedRef();
-
         private static readonly MethodInfo SetLoadedMethod =
             AccessTools.Method(typeof(SceneryAssetInstance), "SetLoaded", new[] { typeof(bool) });
 
@@ -87,7 +81,6 @@ namespace FUSE.Patches
         // that call through instead of re-deferring it.
         private static bool _pumping;
 
-        private static Camera _camera;
         private static FuseSceneryLoadThrottlePump _pump;
 
         private static long _deferredLoads;
@@ -111,7 +104,7 @@ namespace FUSE.Patches
         internal static int QueueDepth => Pending.Count;
 
         /// <summary>True when reflection bound and the throttle can operate.</summary>
-        internal static bool Available => WantsLoadedRef != null && SetLoadedMethod != null;
+        internal static bool Available => FuseSceneryModelState.Available && SetLoadedMethod != null;
 
         internal static void ResetStats()
         {
@@ -153,7 +146,7 @@ namespace FUSE.Patches
                 // no-op, so let it through rather than spend a budget slot on it. The
                 // debounce clamps band 3 -> 2 repeatedly for resident objects, which
                 // would otherwise hammer this path.
-                if (WantsLoadedRef(__instance))
+                if (FuseSceneryModelState.IsLoadRequested(__instance))
                 {
                     return true;
                 }
@@ -213,10 +206,7 @@ namespace FUSE.Patches
             try
             {
                 Budget.BeginFrame(Time.frameCount);
-                if (_camera == null)
-                {
-                    _camera = Camera.main;
-                }
+                var camera = FuseSceneryCameraRef.Resolve();
 
                 // The queue only shrinks inside this loop, so a count snapshot bounds
                 // the work even though null/stale entries are skipped for free.
@@ -233,16 +223,18 @@ namespace FUSE.Patches
                     }
 
                     // Loaded via another path since it was queued: nothing to do.
-                    if (WantsLoadedRef != null && WantsLoadedRef(instance))
+                    if (FuseSceneryModelState.IsLoadRequested(instance))
                     {
                         continue;
                     }
 
                     // Left the resident deadband while queued: don't force-load scenery
                     // the camera has moved away from (consistent with the debounce).
-                    if (_camera != null &&
+                    // Uses a freshly-resolved camera so a stale reference can't drop a
+                    // load the player is actually next to.
+                    if (camera != null &&
                         !FuseSceneryCullingDebouncePatch.ShouldHoldResident(
-                            _camera.transform.position, instance.transform.position))
+                            camera.transform.position, instance.transform.position))
                     {
                         _droppedStaleLoads++;
                         continue;
@@ -315,24 +307,9 @@ namespace FUSE.Patches
             Pending.Clear();
             PendingIds.Clear();
             Budget.Reset();
-            _camera = null;
+            FuseSceneryCameraRef.Reset();
             _pumping = false;
             ResetStats();
-        }
-
-        private static AccessTools.FieldRef<SceneryAssetInstance, bool> BuildWantsLoadedRef()
-        {
-            try
-            {
-                return AccessTools.FieldRefAccess<SceneryAssetInstance, bool>("_wantsLoaded");
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception(
-                    "FUSE scenery load-throttle could not bind SceneryAssetInstance._wantsLoaded; " +
-                    "throttling disabled (loads run vanilla)", ex);
-                return null;
-            }
         }
 
         private readonly struct PendingLoad

@@ -198,6 +198,12 @@ namespace FUSE.Interface
                         $"duration base={baseline.Value<double>("durationMs"):0}ms fix={fixedRun.Value<double>("durationMs"):0}ms.";
                 }
 
+                if (baseline.Value<bool>("inconclusive") || fixedRun.Value<bool>("inconclusive"))
+                {
+                    _status = "INCONCLUSIVE — scenario never engaged FUSE scenery culling; " +
+                              "run it in a denser area / teleport. " + _status;
+                }
+
                 FuseLog.Info("FUSE benchmark A/B: " + _status);
             }
         }
@@ -280,6 +286,25 @@ namespace FUSE.Interface
                     ["maxLoadMs"] = Math.Round(sampler.MaxLoadMs, 0),
                     ["csv"] = sampler.FileName
                 };
+
+                // A run that never engaged the FUSE scenery path can't validate
+                // anything — flag it INCONCLUSIVE so a too-light scenario (all-zero
+                // counters) is not mistaken for a passing regression guard.
+                var engaged = FuseSceneryBenchmarkEngagement.Engaged(
+                    FuseSceneryCullingDiagnosticPatch.FuseLoads,
+                    FuseSceneryCullingDebouncePatch.SuppressedUnloads,
+                    FuseSceneryLoadThrottlePatch.DeferredLoads,
+                    FuseSceneryLoadThrottlePatch.PeakQueueDepth);
+                result["engaged"] = engaged;
+                result["inconclusive"] = !engaged;
+                if (!engaged)
+                {
+                    FuseLog.Warning(
+                        $"FUSE benchmark [{scenario.Name}/{label}] is INCONCLUSIVE: the scenario never engaged FUSE " +
+                        "scenery culling (0 FUSE loads, 0 debounce suppressions, 0 throttle deferrals/queue). Run a " +
+                        "denser area or teleport into heavily-modded scenery so the load path is actually exercised.");
+                }
+
                 AppendResult(result);
                 _status =
                     $"[{scenario.Name}/{label}] done {durationMs:0}ms; loads={FuseSceneryCullingDiagnosticPatch.FuseLoads} " +
