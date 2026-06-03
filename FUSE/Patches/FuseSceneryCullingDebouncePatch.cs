@@ -59,22 +59,6 @@ namespace FUSE.Patches
         // force ON. Set transiently by FuseSceneryBenchmark and cleared after a run.
         internal static bool? BenchmarkDebounceOverride;
 
-        // Cached camera (the culler's distance reference is Camera.main). Refreshed
-        // when it is destroyed OR merely disabled (camera-mode / scene transition),
-        // so a stale, no-longer-active camera can't make the hold decision misjudge
-        // distance after the player changes views or teleports.
-        private static Camera _camera;
-
-        // Typed accessor for the game's private load-state flag. The debounce holds
-        // only scenery that is ALREADY loaded (true anti-flap). Force-loading a
-        // not-yet-loaded object inside the deadband would expand the resident set to
-        // the whole ~3 km sphere (~8x the game's ~1.5 km load volume) and pour it into
-        // the load throttle on every teleport. Null only if the field was renamed (the
-        // reflection-surface canary test guards the name), in which case we fall back
-        // to the prior "hold anything in range" behavior.
-        private static readonly AccessTools.FieldRef<SceneryAssetInstance, bool> WantsLoadedRef =
-            BuildWantsLoadedRef();
-
         private static long _suppressedUnloads;
 
         /// <summary>Unloads suppressed (objects held resident) since the last reset.</summary>
@@ -121,28 +105,26 @@ namespace FUSE.Patches
                     return; // FUSE-owned scenery only; vanilla culls normally.
                 }
 
-                // Anti-flap only: hold scenery the game has ALREADY loaded. A
-                // not-yet-loaded object inside the deadband isn't flapping — leaving
-                // it unloaded keeps the post-teleport working set to the game's real
-                // load band instead of force-streaming the whole deadband sphere
-                // through the throttle. (Fail-open: if the field binding is missing we
-                // skip the gate and hold any in-range scenery, the prior behavior.)
-                if (WantsLoadedRef != null && !WantsLoadedRef(__instance))
-                {
-                    return;
-                }
-
-                var camera = ResolveActiveCamera();
+                var camera = FuseSceneryCameraRef.Resolve();
                 if (camera == null)
                 {
                     return; // No reference to measure against: let the game unload.
                 }
 
-                // transform.position and the camera are in the same (floating-origin
-                // shifted) space, so the delta is correct regardless of world shifts.
-                if (!ShouldHoldResident(camera.transform.position, __instance.transform.position))
+                // Anti-flap only: hold scenery the game has ALREADY loaded. A
+                // not-yet-loaded object inside the deadband isn't flapping — leaving it
+                // unloaded keeps the post-teleport working set to the game's real load
+                // band instead of force-streaming the whole deadband sphere through the
+                // throttle. transform.position and the camera are in the same
+                // (floating-origin shifted) space, so the delta is world-shift safe.
+                // Route through ShouldHold so the production decision is exactly the
+                // unit-tested one; fail-open (binding unavailable) holds any in-range
+                // scenery, the prior behavior.
+                var modelLoadRequested = !FuseSceneryModelState.Available
+                    || FuseSceneryModelState.IsLoadRequested(__instance);
+                if (!ShouldHold(modelLoadRequested, camera.transform.position, __instance.transform.position))
                 {
-                    return; // Genuinely far: let band 3 through so the game unloads it.
+                    return; // Not loaded, or genuinely far: let band 3 through.
                 }
 
                 // Inside the deadband and already loaded: hold it resident so the
@@ -159,34 +141,6 @@ namespace FUSE.Patches
             catch (Exception ex)
             {
                 FuseLog.Exception("FUSE scenery unload debounce prefix failed", ex);
-            }
-        }
-
-        // Camera.main, refreshed when the cached one is destroyed or merely disabled
-        // (a camera-mode or scene transition leaves the old gameplay camera disabled
-        // but not destroyed, so a == null check alone would keep a stale reference).
-        private static Camera ResolveActiveCamera()
-        {
-            if (_camera == null || !_camera.isActiveAndEnabled)
-            {
-                _camera = Camera.main;
-            }
-
-            return _camera;
-        }
-
-        private static AccessTools.FieldRef<SceneryAssetInstance, bool> BuildWantsLoadedRef()
-        {
-            try
-            {
-                return AccessTools.FieldRefAccess<SceneryAssetInstance, bool>("_wantsLoaded");
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception(
-                    "FUSE scenery debounce could not bind SceneryAssetInstance._wantsLoaded; " +
-                    "holding any in-range FUSE scenery (prior behavior)", ex);
-                return null;
             }
         }
     }
