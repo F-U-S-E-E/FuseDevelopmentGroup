@@ -79,7 +79,7 @@ namespace FUSE.Interface.MenuWindow
             builder.AddSection("Overview");
 
 
-            builder.AddField("Status", modSetIsActive ? "Active" : "Inactive");
+            builder.AddField("Status", builder.AddLabelMarkup(modSetIsActive ? "<color=\"green\">Active" : "<color=\"red\">Inactive"));
             builder.AddField("Profile Name", modSet.Name);
             builder.AddField("Enabled Mods", FuseModSetService.GetSetPackageSummary(modSet));
 
