@@ -25,7 +25,7 @@ namespace FUSE.Interface.MenuWindow
 
         public static FuseMenuWindow Shared { get; private set; } = null;
 
-        private Vector2Int DefaultSize => new(740, 660);
+        private Vector2Int DefaultSize => new(880, 600);
         private Vector2Int MaxSize => new(Screen.width, Screen.height);
         private Window.Sizing DefaultSizing => Window.Sizing.Resizable(DefaultSize, MaxSize);
         private Window.Position DefaultPosition => Window.Position.UpperLeft;
