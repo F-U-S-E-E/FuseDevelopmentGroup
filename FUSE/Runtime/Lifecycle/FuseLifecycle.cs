@@ -177,6 +177,34 @@ namespace FUSE.Runtime.Lifecycle
                 }
             }
 
+            // Replay FUSE's industrial-segment push to Map Enhancer now that the
+            // load-time apply AND the trailing track-graph rebuild (EndBatch(true)
+            // above) have settled. The inline RefreshIndustry in
+            // AddOrUpdateComponents runs DURING apply — before that rebuild — so a
+            // FUSE-created industry's TrackSpans have no resolvable cached segments
+            // yet and nothing lands in Map Enhancer's industrial-segment cache
+            // (observed as componentsRefreshed=0 for FUSE-built industries like the
+            // Whittier sawmill, whose R1 log dropoff then paints as plain track).
+            // Map Enhancer's own IndustryComponent.Start postfix misses them for the
+            // same timing reason, so this post-rebuild pass is the only point where
+            // the segments are resolvable. It no-ops when Map Enhancer isn't
+            // installed and re-affirms already-registered base-game segments harmlessly.
+            try
+            {
+                if (canMutateWorld)
+                {
+                    FUSE.Interface.FuseMapEnhancerCompat.RefreshAllIndustries("map load post-rebuild");
+                }
+                else
+                {
+                    FuseLog.Info("FUSE skipped Map Enhancer post-rebuild backfill on non-host multiplayer client.");
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE Map Enhancer post-rebuild backfill failed", ex);
+            }
+
             // Console handler is created during scene activation, so we re-attempt
             // registration here even if the early Load attempt missed it.
             try
