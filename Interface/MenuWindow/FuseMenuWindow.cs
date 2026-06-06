@@ -97,7 +97,6 @@ namespace FUSE.Interface.MenuWindow
             if (_selectedTabState.Value == TabIdProfiles)
             {
                 SetSelectedProfile(modSetId);
-                RebuildWindow();
             }
         }
 
@@ -437,6 +436,13 @@ namespace FUSE.Interface.MenuWindow
         public void SetSelectedProfile(string id)
         {
             _selectedProfileItem.Value = id;
+            RebuildWindow();
+        }
+
+        public void SetSelectedStatusItem(string id)
+        {
+            _selectedStatusItem.Value = id;
+            RebuildWindow();
         }
     }
 }
