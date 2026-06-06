@@ -3,10 +3,17 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "mod-v*"
 
 permissions:
   contents: write
+
+# Serialize mod releases: the job reuses fixed working directories (staging,
+# staging-livebridge) on the self-hosted runner, so overlapping runs could race
+# and ship a corrupted archive. Never cancel an in-flight release.
+concurrency:
+  group: release-mod
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
@@ -17,25 +24,30 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5
         with:
           dotnet-version: "10.0.x"
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.12"
 
       - name: Parse semantic version from tag
         id: version
         shell: powershell
+        env:
+          # Pass the tag via the environment, not template expansion, so a
+          # crafted tag name can't inject into the script before validation.
+          # This step runs on the self-hosted runner, so the hardening matters.
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          if ($tag -notmatch '^v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
-            throw "Tag '$tag' must match v<semver>, e.g. v0.10.0 or v1.0.0-rc.1."
+          $tag = $env:TAG_NAME
+          if ($tag -notmatch '^mod-v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
+            throw "Tag '$tag' must match mod-v<semver>, e.g. mod-v0.13.0 or mod-v1.0.0-rc.1."
           }
 
           $version = $Matches.version
@@ -53,7 +65,9 @@ jobs:
 
       - name: Build FUSE mod (Release)
         shell: powershell
-        run: dotnet build FUSE.csproj -c Release -p:ModVersion=${{ steps.version.outputs.version }}
+        # Build FUSE.Editor.csproj: it ProjectReferences FUSE.csproj, so
+        # MSBuild builds FUSE.dll first and FUSE.Editor.dll second.
+        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Release -p:ModVersion=${{ steps.version.outputs.version }}
 
       - name: Package UMM mod zip
         id: package
@@ -75,8 +89,16 @@ jobs:
           # Copy the runtime assembly and its stamped manifest. Source the
           # manifest from bin so the InjectModVersionIntoInfoJson target's
           # rewrite is what ships.
-          Copy-Item "bin\Release\net48\FUSE.dll" $modFolder
-          Copy-Item "bin\Release\net48\Info.json" $modFolder
+          Copy-Item "FUSE\bin\Release\net48\FUSE.dll" $modFolder
+          Copy-Item "FUSE\bin\Release\net48\Info.json" $modFolder
+          # FUSE.Editor.dll ships side-by-side with FUSE.dll; FUSE loads it
+          # lazily from this folder via Assembly.LoadFrom after UMM boots.
+          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Editor.dll" $modFolder
+          # FUSE.Converter.dll is referenced by the editor's Convert
+          # button. Project-reference flows it to FUSE.Editor's output
+          # naturally; the release step explicitly copies it so the
+          # release zip is self-contained.
+          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Converter.dll" $modFolder
 
           # Schemas are referenced by FUSE.csproj and copied into bin. We re-copy
           # from source to avoid picking up any stale files left over in bin
@@ -94,6 +116,30 @@ jobs:
           "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
           "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
 
+      # The standalone editor ships in its own release lane (externaleditor-v*
+      # tags, .github/workflows/release-externaleditor.yml) so it can be
+      # versioned and shipped independently of the mod. Intentionally NOT
+      # packaged here.
+
+      # FUSE.LiveBridge is an optional in-game mod (net48) that hot-reloads the
+      # editor's saves; it ships as its own UMM mod zip.
+      - name: Package FUSE.LiveBridge mod zip
+        shell: powershell
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          dotnet build FUSE.LiveBridge/FUSE.LiveBridge.csproj -c Release -p:ModVersion=$version -p:EnableModDeploy=false
+          $stagingRoot = Join-Path $PWD "staging-livebridge"
+          $modFolder = Join-Path $stagingRoot "FUSE.LiveBridge"
+          if (Test-Path $stagingRoot) { Remove-Item $stagingRoot -Recurse -Force }
+          New-Item -ItemType Directory -Path $modFolder | Out-Null
+          Copy-Item "FUSE.LiveBridge\bin\Release\net48\FUSE.LiveBridge.dll" $modFolder
+          # FUSE.Core.dll is a runtime dependency of the bridge (ProjectReference); ship it too.
+          Copy-Item "FUSE.LiveBridge\bin\Release\net48\FUSE.Core.dll" $modFolder
+          Copy-Item "FUSE.LiveBridge\bin\Release\net48\Info.json" $modFolder
+          $zip = "FUSE.LiveBridge-v$version.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path $modFolder -DestinationPath $zip -CompressionLevel Optimal
+
       - name: Install PyInstaller
         run: python -m pip install --upgrade pip pyinstaller
 
@@ -109,7 +155,7 @@ jobs:
         run: python tools/build_folder_converter_pyz.py
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
           tag_name: ${{ github.ref_name }}
           name: FUSE v${{ steps.version.outputs.version }}
@@ -120,6 +166,7 @@ jobs:
             dist/FUSE-Converter.exe
             dist/FUSE-Installer.exe
             dist/FUSEConvertFolder.pyz
+            FUSE.LiveBridge-v${{ steps.version.outputs.version }}.zip
 
       # Uploads the same archive to the mod's Nexus Mods page.
       # Skipped automatically until the repo variable NEXUS_FILE_GROUP_ID is set.
@@ -128,7 +175,7 @@ jobs:
       #   - variable NEXUS_FILE_GROUP_ID (from "API Info" on the mod's Files tab)
       - name: Upload to Nexus Mods
         if: ${{ vars.NEXUS_FILE_GROUP_ID != '' }}
-        uses: Nexus-Mods/upload-action@v1.0.0-beta.5
+        uses: Nexus-Mods/upload-action@0bf670d75d46988c176c9bfacc94ca0144e0fe3f # v1.0.0-beta.7
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}
           file_group_id: ${{ vars.NEXUS_FILE_GROUP_ID }}

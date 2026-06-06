@@ -1,0 +1,13 @@
+{
+  "Id": "FUSE.TestBridge",
+  "DisplayName": "FUSE Test Bridge (dev only)",
+  "Author": "FUSE Team",
+  "Version": "0.1.0",
+  "ManagerVersion": "0.27.10",
+  "GameVersion": "2025.1",
+  "AssemblyName": "FUSE.TestBridge.dll",
+  "EntryMethod": "FUSE.TestBridge.Main.Load",
+  "Requirements": ["FUSE"],
+  "LoadAfter": ["FUSE"],
+  "Enabled": false
+}

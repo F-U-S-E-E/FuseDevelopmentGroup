@@ -113,8 +113,7 @@
         "trackClass": "yard",
         "speedLimit": 10,
         "priority": 5,
-        "groupId": "murphy:yard",
-        "gauge": "Narrow"
+        "groupId": "murphy:yard"
       }
     },
     "spans": {
@@ -846,7 +845,7 @@
     "whistles": {
       "murphy:whistle:single": {
         "name": "Murphy Single Chime",
-        "clip": "Audio/whistles/murphy-single.wav"
+        "clip": "path://Audio/whistles/murphy-single.wav"
       }
     },
     "horns": {
@@ -854,7 +853,7 @@
         "name": "Murphy Two Layer Horn",
         "layers": [
           {
-            "file": "Audio/horns/murphy-quiet.wav",
+            "file": "path://Audio/horns/murphy-quiet.wav",
             "keyframes": [
               {
                 "t": 0,
@@ -867,7 +866,7 @@
             ]
           },
           {
-            "file": "Audio/horns/murphy-full.wav",
+            "file": "path://Audio/horns/murphy-full.wav",
             "keyframes": [
               {
                 "t": 0,
@@ -885,7 +884,7 @@
     "bells": {
       "murphy:bell:shop": {
         "name": "Murphy Shop Bell",
-        "file": "Audio/bells/murphy-shop.wav",
+        "file": "path://Audio/bells/murphy-shop.wav",
         "indexTimes": [
           0.42,
           0.86

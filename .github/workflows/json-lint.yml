@@ -1,0 +1,44 @@
+name: JSON Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch/PR when a new commit lands.
+concurrency:
+  group: json-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  json-lint:
+    # Runs on the same self-hosted runner as ci.yml + release.yml. The lint
+    # itself only needs Python + jsonschema, but keeping every workflow on
+    # one runner avoids the matrix of "do we have git available?" /
+    # "do we have UMM DLLs available?" / "does actions/setup-python work
+    # here?" questions every time a check is touched.
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.x"
+
+      - name: Install json_lint dependencies
+        run: pip install jsonschema
+
+      # Validates every tracked .json file in the repo (strict parse) and
+      # cross-checks the canonical instance/schema pairs:
+      #   FUSE/Info.json               -> schemas/umm-info.schema.json
+      #   schemas/fuse-mod.example.json -> schemas/fuse-mod.schema.json
+      - name: Run JSON lint
+        run: python tools/json_lint.py

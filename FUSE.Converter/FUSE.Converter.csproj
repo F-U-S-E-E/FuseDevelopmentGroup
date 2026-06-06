@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net48;net10.0</TargetFrameworks>
+    <AssemblyName>FUSE.Converter</AssemblyName>
+    <RootNamespace>FUSE.Converter</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <Platforms>AnyCPU</Platforms>
+  </PropertyGroup>
+
+  <!--
+    Pure-logic legacy-to-FUSE converter. Ported from tools/fuse_convert.py
+    + tools/fuse_converter.py. No Unity / Railroader dependencies so this
+    can be reused from a future CLI tool, CI, or unit tests without
+    pulling the game-side assemblies.
+
+    Coverage today: mod metadata (Definition.json / Info.json), the
+    fragment skeleton, track nodes + segments. Spans / world entities /
+    operations / progression / audio / asset packs are TODOs flagged in
+    code; see the Python source for the canonical behaviour.
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- FUSE.Tests and the editor's Convert button reach into the
+         internal types to drive conversion without exposing a wide API. -->
+    <InternalsVisibleTo Include="FUSE.Tests" />
+    <InternalsVisibleTo Include="FUSE.Editor" />
+    <InternalsVisibleTo Include="FUSE.ExternalEditor" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>FUSE.ExternalEditor</AssemblyName>
+    <RootNamespace>Fuse.ExternalEditor</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Standalone cross-platform desktop app: no game/Unity DLLs, so it sets
+         its own version instead of the net48 mod-version stamp (see
+         Directory.Build.targets). -->
+    <FuseIsGameFree>true</FuseIsGameFree>
+    <!-- Version is tag-driven: release-externaleditor.yml passes
+         -p:ExternalEditorVersion=<semver from the externaleditor-v* tag>.
+         Local/CI builds fall back to the dev floor below. Full semver feeds
+         Version/Informational; AssemblyVersion/FileVersion take the numeric
+         core only (those can't hold a prerelease suffix). Mirrors the
+         ModVersion split in Directory.Build.targets. -->
+    <ExternalEditorVersion Condition="'$(ExternalEditorVersion)' == ''">0.1.0</ExternalEditorVersion>
+    <ExternalEditorVersionCore>$([System.Text.RegularExpressions.Regex]::Match('$(ExternalEditorVersion)', '^[0-9]+\.[0-9]+\.[0-9]+').Value)</ExternalEditorVersionCore>
+    <ExternalEditorVersionCore Condition="'$(ExternalEditorVersionCore)' == ''">0.1.0</ExternalEditorVersionCore>
+    <Version>$(ExternalEditorVersion)</Version>
+    <AssemblyVersion>$(ExternalEditorVersionCore).0</AssemblyVersion>
+    <FileVersion>$(ExternalEditorVersionCore).0</FileVersion>
+    <InformationalVersion>$(ExternalEditorVersion)</InformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.4" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.4" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+    <!-- Pure-managed image codec for terrain tile_X_Y.data (RGBA PNG) load/save. -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FUSE.Core\FUSE.Core.csproj" />
+    <ProjectReference Include="..\FUSE.Converter\FUSE.Converter.csproj" />
+  </ItemGroup>
+
+</Project>

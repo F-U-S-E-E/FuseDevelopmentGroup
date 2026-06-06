@@ -1,4 +1,4 @@
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using Xunit;
 
 namespace FUSE.Tests.Data

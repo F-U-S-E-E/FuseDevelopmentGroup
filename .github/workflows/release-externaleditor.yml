@@ -1,0 +1,102 @@
+name: Release External Editor
+
+# Independent release lane for the standalone FUSE.ExternalEditor (Avalonia,
+# net10, game-free). Triggered by externaleditor-v<semver> tags so the external
+# editor ships on its own cadence, decoupled from the mod's mod-v<semver>
+# release (release.yml). The prefix is externaleditor- (not editor-) to keep it
+# distinct from the in-game editor, which ships inside the mod.
+on:
+  push:
+    tags:
+      - "externaleditor-v*"
+
+# A release lane only needs to write repository Contents (create the release and
+# upload the per-OS bundles); no other scopes are required.
+permissions:
+  contents: write
+
+# Serialize editor releases so two runs never race on GitHub-release creation or
+# asset uploads. Never cancel an in-flight release.
+concurrency:
+  group: release-externaleditor
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    # Game-free (no Unity/UMM DLLs, no GameDir) -> builds on a stock GitHub
+    # runner, the same environment CI's build-net10 job proves it in. No
+    # dependency on the self-hosted Railroader runner release.yml needs.
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # This lane never pushes back to the repo, so don't leave the
+          # checkout token persisted in .git/config on the runner.
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Parse semantic version from tag
+        id: version
+        shell: pwsh
+        env:
+          # Pass the tag via the environment, not template expansion, so a
+          # crafted tag name can't inject into the script before validation.
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $tag = $env:TAG_NAME
+          if ($tag -notmatch '^externaleditor-v(?<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$') {
+            throw "Tag '$tag' must match externaleditor-v<semver>, e.g. externaleditor-v0.2.0 or externaleditor-v1.0.0-rc.1."
+          }
+
+          $version = $Matches.version
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+          # Treat anything in the 0.x series or with a pre-release suffix as a
+          # GitHub pre-release, mirroring release.yml's policy for the mod.
+          if ($version -match '^0\.' -or $version -match '-') {
+            "is_prerelease=true" >> $env:GITHUB_OUTPUT
+          }
+          else {
+            "is_prerelease=false" >> $env:GITHUB_OUTPUT
+          }
+
+      # Self-contained per-OS bundles (no .NET runtime required on the user's
+      # machine). The version comes from the tag via -p:ExternalEditorVersion,
+      # not the mod's ModVersion stamp (see FUSE.ExternalEditor.csproj).
+      - name: Publish FUSE.ExternalEditor (per-OS, self-contained)
+        shell: pwsh
+        env:
+          EDITOR_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $version = $env:EDITOR_VERSION
+          foreach ($rid in @('win-x64', 'linux-x64', 'osx-x64')) {
+            $out = "publish/externaleditor-$rid"
+            dotnet publish FUSE.ExternalEditor/FUSE.ExternalEditor.csproj `
+              -c Release -r $rid --self-contained true `
+              -p:ExternalEditorVersion=$version -o $out
+            if ($LASTEXITCODE -ne 0) { throw "publish failed for $rid" }
+            $zip = "FUSE.ExternalEditor-v$version-$rid.zip"
+            if (Test-Path $zip) { Remove-Item $zip -Force }
+            Compress-Archive -Path "$out/*" -DestinationPath $zip -CompressionLevel Optimal
+          }
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: FUSE External Editor v${{ steps.version.outputs.version }}
+          prerelease: ${{ steps.version.outputs.is_prerelease }}
+          generate_release_notes: true
+          files: |
+            FUSE.ExternalEditor-v${{ steps.version.outputs.version }}-win-x64.zip
+            FUSE.ExternalEditor-v${{ steps.version.outputs.version }}-linux-x64.zip
+            FUSE.ExternalEditor-v${{ steps.version.outputs.version }}-osx-x64.zip

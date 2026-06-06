@@ -1,4 +1,4 @@
-using FUSE.Validation;
+using FUSE.Authoring.Validation;
 using Xunit;
 
 namespace FUSE.Tests.Validation

@@ -1,0 +1,15 @@
+<Solution>
+  <Project Path="FUSE.Converter/FUSE.Converter.csproj" />
+  <Project Path="FUSE.Core/FUSE.Core.csproj" />
+  <Project Path="FUSE.Core.Tests/FUSE.Core.Tests.csproj" />
+  <Project Path="FUSE.Editor/FUSE.Editor.csproj" />
+  <Project Path="FUSE.ExternalEditor/FUSE.ExternalEditor.csproj" />
+  <Project Path="FUSE.ExternalEditor.UiTests/FUSE.ExternalEditor.UiTests.csproj" />
+  <Project Path="FUSE.LiveBridge/FUSE.LiveBridge.csproj" />
+  <Project Path="FUSE.TestBridge/FUSE.TestBridge.csproj" />
+  <Project Path="FUSE.TestCli/FUSE.TestCli.csproj" />
+  <Project Path="FUSE.LiveHarness/FUSE.LiveHarness.csproj" />
+  <Project Path="FUSE.LiveHarness.Tests/FUSE.LiveHarness.Tests.csproj" />
+  <Project Path="FUSE.Tests/FUSE.Tests.csproj" />
+  <Project Path="FUSE/FUSE.csproj" />
+</Solution>

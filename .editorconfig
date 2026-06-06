@@ -1,0 +1,38 @@
+# Minimal editorconfig for FUSE.
+#
+# Scope is intentionally conservative: only rules the existing tree already
+# follows are encoded here, so editors and the dotnet-lint workflow
+# (tools/cs_lint.py) stay aligned without flooding PRs with violations on
+# unrelated files. Add style/IDE rules in a follow-up once the formatting
+# baseline is stable.
+
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# `charset` is intentionally not set: a handful of .cs files carry a UTF-8
+# BOM (legacy from VS file templates) while the rest do not, and pinning a
+# value would either make IDEs strip the BOM on save (silent diffs) or
+# require a one-time mass re-encode. tools/cs_lint.py only rejects stacked
+# BOMs (the corruption mode), not the presence of a single BOM.
+
+# `end_of_line` is intentionally not pinned. .gitattributes already declares
+# `* text=auto`, which normalizes text files to LF in the repository and
+# lets each working copy honour the local platform convention (CRLF on
+# Windows checkouts when core.autocrlf=true, LF elsewhere). Pinning either
+# value here would either fail on the CI checkout (which sees LF) or
+# generate noise for Windows contributors (who see CRLF on disk).
+
+# YAML / JSON / shell scripts are typically 2-space indented across this
+# repo and the wider ecosystem (GitHub Actions workflows, package files).
+[*.{yml,yaml,json}]
+indent_size = 2
+
+# Markdown allows trailing two-space lines as a hard-break, so leave that
+# alone — enforcing trim would silently rewrite documentation prose.
+[*.md]
+trim_trailing_whitespace = false

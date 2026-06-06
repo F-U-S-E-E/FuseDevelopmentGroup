@@ -6,6 +6,18 @@
     <ModVersion Condition="'$(ModVersion)' == ''">0.0.0</ModVersion>
 
     <!--
+      Roslyn analyzer baseline. `latest-minimum` enables Microsoft's curated
+      essential rule set (perf/correctness wins, no broad-style noise) and
+      excludes CA1031 (catch-all Exception), which is intentional design
+      throughout the mod-loading code — one busted third-party mod must not
+      crash the host. Tighten further (latest-recommended / latest-all) only
+      after the existing baseline of warnings is paid down.
+    -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-minimum</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!--
       When neither GameDir nor UnityManagedDir is configured (e.g. CI runners or
       contributors without Railroader installed), fall back to the checked-in
       reference assemblies under lib/refs so the build still resolves Unity and

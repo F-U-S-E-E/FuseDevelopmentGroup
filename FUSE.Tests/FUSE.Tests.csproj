@@ -9,16 +9,22 @@
     <Nullable>disable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!--
+      Suppress perf rules that hurt test readability: CA1861 wants array
+      literals in `Assert.Equal(new[] { ... }, x)` extracted to static fields,
+      but inline expected values are the standard xUnit idiom.
+    -->
+    <NoWarn>$(NoWarn);CA1861</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
-    <PackageReference Include="xunit" Version="2.9.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="coverlet.collector" Version="6.0.2">
+    <PackageReference Include="coverlet.collector" Version="10.0.1">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
@@ -27,11 +33,28 @@
          in a clean .NET Framework process (CI runners). The NuGet copy carries
          the same AssemblyVersion (13.0.0.0) and PublicKeyToken so FUSE.dll's
          reference resolves to it at test time. -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\FUSE.csproj" />
+    <ProjectReference Include="..\FUSE\FUSE.csproj" />
+    <!-- FUSE.Editor reference is for pure-logic test coverage of types
+         like FuseEditorWindowRegistry. Unity-coupled types in the editor
+         (FuseEditorScreen, FuseNodeMarker) stay in the in-game harness;
+         they're not directly tested here. -->
+    <ProjectReference Include="..\FUSE.Editor\FUSE.Editor.csproj" />
+    <ProjectReference Include="..\FUSE.Converter\FUSE.Converter.csproj" />
+    <!-- Unity-free core, referenced for the cross-serializer contract test that
+         proves FUSE.ExternalEditor output is read identically by the shipping
+         (Unity) FuseSerializer. -->
+    <ProjectReference Include="..\FUSE.Core\FUSE.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Example fixture for the cross-serializer contract test. -->
+    <None Include="..\schemas\fuse-mod.example.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!-- The main FUSE project references game-shipped assemblies with <Private>false</Private>
@@ -53,8 +76,42 @@
       <HintPath>$(UnityModManagerAssemblyPath)</HintPath>
       <Private>true</Private>
     </Reference>
+    <!-- 0Harmony is needed by FusePatchTargetingTests, which reflects
+         over FUSE's [HarmonyPatch]-decorated types and resolves their
+         targets via AccessTools. The game ships 0Harmony in the
+         UnityModManager folder; reuse the same path as the production
+         build's Reference in FUSE.csproj. Private=true so the DLL is
+         copied next to FUSE.Tests.dll for runtime resolution. -->
+    <Reference Include="0Harmony" Condition="Exists('$(UnityModManagerDir)\0Harmony.dll')">
+      <HintPath>$(UnityModManagerDir)\0Harmony.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="0Harmony" Condition="!Exists('$(UnityModManagerDir)\0Harmony.dll') and Exists('$(UnityManagedDir)\0Harmony.dll')">
+      <HintPath>$(UnityManagedDir)\0Harmony.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <!-- Definition.dll holds Model.Definition.Data.MaterialDefinition
+         and Model.Definition.TypedContainerItem, which the body unit
+         tests in Patches/ instantiate to drive the patched methods
+         directly. -->
+    <Reference Include="Definition" Condition="Exists('$(UnityManagedDir)\Definition.dll')">
+      <HintPath>$(UnityManagedDir)\Definition.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="UnityEngine.CoreModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <!-- AssetPackRuntimeStore lives in Assembly-CSharp; AssetBundle in
+         UnityEngine.AssetBundleModule. Tests for FuseAssetPackPatchHelpers
+         and the bundle-collision Harmony patches need to type-check
+         method signatures that reference these types. -->
+    <Reference Include="Assembly-CSharp" Condition="Exists('$(UnityManagedDir)\Assembly-CSharp.dll')">
+      <HintPath>$(UnityManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>

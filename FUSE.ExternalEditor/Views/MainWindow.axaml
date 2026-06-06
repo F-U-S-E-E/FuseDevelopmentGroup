@@ -1,0 +1,171 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Fuse.ExternalEditor.ViewModels"
+        xmlns:ctl="clr-namespace:Fuse.ExternalEditor.Controls"
+        xmlns:geo="clr-namespace:Fuse.Core.Geometry;assembly=FUSE.Core"
+        x:Class="Fuse.ExternalEditor.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="1180" Height="760"
+        Title="{Binding Title}">
+
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Padding="8" Background="#161B1E">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Open Terrain…" Click="OnOpenTerrainFolder" />
+                <Button Content="Height" Command="{Binding Viewport.SetHeightModeCommand}" />
+                <Button Content="Veg" Command="{Binding Viewport.SetVegModeCommand}" />
+                <Button Content="Water" Command="{Binding Viewport.SetWaterModeCommand}" />
+                <CheckBox Content="Hillshade" IsChecked="{Binding Viewport.Hillshade}" VerticalAlignment="Center" />
+                <Border Width="1" Background="#2E445E" Margin="4,2" />
+                <Button Content="New Mod…" Click="OnNewMod" />
+                <Button Content="Open FUSE Mod…" Click="OnOpenFuseMod" />
+                <Button Content="Save Mod…" Click="OnSaveFuseMod" />
+                <Button Content="Convert Legacy…" Click="OnConvertLegacyMod" />
+                <Button Content="Add Node" Command="{Binding TrackGraph.AddNodeCommand}" />
+                <Button Content="Delete" Command="{Binding TrackGraph.DeleteSelectedCommand}" />
+                <Button Content="Undo" Command="{Binding TrackGraph.UndoCommand}" />
+                <Button Content="Redo" Command="{Binding TrackGraph.RedoCommand}" />
+                <Border Width="1" Background="#2E445E" Margin="4,2" />
+                <TextBlock Text="Tool:" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                <Button Content="Select" Command="{Binding TrackGraph.ActivateToolCommand}" CommandParameter="select" />
+                <Button Content="Move" Command="{Binding TrackGraph.ActivateToolCommand}" CommandParameter="move" />
+                <Button Content="Connect" Command="{Binding TrackGraph.ActivateToolCommand}" CommandParameter="connect" />
+                <Button Content="Turnout" Command="{Binding TrackGraph.ActivateToolCommand}" CommandParameter="turnout" />
+                <Button Content="Wye" Command="{Binding TrackGraph.ActivateToolCommand}" CommandParameter="wye" />
+                <Button Content="Curve" Command="{Binding TrackGraph.ActivateToolCommand}" CommandParameter="curve" />
+                <Button Content="Scenery" Command="{Binding TrackGraph.ActivateToolCommand}" CommandParameter="scenery" />
+                <Button Content="Measure" Command="{Binding TrackGraph.ActivateToolCommand}" CommandParameter="measure" />
+                <Border Width="1" Background="#2E445E" Margin="4,2" />
+                <Button Content="Set Mods…" Click="OnSetModsFolder" />
+                <Button Content="Push to Game" Command="{Binding TrackGraph.PushToGameCommand}" />
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Top" Padding="8,4" Background="#10161A">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <ToggleButton Content="Paint Terrain" IsChecked="{Binding TerrainEdit.EditingEnabled}" />
+                <TextBlock Text="Brush:" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                <Button Content="Raise" Command="{Binding TerrainEdit.SetBrushCommand}" CommandParameter="Raise" />
+                <Button Content="Flatten" Command="{Binding TerrainEdit.SetBrushCommand}" CommandParameter="Flatten" />
+                <Button Content="Paint" Command="{Binding TerrainEdit.SetBrushCommand}" CommandParameter="Paint" />
+                <Button Content="Smooth" Command="{Binding TerrainEdit.SetBrushCommand}" CommandParameter="Smooth" />
+                <Button Content="Noise" Command="{Binding TerrainEdit.SetBrushCommand}" CommandParameter="Noise" />
+                <Button Content="Erode" Command="{Binding TerrainEdit.SetBrushCommand}" CommandParameter="ErodeThermal" />
+                <Border Width="1" Background="#2E445E" Margin="4,2" />
+                <TextBlock Text="On:" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                <Button Content="Height" Command="{Binding TerrainEdit.SetEditModeCommand}" CommandParameter="Height" />
+                <Button Content="Veg" Command="{Binding TerrainEdit.SetEditModeCommand}" CommandParameter="Veg" />
+                <Button Content="Water" Command="{Binding TerrainEdit.SetEditModeCommand}" CommandParameter="Water" />
+                <Border Width="1" Background="#2E445E" Margin="4,2" />
+                <TextBlock Text="Radius" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                <Slider Minimum="2" Maximum="80" Value="{Binding TerrainEdit.BrushRadius}" Width="110" VerticalAlignment="Center" />
+                <TextBlock Text="Strength" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                <Slider Minimum="0.001" Maximum="0.2" Value="{Binding TerrainEdit.BrushStrength}" Width="110" VerticalAlignment="Center" />
+                <Button Content="Save Terrain" Command="{Binding TerrainEdit.SaveTerrainCommand}" />
+                <TextBlock Text="{Binding TerrainEdit.Status}" VerticalAlignment="Center" Foreground="#9FB3C8" />
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Top" Padding="8,4" Background="#0C1418">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="Generate:" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                <TextBox Watermark="Mapbox token" Text="{Binding Generation.MapboxToken}" Width="150" />
+                <TextBlock Text="gx" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                <TextBox Text="{Binding Generation.OriginGx}" Width="44" />
+                <TextBlock Text="gy" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                <TextBox Text="{Binding Generation.OriginGy}" Width="44" />
+                <TextBlock Text="w" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                <TextBox Text="{Binding Generation.Width}" Width="36" />
+                <TextBlock Text="h" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                <TextBox Text="{Binding Generation.Height}" Width="36" />
+                <CheckBox Content="NLCD" IsChecked="{Binding Generation.UseNlcd}" VerticalAlignment="Center" />
+                <Button Content="Out…" Click="OnSetGenOutputFolder" />
+                <Button Content="Generate" Command="{Binding Generation.GenerateCommand}" />
+                <ProgressBar Minimum="0" Maximum="{Binding Generation.ProgressTotal}" Value="{Binding Generation.ProgressCompleted}" Width="90" VerticalAlignment="Center" />
+                <Border Width="1" Background="#2E445E" Margin="4,2" />
+                <CheckBox Content="OSM" IsChecked="{Binding OsmOverlay.Enabled}" VerticalAlignment="Center" />
+                <TextBox Text="{Binding OsmOverlay.Zoom}" Width="36" />
+                <Button Content="Fetch OSM" Command="{Binding OsmOverlay.FetchCommand}" />
+                <TextBlock Text="{Binding Generation.Status}" VerticalAlignment="Center" Foreground="#9FB3C8" />
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Padding="10,6" Background="#16000000">
+            <TextBlock Text="{Binding Viewport.Status}" />
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Height="124" Background="#0E1418" Padding="8">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+                    <TextBlock Text="Profile" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button Content="Refresh" Command="{Binding Profile.RefreshCommand}" />
+                    <Button Content="Fit Arc" Command="{Binding Profile.FitArcCommand}" />
+                    <TextBlock Text="{Binding Profile.Summary}" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                    <TextBlock Text="{Binding Profile.ArcRadius, StringFormat='arc R {0:0.0} m'}" VerticalAlignment="Center" Foreground="#9FB3C8" />
+                </StackPanel>
+                <ListBox ItemsSource="{Binding Profile.Points}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="geo:ProfilePoint">
+                            <StackPanel Orientation="Horizontal" Spacing="14">
+                                <TextBlock Text="{Binding Station, StringFormat='sta {0:0.0}'}" Width="100" />
+                                <TextBlock Text="{Binding TrackElevation, StringFormat='el {0:0.0} m'}" Width="100" />
+                                <TextBlock Text="{Binding GradePercent, StringFormat='{}{0:0.0}%'}" Width="70" />
+                                <TextBlock Text="{Binding CutFill, StringFormat='cut/fill {0:0.0} m'}" Width="140" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Right" Width="270" Background="#12181C" Padding="12">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Track Graph" FontWeight="SemiBold" FontSize="15" />
+                <TextBlock Text="{Binding TrackGraph.Status}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding TrackGraph.NodeCount, StringFormat='Nodes: {0}'}" />
+                <TextBlock Text="{Binding TrackGraph.SegmentCount, StringFormat='Segments: {0}'}" />
+                <TextBlock Text="{Binding TrackGraph.ActiveToolId, StringFormat='Active tool: {0}'}" Foreground="#9FB3C8" />
+                <Border Height="1" Background="#2E445E" Margin="0,4" />
+                <TextBlock Text="Selection" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding TrackGraph.SelectedNodeSummary}" TextWrapping="Wrap" FontFamily="Consolas,monospace" />
+                <TextBlock Text="{Binding TrackGraph.ToolStatus}" TextWrapping="Wrap" Foreground="#FFD27A" />
+                <Border Height="1" Background="#2E445E" Margin="0,4" />
+                <TextBlock Text="Live Bridge" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding TrackGraph.BridgeStatus}" TextWrapping="Wrap" />
+                <Button Content="Refresh" Command="{Binding TrackGraph.RefreshBridgeStatusCommand}" HorizontalAlignment="Left" />
+                <Border Height="1" Background="#2E445E" Margin="0,4" />
+                <TextBlock Text="Calculator" FontWeight="SemiBold" />
+                <TextBox Watermark="e.g. (2+3)*4 ^ 2" Text="{Binding Calculator.Expression}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="=" Command="{Binding Calculator.EvaluateCommand}" />
+                    <TextBlock Text="{Binding Calculator.Result}" VerticalAlignment="Center" FontFamily="Consolas,monospace" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Left" Width="240" Background="#12181C" Padding="8">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="Entities" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,6" />
+                <TreeView ItemsSource="{Binding EntityTree.Roots}" SelectedItem="{Binding EntityTree.Selected, Mode=TwoWay}">
+                    <TreeView.ItemTemplate>
+                        <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="vm:EntityNode">
+                            <TextBlock Text="{Binding Label}" />
+                        </TreeDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+            </DockPanel>
+        </Border>
+
+        <ctl:MapViewport TileGrid="{Binding Viewport.Grid}"
+                         Mode="{Binding Viewport.Mode}"
+                         Hillshade="{Binding Viewport.Hillshade}"
+                         Tracks="{Binding TrackGraph.Tracks}"
+                         World="{Binding TrackGraph.World}"
+                         ActiveTool="{Binding TrackGraph.ActiveTool}"
+                         ToolContext="{Binding TrackGraph}"
+                         TerrainEditor="{Binding TerrainEdit}"
+                         OsmOverlay="{Binding OsmOverlay.EffectiveOverlay}"
+                         SelectedNodeId="{Binding TrackGraph.SelectedNodeId, Mode=TwoWay}" />
+    </DockPanel>
+
+</Window>

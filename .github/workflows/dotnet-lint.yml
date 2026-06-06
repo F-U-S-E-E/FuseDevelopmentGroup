@@ -1,0 +1,43 @@
+name: .NET Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch/PR when a new commit lands.
+concurrency:
+  group: dotnet-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cs-lint:
+    # Runs on the same self-hosted runner as ci.yml + release.yml. The
+    # script itself only needs Python, but keeping every workflow on one
+    # runner avoids divergence between the lint and the build's view of
+    # the source tree (line-ending normalisation, BOM handling, etc.).
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.x"
+
+      # tools/cs_lint.py is the .NET-source counterpart to tools/json_lint.py.
+      # It checks for objective whitespace defects only (final newline,
+      # trailing whitespace, double UTF-8 BOM, tab characters inside the
+      # leading indentation of space-indented files). It deliberately does
+      # NOT run `dotnet format` — see the module docstring in cs_lint.py
+      # for the rationale (FUSE uses column alignment and brace styles
+      # that the Roslyn default formatter wants to flatten).
+      - name: Run C# whitespace lint
+        run: python tools/cs_lint.py
