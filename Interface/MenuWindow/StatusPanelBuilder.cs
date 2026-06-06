@@ -3,7 +3,6 @@ using FUSE.Loading;
 using FUSE.Migrations;
 using Newtonsoft.Json.Linq;
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using UI.Builder;
@@ -14,22 +13,6 @@ namespace FUSE.Interface.MenuWindow
 {
     internal struct StatusPanelBuilder
     {
-        private enum PageId
-        {
-            Overview,
-            Issues
-        }
-
-        private class Page
-        {
-            public PageId Id { get; }
-
-            public Page(PageId id)
-            {
-                Id = id;
-            }
-        }
-
         private struct StatusChecklistData
         {
             public bool HasProblems;
@@ -43,49 +26,7 @@ namespace FUSE.Interface.MenuWindow
             public int NoticesCount;
         }
 
-        private static string _lastAction = string.Empty;
-
-        public static void Build(UIPanelBuilder builder, UIState<string> selectedItem)
-        {
-            if (selectedItem.Value == null)
-            {
-                selectedItem.Value = "overview";
-            }
-
-            List<UIPanelBuilder.ListItem<Page>> list = [];
-            list.Add(new UIPanelBuilder.ListItem<Page>("overview", new Page(PageId.Overview), "Status", "Overview"));
-            list.Add(new UIPanelBuilder.ListItem<Page>("issues", new Page(PageId.Issues), "Status", "Issues"));
-
-            builder.AddListDetail(list, selectedItem, delegate (UIPanelBuilder builder, Page page)
-            {
-                if (page == null)
-                {
-                    builder.AddExpandingVerticalSpacer();
-                    builder.AddLabelEmptyState("Select a page");
-                    builder.AddExpandingVerticalSpacer();
-                }
-                else
-                {
-                    builder.VScrollView(delegate (UIPanelBuilder builder)
-                    {
-                        switch (page.Id)
-                        {
-                            case PageId.Overview:
-                                BuildOverview(builder);
-                                break;
-                            case PageId.Issues:
-                                BuildIssues(builder);
-                                break;
-                            default:
-                                builder.AddLabel("Unknown page.");
-                                break;
-                        }
-                    }, new RectOffset(0, 4, 0, 0));
-                }
-            });
-        }
-
-        private static void BuildOverview(UIPanelBuilder builder)
+        public static void Build(UIPanelBuilder builder)
         {
             builder.AddTitle("FUSE Status", "");
 
@@ -128,7 +69,29 @@ namespace FUSE.Interface.MenuWindow
                     Toast.Present("Copied FUSE readiness report to clipboard.");
                     builder.Rebuild();
                 });
-                row.AddButtonCompact("View Issues", () => FuseMenuWindow.Shared.SetSelectedStatusItem("issues"));
+                row.AddButtonCompact("Copy Health Report", () =>
+                {
+                    GUIUtility.systemCopyBuffer = FuseLoadReport.GetLastDetailReport();
+                    Toast.Present("Copied FUSE health report to clipboard.");
+                    builder.Rebuild();
+                });
+            }, 6f).Height(32f);
+
+            builder.AddSection("Export");
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact("Export and open JSON", () =>
+                {
+                    var message = ExportHealthReportJson(openFolder: true);
+                    Toast.Present(message);
+                    builder.Rebuild();
+                });
+                row.AddButtonCompact("Export and open Mod Manifest", () =>
+                {
+                    var message = ExportActiveModManifest(openFolder: true);
+                    Toast.Present(message);
+                    builder.Rebuild();
+                });
             }, 6f).Height(32f);
         }
 
@@ -238,58 +201,47 @@ namespace FUSE.Interface.MenuWindow
             return builder.ToString().TrimEnd();
         }
 
-        private static void BuildIssues(UIPanelBuilder builder)
+        private static string ExportHealthReportJson(bool openFolder = true)
         {
-            builder.AddSection("Error Drilldown");
-
-            var reportSnapshot = FuseLoadReport.GetLastReportSnapshot();
-
-            if (reportSnapshot == null)
+            try
             {
-                builder.AddLabel("FUSE report is still pending.");
-                return;
+                var root = Path.Combine(Application.persistentDataPath, "FUSE");
+                Directory.CreateDirectory(root);
+                var path = Path.Combine(root, "fuse-health-report.json");
+                File.WriteAllText(path, FuseLoadReport.GetLastJsonReport());
+                if (openFolder)
+                {
+                    string directoryPath = Path.GetDirectoryName(path);
+                    Application.OpenURL(directoryPath);
+                }
+                return "Exported FUSE health report";
             }
-
-            // TODO: original BuildLogsContent seems to be duplicating a lot of functionality from the status checklist page
-            // Check whether we need to actually include this separately since right now
-            // it seems like we're just printing the same stats along with an instruction to use /fuse.report
-
-            builder.AddSection("Export");
-            builder.HStack(row =>
+            catch (Exception e)
             {
-                row.AddButtonCompact("Copy Health Report", () =>
-                {
-                    GUIUtility.systemCopyBuffer = FuseLoadReport.GetLastDetailReport();
-                    Toast.Present("Copied FUSE health report to clipboard.");
-                    builder.Rebuild();
-                });
-                row.AddButtonCompact("Export JSON", () =>
-                {
-                    _lastAction = ExportHealthReportJson();
-                    builder.Rebuild();
-                });
-                row.AddButtonCompact("Export Mod Manifest", () =>
-                {
-                    _lastAction = FuseModSetService.ExportActiveManifest();
-                    builder.Rebuild();
-                });
-            });
-
-            if (!String.IsNullOrEmpty(_lastAction))
-            {
-                builder.AddLabel(_lastAction);
+                var message = "Failed to export FUSE health report";
+                FuseLog.Exception(message, e);
+                return message;
             }
         }
 
-        private static string ExportHealthReportJson()
+        private static string ExportActiveModManifest(bool openFolder = true)
         {
-            var root = Path.Combine(Application.persistentDataPath, "FUSE");
-            Directory.CreateDirectory(root);
-            var path = Path.Combine(root, "fuse-health-report.json");
-            File.WriteAllText(path, FuseLoadReport.GetLastJsonReport());
-            return "Exported FUSE health JSON report: " + path;
+            try
+            {
+                var path = FuseModSetService.ExportActiveManifest();
+                if (openFolder)
+                {
+                    string directoryPath = Path.GetDirectoryName(path);
+                    Application.OpenURL(directoryPath);
+                }
+                return "Exported FUSE active mod profile manifest";
+            }
+            catch (Exception e)
+            {
+                var message = "Failed to export FUSE active mod profile manifest";
+                FuseLog.Exception(message, e);
+                return message;
+            }
         }
-
-        
     }
 }

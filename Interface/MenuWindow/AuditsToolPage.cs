@@ -61,7 +61,7 @@ namespace FUSE.Interface.MenuWindow
                     GUIUtility.systemCopyBuffer = BuildAuditReport(findings);
                     Toast.Present("Copied FUSE audit report to clipboard.");
                 });
-                row.AddButtonCompact("Export Report", () =>
+                row.AddButtonCompact("Export and open Report", () =>
                 {
                     var message = ExportAuditReport(findings);
                     Toast.Present(message);
@@ -410,7 +410,7 @@ namespace FUSE.Interface.MenuWindow
             return builder.ToString().TrimEnd();
         }
 
-        private static string ExportAuditReport(IReadOnlyList<AuditFinding> findings)
+        private static string ExportAuditReport(IReadOnlyList<AuditFinding> findings, bool openFolder = true)
         {
             try
             {
@@ -436,7 +436,14 @@ namespace FUSE.Interface.MenuWindow
                     ["count"] = items.Count,
                     ["findings"] = items
                 }.ToString(Newtonsoft.Json.Formatting.Indented));
-                return "Exported FUSE audit report: " + path;
+
+                if (openFolder)
+                {
+                    string directoryPath = Path.GetDirectoryName(path);
+                    Application.OpenURL(directoryPath);
+                }
+
+                return "Exported FUSE audit report";
             }
             catch (Exception e)
             {

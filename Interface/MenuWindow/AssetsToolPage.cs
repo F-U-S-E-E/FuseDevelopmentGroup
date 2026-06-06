@@ -41,7 +41,7 @@ namespace FUSE.Interface.MenuWindow
 
             builder.HStack(row =>
             {
-                row.AddButtonCompact("Export Asset Report", () =>
+                row.AddButtonCompact("Export and open Asset Report", () =>
                 {
                     var message = ExportAssetDiagnostics(diagnostics);
                     Toast.Present(message);
@@ -222,7 +222,7 @@ namespace FUSE.Interface.MenuWindow
                 : $"{InsertBreakHints(duplicate.Key)} | winner {winner} | overridden {string.Join(", ", overridden)}{suffix}";
         }
 
-        private static string ExportAssetDiagnostics(FuseAssetPackDiagnostics diagnostics)
+        private static string ExportAssetDiagnostics(FuseAssetPackDiagnostics diagnostics, bool openFolder = true)
         {
             try
             {
@@ -275,7 +275,14 @@ namespace FUSE.Interface.MenuWindow
                 };
 
                 File.WriteAllText(path, report.ToString(Newtonsoft.Json.Formatting.Indented));
-                return "Exported FUSE asset diagnostics: " + path;
+
+                if (openFolder)
+                {
+                    string directoryPath = Path.GetDirectoryName(path);
+                    Application.OpenURL(directoryPath);
+                }
+
+                return "Exported FUSE asset diagnostics";
             }
             catch (Exception e)
             {

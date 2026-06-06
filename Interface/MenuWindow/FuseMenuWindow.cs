@@ -31,7 +31,6 @@ namespace FUSE.Interface.MenuWindow
         private Window.Position DefaultPosition => Window.Position.UpperLeft;
 
         private readonly UIState<string> _selectedTabState = new(null);
-        private readonly UIState<string> _selectedStatusItem = new(null);
         private readonly UIState<string> _selectedModListItem = new(null);
         private readonly UIState<string> _selectedProfileItem = new(null);
         private readonly UIState<string> _selectedToolItem = new(null);
@@ -127,7 +126,7 @@ namespace FUSE.Interface.MenuWindow
             {
                 tabBuilder.AddTab("Status", TabIdStatus, b =>
                 {
-                    StatusPanelBuilder.Build(b, _selectedStatusItem);
+                    StatusPanelBuilder.Build(b);
                 });
                 tabBuilder.AddTab("Mods", TabIdMods, b =>
                 {
@@ -436,12 +435,6 @@ namespace FUSE.Interface.MenuWindow
         public void SetSelectedProfile(string id)
         {
             _selectedProfileItem.Value = id;
-            RebuildWindow();
-        }
-
-        public void SetSelectedStatusItem(string id)
-        {
-            _selectedStatusItem.Value = id;
             RebuildWindow();
         }
     }

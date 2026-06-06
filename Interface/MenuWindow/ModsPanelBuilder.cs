@@ -9,6 +9,7 @@ using System.Linq;
 using System.Text;
 using TMPro;
 using UI.Builder;
+using UI.Common;
 using UnityEngine;
 
 namespace FUSE.Interface.MenuWindow
@@ -43,7 +44,7 @@ namespace FUSE.Interface.MenuWindow
         {
             builder.AddSection(manifest.DisplayName);
 
-            builder.AddField("Status", PackageStatusText(manifest));
+            builder.AddField("Status", PackageStatusTextMarkup(manifest));
             builder.AddField("Version", manifest.Version ?? "Unknown");
             builder.AddField("Id", manifest.Id);
             builder.AddField("Folder", manifest.FolderName);
@@ -76,6 +77,7 @@ namespace FUSE.Interface.MenuWindow
                 row.AddButton("Copy Mod Info", () =>
                 {
                     GUIUtility.systemCopyBuffer = BuildSelectedPackageReport(manifest, definitions);
+                    Toast.Present("Copied mod info to clipboard");
                     builder.Rebuild();
                 });
             });
@@ -220,6 +222,28 @@ namespace FUSE.Interface.MenuWindow
             }
 
             return manifest.IsLegacyConverted ? "ready | legacy" : "ready";
+        }
+
+        private static string PackageStatusTextMarkup(FusePackageManifestSnapshot manifest)
+        {
+            if (manifest == null)
+            {
+                return "<color=\"orange\">Unknown";
+            }
+
+            if (manifest.Disabled)
+            {
+                return "<color=\"yellow\">Disabled";
+            }
+
+            if (manifest.Faults.Length > 0)
+            {
+                return "<color=\"red\">Error: " + manifest.Faults.Length + " fault(s)";
+            }
+
+            return manifest.IsLegacyConverted 
+                ? "<color=\"green\">Ready</color> - Legacy" 
+                : "<color=\"green\"Ready";
         }
 
         private static string GetSettingLabel(string key, FuseModSettingDefinition setting)
