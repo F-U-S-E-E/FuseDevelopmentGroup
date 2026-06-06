@@ -35,6 +35,7 @@ namespace FUSE.Interface.MenuWindow
         private readonly UIState<string> _selectedModListItem = new(null);
         private readonly UIState<string> _selectedProfileItem = new(null);
         private readonly UIState<string> _selectedToolItem = new(null);
+        private readonly UIState<string> _selectedSettingsItem = new(null);
 
         private string _lastBuiltTab = TabIdStatus;
 
@@ -143,7 +144,7 @@ namespace FUSE.Interface.MenuWindow
                 });
                 tabBuilder.AddTab("Settings", TabIdSettings, b =>
                 {
-
+                    FuseSettingsPanelBuilder.Build(b, _selectedSettingsItem);
                 });
             });
         }

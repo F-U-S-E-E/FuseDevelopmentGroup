@@ -54,12 +54,12 @@ namespace FUSE.Interface
         // other AND legible against typical map terrain. RGB values are
         // intentionally bright (the labels render over a semi-opaque
         // black pill so saturated foregrounds read cleanly).
-        private static readonly Color FuseSceneryColor = new Color(1.00f, 0.55f, 0.16f, 1f);     // orange
-        private static readonly Color VanillaSceneryColor = new Color(0.78f, 0.78f, 0.78f, 1f); // light gray
-        private static readonly Color SceneCloneColor = new Color(0.16f, 0.78f, 1.00f, 1f);     // cyan
-        private static readonly Color IndustryColor = new Color(1.00f, 0.36f, 0.82f, 1f);       // pink
-        private static readonly Color TrackNodeColor = new Color(0.49f, 0.88f, 0.55f, 1f);      // green
-        private static readonly Color TrackSegmentColor = new Color(1.00f, 0.88f, 0.25f, 1f);   // yellow
+        public static readonly Color FuseSceneryColor = new Color(1.00f, 0.55f, 0.16f, 1f);     // orange
+        public static readonly Color VanillaSceneryColor = new Color(0.78f, 0.78f, 0.78f, 1f); // light gray
+        public static readonly Color SceneCloneColor = new Color(0.16f, 0.78f, 1.00f, 1f);     // cyan
+        public static readonly Color IndustryColor = new Color(1.00f, 0.36f, 0.82f, 1f);       // pink
+        public static readonly Color TrackNodeColor = new Color(0.49f, 0.88f, 0.55f, 1f);      // green
+        public static readonly Color TrackSegmentColor = new Color(1.00f, 0.88f, 0.25f, 1f);   // yellow
 
         private static GameObject _host;
 
