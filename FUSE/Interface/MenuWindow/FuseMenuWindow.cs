@@ -1,4 +1,4 @@
-﻿using FUSE.Events;
+﻿using FUSE.Runtime.Events;
 using FUSE.Infrastructure;
 using System;
 using System.Collections;
@@ -325,7 +325,7 @@ namespace FUSE.Interface.MenuWindow
                 return false;
             }
 
-            _window = WindowCreatorHelper.Shared.CreateWindow(WindowIdentifier, DefaultSize.x, DefaultSize.y, DefaultPosition);
+            _window = WindowCreatorHelper.CreateWindow(WindowIdentifier, DefaultSize.x, DefaultSize.y, DefaultPosition);
             if (_window == null)
             {
                 FuseLog.Warning("FUSE menu window could not be created from the base-game window prefab.");
@@ -366,7 +366,7 @@ namespace FUSE.Interface.MenuWindow
             }
 
             _window.Title = GetWindowTitle();
-            _panel = WindowCreatorHelper.Shared.PopulateWindow(_window, BuildFuseMenu);
+            _panel = WindowCreatorHelper.PopulateWindow(_window, BuildFuseMenu);
             _lastBuiltTab = _selectedTabState.Value;
 
             WindowPersistence.SetInitialPositionSize(_window, WindowIdentifier, DefaultSize, DefaultPosition, DefaultSizing);

@@ -1,5 +1,5 @@
-﻿using FUSE.Cache;
-using FUSE.Registry;
+﻿using FUSE.Runtime.Cache;
+using FUSE.Runtime.Registry;
 using System;
 using System.Collections.Generic;
 using System.Linq;

@@ -1,4 +1,4 @@
-﻿using FUSE.API;
+﻿using FUSE.Runtime.API;
 using System.Collections.Generic;
 using System.Linq;
 using UI.Builder;
@@ -105,9 +105,9 @@ namespace FUSE.Interface.MenuWindow
             builder.Spacer(6f);
 
             builder.AddSection("Registry");
-            builder.AddField("Exclusive Claims", FUSE.Registry.FuseRegistry.ExclusiveClaimCount.ToString());
-            builder.AddField("Shared Claims", FUSE.Registry.FuseRegistry.SharedClaimCount.ToString());
-            builder.AddField("Conflicts", FUSE.Registry.FuseRegistry.Conflicts.Count.ToString());
+            builder.AddField("Exclusive Claims", FUSE.Runtime.Registry.FuseRegistry.ExclusiveClaimCount.ToString());
+            builder.AddField("Shared Claims", FUSE.Runtime.Registry.FuseRegistry.SharedClaimCount.ToString());
+            builder.AddField("Conflicts", FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count.ToString());
         }
     }
 }

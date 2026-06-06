@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using FUSE.Events;
+using FUSE.Runtime.Events;
 using FUSE.Loading;
 using Newtonsoft.Json;
 using UnityEngine;

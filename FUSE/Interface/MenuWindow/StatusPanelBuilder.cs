@@ -1,6 +1,6 @@
 ﻿using FUSE.Infrastructure;
 using FUSE.Loading;
-using FUSE.Migrations;
+using FUSE.Authoring.Migrations;
 using Newtonsoft.Json.Linq;
 using System;
 using System.IO;

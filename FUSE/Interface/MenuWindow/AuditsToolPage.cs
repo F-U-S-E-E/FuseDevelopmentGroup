@@ -1,7 +1,7 @@
-﻿using FUSE.API;
+﻿using FUSE.Runtime.API;
 using FUSE.Infrastructure;
 using FUSE.Loading;
-using FUSE.Registry;
+using FUSE.Runtime.Registry;
 using Model;
 using Newtonsoft.Json.Linq;
 using System;

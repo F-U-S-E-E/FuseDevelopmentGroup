@@ -198,6 +198,17 @@ namespace FUSE.Loading
             return BuildJson(snapshot, summary);
         }
 
+        public static ReportSnapshot GetLastReportSnapshot()
+        {
+            if ( _lastReportSnapshot == null )
+            {
+                return _lastReportSnapshot;
+            }
+            var snapshot = CaptureCurrentSnapshot();
+            _lastReportSnapshot = snapshot;
+            return _lastReportSnapshot;
+        }
+
         /// <summary>
         /// Re-snapshots every registry the report exposes without
         /// disturbing the cached "as-published" summary that the

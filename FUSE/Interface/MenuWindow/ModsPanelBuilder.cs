@@ -1,4 +1,4 @@
-﻿using FUSE.Data;
+﻿using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using FUSE.Loading;
 using Newtonsoft.Json.Linq;
