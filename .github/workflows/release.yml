@@ -124,6 +124,12 @@ jobs:
       # so a bad package fails fast.
       - name: Validate mod package (UMM compatibility)
         shell: powershell
+        env:
+          # Pass the archive path + version through the environment rather than
+          # ${{ }} template expansion, consistent with the TAG_NAME hardening in
+          # the version-parse step above.
+          ARCHIVE_PATH: ${{ steps.package.outputs.archive_path }}
+          MOD_VERSION: ${{ steps.version.outputs.version }}
         run: |
           # Resolve the reference dir through the same Paths.user / GameDir the build
           # used, so the UnityModManager assembly set always matches this runner.
@@ -131,10 +137,10 @@ jobs:
           if ($ummDir) { $ummDir = $ummDir.Trim() }
           Write-Host "UnityModManager reference dir: $ummDir"
           if ($ummDir -and (Test-Path $ummDir)) {
-            dotnet run scripts/Validate-ModPackage.cs -- "${{ steps.package.outputs.archive_path }}" "${{ steps.version.outputs.version }}" "FUSE" "$ummDir"
+            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
           } else {
             Write-Host "UnityModManagerDir unresolved; falling back to validator env-based resolution."
-            dotnet run scripts/Validate-ModPackage.cs -- "${{ steps.package.outputs.archive_path }}" "${{ steps.version.outputs.version }}"
+            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION"
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

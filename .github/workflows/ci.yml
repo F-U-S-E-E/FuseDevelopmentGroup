@@ -270,6 +270,13 @@ jobs:
       # stamp, while still enforcing it on real release tags (see release.yml).
       - name: Validate mod package (UMM compatibility)
         shell: powershell
+        env:
+          # Pass the archive name + build version through the environment rather
+          # than ${{ }} template expansion, so a crafted branch name can't inject
+          # into the script before validation. Mirrors the TAG_NAME hardening in
+          # release.yml.
+          ARCHIVE_PATH: ${{ steps.build_id.outputs.archive }}
+          MOD_VERSION: ${{ steps.build_id.outputs.version }}
         run: |
           # Resolve the reference dir through the same Paths.user / GameDir the build
           # used, so the UnityModManager assembly set always matches this runner.
@@ -277,10 +284,10 @@ jobs:
           if ($ummDir) { $ummDir = $ummDir.Trim() }
           Write-Host "UnityModManager reference dir: $ummDir"
           if ($ummDir -and (Test-Path $ummDir)) {
-            dotnet run scripts/Validate-ModPackage.cs -- "${{ steps.build_id.outputs.archive }}" "${{ steps.build_id.outputs.version }}" "FUSE" "$ummDir"
+            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
           } else {
             Write-Host "UnityModManagerDir unresolved; falling back to validator env-based resolution."
-            dotnet run scripts/Validate-ModPackage.cs -- "${{ steps.build_id.outputs.archive }}" "${{ steps.build_id.outputs.version }}"
+            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION"
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

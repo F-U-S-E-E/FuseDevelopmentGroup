@@ -190,10 +190,17 @@ try
         Fail("Mod folder ships debug symbols (Release zip should not): " + string.Join(", ", pdbs));
 
     // 2. Info.json
+    // Parse inside a using and Clone the root: JsonDocument pools its backing
+    // buffers and must be disposed, but a cloned JsonElement is independent of the
+    // document's lifetime, so the checks below can use it after the doc is gone.
     JsonElement? info = null;
     if (infoExists)
     {
-        try { info = JsonDocument.Parse(File.ReadAllText(infoPath)).RootElement; }
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(infoPath));
+            info = doc.RootElement.Clone();
+        }
         catch (Exception ex) { Fail($"Info.json failed to parse as JSON: {ex.Message}"); }
     }
 
