@@ -300,6 +300,10 @@ namespace FUSE.Loading
                 _lastSummary = summary;
                 _lastDetails = details;
                 _lastJson = BuildJson(snapshot, summary);
+                _lastPublishReason = reason;
+                _lastLoadedFromDiskThisPass = loadedFromDiskThisPass;
+                _lastAppliedToRuntimeThisPass = appliedToRuntimeThisPass;
+                _hasPublishedAtLeastOnce = true;
                 _lastReportSnapshot = snapshot;
             }
 
