@@ -203,6 +203,13 @@ namespace FUSE.Patches
 
         private static KeyValueObject EnsureKeyValueObject(SceneryAssetInstance instance)
         {
+            // Invariant: the KeyValueObject (and its StateManager registration) is hosted on
+            // the scenery's PERSISTENT root GameObject, never inside the streamed model. That
+            // is what lets save-state survive the model streaming out and back: the value
+            // persists on the root while the model is gone, and Model-lifetime observers
+            // re-subscribe to it on reload (see WillUnloadModel + SetupComponents). Terrain
+            // masks follow this same persistent-world-contribution principle, via
+            // MapAPI.DecoupleAttachedMapMasks.
             var keyValueObject = instance.GetComponent<KeyValueObject>();
             if (keyValueObject == null)
             {

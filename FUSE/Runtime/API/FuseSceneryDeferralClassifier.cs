@@ -12,14 +12,21 @@ namespace FUSE.Runtime.API
     /// Decides whether a scenery asset is eligible to have its activation deferred
     /// off the map-load critical path (see <c>FuseDeferredSceneryActivator</c>).
     ///
-    /// Two classes of scenery must stay eager (activated synchronously during apply):
-    ///  - <b>Mask-bearing</b> scenery, because the single terrain SDF bake runs once
-    ///    right after apply (FuseLifecycle map-mask rebuild). A mask activated after
-    ///    that bake would leave dark uncut terrain.
-    ///  - <b>Stateful</b> scenery whose components register KeyValue/StateManager
-    ///    property objects at activation (animated/toggleable props). Keeping these
-    ///    eager guarantees a save restore never races a not-yet-activated property
-    ///    object. This is the chosen conservative scope ("static-mesh only").
+    /// Only <b>stateful</b> scenery must stay eager (activated synchronously during
+    /// apply): components that register KeyValue/StateManager property objects at
+    /// activation (animated/toggleable props). Keeping these eager guarantees a save
+    /// restore never races a not-yet-activated property object.
+    ///
+    /// <b>Mask-bearing</b> scenery USED to be forced eager too (so the one-shot map-load
+    /// terrain bake saw its masks), but eager activation runs before the gameplay camera
+    /// exists and registered the cull sphere camera-less, leaving masked objects stuck
+    /// (never streaming in — confirmed on a lower-end PC where masked buildings never
+    /// appeared). Masks now defer like plain scenery, so they activate against a live
+    /// camera and bake their terrain as each piece streams in. Once loaded they are held
+    /// resident (never unloaded) by FuseSceneryCullingDebouncePatch as a safety net, while
+    /// MapAPI.DecoupleAttachedMapMasks moves the terrain mask onto a persistent object — so
+    /// the building and its baked terrain mask survive the player moving or teleporting away
+    /// and back.
     ///
     /// Everything else — plain meshes, materials, colorizers, ambient VFX/audio —
     /// is safe to defer; the worst case is brief cosmetic pop-in, exactly how the
@@ -54,12 +61,14 @@ namespace FUSE.Runtime.API
         };
 
         /// <summary>
-        /// True when the scenery identified by <paramref name="assetIdentifier"/> is a
-        /// plain static/visual asset whose activation can be deferred. Fail-safe:
-        /// returns false whenever the definition cannot be resolved or inspected.
+        /// Shared fail-safe resolution of a <see cref="SceneryDefinition"/> from
+        /// <see cref="SceneryAssetManager"/>. A null/empty id, a missing manager, a missing
+        /// definition, or any thrown lookup all return false (callers treat that as "cannot
+        /// classify"). <paramref name="operation"/> tags the failure log.
         /// </summary>
-        internal static bool CanDefer(string assetIdentifier)
+        private static bool TryResolveDefinition(string assetIdentifier, string operation, out SceneryDefinition definition)
         {
+            definition = null;
             if (string.IsNullOrWhiteSpace(assetIdentifier))
             {
                 return false;
@@ -71,7 +80,6 @@ namespace FUSE.Runtime.API
                 return false;
             }
 
-            SceneryDefinition definition;
             try
             {
                 if (!manager.TryGetSceneryDefinition(assetIdentifier, out definition) || definition == null)
@@ -81,7 +89,22 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Exception($"FUSE deferred-scenery classifier could not resolve definition '{assetIdentifier}'", ex);
+                FuseLog.Exception($"FUSE deferred-scenery classifier could not resolve definition '{assetIdentifier}' for {operation}", ex);
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// True when the scenery identified by <paramref name="assetIdentifier"/> is a
+        /// plain static/visual asset whose activation can be deferred. Fail-safe:
+        /// returns false whenever the definition cannot be resolved or inspected.
+        /// </summary>
+        internal static bool CanDefer(string assetIdentifier)
+        {
+            if (!TryResolveDefinition(assetIdentifier, "deferral check", out var definition))
+            {
                 return false;
             }
 
@@ -95,6 +118,65 @@ namespace FUSE.Runtime.API
                 FuseLog.Exception($"FUSE deferred-scenery classifier could not inspect '{assetIdentifier}'", ex);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// True when the scenery identified by <paramref name="assetIdentifier"/> declares a
+        /// map-mask component. Used to tag mask-bearing scenery at creation so the cull
+        /// debounce can hold it resident — masked scenery must never unload, because the game
+        /// fails to reload it after a teleport (and a missed reload also drops its baked
+        /// terrain mask). Fail-safe: false when the definition cannot be resolved/inspected.
+        /// </summary>
+        internal static bool HasMaskComponent(string assetIdentifier)
+        {
+            if (!TryResolveDefinition(assetIdentifier, "mask check", out var definition))
+            {
+                return false;
+            }
+
+            try
+            {
+                return DeclaresMaskComponent(definition, ComponentLifetime.Static)
+                    || DeclaresMaskComponent(definition, ComponentLifetime.Model);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FUSE deferred-scenery classifier could not inspect '{assetIdentifier}' for mask components", ex);
+                return false;
+            }
+        }
+
+        private static bool DeclaresMaskComponent(SceneryDefinition definition, ComponentLifetime lifetime)
+        {
+            IEnumerable<DefinitionComponent> components;
+            try
+            {
+                components = definition.EnabledComponentsForLifetime(lifetime);
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (components == null)
+            {
+                return false;
+            }
+
+            foreach (var component in components)
+            {
+                if (component == null)
+                {
+                    continue;
+                }
+
+                if (IsMaskTypeName(component.GetType().FullName))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool DeclaresEagerOnlyComponent(SceneryDefinition definition, ComponentLifetime lifetime)
@@ -144,8 +226,17 @@ namespace FUSE.Runtime.API
                 return true;
             }
 
-            return ContainsAny(componentTypeFullName, MaskTypeNameFragments)
-                || ContainsAny(componentTypeFullName, StatefulTypeNameFragments);
+            // Mask-bearing scenery used to be forced eager so the one-shot map-load
+            // terrain bake saw its masks. But eager activation happens during apply,
+            // before the gameplay camera exists, which registers the cull sphere
+            // camera-less and leaves the object STUCK — it never streams in (confirmed:
+            // masked roundhouse pieces sat at band 3 while the unmasked office next to
+            // them loaded). Masks now defer like plain scenery, so they activate against
+            // a live camera and stream in correctly; each masked piece bakes its terrain
+            // as it loads, and FuseSceneryCullingDebouncePatch then holds it resident so
+            // it never unloads (and therefore never has to reload). Only stateful scenery
+            // stays eager.
+            return ContainsAny(componentTypeFullName, StatefulTypeNameFragments);
         }
 
         /// <summary>Pure, unit-testable: true when the type name is a map-mask component.</summary>

@@ -23,12 +23,14 @@ namespace FUSE.Runtime.Lifecycle
     /// genuinely-near scenery and stream the rest as the player moves, exactly how
     /// vanilla scenery behaves.
     ///
-    /// Only plain static/visual scenery is deferred (see
-    /// <see cref="FuseSceneryDeferralClassifier"/>); mask-bearing and stateful
-    /// scenery stay eager. Every failure path falls back to inline (synchronous)
-    /// activation, so a deferral problem can never leave scenery invisible or wedge
-    /// a load. Only the initial map-load wave defers; reapply/live-reload stay
-    /// synchronous.
+    /// Plain static/visual scenery and mask-bearing scenery are deferred (see
+    /// <see cref="FuseSceneryDeferralClassifier"/>); only stateful scenery (KeyValue/
+    /// animation) stays eager. Mask-bearing scenery defers so it activates against a
+    /// live camera — camera-less activation left masks stuck — and is then held
+    /// resident by FuseSceneryCullingDebouncePatch so it never unloads. Every failure
+    /// path falls back to inline (synchronous) activation, so a deferral problem can
+    /// never leave scenery invisible or wedge a load. Only the initial map-load wave
+    /// defers; reapply/live-reload stay synchronous.
     ///
     /// FLAGGED — measured impact is modest (heavy 38-package install, 2026-06):
     /// loading screen ~110s -> ~96s (~13%); only ~14s of scenery activation moved

@@ -137,9 +137,22 @@ namespace FUSE.Patches
 
             try
             {
-                if (__instance.GetComponent<FUSE.Runtime.API.SceneryAPI.FuseSceneryMarker>() == null)
+                var marker = __instance.GetComponent<FUSE.Runtime.API.SceneryAPI.FuseSceneryMarker>();
+                if (marker == null)
                 {
                     return true; // FUSE-owned scenery only; vanilla loads normally.
+                }
+
+                // Mask-bearing buildings load immediately — never throttled or deferred.
+                // They are pinned permanently loaded+rendered by
+                // FuseSceneryCullingDebouncePatch, so each loads once and the number near
+                // any single spot is small; throttling them is what made a teleported-to
+                // building take minutes (or get dropped from the queue). Build it now, keep
+                // it. (Safety net alongside MapAPI.DecoupleAttachedMapMasks; removable once
+                // that decouple is verified in-game.)
+                if (marker.IsMaskBearing)
+                {
+                    return true;
                 }
 
                 // Already loading or loaded: the original SetLoaded(true) is a cheap
