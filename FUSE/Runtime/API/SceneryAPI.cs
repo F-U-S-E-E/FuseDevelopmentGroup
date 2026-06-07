@@ -76,6 +76,28 @@ namespace FUSE.Runtime.API
             // correctly falls into AddScenery for a brand-new entity.
             var marker = gameObject.AddComponent<FuseSceneryMarker>();
             marker.Id = id;
+            // Tag mask-bearing scenery. Two behaviours key off this: (1) the cull debounce
+            // pins it loaded+rendered (a safety net), and (2) the OnDidLoadModels hook below
+            // re-homes its welded map masks into standalone, always-active objects the moment
+            // the model streams in (MapAPI.DecoupleAttachedMapMasks) — the real fix, so the
+            // terrain mask survives the building streaming out/in and teleport world-shifts.
+            marker.IsMaskBearing = FuseSceneryDeferralClassifier.HasMaskComponent(assetIdentifier);
+            if (marker.IsMaskBearing)
+            {
+                var sceneryRoot = gameObject;
+                var sceneryId = id;
+                scenery.OnDidLoadModels += _ =>
+                {
+                    try
+                    {
+                        MapAPI.DecoupleAttachedMapMasks(sceneryRoot, sceneryId);
+                    }
+                    catch (Exception ex)
+                    {
+                        FuseLog.Exception($"FUSE map-mask decouple-on-load failed for scenery '{sceneryId}'", ex);
+                    }
+                };
+            }
             ApplyDefinition(scenery, definition, assetIdentifier);
 
             // Activate inline unless the deferred activator takes ownership of this
@@ -104,6 +126,13 @@ namespace FUSE.Runtime.API
         internal sealed class FuseSceneryMarker : MonoBehaviour
         {
             public string Id;
+
+            // True when this scenery declares a map-mask component. The cull debounce
+            // (FuseSceneryCullingDebouncePatch) reads this to hold mask-bearing scenery
+            // resident at any distance — it must never unload, because the game does not
+            // reliably reload masked scenery after a teleport (and a missed reload also
+            // drops its baked terrain mask). Set once at AddScenery time.
+            public bool IsMaskBearing;
         }
 
         public static void UpdateScenery(string id, FuseScenery definition)
@@ -133,6 +162,17 @@ namespace FUSE.Runtime.API
 
             MapAPI.RefreshAttachedMapMasks(scenery.gameObject, $"scenery '{id}' update");
 
+            // Mask-bearing scenery: its terrain mask was decoupled to a standalone object at
+            // the previous transform. Drop those and re-decouple from the (now-moved) welded
+            // masks so the flatten follows the scenery. If the model isn't currently streamed
+            // in, the re-decouple is a no-op and OnDidLoadModels redoes it on the next load.
+            var marker = scenery.GetComponent<FuseSceneryMarker>();
+            if (marker != null && marker.IsMaskBearing)
+            {
+                MapAPI.RemoveDecoupledMasksFor(id);
+                MapAPI.DecoupleAttachedMapMasks(scenery.gameObject, id);
+            }
+
             FuseSceneryRuntimeIndex.Instance.Set(id, scenery);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Scenery, id, definition);
         }
@@ -159,6 +199,9 @@ namespace FUSE.Runtime.API
             UnityEngine.Object.Destroy(root);
             FuseSceneryRuntimeIndex.Instance.Remove(id);
             FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.Scenery, id);
+            // Remove any terrain masks this scenery decoupled to standalone objects, so a
+            // deleted building doesn't leave its ground permanently flattened.
+            MapAPI.RemoveDecoupledMasksFor(id);
             FuseLog.Info($"FUSE removed scenery '{id}' from '{path}'.");
             return true;
         }
