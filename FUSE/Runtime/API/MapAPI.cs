@@ -451,10 +451,10 @@ namespace FUSE.Runtime.API
                 return 0;
             }
 
-            // A freshly (re)loaded model can come back with its renderers disabled (e.g.
-            // an object-mask forceRenderingOff hide that never cleared); force them on so
-            // the building actually draws. Same fix the turntable visuals apply on load.
-            EnableRenderers(sceneryRoot);
+            // A freshly (re)loaded model can come back with an object-mask forceRenderingOff
+            // hide stuck on, leaving the building invisible; clear that so it draws. Scoped to
+            // forceRenderingOff only, so pack-authored disabled renderers stay disabled.
+            ClearForcedRendererHides(sceneryRoot);
 
             var maskRoot = GetOrCreateWorldRoot(MapMaskRootName, ref _fallbackMapMaskRoot);
             if (maskRoot == null)
@@ -571,16 +571,19 @@ namespace FUSE.Runtime.API
             destination.order = source.order;
         }
 
-        private static void EnableRenderers(GameObject root)
+        private static void ClearForcedRendererHides(GameObject root)
         {
             if (root == null)
             {
                 return;
             }
 
+            // Only clear forceRenderingOff -- a runtime culling flag that can stick "on" and
+            // leave a loaded building invisible. Deliberately do NOT touch renderer.enabled:
+            // a pack author may have intentionally disabled specific sub-mesh renderers, and
+            // forcing them on would override that intent.
             foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
             {
-                renderer.enabled = true;
                 renderer.forceRenderingOff = false;
             }
         }

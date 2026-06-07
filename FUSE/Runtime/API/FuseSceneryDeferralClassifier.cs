@@ -61,12 +61,14 @@ namespace FUSE.Runtime.API
         };
 
         /// <summary>
-        /// True when the scenery identified by <paramref name="assetIdentifier"/> is a
-        /// plain static/visual asset whose activation can be deferred. Fail-safe:
-        /// returns false whenever the definition cannot be resolved or inspected.
+        /// Shared fail-safe resolution of a <see cref="SceneryDefinition"/> from
+        /// <see cref="SceneryAssetManager"/>. A null/empty id, a missing manager, a missing
+        /// definition, or any thrown lookup all return false (callers treat that as "cannot
+        /// classify"). <paramref name="operation"/> tags the failure log.
         /// </summary>
-        internal static bool CanDefer(string assetIdentifier)
+        private static bool TryResolveDefinition(string assetIdentifier, string operation, out SceneryDefinition definition)
         {
+            definition = null;
             if (string.IsNullOrWhiteSpace(assetIdentifier))
             {
                 return false;
@@ -78,7 +80,6 @@ namespace FUSE.Runtime.API
                 return false;
             }
 
-            SceneryDefinition definition;
             try
             {
                 if (!manager.TryGetSceneryDefinition(assetIdentifier, out definition) || definition == null)
@@ -88,7 +89,22 @@ namespace FUSE.Runtime.API
             }
             catch (Exception ex)
             {
-                FuseLog.Exception($"FUSE deferred-scenery classifier could not resolve definition '{assetIdentifier}'", ex);
+                FuseLog.Exception($"FUSE deferred-scenery classifier could not resolve definition '{assetIdentifier}' for {operation}", ex);
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// True when the scenery identified by <paramref name="assetIdentifier"/> is a
+        /// plain static/visual asset whose activation can be deferred. Fail-safe:
+        /// returns false whenever the definition cannot be resolved or inspected.
+        /// </summary>
+        internal static bool CanDefer(string assetIdentifier)
+        {
+            if (!TryResolveDefinition(assetIdentifier, "deferral check", out var definition))
+            {
                 return false;
             }
 
@@ -113,28 +129,8 @@ namespace FUSE.Runtime.API
         /// </summary>
         internal static bool HasMaskComponent(string assetIdentifier)
         {
-            if (string.IsNullOrWhiteSpace(assetIdentifier))
+            if (!TryResolveDefinition(assetIdentifier, "mask check", out var definition))
             {
-                return false;
-            }
-
-            var manager = SceneryAssetManager.Shared;
-            if (manager == null)
-            {
-                return false;
-            }
-
-            SceneryDefinition definition;
-            try
-            {
-                if (!manager.TryGetSceneryDefinition(assetIdentifier, out definition) || definition == null)
-                {
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception($"FUSE deferred-scenery classifier could not resolve definition '{assetIdentifier}' for mask check", ex);
                 return false;
             }
 
