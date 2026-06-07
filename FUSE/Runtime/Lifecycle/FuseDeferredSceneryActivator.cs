@@ -190,6 +190,7 @@ namespace FUSE.Runtime.Lifecycle
 
             var total = Queue.Count;
             var activated = 0;
+            var failed = 0;
             var keptHidden = 0;
             for (var index = 0; index < Queue.Count; index++)
             {
@@ -201,11 +202,14 @@ namespace FUSE.Runtime.Lifecycle
                     case ActivationResult.KeptHidden:
                         keptHidden++;
                         break;
+                    default:
+                        failed++;
+                        break;
                 }
             }
 
             Queue.Clear();
-            FuseLog.Info($"FUSE deferred scenery flushed synchronously ({activated}/{total}, keptHidden={keptHidden}); reason='{reason ?? "unspecified"}'.");
+            FuseLog.Info($"FUSE deferred scenery flushed synchronously ({activated}/{total}, failed={failed}, keptHidden={keptHidden}); reason='{reason ?? "unspecified"}'.");
         }
 
         private static IEnumerator DrainRoutine(string reason)
@@ -340,9 +344,24 @@ namespace FUSE.Runtime.Lifecycle
             // it on the unlock transition). Re-activating it here would strand a
             // not-yet-unlocked prop visible until the next feature change, so leave it
             // inactive; the game shows it when the owning feature unlocks.
-            if (ProgressionAPI.IsGameObjectHiddenByLockedFeature(gameObject))
+            //
+            // Guard the query separately: if progression state is momentarily
+            // inconsistent and the check throws, fall back to activating (the pre-fix
+            // behavior) rather than letting the exception escape ActivateOne and kill the
+            // drain coroutine mid-wave — the class contract is that no deferral problem
+            // leaves scenery stranded or wedges the load.
+            try
             {
-                return ActivationResult.KeptHidden;
+                if (ProgressionAPI.IsGameObjectHiddenByLockedFeature(gameObject))
+                {
+                    return ActivationResult.KeptHidden;
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception(
+                    $"FUSE deferred scenery progression-gate check failed for '{item.Id}'; activating normally.",
+                    ex);
             }
 
             try
