@@ -260,6 +260,37 @@ jobs:
 
           Compress-Archive -Path $modFolder -DestinationPath $archivePath -CompressionLevel Optimal
 
+      # Prove the freshly-packaged zip is actually loadable by Unity Mod Manager
+      # before publishing it as an artifact. scripts/Validate-ModPackage.cs resolves
+      # the Info.json EntryMethod against the game's UnityModManager assembly via
+      # MetadataLoadContext (no game launch), checks the manifest fields, and asserts
+      # the archive layout (DLL set + schemas/ + assets/, no stray files or PDBs).
+      # The expected version is the CI build identity (0.0.0-<branch|pr>.<sha>); the
+      # validator tolerates the 0.0.0 version core that PR/push builds intentionally
+      # stamp, while still enforcing it on real release tags (see release.yml).
+      - name: Validate mod package (UMM compatibility)
+        shell: powershell
+        env:
+          # Pass the archive name + build version through the environment rather
+          # than ${{ }} template expansion, so a crafted branch name can't inject
+          # into the script before validation. Mirrors the TAG_NAME hardening in
+          # release.yml.
+          ARCHIVE_PATH: ${{ steps.build_id.outputs.archive }}
+          MOD_VERSION: ${{ steps.build_id.outputs.version }}
+        run: |
+          # Resolve the reference dir through the same Paths.user / GameDir the build
+          # used, so the UnityModManager assembly set always matches this runner.
+          $ummDir = (dotnet msbuild FUSE/FUSE.csproj -getProperty:UnityModManagerDir -nologo 2>$null | Select-Object -Last 1)
+          if ($ummDir) { $ummDir = $ummDir.Trim() }
+          Write-Host "UnityModManager reference dir: $ummDir"
+          if ($ummDir -and (Test-Path $ummDir)) {
+            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
+          } else {
+            Write-Host "UnityModManagerDir unresolved; falling back to validator env-based resolution."
+            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION"
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload build artifact
         id: build_upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
