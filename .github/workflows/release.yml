@@ -116,6 +116,34 @@ jobs:
           "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
           "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
 
+      # Gate the release on UMM compatibility before publishing to GitHub and Nexus:
+      # the packaged zip must be loadable by Unity Mod Manager. scripts/Validate-ModPackage.cs
+      # resolves the Info.json EntryMethod to a public static bool Load(ModEntry) against
+      # the game's UnityModManager assembly (via MetadataLoadContext — no game launch) and
+      # asserts the manifest + archive layout. Runs before the installer/exe builds below
+      # so a bad package fails fast.
+      - name: Validate mod package (UMM compatibility)
+        shell: powershell
+        env:
+          # Pass the archive path + version through the environment rather than
+          # ${{ }} template expansion, consistent with the TAG_NAME hardening in
+          # the version-parse step above.
+          ARCHIVE_PATH: ${{ steps.package.outputs.archive_path }}
+          MOD_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Resolve the reference dir through the same Paths.user / GameDir the build
+          # used, so the UnityModManager assembly set always matches this runner.
+          $ummDir = (dotnet msbuild FUSE/FUSE.csproj -getProperty:UnityModManagerDir -nologo 2>$null | Select-Object -Last 1)
+          if ($ummDir) { $ummDir = $ummDir.Trim() }
+          Write-Host "UnityModManager reference dir: $ummDir"
+          if ($ummDir -and (Test-Path $ummDir)) {
+            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
+          } else {
+            Write-Host "UnityModManagerDir unresolved; falling back to validator env-based resolution."
+            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION"
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       # The standalone editor ships in its own release lane (externaleditor-v*
       # tags, .github/workflows/release-externaleditor.yml) so it can be
       # versioned and shipped independently of the mod. Intentionally NOT
