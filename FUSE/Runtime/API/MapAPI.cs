@@ -478,19 +478,20 @@ namespace FUSE.Runtime.API
                     continue;
                 }
 
-                var standaloneId = BuildDecoupledMaskId(id, index);
-                if (GetMapMask(standaloneId) == null)
+                // Ownership is tracked by a marker component (not the name), so a user-authored
+                // mask that happens to share the generated name is never mistaken for our clone.
+                if (FindDecoupledMask(maskRoot, id, index) == null)
                 {
                     try
                     {
-                        CloneMaskToStandalone(standaloneId, attached, maskRoot);
+                        CloneMaskToStandalone(BuildDecoupledMaskId(id, index), attached, maskRoot, id, index);
                         decoupled++;
                     }
                     catch (Exception ex)
                     {
                         // Fail-safe: keep the welded mask working rather than lose the flatten.
                         FuseLog.Warning(
-                            $"FUSE could not decouple map mask '{standaloneId}' from scenery '{id}': " +
+                            $"FUSE could not decouple map mask #{index} from scenery '{id}': " +
                             $"{ex.Message}; leaving it attached.");
                         continue;
                     }
@@ -511,14 +512,19 @@ namespace FUSE.Runtime.API
             return decoupled;
         }
 
-        private static GameObject CloneMaskToStandalone(string id, MapMaskBase source, Transform maskRoot)
+        private static GameObject CloneMaskToStandalone(string name, MapMaskBase source, Transform maskRoot, string ownerSceneryId, int sourceIndex)
         {
-            var go = new GameObject(id);
+            var go = new GameObject(name);
             go.transform.SetParent(maskRoot, false);
             go.SetActive(false);
             go.transform.position = source.transform.position;
             go.transform.rotation = source.transform.rotation;
             go.transform.localScale = Vector3.one;
+
+            // Ownership marker so reuse/cleanup never depend on the (cosmetic) GameObject name.
+            var owner = go.AddComponent<FuseDecoupledMaskMarker>();
+            owner.OwnerSceneryId = ownerSceneryId;
+            owner.SourceIndex = sourceIndex;
 
             if (source is CircleMapMask sourceCircle)
             {
@@ -588,10 +594,10 @@ namespace FUSE.Runtime.API
             }
         }
 
-        // Standalone masks that DecoupleAttachedMapMasks creates from a scenery's welded
-        // masks are named "<sceneryId>__mask<NN>" under the FUSE Map Masks root, so they can
-        // be located for cleanup when that scenery is removed or updated. The "__mask"
-        // separator keeps the prefix unambiguous: scenery "Shop4" never matches "Shop4X".
+        // Decoupled masks are NAMED "<sceneryId>__mask<NN>" for readability only. Ownership
+        // (reuse on reload + cleanup on removal/update) is tracked by the
+        // FuseDecoupledMaskMarker component, never the name, so a user-authored mask that
+        // happens to share the generated name is never reused or destroyed by mistake.
         internal const string DecoupledMaskInfix = "__mask";
 
         /// <summary>Pure: the standalone id for a scenery's decoupled mask at <paramref name="index"/>.</summary>
@@ -600,12 +606,44 @@ namespace FUSE.Runtime.API
             return sceneryId + DecoupledMaskInfix + index.ToString("D2");
         }
 
-        /// <summary>Pure: true when <paramref name="maskName"/> is a decoupled mask owned by <paramref name="sceneryId"/>.</summary>
-        internal static bool IsDecoupledMaskOf(string maskName, string sceneryId)
+        /// <summary>
+        /// Inert ownership marker on a standalone mask that
+        /// <see cref="DecoupleAttachedMapMasks"/> cloned from a scenery's welded mask.
+        /// Ownership decisions (reuse on reload, cleanup on removal/update) read this marker,
+        /// not the GameObject name, so a user-authored mask that shares the generated name is
+        /// never reused or destroyed by mistake.
+        /// </summary>
+        internal sealed class FuseDecoupledMaskMarker : MonoBehaviour
         {
-            return !string.IsNullOrEmpty(maskName)
-                && !string.IsNullOrEmpty(sceneryId)
-                && maskName.StartsWith(sceneryId + DecoupledMaskInfix, StringComparison.Ordinal);
+            public string OwnerSceneryId;
+            public int SourceIndex;
+        }
+
+        /// <summary>
+        /// The standalone mask this scenery already decoupled for the welded mask at
+        /// <paramref name="sourceIndex"/> (matched by ownership marker), or null if it has
+        /// not been cloned yet.
+        /// </summary>
+        private static GameObject FindDecoupledMask(Transform maskRoot, string sceneryId, int sourceIndex)
+        {
+            if (maskRoot == null)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < maskRoot.childCount; i++)
+            {
+                var child = maskRoot.GetChild(i);
+                var marker = child != null ? child.GetComponent<FuseDecoupledMaskMarker>() : null;
+                if (marker != null
+                    && marker.SourceIndex == sourceIndex
+                    && string.Equals(marker.OwnerSceneryId, sceneryId, StringComparison.Ordinal))
+                {
+                    return child.gameObject;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -629,12 +667,14 @@ namespace FUSE.Runtime.API
                 return 0;
             }
 
-            // Collect before destroying: Destroy reindexes the parent's children.
+            // Collect before destroying: Destroy reindexes the parent's children. Match by
+            // ownership marker (not name) so a user-authored mask is never destroyed.
             var doomed = new List<GameObject>();
             for (var i = 0; i < root.childCount; i++)
             {
                 var child = root.GetChild(i);
-                if (child != null && IsDecoupledMaskOf(child.name, sceneryId))
+                var marker = child != null ? child.GetComponent<FuseDecoupledMaskMarker>() : null;
+                if (marker != null && string.Equals(marker.OwnerSceneryId, sceneryId, StringComparison.Ordinal))
                 {
                     doomed.Add(child.gameObject);
                 }
