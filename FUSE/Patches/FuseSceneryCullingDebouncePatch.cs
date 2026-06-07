@@ -43,10 +43,18 @@ namespace FUSE.Patches
     [HarmonyPatch(typeof(SceneryAssetInstance), "CullingSphereStateChanged")]
     internal static class FuseSceneryCullingDebouncePatch
     {
-        // Vanilla: SetLoaded(distanceBand <= 2). Bands 0-2 keep the model resident
-        // (band 0-1 render, band 2 resident-but-invisible); band 3 unloads. Holding
-        // an object at band 2 is a no-op visually but skips the destroy + reload.
+        // Vanilla: SetLoaded(distanceBand <= 2). Band 0-1 = loaded AND rendered,
+        // band 2 = loaded but renderers OFF (resident-but-invisible), band 3 = unloaded.
+        // So a RENDER band is <= 1; the model merely stays loaded up to <= 2.
+        private const int RenderBandCeiling = 1;
         private const int ResidentBandCeiling = 2;
+
+        // Mask-bearing scenery is pinned to this nearest band so it stays BOTH loaded and
+        // rendered instead of being parked invisible at band 2 or unloaded at band 3. This
+        // is a safety net layered over the real fix (MapAPI.DecoupleAttachedMapMasks, which
+        // moves the terrain mask off the streamed model); once that is verified in-game the
+        // pin is redundant and masked scenery can stream like any other.
+        private const int RenderResidentBand = 0;
 
         // Deadband outer edge. Band 3 begins ~1500m out (the SceneryDistanceBands
         // ceiling); we keep FUSE scenery resident until it is this far so jitter near
@@ -91,18 +99,59 @@ namespace FUSE.Patches
 
         private static void Prefix(SceneryAssetInstance __instance, ref int distanceBand)
         {
-            // Only the unload band is in scope; in-range bands keep vanilla behavior.
-            // BenchmarkDebounceOverride == false forces a baseline (no-debounce) pass.
-            if (distanceBand <= ResidentBandCeiling || __instance == null || BenchmarkDebounceOverride == false)
+            // Bands 0-1 are already loaded AND rendered, so there is nothing to keep
+            // resident there. We act only at band 2 (loaded but renderers off) and band 3
+            // (unload). BenchmarkDebounceOverride == false forces a no-debounce baseline.
+            if (distanceBand <= RenderBandCeiling || __instance == null || BenchmarkDebounceOverride == false)
             {
                 return;
             }
 
             try
             {
-                if (__instance.GetComponent<FUSE.Runtime.API.SceneryAPI.FuseSceneryMarker>() == null)
+                var marker = __instance.GetComponent<FUSE.Runtime.API.SceneryAPI.FuseSceneryMarker>();
+                if (marker == null)
                 {
                     return; // FUSE-owned scenery only; vanilla culls normally.
+                }
+
+                // Only ever hold scenery the game has ALREADY loaded; a not-yet-loaded
+                // object has nothing to keep resident. Fail-open: when _wantsLoaded can't
+                // be read we treat it as loaded (the prior behavior).
+                var modelLoadRequested = !FuseSceneryModelState.Available
+                    || FuseSceneryModelState.IsLoadRequested(__instance);
+                if (!modelLoadRequested)
+                {
+                    return;
+                }
+
+                if (marker.IsMaskBearing)
+                {
+                    // Pin a loaded mask-bearing building to the nearest band so it stays BOTH
+                    // loaded and RENDERED. Left alone, the culler pushes it to band 2 (loaded
+                    // but renderers OFF) or band 3 (unloaded) when far, and the on-return
+                    // re-show/reload is unreliable across a teleport world-origin shift —
+                    // which is how you end up standing inside an invisible building. Never
+                    // letting it leave the rendered band sidesteps that. The load throttle is
+                    // bypassed for these too, so the first load is immediate. Unity's
+                    // per-renderer frustum culling still skips it when off-screen, so this is
+                    // "always eligible to draw", not "always drawn". Safety net over the real
+                    // fix (MapAPI.DecoupleAttachedMapMasks); removable once that is verified.
+                    distanceBand = RenderResidentBand;
+                    _suppressedUnloads++;
+                    LogSuppressedIfDue();
+                    return;
+                }
+
+                // Non-mask FUSE scenery: anti-flap only, and only against the UNLOAD band.
+                // Band 2 (loaded-but-hidden) is the game's own behaviour — leave it. At
+                // band 3, hold inside the ~3km deadband so jitter near the ~1500m boundary
+                // can't thrash load/unload, otherwise let the game unload. transform.position
+                // and the camera share the same (floating-origin shifted) space, so the
+                // delta is world-shift safe. Mirrors the unit-tested ShouldHoldResident.
+                if (distanceBand <= ResidentBandCeiling)
+                {
+                    return;
                 }
 
                 var camera = FuseSceneryCameraRef.Resolve();
@@ -111,36 +160,28 @@ namespace FUSE.Patches
                     return; // No reference to measure against: let the game unload.
                 }
 
-                // Anti-flap only: hold scenery the game has ALREADY loaded. A
-                // not-yet-loaded object inside the deadband isn't flapping — leaving it
-                // unloaded keeps the post-teleport working set to the game's real load
-                // band instead of force-streaming the whole deadband sphere through the
-                // throttle. transform.position and the camera are in the same
-                // (floating-origin shifted) space, so the delta is world-shift safe.
-                // Route through ShouldHold so the production decision is exactly the
-                // unit-tested one; fail-open (binding unavailable) holds any in-range
-                // scenery, the prior behavior.
-                var modelLoadRequested = !FuseSceneryModelState.Available
-                    || FuseSceneryModelState.IsLoadRequested(__instance);
-                if (!ShouldHold(modelLoadRequested, camera.transform.position, __instance.transform.position))
+                if (!ShouldHoldResident(camera.transform.position, __instance.transform.position))
                 {
-                    return; // Not loaded, or genuinely far: let band 3 through.
+                    return; // Genuinely far: let band 3 through.
                 }
 
-                // Inside the deadband and already loaded: hold it resident so the
-                // ~1500m boundary can't thrash load/unload.
-                distanceBand = ResidentBandCeiling;
+                distanceBand = ResidentBandCeiling; // clamp 3 -> 2 (resident anti-flap).
                 _suppressedUnloads++;
-                if (FuseSettings.EnableSceneryCullingDiagnostics && _suppressedUnloads % 1000 == 0)
-                {
-                    FuseLog.Info(
-                        $"FUSE diag scenery-debounce active: suppressedUnloads={_suppressedUnloads} " +
-                        $"(holding FUSE scenery resident within {UnloadDistance:0}m).");
-                }
+                LogSuppressedIfDue();
             }
             catch (Exception ex)
             {
                 FuseLog.Exception("FUSE scenery unload debounce prefix failed", ex);
+            }
+        }
+
+        private static void LogSuppressedIfDue()
+        {
+            if (FuseSettings.EnableSceneryCullingDiagnostics && _suppressedUnloads % 1000 == 0)
+            {
+                FuseLog.Info(
+                    $"FUSE diag scenery-debounce active: suppressedUnloads={_suppressedUnloads} " +
+                    $"(mask-bearing pinned loaded+rendered; non-mask held within {UnloadDistance:0}m).");
             }
         }
     }

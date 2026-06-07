@@ -223,6 +223,14 @@ namespace FUSE.Runtime.API
             return definition;
         }
 
+        /// <summary>
+        /// Creates a standalone, always-active map mask under the permanent
+        /// <c>World/FUSE Map Masks</c> root. This is the preferred way to author a terrain
+        /// mask: hosted here it is decoupled from any scenery's streaming, so it bakes once
+        /// and stays applied through the player moving or teleporting. Masks authored instead
+        /// as components on a scenery are re-homed here automatically on load by
+        /// <see cref="DecoupleAttachedMapMasks"/> — the compatibility path for existing packs.
+        /// </summary>
         public static GameObject AddMapMask(string id, FuseMapMask definition)
         {
             RequireId(id, nameof(id));
@@ -404,6 +412,248 @@ namespace FUSE.Runtime.API
                     $"FUSE refreshed {refreshed} attached map mask component(s) on '{root.name}' " +
                     $"after '{reason ?? "unspecified"}'.");
             }
+        }
+
+        /// <summary>
+        /// Re-homes a scenery's terrain map masks from components welded inside its streamed
+        /// model into standalone, always-active objects under the permanent
+        /// <c>FUSE Map Masks</c> root.
+        ///
+        /// Design principle — a FUSE scenery is a STREAMED VISUAL MODEL plus a PERSISTENT
+        /// WORLD-CONTRIBUTION. The <c>SceneryAssetInstance</c> streams its visual model in/out
+        /// by camera distance, but a terrain mask is a world contribution that must outlive
+        /// that streaming. Welded into the model it rides the cull lifecycle: it re-bakes
+        /// terrain on every load (slow) and loses its flatten/cut when the model streams out
+        /// or a teleport re-bakes terrain mid-stream, leaving the building buried in
+        /// un-flattened ground. Hosted standalone it is baked once and always applied while
+        /// the visual streams freely. Save-state already follows this shape (its
+        /// KeyValueObject lives on the persistent scenery root, not the model — see
+        /// FuseSceneryAnimationFixPatches). Effects that only matter up close — colliders,
+        /// audio, lights, particles — are intentionally left in the streamed model: they are
+        /// loaded whenever the player is near enough to perceive them, so a brief stream-in
+        /// gap is acceptable rather than worth a permanent companion.
+        ///
+        /// Mechanism: called from <c>SceneryAPI.AddScenery</c> via
+        /// <c>SceneryAssetInstance.OnDidLoadModels</c>, so it runs the moment the model (and
+        /// its mask components) finish streaming in, and again on any reload. Idempotent — the
+        /// standalone is created once (keyed by scenery id + mask index via
+        /// <see cref="BuildDecoupledMaskId"/>) and the welded copy is disabled on every load
+        /// so it never bakes on the model. Fail-safe — if a mask can't be cloned the welded
+        /// original is left enabled rather than dropped. Cleaned up by
+        /// <see cref="RemoveDecoupledMasksFor"/> on scenery removal/update. To decouple a
+        /// future world-contribution type, mirror this shape: clone to the persistent root on
+        /// load, disable the welded source, clean up by id on removal.
+        /// </summary>
+        internal static int DecoupleAttachedMapMasks(GameObject sceneryRoot, string id)
+        {
+            if (sceneryRoot == null || string.IsNullOrEmpty(id))
+            {
+                return 0;
+            }
+
+            // A freshly (re)loaded model can come back with its renderers disabled (e.g.
+            // an object-mask forceRenderingOff hide that never cleared); force them on so
+            // the building actually draws. Same fix the turntable visuals apply on load.
+            EnableRenderers(sceneryRoot);
+
+            var maskRoot = GetOrCreateWorldRoot(MapMaskRootName, ref _fallbackMapMaskRoot);
+            if (maskRoot == null)
+            {
+                return 0;
+            }
+
+            var masks = sceneryRoot.GetComponentsInChildren<MapMaskBase>(true);
+            var decoupled = 0;
+            for (var index = 0; index < masks.Length; index++)
+            {
+                var attached = masks[index];
+                if (attached == null)
+                {
+                    continue;
+                }
+
+                // One of our own standalone masks (re-entrant call): leave it alone.
+                if (attached.transform.IsChildOf(maskRoot))
+                {
+                    continue;
+                }
+
+                var standaloneId = BuildDecoupledMaskId(id, index);
+                if (GetMapMask(standaloneId) == null)
+                {
+                    try
+                    {
+                        CloneMaskToStandalone(standaloneId, attached, maskRoot);
+                        decoupled++;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Fail-safe: keep the welded mask working rather than lose the flatten.
+                        FuseLog.Warning(
+                            $"FUSE could not decouple map mask '{standaloneId}' from scenery '{id}': " +
+                            $"{ex.Message}; leaving it attached.");
+                        continue;
+                    }
+                }
+
+                // Stop the welded copy baking on the streamed model. Idempotent across
+                // reloads: the standalone above already holds the flatten/cut.
+                attached.enabled = false;
+            }
+
+            if (decoupled > 0)
+            {
+                FuseLog.Info(
+                    $"FUSE decoupled {decoupled} map mask(s) from scenery '{id}' into standalone " +
+                    $"'{MapMaskRootName}' object(s); the terrain mask now survives the model streaming and teleports.");
+            }
+
+            return decoupled;
+        }
+
+        private static GameObject CloneMaskToStandalone(string id, MapMaskBase source, Transform maskRoot)
+        {
+            var go = new GameObject(id);
+            go.transform.SetParent(maskRoot, false);
+            go.SetActive(false);
+            go.transform.position = source.transform.position;
+            go.transform.rotation = source.transform.rotation;
+            go.transform.localScale = Vector3.one;
+
+            if (source is CircleMapMask sourceCircle)
+            {
+                var clone = go.AddComponent<CircleMapMask>();
+                CopyCommonMaskFields(sourceCircle, clone);
+                clone.radius = sourceCircle.radius;
+            }
+            else if (source is RectangleMapMask sourceRectangle)
+            {
+                var clone = go.AddComponent<RectangleMapMask>();
+                CopyCommonMaskFields(sourceRectangle, clone);
+                clone.sizeX = sourceRectangle.sizeX;
+                clone.sizeZ = sourceRectangle.sizeZ;
+                clone.degrees = sourceRectangle.degrees;
+            }
+            else if (source is CurveMapMask sourceCurve)
+            {
+                var clone = go.AddComponent<CurveMapMask>();
+                CopyCommonMaskFields(sourceCurve, clone);
+                clone.positionA = sourceCurve.positionA;
+                clone.positionB = sourceCurve.positionB;
+                clone.rotationA = sourceCurve.rotationA;
+                clone.rotationB = sourceCurve.rotationB;
+                clone.sizeA = sourceCurve.sizeA;
+                clone.sizeB = sourceCurve.sizeB;
+                clone.radiusNoise = sourceCurve.radiusNoise;
+                clone.noiseScale = sourceCurve.noiseScale;
+            }
+            else
+            {
+                UnityEngine.Object.Destroy(go);
+                throw new InvalidOperationException($"Unsupported map mask type '{source.GetType().Name}'.");
+            }
+
+            // OnEnable self-applies the modifier to the (persistent) terrain. Enable the
+            // standalone BEFORE the caller disables the welded original so the flatten/cut
+            // is never momentarily dropped.
+            go.SetActive(true);
+            return go;
+        }
+
+        private static void CopyCommonMaskFields(MapMaskBase source, MapMaskBase destination)
+        {
+            destination.radius = source.radius;
+            destination.falloff = source.falloff;
+            destination.enableSetHeight = source.enableSetHeight;
+            destination.enableCutTrees = source.enableCutTrees;
+            destination.enableMaskModifier = source.enableMaskModifier;
+            destination.maskName = source.maskName;
+            destination.order = source.order;
+        }
+
+        private static void EnableRenderers(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.enabled = true;
+                renderer.forceRenderingOff = false;
+            }
+        }
+
+        // Standalone masks that DecoupleAttachedMapMasks creates from a scenery's welded
+        // masks are named "<sceneryId>__mask<NN>" under the FUSE Map Masks root, so they can
+        // be located for cleanup when that scenery is removed or updated. The "__mask"
+        // separator keeps the prefix unambiguous: scenery "Shop4" never matches "Shop4X".
+        internal const string DecoupledMaskInfix = "__mask";
+
+        /// <summary>Pure: the standalone id for a scenery's decoupled mask at <paramref name="index"/>.</summary>
+        internal static string BuildDecoupledMaskId(string sceneryId, int index)
+        {
+            return sceneryId + DecoupledMaskInfix + index.ToString("D2");
+        }
+
+        /// <summary>Pure: true when <paramref name="maskName"/> is a decoupled mask owned by <paramref name="sceneryId"/>.</summary>
+        internal static bool IsDecoupledMaskOf(string maskName, string sceneryId)
+        {
+            return !string.IsNullOrEmpty(maskName)
+                && !string.IsNullOrEmpty(sceneryId)
+                && maskName.StartsWith(sceneryId + DecoupledMaskInfix, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Destroys the standalone masks that <see cref="DecoupleAttachedMapMasks"/> created
+        /// for scenery <paramref name="sceneryId"/>. Call when the scenery is removed (so a
+        /// deleted building doesn't leave its terrain permanently flattened) or when its
+        /// definition/position changes (so the next load re-decouples at the new transform
+        /// instead of leaving a stale mask behind). Like <see cref="TryRemoveMapMask"/>, the
+        /// terrain reverts on the next rebuild rather than being force-rebuilt here.
+        /// </summary>
+        internal static int RemoveDecoupledMasksFor(string sceneryId)
+        {
+            if (string.IsNullOrEmpty(sceneryId))
+            {
+                return 0;
+            }
+
+            var root = GetOrCreateWorldRoot(MapMaskRootName, ref _fallbackMapMaskRoot);
+            if (root == null)
+            {
+                return 0;
+            }
+
+            // Collect before destroying: Destroy reindexes the parent's children.
+            var doomed = new List<GameObject>();
+            for (var i = 0; i < root.childCount; i++)
+            {
+                var child = root.GetChild(i);
+                if (child != null && IsDecoupledMaskOf(child.name, sceneryId))
+                {
+                    doomed.Add(child.gameObject);
+                }
+            }
+
+            foreach (var go in doomed)
+            {
+                if (go == null)
+                {
+                    continue;
+                }
+
+                go.SetActive(false);
+                UnityEngine.Object.Destroy(go);
+            }
+
+            if (doomed.Count > 0)
+            {
+                FuseLog.Info($"FUSE removed {doomed.Count} decoupled map mask(s) for scenery '{sceneryId}'.");
+            }
+
+            return doomed.Count;
         }
 
         public static GameObject AddTelegraphPoles(string id, FuseTelegraphPoles definition)

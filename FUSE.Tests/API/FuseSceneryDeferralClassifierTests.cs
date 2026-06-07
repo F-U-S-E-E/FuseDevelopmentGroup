@@ -9,9 +9,10 @@ namespace FUSE.Tests.API
     /// resolves a typed <c>SceneryDefinition</c> from the game's
     /// <c>SceneryAssetManager</c> and is exercised in-game; these tests pin the
     /// decision logic that decides which component type names force eager activation
-    /// (masks, which must precede the terrain bake, and KeyValue/animation
-    /// components, which register persistent state at activation), and the fail-safe
-    /// that treats an unknown/empty type name as eager-only.
+    /// (KeyValue/animation components, which register persistent state at activation;
+    /// masks no longer force eager — they defer and are held resident by the cull
+    /// debounce instead), and the fail-safe that treats an unknown/empty type name as
+    /// eager-only.
     /// </summary>
     public class FuseSceneryDeferralClassifierTests
     {
@@ -35,8 +36,12 @@ namespace FUSE.Tests.API
         }
 
         [Theory]
-        // Masks force eager activation (terrain bake correctness).
-        [InlineData("Model.Definition.Components.MapMasks.RectangleMapMaskComponent", true)]
+        // Mask components are NO LONGER forced eager: they defer like plain scenery (so
+        // they activate against a live camera and stream correctly) and are kept resident
+        // by the cull debounce instead. Only stateful scenery stays eager. (Masks are still
+        // a mask-type-name — see IsMaskTypeName above — which is how they get tagged and
+        // held resident; they just no longer gate deferral.)
+        [InlineData("Model.Definition.Components.MapMasks.RectangleMapMaskComponent", false)]
         // Stateful components force eager activation (save-restore correctness):
         // KeyValue / animation register persistent property objects on activation.
         [InlineData("Some.Pack.KeyValueBoolAnimatorComponent", true)]
@@ -53,7 +58,7 @@ namespace FUSE.Tests.API
         // defer something we could not classify.
         [InlineData("", true)]
         [InlineData(null, true)]
-        public void IsEagerOnlyTypeName_ForcesEagerForMaskAndStateful(string typeName, bool expected)
+        public void IsEagerOnlyTypeName_ForcesEagerForStatefulOnly(string typeName, bool expected)
         {
             Assert.Equal(expected, FuseSceneryDeferralClassifier.IsEagerOnlyTypeName(typeName));
         }
