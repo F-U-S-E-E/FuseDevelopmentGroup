@@ -714,23 +714,69 @@ namespace FUSE.Interface
             var renderers = root.GetComponentsInChildren<Renderer>(true);
             var lodGroups = root.GetComponentsInChildren<LODGroup>(true);
             var enabledRenderers = 0;
+            var visibleRenderers = 0;
+            var layers = new HashSet<int>();
+            var shaders = new HashSet<string>();
             for (var index = 0; index < renderers.Length; index++)
             {
-                if (renderers[index] != null && renderers[index].enabled)
+                var renderer = renderers[index];
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                if (renderer.enabled)
                 {
                     enabledRenderers++;
+                }
+
+                // isVisible: rendered by some camera last frame. enabled==true but
+                // isVisible==false (and on-screen) means a layer/frustum cull is
+                // hiding it; enabled==true && isVisible==true but nothing on screen
+                // means a stencil/shader discard (object-mask) is hiding it.
+                if (renderer.isVisible)
+                {
+                    visibleRenderers++;
+                }
+
+                layers.Add(renderer.gameObject.layer);
+
+                var material = renderer.sharedMaterial;
+                if (material != null && material.shader != null)
+                {
+                    shaders.Add(material.shader.name);
                 }
             }
 
             builder.AppendLine();
             builder.Append("<b>Renderers</b>: ").Append(renderers.Length)
-                .Append(" total, ").Append(enabledRenderers).Append(" enabled");
+                .Append(" total, ").Append(enabledRenderers).Append(" enabled, ")
+                .Append(visibleRenderers).Append(" visible");
             if (lodGroups.Length > 0)
             {
                 builder.Append(", ").Append(lodGroups.Length).Append(" LOD group(s)");
             }
 
             builder.AppendLine();
+
+            // Layer + shader breakdown. For the masked-scenery invisibility case:
+            // renderers present + enabled but the building unseen points at
+            // render-state suppression (an object-mask stencil/layer or a
+            // fallback/error shader) rather than a load failure.
+            if (layers.Count > 0)
+            {
+                var layerNames = layers.Select(layer =>
+                {
+                    var name = LayerMask.LayerToName(layer);
+                    return string.IsNullOrEmpty(name) ? layer.ToString() : name + "(" + layer + ")";
+                });
+                builder.Append("layers: ").AppendLine(string.Join(", ", layerNames));
+            }
+
+            if (shaders.Count > 0)
+            {
+                builder.Append("shaders: ").AppendLine(string.Join(", ", shaders));
+            }
 
             var components = root.GetComponents<Component>();
             if (components.Length > 1)
