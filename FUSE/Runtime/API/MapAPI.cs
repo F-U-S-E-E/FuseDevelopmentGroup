@@ -802,6 +802,23 @@ namespace FUSE.Runtime.API
         }
 
         /// <summary>
+        /// Folds a freshly captured visibility into a watcher's retained state.
+        /// <see cref="DecoupledMaskVisibility.Indeterminate"/> (no renderers — the model is streamed
+        /// out / not loaded) holds the last decisive Visible/Hidden value: a building hidden THEN
+        /// streamed out keeps its mask dropped, and a visible one keeps it applied. A decisive
+        /// reading replaces it. The returned value is both the effective decision and the new
+        /// retained value (they are always equal), so a caller stores it and applies the mask when
+        /// it is <see cref="DecoupledMaskVisibility.Visible"/>. Pure, so the retention behaviour is
+        /// unit-tested without a live game (see FUSE.Tests MapApiMaskVisibilityTests).
+        /// </summary>
+        internal static DecoupledMaskVisibility ResolveEffectiveMaskVisibility(
+            DecoupledMaskVisibility captured,
+            DecoupledMaskVisibility lastDecisive)
+        {
+            return captured == DecoupledMaskVisibility.Indeterminate ? lastDecisive : captured;
+        }
+
+        /// <summary>
         /// Activates or deactivates the standalone masks <see cref="DecoupleAttachedMapMasks"/>
         /// created for scenery <paramref name="sceneryId"/> (matched by ownership marker, never the
         /// name, so a user-authored mask is never touched). Deactivating reverts the flatten/cut on

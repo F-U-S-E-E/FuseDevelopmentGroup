@@ -121,18 +121,12 @@ namespace FUSE.Runtime.API
                 return;
             }
 
-            var visibility = CaptureVisibility();
-            if (visibility == MapAPI.DecoupledMaskVisibility.Indeterminate)
-            {
-                // Streamed out / not loaded: hold the last decisive state (keep the mask).
-                visibility = _lastDecisive;
-            }
-            else
-            {
-                _lastDecisive = visibility;
-            }
-
-            MapAPI.SetDecoupledMasksActive(_sceneryId, visibility == MapAPI.DecoupledMaskVisibility.Visible);
+            // Fold the reading into the retained state: Indeterminate (streamed out / not loaded)
+            // holds the last decisive Visible/Hidden, so we never drop a mask just because the model
+            // isn't currently loaded. The result is both the effective decision and the new retained
+            // value (see MapAPI.ResolveEffectiveMaskVisibility).
+            _lastDecisive = MapAPI.ResolveEffectiveMaskVisibility(CaptureVisibility(), _lastDecisive);
+            MapAPI.SetDecoupledMasksActive(_sceneryId, _lastDecisive == MapAPI.DecoupledMaskVisibility.Visible);
         }
 
         private MapAPI.DecoupledMaskVisibility CaptureVisibility()
