@@ -42,8 +42,8 @@ namespace FUSE.Interface.MenuWindow
 
             builder.AddSection("Overview");
 
-            builder.AddField("Status", 
-                builder.AddLabelMarkup(data.HasProblems 
+            builder.AddField("Status",
+                builder.AddLabelMarkup(data.HasProblems
                 ? "<color=\"red\">Needs Attention</color> - FUSE found items that need review before a clean session."
                 : "<color=\"green\">OK</color> - Full stack loaded cleanly. No package faults, asset misses, graph issues, or transfer skips are reported."));
 

@@ -451,7 +451,6 @@ namespace FUSE.Interface.MenuWindow
                 FuseLog.Exception(message, e);
                 return message;
             }
-            
         }
     }
 }

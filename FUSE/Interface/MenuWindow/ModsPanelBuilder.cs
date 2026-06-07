@@ -241,8 +241,8 @@ namespace FUSE.Interface.MenuWindow
                 return "<color=\"red\">Error: " + manifest.Faults.Length + " fault(s)";
             }
 
-            return manifest.IsLegacyConverted 
-                ? "<color=\"green\">Ready</color> - Legacy" 
+            return manifest.IsLegacyConverted
+                ? "<color=\"green\">Ready</color> - Legacy"
                 : "<color=\"green\"Ready";
         }
 

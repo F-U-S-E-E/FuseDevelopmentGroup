@@ -98,7 +98,7 @@ namespace FUSE.Interface.MenuWindow
             builder.AddField("Scenery Probe", control: BuildToggleBoxWithButton(
                 builder,
                 FuseSettings.ShowSceneryDebugOverlay,
-                () => 
+                () =>
                 {
                     FuseSettings.SetShowSceneryDebugOverlay(!FuseSettings.ShowSceneryDebugOverlay);
                     builder.Rebuild();
