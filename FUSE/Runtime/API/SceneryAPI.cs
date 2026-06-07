@@ -76,11 +76,14 @@ namespace FUSE.Runtime.API
             // correctly falls into AddScenery for a brand-new entity.
             var marker = gameObject.AddComponent<FuseSceneryMarker>();
             marker.Id = id;
-            // Tag mask-bearing scenery. Two behaviours key off this: (1) the cull debounce
-            // pins it loaded+rendered (a safety net), and (2) the OnDidLoadModels hook below
-            // re-homes its welded map masks into standalone, always-active objects the moment
-            // the model streams in (MapAPI.DecoupleAttachedMapMasks) — the real fix, so the
-            // terrain mask survives the building streaming out/in and teleport world-shifts.
+            // Tag mask-bearing scenery. Three behaviours key off this: (1) the cull debounce
+            // pins it loaded+rendered (a safety net), (2) the OnDidLoadModels hook below re-homes
+            // its welded map masks into standalone, always-active objects the moment the model
+            // streams in (MapAPI.DecoupleAttachedMapMasks) — the real fix, so the terrain mask
+            // survives the building streaming out/in and teleport world-shifts, and (3) a
+            // visibility watcher (FuseDecoupledMaskVisibilityWatcher) drops that standalone mask
+            // while the building is intentionally hidden (renderers disabled) and restores it when
+            // shown, so a hidden building never leaves a flat patch of ground behind.
             marker.IsMaskBearing = FuseSceneryDeferralClassifier.HasMaskComponent(assetIdentifier);
             if (marker.IsMaskBearing)
             {
@@ -91,6 +94,10 @@ namespace FUSE.Runtime.API
                     try
                     {
                         MapAPI.DecoupleAttachedMapMasks(sceneryRoot, sceneryId);
+                        // Keep the just-decoupled mask in step with the building's visibility: if the
+                        // model streamed in already hidden, drop the mask now; otherwise watch for it
+                        // being hidden/shown later.
+                        FuseDecoupledMaskVisibilityWatcher.Ensure(sceneryRoot, sceneryId);
                     }
                     catch (Exception ex)
                     {
@@ -171,6 +178,9 @@ namespace FUSE.Runtime.API
             {
                 MapAPI.RemoveDecoupledMasksFor(id);
                 MapAPI.DecoupleAttachedMapMasks(scenery.gameObject, id);
+                // Re-attach/refresh the visibility watcher and apply the current hidden/shown state
+                // to the freshly re-decoupled mask.
+                FuseDecoupledMaskVisibilityWatcher.Ensure(scenery.gameObject, id);
             }
 
             FuseSceneryRuntimeIndex.Instance.Set(id, scenery);

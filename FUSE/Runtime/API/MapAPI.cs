@@ -699,6 +699,178 @@ namespace FUSE.Runtime.API
             return doomed.Count;
         }
 
+        // --- Visibility-driven decoupled-mask lifecycle ---
+        //
+        // DecoupleAttachedMapMasks re-homes a building's terrain mask onto a standalone,
+        // always-active object so the flatten/cut survives the model streaming out/in and
+        // teleports. But "always active" is wrong when the building is INTENTIONALLY hidden — a
+        // pack disables its renderers (renderer.enabled = false / a child SetActive(false)) while
+        // the scenery GameObject stays active. The standalone mask then keeps flattening the
+        // ground under a building that is not drawn, leaving a bare flat patch (e.g. Whittier).
+        //
+        // FuseDecoupledMaskVisibilityWatcher polls each mask-bearing scenery and calls
+        // SetDecoupledMasksActive to drop the standalone mask while the building is hidden and
+        // restore it when shown. The decision (ClassifyMaskVisibility) is careful to KEEP the
+        // mask when the building is merely streamed out or culled — dropping it only for a real
+        // renderer-level hide — so this never undoes the point of the decouple.
+
+        /// <summary>
+        /// Whether a mask-bearing scenery's building is currently drawing, and therefore whether
+        /// its decoupled terrain mask should apply.
+        /// </summary>
+        internal enum DecoupledMaskVisibility
+        {
+            /// <summary>At least one renderer would draw (enabled and active). Keep the mask applied.</summary>
+            Visible,
+
+            /// <summary>The model is loaded but a pack has disabled/deactivated every renderer (an
+            /// intentional hide). Drop the mask so the ground is not flattened under nothing.</summary>
+            Hidden,
+
+            /// <summary>No renderers to inspect — the model is streamed out (or not yet loaded), so
+            /// visible and hidden are indistinguishable. Keep the last known state (and, by default,
+            /// keep the mask): a streamed-out building must retain its terrain contribution.</summary>
+            Indeterminate
+        }
+
+        /// <summary>
+        /// A Unity-free snapshot of the three renderer flags the visibility decision can read, so
+        /// <see cref="ClassifyMaskVisibility"/> is unit-testable without a live game.
+        /// </summary>
+        internal readonly struct SceneryRendererVisibility
+        {
+            public SceneryRendererVisibility(bool enabled, bool activeInHierarchy, bool forceRenderingOff)
+            {
+                Enabled = enabled;
+                ActiveInHierarchy = activeInHierarchy;
+                ForceRenderingOff = forceRenderingOff;
+            }
+
+            /// <summary>Renderer.enabled — a pack clears this to hide a sub-mesh.</summary>
+            public bool Enabled { get; }
+
+            /// <summary>Renderer.gameObject.activeInHierarchy — false when a pack deactivates the holder.</summary>
+            public bool ActiveInHierarchy { get; }
+
+            /// <summary>
+            /// Renderer.forceRenderingOff — the GAME CULLER's hide flag (resident band 2),
+            /// deliberately NOT consulted by the decision: a culled-but-resident building must keep
+            /// its mask. Carried on the snapshot only so the "culled, not hidden" case is explicit
+            /// in tests.
+            /// </summary>
+            public bool ForceRenderingOff { get; }
+        }
+
+        /// <summary>
+        /// Pure visibility decision for a mask-bearing scenery, mirroring the renderer-presence
+        /// audit (<c>FusePrefabSanitizer.ValidateRendererPresence</c> /
+        /// <c>FuseHealthUi.AuditsTab</c>): a renderer "would draw" when it is
+        /// <c>enabled &amp;&amp; activeInHierarchy</c>.
+        ///
+        /// Crucially this separates an INTENTIONAL hide from the game culler streaming the model
+        /// out — the two states look alike but need opposite mask handling:
+        /// <list type="bullet">
+        /// <item>No renderers =&gt; the model is streamed out / not loaded =&gt;
+        /// <see cref="DecoupledMaskVisibility.Indeterminate"/> (keep the mask; a streamed-out
+        /// building must retain its terrain contribution — the reason the mask was decoupled).</item>
+        /// <item>Any renderer enabled &amp; active =&gt; <see cref="DecoupledMaskVisibility.Visible"/>.
+        /// <c>forceRenderingOff</c> is ignored on purpose: the culler parks a resident model with
+        /// <c>forceRenderingOff = true</c> while leaving <c>enabled</c>/active set, so a culled
+        /// building still reads Visible and KEEPS its mask.</item>
+        /// <item>Renderers present but none enabled &amp; active =&gt; a pack disabled
+        /// (<c>renderer.enabled = false</c>) or deactivated every renderer =&gt;
+        /// <see cref="DecoupledMaskVisibility.Hidden"/> (drop the mask).</item>
+        /// </list>
+        /// </summary>
+        internal static DecoupledMaskVisibility ClassifyMaskVisibility(IReadOnlyList<SceneryRendererVisibility> renderers)
+        {
+            if (renderers == null || renderers.Count == 0)
+            {
+                return DecoupledMaskVisibility.Indeterminate;
+            }
+
+            for (var index = 0; index < renderers.Count; index++)
+            {
+                var renderer = renderers[index];
+                if (renderer.Enabled && renderer.ActiveInHierarchy)
+                {
+                    return DecoupledMaskVisibility.Visible;
+                }
+            }
+
+            return DecoupledMaskVisibility.Hidden;
+        }
+
+        /// <summary>
+        /// Folds a freshly captured visibility into a watcher's retained state.
+        /// <see cref="DecoupledMaskVisibility.Indeterminate"/> (no renderers — the model is streamed
+        /// out / not loaded) holds the last decisive Visible/Hidden value: a building hidden THEN
+        /// streamed out keeps its mask dropped, and a visible one keeps it applied. A decisive
+        /// reading replaces it. The returned value is both the effective decision and the new
+        /// retained value (they are always equal), so a caller stores it and applies the mask when
+        /// it is <see cref="DecoupledMaskVisibility.Visible"/>. Pure, so the retention behaviour is
+        /// unit-tested without a live game (see FUSE.Tests MapApiMaskVisibilityTests).
+        /// </summary>
+        internal static DecoupledMaskVisibility ResolveEffectiveMaskVisibility(
+            DecoupledMaskVisibility captured,
+            DecoupledMaskVisibility lastDecisive)
+        {
+            return captured == DecoupledMaskVisibility.Indeterminate ? lastDecisive : captured;
+        }
+
+        /// <summary>
+        /// Activates or deactivates the standalone masks <see cref="DecoupleAttachedMapMasks"/>
+        /// created for scenery <paramref name="sceneryId"/> (matched by ownership marker, never the
+        /// name, so a user-authored mask is never touched). Deactivating reverts the flatten/cut on
+        /// the next terrain rebuild — like <see cref="RemoveDecoupledMasksFor"/> but reversible:
+        /// re-activating re-applies it without re-cloning. Driven by
+        /// <see cref="FuseDecoupledMaskVisibilityWatcher"/> as the building hides/shows. Returns the
+        /// number of standalone masks whose active state actually changed (0 = already in the
+        /// requested state, the steady-state path — no log, no terrain churn).
+        /// </summary>
+        internal static int SetDecoupledMasksActive(string sceneryId, bool active)
+        {
+            if (string.IsNullOrEmpty(sceneryId))
+            {
+                return 0;
+            }
+
+            var root = GetOrCreateWorldRoot(MapMaskRootName, ref _fallbackMapMaskRoot);
+            if (root == null)
+            {
+                return 0;
+            }
+
+            var changed = 0;
+            for (var i = 0; i < root.childCount; i++)
+            {
+                var child = root.GetChild(i);
+                var marker = child != null ? child.GetComponent<FuseDecoupledMaskMarker>() : null;
+                if (marker == null || !string.Equals(marker.OwnerSceneryId, sceneryId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var go = child.gameObject;
+                if (go.activeSelf == active)
+                {
+                    continue;
+                }
+
+                go.SetActive(active);
+                changed++;
+            }
+
+            if (changed > 0)
+            {
+                FuseLog.Info(
+                    $"FUSE {(active ? "restored" : "dropped")} {changed} decoupled map mask(s) for scenery " +
+                    $"'{sceneryId}' (building {(active ? "shown" : "hidden")}).");
+            }
+
+            return changed;
+        }
+
         public static GameObject AddTelegraphPoles(string id, FuseTelegraphPoles definition)
         {
             RequireId(id, nameof(id));
