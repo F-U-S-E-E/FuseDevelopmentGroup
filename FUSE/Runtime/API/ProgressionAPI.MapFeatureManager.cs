@@ -920,5 +920,77 @@ namespace FUSE.Runtime.API
                 ManagerProgressionsField?.SetValue(manager, UnityEngine.Object.FindObjectsOfType<Progression>());
             }
         }
+
+        /// <summary>
+        /// True when <paramref name="gameObject"/> is currently held hidden by a locked
+        /// progression feature — i.e. some <see cref="MapFeature"/> that is not unlocked
+        /// lists this exact object in <c>gameObjectsEnableOnUnlock</c>. The game disables
+        /// such objects (<c>SetActive(false)</c>) while their feature is locked and only
+        /// re-shows them on the unlock transition, so any one-shot re-activation that
+        /// races that state would leave a locked-area prop permanently visible. The
+        /// deferred-scenery activation wave consults this before its post-load
+        /// <c>SetActive(true)</c> pass so it never re-reveals a prop progression just hid
+        /// (e.g. decking in a not-yet-unlocked area).
+        ///
+        /// Conservative by construction: only a feature whose <c>Unlocked</c> flag is
+        /// false suppresses activation, and an unresolved manager returns false, so
+        /// anything whose gate cannot be determined activates exactly as it did before.
+        /// </summary>
+        internal static bool IsGameObjectHiddenByLockedFeature(GameObject gameObject)
+        {
+            if (gameObject == null)
+            {
+                return false;
+            }
+
+            var manager = MapFeatureManager.Shared;
+            if (manager == null)
+            {
+                return false;
+            }
+
+            IEnumerable<MapFeature> features;
+            try
+            {
+                features = manager.AvailableFeatures;
+            }
+            catch
+            {
+                return false;
+            }
+
+            return IsGameObjectHiddenByLockedFeature(gameObject, features);
+        }
+
+        /// <summary>
+        /// Overload that evaluates against an explicit feature set instead of
+        /// <see cref="MapFeatureManager.Shared"/>, so the live <see cref="MapFeature"/> →
+        /// gate mapping (reading <c>Unlocked</c> + <c>gameObjectsEnableOnUnlock</c> and
+        /// matching by GameObject identity) can be pinned by an EditMode integration test
+        /// with hand-built features. The pure decision itself lives in
+        /// <see cref="FuseProgressionGateEvaluator.IsHiddenByLockedGate"/>.
+        /// </summary>
+        internal static bool IsGameObjectHiddenByLockedFeature(GameObject gameObject, IEnumerable<MapFeature> features)
+        {
+            if (gameObject == null || features == null)
+            {
+                return false;
+            }
+
+            return FuseProgressionGateEvaluator.IsHiddenByLockedGate(gameObject, ToFeatureGates(features));
+        }
+
+        private static IEnumerable<FuseProgressionGateEvaluator.Gate> ToFeatureGates(IEnumerable<MapFeature> features)
+        {
+            foreach (var feature in features)
+            {
+                if (feature == null)
+                {
+                    continue;
+                }
+
+                yield return new FuseProgressionGateEvaluator.Gate(feature.Unlocked, feature.gameObjectsEnableOnUnlock);
+            }
+        }
     }
 }

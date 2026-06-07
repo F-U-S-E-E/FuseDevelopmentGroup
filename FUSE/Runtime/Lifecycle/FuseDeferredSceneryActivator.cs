@@ -188,16 +188,22 @@ namespace FUSE.Runtime.Lifecycle
 
             var total = Queue.Count;
             var activated = 0;
+            var keptHidden = 0;
             for (var index = 0; index < Queue.Count; index++)
             {
-                if (ActivateOne(Queue[index]))
+                switch (ActivateOne(Queue[index]))
                 {
-                    activated++;
+                    case ActivationResult.Activated:
+                        activated++;
+                        break;
+                    case ActivationResult.KeptHidden:
+                        keptHidden++;
+                        break;
                 }
             }
 
             Queue.Clear();
-            FuseLog.Info($"FUSE deferred scenery flushed synchronously ({activated}/{total}); reason='{reason ?? "unspecified"}'.");
+            FuseLog.Info($"FUSE deferred scenery flushed synchronously ({activated}/{total}, keptHidden={keptHidden}); reason='{reason ?? "unspecified"}'.");
         }
 
         private static IEnumerator DrainRoutine(string reason)
@@ -219,6 +225,7 @@ namespace FUSE.Runtime.Lifecycle
             var processed = 0;
             var activated = 0;
             var failed = 0;
+            var keptHidden = 0;
 
             while (index < Queue.Count)
             {
@@ -231,13 +238,17 @@ namespace FUSE.Runtime.Lifecycle
                        thisFrame < maxPerFrame &&
                        (thisFrame == 0 || Time.realtimeSinceStartup - frameStart < budgetSeconds))
                 {
-                    if (ActivateOne(Queue[index]))
+                    switch (ActivateOne(Queue[index]))
                     {
-                        activated++;
-                    }
-                    else
-                    {
-                        failed++;
+                        case ActivationResult.Activated:
+                            activated++;
+                            break;
+                        case ActivationResult.KeptHidden:
+                            keptHidden++;
+                            break;
+                        default:
+                            failed++;
+                            break;
                     }
 
                     index++;
@@ -252,13 +263,17 @@ namespace FUSE.Runtime.Lifecycle
                         $"activating the remaining {Queue.Count - index} item(s) inline.");
                     while (index < Queue.Count)
                     {
-                        if (ActivateOne(Queue[index]))
+                        switch (ActivateOne(Queue[index]))
                         {
-                            activated++;
-                        }
-                        else
-                        {
-                            failed++;
+                            case ActivationResult.Activated:
+                                activated++;
+                                break;
+                            case ActivationResult.KeptHidden:
+                                keptHidden++;
+                                break;
+                            default:
+                                failed++;
+                                break;
                         }
 
                         index++;
@@ -271,10 +286,10 @@ namespace FUSE.Runtime.Lifecycle
                 yield return null;
             }
 
-            OnDrainComplete(reason, processed, activated, failed);
+            OnDrainComplete(reason, processed, activated, failed, keptHidden);
         }
 
-        private static void OnDrainComplete(string reason, int processed, int activated, int failed)
+        private static void OnDrainComplete(string reason, int processed, int activated, int failed, int keptHidden)
         {
             _coroutine = null;
             Queue.Clear();
@@ -287,16 +302,19 @@ namespace FUSE.Runtime.Lifecycle
             // Genuine activation errors are logged separately via FuseLog.Exception in
             // ActivateOne. A small non-zero 'failed' is expected. (TODO: split into
             // 'skipped' vs 'errored' if this metric ever causes confusion.)
+            // 'keptHidden' counts props a locked progression feature is intentionally
+            // holding inactive (gameObjectsEnableOnUnlock); leaving them hidden is the
+            // point of the lock check and is expected for any not-yet-unlocked area.
             FuseLog.Info(
                 $"FUSE load timing phase='deferred scenery activation wave' elapsedMs={elapsedMs} " +
-                $"reason='{reason ?? "map load"}' activated={activated} failed={failed} processed={processed}.");
+                $"reason='{reason ?? "map load"}' activated={activated} failed={failed} keptHidden={keptHidden} processed={processed}.");
         }
 
-        private static bool ActivateOne(DeferredScenery item)
+        private static ActivationResult ActivateOne(DeferredScenery item)
         {
             if (item == null)
             {
-                return false;
+                return ActivationResult.Failed;
             }
 
             var instance = item.Instance;
@@ -306,13 +324,23 @@ namespace FUSE.Runtime.Lifecycle
             // in OnDrainComplete) — not an error.
             if (instance == null)
             {
-                return false;
+                return ActivationResult.Failed;
             }
 
             var gameObject = instance.gameObject;
             if (gameObject == null)
             {
-                return false;
+                return ActivationResult.Failed;
+            }
+
+            // A locked progression feature may have hidden this prop during apply via
+            // gameObjectsEnableOnUnlock (the game SetActive(false)'d it and only re-shows
+            // it on the unlock transition). Re-activating it here would strand a
+            // not-yet-unlocked prop visible until the next feature change, so leave it
+            // inactive; the game shows it when the owning feature unlocks.
+            if (ProgressionAPI.IsGameObjectHiddenByLockedFeature(gameObject))
+            {
+                return ActivationResult.KeptHidden;
             }
 
             try
@@ -323,13 +351,26 @@ namespace FUSE.Runtime.Lifecycle
                 }
 
                 item.OnActivated?.Invoke();
-                return true;
+                return ActivationResult.Activated;
             }
             catch (Exception ex)
             {
                 FuseLog.Exception($"FUSE deferred scenery activation failed for '{item.Id}'", ex);
-                return false;
+                return ActivationResult.Failed;
             }
+        }
+
+        /// <summary>
+        /// Outcome of a single deferred-activation attempt. <see cref="Failed"/> is the
+        /// benign destroyed/removed case (and genuine errors, which are logged
+        /// separately); <see cref="KeptHidden"/> means a locked progression feature is
+        /// intentionally holding the prop inactive and it must not be shown.
+        /// </summary>
+        private enum ActivationResult
+        {
+            Activated,
+            Failed,
+            KeptHidden
         }
 
         private static void SortByDistance(Vector3 anchor)
