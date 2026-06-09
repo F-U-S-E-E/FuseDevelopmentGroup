@@ -76,28 +76,49 @@ namespace FUSE.Runtime.API
             // correctly falls into AddScenery for a brand-new entity.
             var marker = gameObject.AddComponent<FuseSceneryMarker>();
             marker.Id = id;
-            // Tag mask-bearing scenery. Three behaviours key off this: (1) the cull debounce
-            // pins it loaded+rendered (a safety net), (2) the OnDidLoadModels hook below re-homes
-            // its welded map masks into standalone, always-active objects the moment the model
-            // streams in (MapAPI.DecoupleAttachedMapMasks) — the real fix, so the terrain mask
-            // survives the building streaming out/in and teleport world-shifts, and (3) a
-            // visibility watcher (FuseDecoupledMaskVisibilityWatcher) drops that standalone mask
-            // while the building is intentionally hidden (renderers disabled) and restores it when
-            // shown, so a hidden building never leaves a flat patch of ground behind.
+            // Tag mask-bearing scenery. Three behaviours key off this: (1) the load throttle
+            // is bypassed so its first load — which registers the terrain flatten/cut — is
+            // immediate, (2) the OnDidLoadModels hook below re-homes its welded map masks into
+            // standalone, always-active objects the moment the model streams in
+            // (MapAPI.DecoupleAttachedMapMasks) so the terrain mask survives the building
+            // streaming out/in and teleport world-shifts, and (3) a visibility watcher
+            // (FuseDecoupledMaskVisibilityWatcher) drops that standalone mask only while the
+            // building is intentionally hidden (every renderer holder SetActive(false)) and
+            // restores it when shown, so a hidden building never leaves a flat patch of ground
+            // behind. The building MODEL itself culls like any other scenery — only its
+            // terrain contribution is permanent.
+            //
+            // The declared-component check covers masks declared in the definition, but ALW-style
+            // packs WELD masks into the prefab with an empty "components" declaration. So the hook
+            // ALWAYS runs and, on first model load, inspects the real prefab: if a map-mask
+            // component is welded in, the scenery is upgraded to mask-bearing here so it is
+            // decoupled all the same.
             marker.IsMaskBearing = FuseSceneryDeferralClassifier.HasMaskComponent(assetIdentifier);
-            if (marker.IsMaskBearing)
             {
                 var sceneryRoot = gameObject;
                 var sceneryId = id;
-                scenery.OnDidLoadModels += _ =>
+                var sceneryMarker = marker;
+                scenery.OnDidLoadModels += model =>
                 {
                     try
                     {
-                        MapAPI.DecoupleAttachedMapMasks(sceneryRoot, sceneryId);
-                        // Keep the just-decoupled mask in step with the building's visibility: if the
-                        // model streamed in already hidden, drop the mask now; otherwise watch for it
-                        // being hidden/shown later.
-                        FuseDecoupledMaskVisibilityWatcher.Ensure(sceneryRoot, sceneryId);
+                        if (!sceneryMarker.IsMaskBearing && ModelHasWeldedMaskComponent(model))
+                        {
+                            sceneryMarker.IsMaskBearing = true;
+                            FuseLog.Info(
+                                $"FUSE upgraded scenery '{sceneryId}' to mask-bearing: a map-mask component is " +
+                                "welded into the loaded prefab but not declared in the definition. Its mask will " +
+                                "be decoupled to a standalone object so the terrain survives streaming and teleports.");
+                        }
+
+                        if (sceneryMarker.IsMaskBearing)
+                        {
+                            MapAPI.DecoupleAttachedMapMasks(sceneryRoot, sceneryId);
+                            // Keep the just-decoupled mask in step with the building's visibility: if the
+                            // model streamed in already hidden, drop the mask now; otherwise watch for it
+                            // being hidden/shown later.
+                            FuseDecoupledMaskVisibilityWatcher.Ensure(sceneryRoot, sceneryId);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -120,6 +141,32 @@ namespace FUSE.Runtime.API
             FuseSceneryRuntimeIndex.Instance.Set(id, scenery);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Scenery, id, definition);
             return scenery;
+        }
+
+        // Detects a map-mask component WELDED into a loaded scenery prefab — as opposed to one
+        // declared in the definition, which FuseSceneryDeferralClassifier.HasMaskComponent already
+        // covers. ALW-style packs ship the mask inside the prefab with an empty component
+        // declaration, so the only reliable signal is the live model. Reuses the same pure
+        // type-name check the declared path uses; one bounded GetComponentsInChildren pass per load.
+        private static bool ModelHasWeldedMaskComponent(Transform model)
+        {
+            if (model == null)
+            {
+                return false;
+            }
+
+            var behaviours = model.GetComponentsInChildren<MonoBehaviour>(true);
+            for (var index = 0; index < behaviours.Length; index++)
+            {
+                var behaviour = behaviours[index];
+                if (behaviour != null &&
+                    FuseSceneryDeferralClassifier.IsMaskTypeName(behaviour.GetType().FullName))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

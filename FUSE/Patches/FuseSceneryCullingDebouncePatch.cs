@@ -49,13 +49,6 @@ namespace FUSE.Patches
         private const int RenderBandCeiling = 1;
         private const int ResidentBandCeiling = 2;
 
-        // Mask-bearing scenery is pinned to this nearest band so it stays BOTH loaded and
-        // rendered instead of being parked invisible at band 2 or unloaded at band 3. This
-        // is a safety net layered over the real fix (MapAPI.DecoupleAttachedMapMasks, which
-        // moves the terrain mask off the streamed model); once that is verified in-game the
-        // pin is redundant and masked scenery can stream like any other.
-        private const int RenderResidentBand = 0;
-
         // Deadband outer edge. Band 3 begins ~1500m out (the SceneryDistanceBands
         // ceiling); we keep FUSE scenery resident until it is this far so jitter near
         // 1500m can't flap, then allow the unload. Squared to avoid a sqrt per call.
@@ -125,30 +118,23 @@ namespace FUSE.Patches
                     return;
                 }
 
-                if (marker.IsMaskBearing)
-                {
-                    // Pin a loaded mask-bearing building to the nearest band so it stays BOTH
-                    // loaded and RENDERED. Left alone, the culler pushes it to band 2 (loaded
-                    // but renderers OFF) or band 3 (unloaded) when far, and the on-return
-                    // re-show/reload is unreliable across a teleport world-origin shift —
-                    // which is how you end up standing inside an invisible building. Never
-                    // letting it leave the rendered band sidesteps that. The load throttle is
-                    // bypassed for these too, so the first load is immediate. Unity's
-                    // per-renderer frustum culling still skips it when off-screen, so this is
-                    // "always eligible to draw", not "always drawn". Safety net over the real
-                    // fix (MapAPI.DecoupleAttachedMapMasks); removable once that is verified.
-                    distanceBand = RenderResidentBand;
-                    _suppressedUnloads++;
-                    LogSuppressedIfDue();
-                    return;
-                }
-
-                // Non-mask FUSE scenery: anti-flap only, and only against the UNLOAD band.
-                // Band 2 (loaded-but-hidden) is the game's own behaviour — leave it. At
-                // band 3, hold inside the ~3km deadband so jitter near the ~1500m boundary
-                // can't thrash load/unload, otherwise let the game unload. transform.position
-                // and the camera share the same (floating-origin shifted) space, so the
-                // delta is world-shift safe. Mirrors the unit-tested ShouldHoldResident.
+                // All FUSE scenery — mask-bearing included — gets anti-flap only, and only
+                // against the UNLOAD band. Band 2 (loaded-but-hidden) is the game's own
+                // behaviour — leave it. At band 3, hold inside the ~3km deadband so jitter
+                // near the ~1500m boundary can't thrash load/unload, otherwise let the game
+                // unload. transform.position and the camera share the same (floating-origin
+                // shifted) space, so the delta is world-shift safe. Mirrors the unit-tested
+                // ShouldHoldResident.
+                //
+                // Mask-bearing scenery used to be PINNED to band 0 here (never parked, never
+                // unloaded) as a safety net while the mask decouple was unverified: a welded
+                // mask died with its streamed model, and the on-return reload was unreliable.
+                // Both causes are fixed and verified in-game — the terrain mask lives on a
+                // standalone object that survives streaming (MapAPI.DecoupleAttachedMapMasks),
+                // and reloads are reliable now that a broken curve-mesh culling handler can't
+                // abort the CullingGroup event batch (FuseCurveMeshCullingGuardPatch + the
+                // invalid-marker builder scrub). So masked buildings cull like everything
+                // else; only their terrain contribution is permanent.
                 if (distanceBand <= ResidentBandCeiling)
                 {
                     return;
@@ -181,7 +167,7 @@ namespace FUSE.Patches
             {
                 FuseLog.Info(
                     $"FUSE diag scenery-debounce active: suppressedUnloads={_suppressedUnloads} " +
-                    $"(mask-bearing pinned loaded+rendered; non-mask held within {UnloadDistance:0}m).");
+                    $"(band-3 unloads held while within {UnloadDistance:0}m of the camera).");
             }
         }
     }

@@ -144,12 +144,13 @@ namespace FUSE.Patches
                 }
 
                 // Mask-bearing buildings load immediately — never throttled or deferred.
-                // They are pinned permanently loaded+rendered by
-                // FuseSceneryCullingDebouncePatch, so each loads once and the number near
-                // any single spot is small; throttling them is what made a teleported-to
-                // building take minutes (or get dropped from the queue). Build it now, keep
-                // it. (Safety net alongside MapAPI.DecoupleAttachedMapMasks; removable once
-                // that decouple is verified in-game.)
+                // Their FIRST load is what registers the terrain flatten/cut (the welded
+                // masks are decoupled on model load), so queueing one behind plain scenery
+                // leaves visibly wrong ground for the wait; and the mask-bearing set near
+                // any single spot is small, so the bypass costs little. Reloads after a
+                // teleport keep the bypass too: the standalone mask already holds the
+                // terrain, but the building itself is what the player is usually standing
+                // next to when it re-streams.
                 if (marker.IsMaskBearing)
                 {
                     return true;

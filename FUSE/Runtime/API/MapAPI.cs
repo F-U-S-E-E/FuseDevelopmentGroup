@@ -27,6 +27,20 @@ namespace FUSE.Runtime.API
         private static readonly FieldInfo PolePrefabsField = typeof(TelegraphPoleManager).GetField("polePrefabs", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo WirePrefabField = typeof(TelegraphPoleManager).GetField("wirePrefab", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly MethodInfo TelegraphRebuildMethod = typeof(TelegraphPoleManager).GetMethod("Rebuild", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        // MapManager's private game<->world offset. The game stores terrain modifiers in GAME
+        // space by subtracting exactly this field from a World-space registration
+        // (MapManager.AddModifier: modifier.OffsetBy(-_gameToWorldOffset)), so placing a mask
+        // clone at gamePosition + THIS offset makes its modifier land at gamePosition by
+        // construction, whatever the floating-origin rebase state. Resolved like the other
+        // MapManager reflection surfaces (see FuseRuntimeReloadService); covered by the
+        // reflection-surface canary test.
+        private static readonly FieldInfo MapManagerGameToWorldOffsetField =
+            Type.GetType("Map.Runtime.MapManager, Map.Runtime")
+                ?.GetField("_gameToWorldOffset", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly PropertyInfo MapManagerInstanceProperty =
+            Type.GetType("Map.Runtime.MapManager, Map.Runtime")
+                ?.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public);
         private static readonly Regex SpeedLimitTextPattern = new Regex(@"^\s*(?<mph>\d{1,3})\s*MPH\.?\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex SpeedLimitNumberPattern = new Regex(@"^\s*(?<mph>\d{1,3})\s*$", RegexOptions.Compiled);
 
@@ -462,8 +476,18 @@ namespace FUSE.Runtime.API
                 return 0;
             }
 
+            // The game-space anchor math reads the scenery root's localPosition as its authored
+            // game position and treats parent motion as pure translation; both assumptions hold
+            // for every known container ("World/Large Scenery", SceneryAssetManager, the FUSE
+            // fallback) but are scene data the code can't prove. Warn loudly (once) if a map
+            // ever violates them instead of silently mis-anchoring masks.
+            WarnIfParentBreaksGameSpaceAssumptions(sceneryRoot.transform.parent, "scenery container");
+            WarnIfParentBreaksGameSpaceAssumptions(maskRoot, "mask root");
+
             var masks = sceneryRoot.GetComponentsInChildren<MapMaskBase>(true);
             var decoupled = 0;
+            var union = default(Bounds);
+            var haveUnion = false;
             for (var index = 0; index < masks.Length; index++)
             {
                 var attached = masks[index];
@@ -478,13 +502,24 @@ namespace FUSE.Runtime.API
                     continue;
                 }
 
+                // The mask's GAME-space position, from rebase-invariant inputs only. The welded
+                // mask's ABSOLUTE transform.position must never be trusted here: this hook runs
+                // while the floating-origin rebase (MoveWorld) is racing the model stream-in, so
+                // an absolute read can be off by exactly one origin block (~4000/5000m at
+                // Bryson), registering the flatten on a far-away tile that no rebuild can fix.
+                var gamePosition = ComputeMaskGamePosition(
+                    sceneryRoot.transform.localPosition,
+                    sceneryRoot.transform.position,
+                    attached.transform.position);
+
                 // Ownership is tracked by a marker component (not the name), so a user-authored
                 // mask that happens to share the generated name is never mistaken for our clone.
-                if (FindDecoupledMask(maskRoot, id, index) == null)
+                var standalone = FindDecoupledMask(maskRoot, id, index);
+                if (standalone == null)
                 {
                     try
                     {
-                        CloneMaskToStandalone(BuildDecoupledMaskId(id, index), attached, maskRoot, id, index);
+                        CloneMaskToStandalone(BuildDecoupledMaskId(id, index), attached, maskRoot, id, index, gamePosition);
                         decoupled++;
                     }
                     catch (Exception ex)
@@ -496,10 +531,30 @@ namespace FUSE.Runtime.API
                         continue;
                     }
                 }
+                else
+                {
+                    ReanchorDecoupledMask(standalone, gamePosition);
+                }
 
                 // Stop the welded copy baking on the streamed model. Idempotent across
                 // reloads: the standalone above already holds the flatten/cut.
                 attached.enabled = false;
+
+                // Union this mask's GAME-space footprint so the post-burst re-bake covers its
+                // tiles. Game space, not world: a decouple burst can straddle a MoveWorld
+                // rebase, so absolute world footprints captured across the burst mix offset
+                // states and inflate the union by ~a full origin block (mass-invalidating
+                // thousands of meters of terrain — the "everything loads slower" symptom).
+                var maskBounds = MaskGameBounds(attached, gamePosition);
+                if (haveUnion)
+                {
+                    union.Encapsulate(maskBounds);
+                }
+                else
+                {
+                    union = maskBounds;
+                    haveUnion = true;
+                }
             }
 
             if (decoupled > 0)
@@ -509,22 +564,74 @@ namespace FUSE.Runtime.API
                     $"'{MapMaskRootName}' object(s); the terrain mask now survives the model streaming and teleports.");
             }
 
+            // The single map-load terrain rebuild runs BEFORE these masks stream in with their
+            // building model, and the game's own per-modifier invalidate is debounced and starved
+            // behind the spawn tile-load backlog — so the freshly-registered flatten/cut modifiers
+            // never re-bake an already-built tile (the spawn/roundhouse tile stays unmasked). Ask
+            // the rebaker to re-bake the touched tiles once the decouple burst settles: targeted
+            // (terrain-only, no scenery re-stream) and coalesced (one pass for the whole burst).
+            if (haveUnion)
+            {
+                FUSE.Runtime.Lifecycle.FuseDecoupledMaskTerrainRebaker.Request(union);
+            }
+
             return decoupled;
         }
 
-        private static GameObject CloneMaskToStandalone(string name, MapMaskBase source, Transform maskRoot, string ownerSceneryId, int sourceIndex)
+        // GAME-space footprint of a map mask (centered on its computed game position), used only
+        // to pick which terrain tiles the post-decouple re-bake must invalidate. Deliberately
+        // generous: over-covering re-bakes a few harmless extra tiles, while under-covering would
+        // leave uncut/​unflattened terrain.
+        private static Bounds MaskGameBounds(MapMaskBase mask, Vector3 gameCenter)
+        {
+            var half = 8f;
+            if (mask is CircleMapMask circle)
+            {
+                half = Mathf.Max(circle.radius, 1f) + 4f;
+            }
+            else if (mask is RectangleMapMask rectangle)
+            {
+                half = (Mathf.Max(rectangle.sizeX, rectangle.sizeZ) * 0.5f) + 4f;
+            }
+            else if (mask is CurveMapMask curve)
+            {
+                // Curve masks span between two authored endpoints, which are unbounded — a long
+                // curve easily exceeds any flat half-extent. Cover both endpoints explicitly,
+                // mapped to game space by the same translation-only delta the center uses.
+                var t = mask.transform;
+                var bounds = new Bounds(gameCenter, Vector3.zero);
+                bounds.Encapsulate(gameCenter + (t.TransformPoint(curve.positionA) - t.position));
+                bounds.Encapsulate(gameCenter + (t.TransformPoint(curve.positionB) - t.position));
+                bounds.Expand(new Vector3(
+                    2f * (Mathf.Max(curve.radius + curve.falloff, 16f) + 16f),
+                    64f,
+                    2f * (Mathf.Max(curve.radius + curve.falloff, 16f) + 16f)));
+                return bounds;
+            }
+
+            return new Bounds(gameCenter, new Vector3(half * 2f, 64f, half * 2f));
+        }
+
+        private static GameObject CloneMaskToStandalone(string name, MapMaskBase source, Transform maskRoot, string ownerSceneryId, int sourceIndex, Vector3 gamePosition)
         {
             var go = new GameObject(name);
             go.transform.SetParent(maskRoot, false);
             go.SetActive(false);
-            go.transform.position = source.transform.position;
             go.transform.rotation = source.transform.rotation;
-            go.transform.localScale = Vector3.one;
+            // Match the source mask's WORLD scale, not identity. CircleMapMask/RectangleMapMask
+            // descriptors are scale-independent (position + radius/size), so this is a no-op for
+            // them; but CurveMapMask builds its footprint via transform.TransformPoint, which reads
+            // lossyScale — forcing Vector3.one there shrinks/moves the curve off the building.
+            go.transform.localScale = source.transform.lossyScale;
 
             // Ownership marker so reuse/cleanup never depend on the (cosmetic) GameObject name.
+            // It also remembers the game-space anchor so every later (re)activation can re-place
+            // the clone before its OnEnable re-registers the modifier.
             var owner = go.AddComponent<FuseDecoupledMaskMarker>();
             owner.OwnerSceneryId = ownerSceneryId;
             owner.SourceIndex = sourceIndex;
+            owner.GamePosition = gamePosition;
+            owner.HasGamePosition = true;
 
             if (source is CircleMapMask sourceCircle)
             {
@@ -559,11 +666,153 @@ namespace FUSE.Runtime.API
                 throw new InvalidOperationException($"Unsupported map mask type '{source.GetType().Name}'.");
             }
 
-            // OnEnable self-applies the modifier to the (persistent) terrain. Enable the
-            // standalone BEFORE the caller disables the welded original so the flatten/cut
-            // is never momentarily dropped.
+            // Anchor the clone so its OnEnable registration lands at gamePosition exactly, then
+            // enable. Enable the standalone BEFORE the caller disables the welded original so
+            // the flatten/cut is never momentarily dropped. NOT registered with
+            // WorldTransformer.AddObjectToMove: the modifier is stored offset-independently in
+            // game space the moment it registers, the clone has nothing visual to keep aligned,
+            // and every later (re)activation re-places it from the marker anyway — while a move
+            // registration would double-shift it whenever its parent root also rides a rebase.
+            PlaceDecoupledMask(go.transform, gamePosition);
             go.SetActive(true);
+
+            // Decisive probe (gated on the existing scenery diagnostics flag): the type + game
+            // position + runtime world position + scale of each decoupled mask is exactly what's
+            // needed to tell a curve-scale miss from a placement/offset miss from a
+            // correctly-placed-but-inert mask. The Bryson roundhouse masks sit near game-space
+            // (~4300-4330, 529, 5375-5500); compare gamePos.
+            if (FuseSettings.EnableSceneryCullingDiagnostics)
+            {
+                var srcTransform = source.transform;
+                var extra = source is RectangleMapMask rect
+                    ? $" sizeX={rect.sizeX} sizeZ={rect.sizeZ} deg={rect.degrees}"
+                    : source is CurveMapMask curve
+                        ? $" curveA={curve.positionA} curveB={curve.positionB}"
+                        : string.Empty;
+                FuseLog.Info(
+                    $"FUSE diag map-mask decouple id='{ownerSceneryId}' #{sourceIndex} type='{source.GetType().Name}' " +
+                    $"gamePos={gamePosition} srcWorldPos={srcTransform.position} cloneWorldPos={go.transform.position} " +
+                    $"srcLossyScale={srcTransform.lossyScale} setHeight={source.enableSetHeight} " +
+                    $"cutTrees={source.enableCutTrees} mask='{source.maskName}' radius={source.radius}{extra}.");
+            }
+
             return go;
+        }
+
+        /// <summary>
+        /// Re-anchors an existing standalone mask on a re-decouple (its building streamed back
+        /// in, or the scenery definition changed). If the game-space anchor moved while the mask
+        /// is actively registered, bounce it (OnDisable removes the old modifier, OnEnable
+        /// re-adds at the new anchor); an unchanged anchor leaves the live modifier untouched so
+        /// routine stream-ins never churn the terrain.
+        /// </summary>
+        private static void ReanchorDecoupledMask(GameObject standalone, Vector3 gamePosition)
+        {
+            var marker = standalone.GetComponent<FuseDecoupledMaskMarker>();
+            var moved = marker == null
+                || !marker.HasGamePosition
+                || (marker.GamePosition - gamePosition).sqrMagnitude > 0.0001f;
+            if (marker != null)
+            {
+                marker.GamePosition = gamePosition;
+                marker.HasGamePosition = true;
+            }
+
+            if (!moved)
+            {
+                return;
+            }
+
+            var wasActive = standalone.activeSelf;
+            if (wasActive)
+            {
+                standalone.SetActive(false);
+            }
+
+            PlaceDecoupledMask(standalone.transform, gamePosition);
+            if (wasActive)
+            {
+                standalone.SetActive(true);
+            }
+        }
+
+        /// <summary>
+        /// Places a standalone mask so the modifier its OnEnable registers lands at
+        /// <paramref name="gamePosition"/> EXACTLY. MapManager converts a World-space
+        /// registration to game space by subtracting its private <c>_gameToWorldOffset</c>
+        /// (AddModifier: <c>OffsetBy(-_gameToWorldOffset)</c>), so the clone is placed at
+        /// gamePosition + that same offset: the round-trip cancels by construction, in the same
+        /// synchronous frame, regardless of the floating-origin rebase state of anything else.
+        /// Must be called (re-)placing the mask BEFORE each SetActive(true).
+        /// </summary>
+        private static void PlaceDecoupledMask(Transform standalone, Vector3 gamePosition)
+        {
+            standalone.position = gamePosition + MapManagerGameToWorldOffset();
+        }
+
+        private static Vector3 MapManagerGameToWorldOffset()
+        {
+            try
+            {
+                var instance = MapManagerInstanceProperty?.GetValue(null);
+                if (instance != null && MapManagerGameToWorldOffsetField != null)
+                {
+                    return (Vector3)MapManagerGameToWorldOffsetField.GetValue(instance);
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE could not read MapManager's game-to-world offset: {ex.GetBaseException().Message}; " +
+                    "falling back to the WorldTransformer offset.");
+            }
+
+            // Fallback: the WorldTransformer's current offset (GameToWorld(0) == offset). It
+            // matches MapManager's whenever the two are in sync, which is the steady state.
+            return Helpers.WorldTransformer.GameToWorld(Vector3.zero);
+        }
+
+        /// <summary>
+        /// GAME-space position of a welded mask, computed from rebase-invariant inputs only.
+        /// The floating-origin rebase (Helpers.WorldTransformer) is a pure translation applied
+        /// to whole root objects, so: (a) the welded mask and its scenery root are in the same
+        /// hierarchy and therefore always in the same rebase state — their world-position delta
+        /// carries no offset in ANY state; and (b) the scenery root's LOCAL position under its
+        /// container is the authored game position (SceneryAPI parents with
+        /// <c>SetParent(parent, false)</c> and writes the definition position to localPosition),
+        /// and a parent translation never changes a child's localPosition. Their sum is the
+        /// mask's game position before the first MoveWorld, after it, and in any half-applied
+        /// window in between — which is what makes the modifier registration race-proof.
+        /// </summary>
+        internal static Vector3 ComputeMaskGamePosition(
+            Vector3 sceneryRootLocalPosition,
+            Vector3 sceneryRootWorldPosition,
+            Vector3 maskWorldPosition)
+        {
+            return sceneryRootLocalPosition + (maskWorldPosition - sceneryRootWorldPosition);
+        }
+
+        private static bool _warnedNonIdentityMaskParent;
+
+        private static void WarnIfParentBreaksGameSpaceAssumptions(Transform parent, string role)
+        {
+            if (_warnedNonIdentityMaskParent || parent == null)
+            {
+                return;
+            }
+
+            var rotated = Quaternion.Angle(parent.rotation, Quaternion.identity) > 0.5f;
+            var scaled = (parent.lossyScale - Vector3.one).sqrMagnitude > 0.0001f;
+            if (!rotated && !scaled)
+            {
+                return;
+            }
+
+            _warnedNonIdentityMaskParent = true;
+            FuseLog.Warning(
+                $"FUSE decoupled-mask anchoring assumes the {role} '{GetTransformPath(parent)}' has identity " +
+                $"rotation and unit scale, but it has rotation={parent.rotation.eulerAngles} " +
+                $"lossyScale={parent.lossyScale}. Decoupled terrain masks may be mis-anchored on this map.");
         }
 
         private static void CopyCommonMaskFields(MapMaskBase source, MapMaskBase destination)
@@ -617,6 +866,45 @@ namespace FUSE.Runtime.API
         {
             public string OwnerSceneryId;
             public int SourceIndex;
+
+            /// <summary>
+            /// The mask's anchor in GAME space (offset-independent, the space MapManager stores
+            /// modifiers in). Every (re)activation re-places the standalone from this before its
+            /// OnEnable registers the modifier, so registration is immune to floating-origin
+            /// rebases that happened while the mask was inactive.
+            /// </summary>
+            public Vector3 GamePosition;
+            public bool HasGamePosition;
+
+            /// <summary>
+            /// Self-heal for activation paths that bypass FUSE's explicit re-anchoring (e.g. an
+            /// ANCESTOR of the mask root being toggled re-fires every child OnEnable directly).
+            /// If the transform drifted off the anchor, re-place it and re-register any sibling
+            /// mask that already self-applied from the stale pose. On FUSE's own activation
+            /// paths the transform was just placed, so this is a cheap no-op.
+            /// </summary>
+            private void OnEnable()
+            {
+                if (!HasGamePosition)
+                {
+                    return;
+                }
+
+                var expected = GamePosition + MapManagerGameToWorldOffset();
+                if ((transform.position - expected).sqrMagnitude <= 0.0001f)
+                {
+                    return;
+                }
+
+                transform.position = expected;
+                foreach (var mask in GetComponents<MapMaskBase>())
+                {
+                    if (mask != null && mask.enabled)
+                    {
+                        mask.Rebuild();
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -688,6 +976,13 @@ namespace FUSE.Runtime.API
                 }
 
                 go.SetActive(false);
+                // Detach before the (end-of-frame) Destroy. A same-frame re-decouple — the
+                // UpdateScenery/reload-reapply path calls RemoveDecoupledMasksFor and then
+                // DecoupleAttachedMapMasks in one frame — must never find this destroy-pending
+                // clone via FindDecoupledMask: "reusing" it skips the re-clone, the welded mask
+                // is disabled regardless, and when the Destroy lands the scenery has NO mask at
+                // all — a flatten loss no terrain rebuild can recover.
+                go.transform.SetParent(null);
                 UnityEngine.Object.Destroy(go);
             }
 
@@ -777,9 +1072,13 @@ namespace FUSE.Runtime.API
         /// <c>forceRenderingOff</c> is ignored on purpose: the culler parks a resident model with
         /// <c>forceRenderingOff = true</c> while leaving <c>enabled</c>/active set, so a culled
         /// building still reads Visible and KEEPS its mask.</item>
-        /// <item>Renderers present but none enabled &amp; active =&gt; a pack disabled
-        /// (<c>renderer.enabled = false</c>) or deactivated every renderer =&gt;
-        /// <see cref="DecoupledMaskVisibility.Hidden"/> (drop the mask).</item>
+        /// <item>At least one holder active but none drawing — the culler set
+        /// <c>renderer.enabled = false</c> for the resident distance band / off-screen =&gt;
+        /// <see cref="DecoupledMaskVisibility.Indeterminate"/> (KEEP: the culler owns
+        /// <c>renderer.enabled</c>, so disabled-but-active is a cull, not a hide).</item>
+        /// <item>EVERY holder inactive — a pack/progression <c>SetActive(false)</c>, the one
+        /// hide the culler never performs =&gt; <see cref="DecoupledMaskVisibility.Hidden"/>
+        /// (drop the mask so a hidden building leaves no flat patch).</item>
         /// </list>
         /// </summary>
         internal static DecoupledMaskVisibility ClassifyMaskVisibility(IReadOnlyList<SceneryRendererVisibility> renderers)
@@ -789,6 +1088,7 @@ namespace FUSE.Runtime.API
                 return DecoupledMaskVisibility.Indeterminate;
             }
 
+            var anyActiveHolder = false;
             for (var index = 0; index < renderers.Count; index++)
             {
                 var renderer = renderers[index];
@@ -796,9 +1096,24 @@ namespace FUSE.Runtime.API
                 {
                     return DecoupledMaskVisibility.Visible;
                 }
+
+                if (renderer.ActiveInHierarchy)
+                {
+                    anyActiveHolder = true;
+                }
             }
 
-            return DecoupledMaskVisibility.Hidden;
+            // No renderer is currently drawing. The game's culler OWNS renderer.enabled — it
+            // rewrites enabled = (isVisible && distanceBand < 2) on every CullingSphereStateChanged,
+            // so a renderer disabled while its holder is still ACTIVE was turned off by the culler
+            // (resident-but-invisible distance band, or off-screen), NOT by a pack hiding the
+            // building. Keep the decoupled mask there — that is the whole reason it was decoupled.
+            // Only when EVERY holder is inactive (a pack/progression SetActive(false) — the one
+            // intentional-hide mechanism the culler never performs) do we drop it, so a genuinely
+            // hidden building leaves no flat patch behind.
+            return anyActiveHolder
+                ? DecoupledMaskVisibility.Indeterminate
+                : DecoupledMaskVisibility.Hidden;
         }
 
         /// <summary>
@@ -855,6 +1170,13 @@ namespace FUSE.Runtime.API
                 if (go.activeSelf == active)
                 {
                     continue;
+                }
+
+                // Re-anchor before activating: a floating-origin rebase may have happened while
+                // the mask was dropped, and OnEnable registers the modifier from the transform.
+                if (active && marker.HasGamePosition)
+                {
+                    PlaceDecoupledMask(child, marker.GamePosition);
                 }
 
                 go.SetActive(active);
