@@ -543,7 +543,10 @@ namespace FUSE.Runtime.API
             // never re-bake an already-built tile (the spawn/roundhouse tile stays unmasked). Ask
             // the rebaker to re-bake the touched tiles once the decouple burst settles: targeted
             // (terrain-only, no scenery re-stream) and coalesced (one pass for the whole burst).
-            if (haveUnion)
+            // Only when something NEW was decoupled: a routine stream-in that merely reuses
+            // existing standalones changed no modifiers, and masked buildings stream in and out
+            // constantly now that they cull like ordinary scenery.
+            if (decoupled > 0 && haveUnion)
             {
                 FUSE.Runtime.Lifecycle.FuseDecoupledMaskTerrainRebaker.Request(union);
             }

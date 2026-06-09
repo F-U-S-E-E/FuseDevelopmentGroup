@@ -29,9 +29,17 @@ namespace FUSE.Runtime.Lifecycle
         // quiesced before we fire, short enough to be unnoticeable. Each request pushes it out.
         private const float SettleSeconds = 1.5f;
 
+        // A rebake can fail transiently (e.g. MapManager briefly unavailable). Retry on the
+        // settle cadence rather than silently dropping the burst's only rebake, but give up
+        // after this many re-attempts so a permanent refusal (multiplayer guard, missing
+        // reflection surface) cannot retry forever — the game's own debounced per-modifier
+        // invalidate remains as the slow-path fallback.
+        private const int MaxRetries = 4;
+
         private static FuseDecoupledMaskTerrainRebaker _instance;
 
         private bool _pending;
+        private int _retries;
         private float _fireAtUnscaledTime;
         private bool _haveBounds;
         // GAME space (offset-independent), never world: requests can arrive on both sides of a
@@ -82,6 +90,7 @@ namespace FUSE.Runtime.Lifecycle
             }
 
             self._pending = true;
+            self._retries = 0;
             self._fireAtUnscaledTime = Time.unscaledTime + SettleSeconds;
             if (self._haveBounds)
             {
@@ -108,6 +117,7 @@ namespace FUSE.Runtime.Lifecycle
             }
 
             self._pending = false;
+            self._retries = 0;
             self._haveBounds = false;
             self._gameBounds = default(Bounds);
             FuseLog.Info($"FUSE decoupled-mask terrain rebake request dropped ({reason}).");
@@ -123,17 +133,37 @@ namespace FUSE.Runtime.Lifecycle
             _pending = false;
             var bounds = _gameBounds;
             var hadBounds = _haveBounds;
-            _haveBounds = false;
-            _gameBounds = default(Bounds);
 
+            var succeeded = false;
             try
             {
-                FuseRuntimeReloadService.RebakeDecoupledMaskTerrain(hadBounds ? (Bounds?)bounds : null);
+                succeeded = FuseRuntimeReloadService.RebakeDecoupledMaskTerrain(hadBounds ? (Bounds?)bounds : null);
             }
             catch (Exception ex)
             {
                 FuseLog.Exception("FUSE decoupled-mask terrain rebake failed", ex);
             }
+
+            if (!succeeded && _retries < MaxRetries)
+            {
+                // Keep the accumulated bounds and try again after another settle period; a
+                // Request arriving meanwhile folds in normally (and resets the retry count).
+                _retries++;
+                _pending = true;
+                _fireAtUnscaledTime = Time.unscaledTime + SettleSeconds;
+                return;
+            }
+
+            if (!succeeded)
+            {
+                FuseLog.Warning(
+                    $"FUSE decoupled-mask terrain rebake gave up after {MaxRetries + 1} attempts; " +
+                    "the game's own debounced modifier invalidate will cover the tiles eventually.");
+            }
+
+            _retries = 0;
+            _haveBounds = false;
+            _gameBounds = default(Bounds);
         }
     }
 }
