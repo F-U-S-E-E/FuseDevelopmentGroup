@@ -276,20 +276,6 @@ namespace FUSE.UnityTests
             AssertProperty("Map.Runtime.MapManager", "Instance", BindingFlags.Static | BindingFlags.Public);
         }
 
-        [Test]
-        public void MapManager_gameToWorldOffset_InstanceField()
-        {
-            // MapAPI.PlaceDecoupledMask anchors decoupled mask clones at
-            // gamePosition + this offset so the modifier their OnEnable
-            // registers (which MapManager converts back by subtracting the
-            // SAME field) lands on the right game tile by construction. If
-            // the field is renamed, placement falls back to the
-            // WorldTransformer offset, which can disagree with MapManager's
-            // around a floating-origin rebase and misplace a mask by a whole
-            // origin block.
-            AssertField("Map.Runtime.MapManager", "_gameToWorldOffset", InstanceNonPublic);
-        }
-
         // -----------------------------------------------------------------
         // AssetPackRuntimeStore — heavily-patched store; FUSE's
         // asset-pack mounting reads BasePath, the load task, and the
