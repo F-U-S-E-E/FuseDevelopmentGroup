@@ -33,10 +33,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # No step in this job pushes back to the repo, so don't leave the
+          # checkout token persisted in .git/config on the runner.
+          persist-credentials: false
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
         with:
           dotnet-version: "10.0.x"
 
@@ -71,7 +75,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results
           path: FUSE.Tests/TestResults/test-results.trx
@@ -200,7 +204,7 @@ jobs:
 
       - name: Upload EditMode test results
         if: always() && steps.editmode_gate.outputs.enabled == 'true' && steps.unity_probe.outputs.available == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unity-editmode-results
           path: FUSE.UnityTests/TestResults/editmode-results.xml
@@ -293,7 +297,7 @@ jobs:
 
       - name: Upload build artifact
         id: build_upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.build_id.outputs.archive }}
           path: ${{ steps.build_id.outputs.archive }}
@@ -305,7 +309,7 @@ jobs:
       # in place rather than spamming the conversation.
       - name: Post / update PR comment with download link
         if: github.event_name == 'pull_request' && success()
-        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
         with:
           header: pr-build-artifact
           message: |
@@ -340,10 +344,14 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # No step in this job pushes back to the repo, so don't leave the
+          # checkout token persisted in .git/config on the runner.
+          persist-credentials: false
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
         with:
           dotnet-version: "10.0.x"
 
@@ -369,7 +377,7 @@ jobs:
 
       - name: Upload editor publish artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuse-external-editor
           path: publish/
@@ -377,7 +385,7 @@ jobs:
 
       - name: Upload net10 test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: net10-test-results
           path: TestResults/*.trx
