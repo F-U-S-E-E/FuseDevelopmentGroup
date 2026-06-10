@@ -220,4 +220,57 @@ namespace FUSE.Patches
             }
         }
     }
+
+    /// <summary>
+    /// Randomizes the visual condition of freshly spawned cars when the
+    /// <see cref="FuseSettings.RandomizeVisualConditionOnSpawn"/> setting is
+    /// on. The hook returns the just-created cars after their key-value
+    /// objects are registered, so the writes land on live cars and the
+    /// observer patch above repaints them immediately.
+    ///
+    /// <para>Host-only: the values replicate to clients through the
+    /// property-sync layer, so letting clients roll their own would
+    /// double-write conflicting conditions. The per-car writes are wrapped
+    /// in a single transaction scope so a multi-car spawn replicates as one
+    /// batch; the scope is null in single player, which <c>using</c>
+    /// tolerates.</para>
+    /// </summary>
+    [HarmonyPatch(typeof(TrainController), "HandleCreateCarsAsTrain")]
+    internal static class FuseTrainControllerSpawnVisualConditionPatch
+    {
+        private static void Postfix(List<Car> __result)
+        {
+            try
+            {
+                if (!FuseSettings.RandomizeVisualConditionOnSpawn ||
+                    __result == null || __result.Count == 0 ||
+                    !StateManager.IsHost)
+                {
+                    return;
+                }
+
+                using (StateManager.TransactionScope())
+                {
+                    foreach (var car in __result)
+                    {
+                        if (car == null || car.ghost)
+                        {
+                            continue;
+                        }
+
+                        var condition = FuseVisualConditionAPI.ComputeSpawnCondition(
+                            FuseSettings.RandomVisualConditionMin,
+                            FuseSettings.RandomVisualConditionMax,
+                            UnityEngine.Random.value);
+                        FuseVisualConditionAPI.SetVisualCondition(car, condition);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE spawn visual-condition randomization failed softly: {ex.GetBaseException().Message}");
+            }
+        }
+    }
 }

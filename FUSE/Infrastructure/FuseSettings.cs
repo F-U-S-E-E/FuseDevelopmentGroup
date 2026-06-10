@@ -36,6 +36,12 @@ namespace FUSE.Infrastructure
         // a car look more worn than its mechanical condition; when on, the
         // visual override applies verbatim so worn cars can look fresh.
         public const bool DefaultDecoupleVisualConditionLimits = false;
+        // Spawn-time visual-condition randomization is opt-in; the default
+        // range mirrors the legacy behavior players already expect: mostly
+        // presentable cars (0.6) up to factory-fresh (1.0).
+        public const bool DefaultRandomizeVisualConditionOnSpawn = false;
+        public const float DefaultRandomVisualConditionMin = 0.6f;
+        public const float DefaultRandomVisualConditionMax = 1f;
         public const float ExperimentalEarlyScenePathSuppressionTimeoutSeconds = 8f;
 
         public static bool EnableExperimentalEarlyScenePathSuppression { get; private set; } =
@@ -85,6 +91,12 @@ namespace FUSE.Infrastructure
 
         public static bool DecoupleVisualConditionLimits { get; private set; } = DefaultDecoupleVisualConditionLimits;
 
+        public static bool RandomizeVisualConditionOnSpawn { get; private set; } = DefaultRandomizeVisualConditionOnSpawn;
+
+        public static float RandomVisualConditionMin { get; private set; } = DefaultRandomVisualConditionMin;
+
+        public static float RandomVisualConditionMax { get; private set; } = DefaultRandomVisualConditionMax;
+
         public static void Load(UnityModManager.ModEntry modEntry)
         {
             EnableExperimentalEarlyScenePathSuppression = DefaultEnableExperimentalEarlyScenePathSuppression;
@@ -107,6 +119,9 @@ namespace FUSE.Infrastructure
             WorldLabelsShowTrackSegments = DefaultWorldLabelsShowTrackSegments;
             ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
             DecoupleVisualConditionLimits = DefaultDecoupleVisualConditionLimits;
+            RandomizeVisualConditionOnSpawn = DefaultRandomizeVisualConditionOnSpawn;
+            RandomVisualConditionMin = DefaultRandomVisualConditionMin;
+            RandomVisualConditionMax = DefaultRandomVisualConditionMax;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
             var infoPath = Path.Combine(modEntry?.Path ?? string.Empty, "Info.json");
@@ -160,6 +175,12 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "ShowLegacyModsInUmm", DefaultShowLegacyModsInUmm);
                 DecoupleVisualConditionLimits =
                     ReadBool(settings, "DecoupleVisualConditionLimits", DefaultDecoupleVisualConditionLimits);
+                RandomizeVisualConditionOnSpawn =
+                    ReadBool(settings, "RandomizeVisualConditionOnSpawn", DefaultRandomizeVisualConditionOnSpawn);
+                RandomVisualConditionMin = Mathf.Clamp01(
+                    ReadFloat(settings, "RandomVisualConditionMin", DefaultRandomVisualConditionMin));
+                RandomVisualConditionMax = Mathf.Clamp01(
+                    ReadFloat(settings, "RandomVisualConditionMax", DefaultRandomVisualConditionMax));
                 ApplyUserOverrides();
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -185,6 +206,9 @@ namespace FUSE.Infrastructure
                     $"WorldLabelsShowTrackSegments={WorldLabelsShowTrackSegments} " +
                     $"ShowLegacyModsInUmm={ShowLegacyModsInUmm} " +
                     $"DecoupleVisualConditionLimits={DecoupleVisualConditionLimits} " +
+                    $"RandomizeVisualConditionOnSpawn={RandomizeVisualConditionOnSpawn} " +
+                    $"RandomVisualConditionMin={RandomVisualConditionMin} " +
+                    $"RandomVisualConditionMax={RandomVisualConditionMax} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
             catch (Exception ex)
@@ -209,6 +233,9 @@ namespace FUSE.Infrastructure
                 WorldLabelsShowTrackSegments = DefaultWorldLabelsShowTrackSegments;
                 ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
                 DecoupleVisualConditionLimits = DefaultDecoupleVisualConditionLimits;
+                RandomizeVisualConditionOnSpawn = DefaultRandomizeVisualConditionOnSpawn;
+                RandomVisualConditionMin = DefaultRandomVisualConditionMin;
+                RandomVisualConditionMax = DefaultRandomVisualConditionMax;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Exception($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled", ex);
             }
@@ -345,6 +372,27 @@ namespace FUSE.Infrastructure
             FuseLog.Info($"FUSE setting changed: {nameof(DecoupleVisualConditionLimits)}={enabled}.");
         }
 
+        public static void SetRandomizeVisualConditionOnSpawn(bool enabled)
+        {
+            RandomizeVisualConditionOnSpawn = enabled;
+            SaveUserOverride(nameof(RandomizeVisualConditionOnSpawn), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(RandomizeVisualConditionOnSpawn)}={enabled}.");
+        }
+
+        public static void SetRandomVisualConditionMin(float value)
+        {
+            RandomVisualConditionMin = Mathf.Clamp01(value);
+            SaveUserOverride(nameof(RandomVisualConditionMin), RandomVisualConditionMin);
+            FuseLog.Info($"FUSE setting changed: {nameof(RandomVisualConditionMin)}={RandomVisualConditionMin}.");
+        }
+
+        public static void SetRandomVisualConditionMax(float value)
+        {
+            RandomVisualConditionMax = Mathf.Clamp01(value);
+            SaveUserOverride(nameof(RandomVisualConditionMax), RandomVisualConditionMax);
+            FuseLog.Info($"FUSE setting changed: {nameof(RandomVisualConditionMax)}={RandomVisualConditionMax}.");
+        }
+
         public static string GetUserSettingsPath()
         {
             return Path.Combine(Application.persistentDataPath, "FUSE", "settings.json");
@@ -370,6 +418,34 @@ namespace FUSE.Infrastructure
 
             bool parsed;
             return bool.TryParse(token.ToString(), out parsed) ? parsed : defaultValue;
+        }
+
+        internal static float ReadFloat(JToken settings, string key, float defaultValue)
+        {
+            if (settings == null || string.IsNullOrWhiteSpace(key))
+            {
+                return defaultValue;
+            }
+
+            var token = settings[key];
+            if (token == null)
+            {
+                return defaultValue;
+            }
+
+            if (token.Type == JTokenType.Float || token.Type == JTokenType.Integer)
+            {
+                return token.Value<float>();
+            }
+
+            float parsed;
+            return float.TryParse(
+                token.ToString(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out parsed)
+                ? parsed
+                : defaultValue;
         }
 
         private static void ApplyUserOverrides()
@@ -419,6 +495,12 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(ShowLegacyModsInUmm), ShowLegacyModsInUmm);
                 DecoupleVisualConditionLimits =
                     ReadBool(settings, nameof(DecoupleVisualConditionLimits), DecoupleVisualConditionLimits);
+                RandomizeVisualConditionOnSpawn =
+                    ReadBool(settings, nameof(RandomizeVisualConditionOnSpawn), RandomizeVisualConditionOnSpawn);
+                RandomVisualConditionMin = Mathf.Clamp01(
+                    ReadFloat(settings, nameof(RandomVisualConditionMin), RandomVisualConditionMin));
+                RandomVisualConditionMax = Mathf.Clamp01(
+                    ReadFloat(settings, nameof(RandomVisualConditionMax), RandomVisualConditionMax));
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
             }
             catch (Exception ex)
@@ -428,6 +510,16 @@ namespace FUSE.Infrastructure
         }
 
         private static void SaveUserOverride(string key, bool value)
+        {
+            SaveUserOverride(key, new JValue(value));
+        }
+
+        private static void SaveUserOverride(string key, float value)
+        {
+            SaveUserOverride(key, new JValue(value));
+        }
+
+        private static void SaveUserOverride(string key, JValue value)
         {
             try
             {

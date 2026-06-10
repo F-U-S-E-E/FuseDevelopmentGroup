@@ -78,6 +78,28 @@ namespace FUSE.Runtime.API
             return quantized;
         }
 
+        /// <summary>
+        /// Maps a 0..1 random roll onto the spawn-randomization range
+        /// configured in <c>FuseSettings</c>. Bounds are clamped to 0..1 and
+        /// normalized if the user entered them reversed (min &gt; max), so
+        /// any settings combination yields a valid condition. Pure function —
+        /// the roll is injected so the mapping is unit-testable without the
+        /// engine RNG.
+        /// </summary>
+        internal static float ComputeSpawnCondition(float min, float max, float roll01)
+        {
+            var lo = Clamp01(min);
+            var hi = Clamp01(max);
+            if (lo > hi)
+            {
+                var swap = lo;
+                lo = hi;
+                hi = swap;
+            }
+
+            return lo + (hi - lo) * Clamp01(roll01);
+        }
+
         internal static string FormatPercent(float value)
         {
             return (Clamp01(value) * 100f).ToString("0", CultureInfo.InvariantCulture) + "%";

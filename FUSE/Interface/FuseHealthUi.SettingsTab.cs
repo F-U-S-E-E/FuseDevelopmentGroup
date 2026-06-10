@@ -92,6 +92,31 @@ namespace FUSE.Interface
             AddWrappedField(builder, "User Config", FuseSettings.GetUserSettingsPath(), 42f);
             builder.Spacer(6f);
 
+            builder.AddSection("Car Spawning");
+            AddSettingToggle(
+                builder,
+                "Random V-Condition",
+                FuseSettings.RandomizeVisualConditionOnSpawn ? "randomized on spawn" : "disabled",
+                FuseSettings.RandomizeVisualConditionOnSpawn ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetRandomizeVisualConditionOnSpawn(!FuseSettings.RandomizeVisualConditionOnSpawn);
+                    RebuildWindow();
+                });
+            if (FuseSettings.RandomizeVisualConditionOnSpawn)
+            {
+                AddRandomVisualConditionBoundField(
+                    builder, "Condition Min", FuseSettings.RandomVisualConditionMin, FuseSettings.SetRandomVisualConditionMin);
+                AddRandomVisualConditionBoundField(
+                    builder, "Condition Max", FuseSettings.RandomVisualConditionMax, FuseSettings.SetRandomVisualConditionMax);
+                AddWrappedField(
+                    builder,
+                    " ",
+                    "Newly spawned cars get a visual condition rolled between min and max (0 = weathered, 1 = factory fresh). Host-side only; values replicate to clients.",
+                    42f);
+            }
+            builder.Spacer(6f);
+
             builder.AddSection("Package Settings");
             AddWrappedField(
                 builder,
@@ -282,6 +307,28 @@ namespace FUSE.Interface
             }
 
             FuseModSettingsStore.SetValue(definition, key, setting, new JValue(value ?? string.Empty));
+        }
+
+        private void AddRandomVisualConditionBoundField(UIPanelBuilder builder, string label, float current, Action<float> save)
+        {
+            builder.HStack(row =>
+            {
+                AddSettingRowLabel(row, label);
+                row.AddInputField(
+                    current.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture),
+                    value =>
+                    {
+                        float parsed;
+                        if (!float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out parsed))
+                        {
+                            _lastAction = $"Setting '{label}' was not saved because '{value}' is not a number.";
+                            return;
+                        }
+
+                        // The setter clamps to 0..1 and persists the override.
+                        save(parsed);
+                    });
+            }, 8f).Height(30f);
         }
 
         private static void AddSettingRowLabel(UIPanelBuilder row, string label)
