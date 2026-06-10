@@ -181,6 +181,7 @@
     <!-- FUSE.Converter depends on FUSE.Core (unified diagnostics), so the
          editor mod has to carry FUSE.Core.dll alongside it. -->
     <Copy SourceFiles="$(TargetDir)FUSE.Core.dll" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)FUSE.Core.dll')" />
+    <Copy SourceFiles="$(TargetDir)FUSE.Core.pdb" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" Condition="Exists('$(TargetDir)FUSE.Core.pdb') and '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' " />
     <!-- Icon PNGs land alongside the DLL so FuseEditorIcons can find
          them via Assembly.GetExecutingAssembly().Location + /Icons/. -->
     <ItemGroup>

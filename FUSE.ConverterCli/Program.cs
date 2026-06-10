@@ -53,7 +53,16 @@ internal static class Program
             var outputFolder = Path.Combine(outputRoot, Path.GetFileName(modFolder.TrimEnd('\\', '/')) + ".FUSE");
             if (options.Clean && Directory.Exists(outputFolder))
             {
-                Directory.Delete(outputFolder, recursive: true);
+                try
+                {
+                    Directory.Delete(outputFolder, recursive: true);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"fuse-convert: failed to clean existing output folder '{outputFolder}': {ex.Message}");
+                    anyConversionFailed = true;
+                    continue;
+                }
             }
 
             var result = FuseLegacyConverter.ConvertPackage(modFolder, outputFolder, options.Kind);
@@ -204,8 +213,14 @@ internal static class Program
         List<FuseDiagnostic> conversionDiagnostics,
         List<FuseDiagnostic> validationDiagnostics)
     {
-        if ((!options.WriteJsonReport && !options.WriteMarkdownReport) || !Directory.Exists(result.OutputFolderPath))
+        if (!options.WriteJsonReport && !options.WriteMarkdownReport)
         {
+            return;
+        }
+
+        if (!Directory.Exists(result.OutputFolderPath))
+        {
+            Console.Error.WriteLine($"fuse-convert: cannot write reports; output folder does not exist: {result.OutputFolderPath}");
             return;
         }
 
@@ -222,9 +237,16 @@ internal static class Program
                 ["conversion"] = FuseValidationRenderer.ToJsonArray(conversionDiagnostics),
                 ["validation"] = FuseValidationRenderer.ToJsonArray(validationDiagnostics),
             };
-            File.WriteAllText(
-                Path.Combine(result.OutputFolderPath, "conversion-report.json"),
-                report.ToString(Formatting.Indented));
+            try
+            {
+                File.WriteAllText(
+                    Path.Combine(result.OutputFolderPath, "conversion-report.json"),
+                    report.ToString(Formatting.Indented));
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"fuse-convert: failed to write conversion-report.json: {ex.Message}");
+            }
         }
 
         if (options.WriteMarkdownReport)
@@ -238,7 +260,14 @@ internal static class Program
                 (conversionDiagnostics.Count > 0 ? FuseValidationRenderer.ToMarkdown(conversionDiagnostics) : "No conversion findings.\n") +
                 "\n## Validation\n\n" +
                 (validationDiagnostics.Count > 0 ? FuseValidationRenderer.ToMarkdown(validationDiagnostics) : "No validation findings.\n");
-            File.WriteAllText(Path.Combine(result.OutputFolderPath, "conversion-report.md"), markdown);
+            try
+            {
+                File.WriteAllText(Path.Combine(result.OutputFolderPath, "conversion-report.md"), markdown);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"fuse-convert: failed to write conversion-report.md: {ex.Message}");
+            }
         }
     }
 }

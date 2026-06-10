@@ -702,7 +702,7 @@
                 },
                 "carTypeFilter": {
                     "type": "string",
-                    "description": "Comma-delimited car-type filter expression, matched verbatim per token at runtime — write \"FB,XM\", not \"FB, XM\" (a token with surrounding whitespace can never match). Tokens support a trailing * prefix wildcard; bare * (or omitting the field) matches any car type."
+                    "description": "Comma-delimited car-type filter expression, matched verbatim per token at runtime — write \"FB,XM\", not \"FB, XM\" (a token with surrounding whitespace can never match). A token may end with * to match any car type whose code starts with that prefix; a bare * (or omitting the field) matches any car type."
                 },
                 "emptyCarType": {
                     "type": "string"
@@ -845,7 +845,7 @@
                 },
                 "carTypeFilter": {
                     "type": "string",
-                    "description": "Comma-delimited car-type filter expression, matched verbatim per token at runtime — write \"FB,XM\", not \"FB, XM\" (a token with surrounding whitespace can never match). Tokens support a trailing * prefix wildcard; bare * (or omitting the field) matches any car type."
+                    "description": "Comma-delimited car-type filter expression, matched verbatim per token at runtime — write \"FB,XM\", not \"FB, XM\" (a token with surrounding whitespace can never match). A token may end with * to match any car type whose code starts with that prefix; a bare * (or omitting the field) matches any car type."
                 },
                 "loadId": {
                     "$ref": "#/$defs/idRef"
@@ -995,7 +995,7 @@
                 },
                 "carTypeFilter": {
                     "type": "string",
-                    "description": "Comma-delimited car-type filter expression, matched verbatim per token at runtime — write \"FB,XM\", not \"FB, XM\" (a token with surrounding whitespace can never match). Tokens support a trailing * prefix wildcard; bare * (or omitting the field) matches any car type."
+                    "description": "Comma-delimited car-type filter expression, matched verbatim per token at runtime — write \"FB,XM\", not \"FB, XM\" (a token with surrounding whitespace can never match). A token may end with * to match any car type whose code starts with that prefix; a bare * (or omitting the field) matches any car type."
                 }
             }
         },
@@ -2277,7 +2277,7 @@
             "properties": {
                 "carTypeFilter": {
                     "type": "string",
-                    "description": "Comma-delimited car-type filter expression, matched verbatim per token at runtime — write \"FB,XM\", not \"FB, XM\" (a token with surrounding whitespace can never match). Tokens support a trailing * prefix wildcard; bare * (or omitting the field) matches any car type."
+                    "description": "Comma-delimited car-type filter expression, matched verbatim per token at runtime — write \"FB,XM\", not \"FB, XM\" (a token with surrounding whitespace can never match). A token may end with * to match any car type whose code starts with that prefix; a bare * (or omitting the field) matches any car type."
                 },
                 "loadId": {
                     "$ref": "#/$defs/idRef"

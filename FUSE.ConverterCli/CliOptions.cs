@@ -51,9 +51,15 @@ internal sealed class CliOptions
                     break;
 
                 case "--kind":
-                    if (++index >= args.Length || !Kinds.Contains(args[index]))
+                    if (++index >= args.Length)
                     {
-                        error = "--kind requires one of: auto, route, audio, asset.";
+                        error = "--kind requires a value (auto, route, audio, or asset).";
+                        return null;
+                    }
+
+                    if (!Kinds.Contains(args[index]))
+                    {
+                        error = $"--kind: invalid value '{args[index]}'. Allowed: auto, route, audio, asset.";
                         return null;
                     }
 
@@ -61,9 +67,15 @@ internal sealed class CliOptions
                     break;
 
                 case "--format":
-                    if (++index >= args.Length || !Formats.Contains(args[index]))
+                    if (++index >= args.Length)
                     {
-                        error = "--format requires one of: console, json, markdown, all.";
+                        error = "--format requires a value (console, json, markdown, or all).";
+                        return null;
+                    }
+
+                    if (!Formats.Contains(args[index]))
+                    {
+                        error = $"--format: invalid value '{args[index]}'. Allowed: console, json, markdown, all.";
                         return null;
                     }
 
