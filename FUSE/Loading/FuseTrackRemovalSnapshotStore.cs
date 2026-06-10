@@ -20,6 +20,29 @@ namespace FUSE.Loading
         private static readonly Dictionary<string, PackageTrackSnapshots> SnapshotsByPackage =
             new Dictionary<string, PackageTrackSnapshots>(StringComparer.OrdinalIgnoreCase);
 
+        // Capture-batch span index. Every segment (and node->segment cascade)
+        // capture needs "which spans reference this segment", which the live
+        // path answers with a full FindObjectsOfType<TrackSpan> scene scan per
+        // segment — ~800 scans on a removal-heavy map load. Inside a capture
+        // batch the first lookup builds one segment-id -> spans index from a
+        // single scan and every later lookup is a dictionary hit. The index is
+        // batch-scoped only: live-reload single-package paths never open a
+        // batch and keep the always-fresh scan.
+        private static bool _captureBatchActive;
+        private static Dictionary<string, List<TrackSpan>> _captureBatchSpansBySegment;
+
+        public static void BeginCaptureBatch()
+        {
+            _captureBatchActive = true;
+            _captureBatchSpansBySegment = null;
+        }
+
+        public static void EndCaptureBatch()
+        {
+            _captureBatchActive = false;
+            _captureBatchSpansBySegment = null;
+        }
+
         public static void CaptureSpanBeforeRemoval(string packageId, string spanId, FuseApplyTransaction transaction)
         {
             if (string.IsNullOrWhiteSpace(packageId) || string.IsNullOrWhiteSpace(spanId))
@@ -304,6 +327,15 @@ namespace FUSE.Loading
                 return Enumerable.Empty<TrackSpan>();
             }
 
+            if (_captureBatchActive)
+            {
+                var index = _captureBatchSpansBySegment ??
+                            (_captureBatchSpansBySegment = BuildSpansBySegmentIndex(packageId));
+                return index.TryGetValue(segmentId, out var spans)
+                    ? spans.Where(span => span != null)
+                    : Enumerable.Empty<TrackSpan>();
+            }
+
             var matches = new List<TrackSpan>();
             foreach (var span in UnityEngine.Object.FindObjectsOfType<TrackSpan>(true))
             {
@@ -336,6 +368,55 @@ namespace FUSE.Loading
             return location.HasValue &&
                    location.Value.segment != null &&
                    string.Equals(location.Value.segment.id, segmentId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static Dictionary<string, List<TrackSpan>> BuildSpansBySegmentIndex(string packageId)
+        {
+            var index = new Dictionary<string, List<TrackSpan>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var span in UnityEngine.Object.FindObjectsOfType<TrackSpan>(true))
+            {
+                if (span == null || string.IsNullOrWhiteSpace(span.id))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Location? upper = span.upper;
+                    Location? lower = span.lower;
+                    var upperId = upper.HasValue && upper.Value.segment != null ? upper.Value.segment.id : null;
+                    var lowerId = lower.HasValue && lower.Value.segment != null ? lower.Value.segment.id : null;
+                    AddSpanToIndex(index, upperId, span);
+                    if (!string.Equals(lowerId, upperId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        AddSpanToIndex(index, lowerId, span);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning(
+                        $"FUSE could not inspect span package='{packageId ?? "<unknown>"}' operation='capture-track-removal-snapshot' " +
+                        $"phase='snapshot' kind='track span' id='{span.id}' segment='<index build>' reason='{ex.Message}'.");
+                }
+            }
+
+            return index;
+        }
+
+        private static void AddSpanToIndex(Dictionary<string, List<TrackSpan>> index, string segmentId, TrackSpan span)
+        {
+            if (string.IsNullOrWhiteSpace(segmentId))
+            {
+                return;
+            }
+
+            if (!index.TryGetValue(segmentId, out var spans))
+            {
+                spans = new List<TrackSpan>();
+                index[segmentId] = spans;
+            }
+
+            spans.Add(span);
         }
 
         private static bool ShouldCaptureBaseTrack(FuseClaimKind kind, string id, string packageId, string label, FuseApplyTransaction transaction)

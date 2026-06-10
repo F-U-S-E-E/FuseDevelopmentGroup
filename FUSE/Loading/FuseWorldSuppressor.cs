@@ -49,9 +49,27 @@ namespace FUSE.Loading
         /// </summary>
         public static void ApplyDefinition(FuseModDefinition definition, FuseApplyTransaction transaction = null)
         {
-            if (definition == null || string.IsNullOrWhiteSpace(definition.Id))
+            if (!RegisterDefinition(definition, transaction))
             {
                 return;
+            }
+
+            ApplyAllActive("definition apply", transaction);
+        }
+
+        /// <summary>
+        /// Registers a package's suppression claims without applying them. The
+        /// merged apply path registers every package in load order (so claim
+        /// precedence is preserved) and then runs <see cref="ApplyAllActive"/>
+        /// once — the apply pass walks the full claimed set, so running it per
+        /// package re-applied every earlier package's suppressions again for
+        /// each of the N packages.
+        /// </summary>
+        public static bool RegisterDefinition(FuseModDefinition definition, FuseApplyTransaction transaction = null)
+        {
+            if (definition == null || string.IsNullOrWhiteSpace(definition.Id))
+            {
+                return false;
             }
 
             var scenePaths = NormalizeIds(definition.World?.SuppressBaseScenePaths, definition.World?.SuppressScenePaths);
@@ -70,10 +88,21 @@ namespace FUSE.Loading
             RestoreUnusedScenePaths(old.ScenePaths.Except(scenePaths, StringComparer.OrdinalIgnoreCase));
             RestoreUnusedTrackGroups(old.TrackGroups.Except(groups, StringComparer.OrdinalIgnoreCase));
             RestoreUnusedAreas(old.Areas.Except(areas, StringComparer.OrdinalIgnoreCase));
+            return true;
+        }
 
-            ApplyActiveScenePathSuppressions("definition apply", transaction);
-            ApplyActiveTrackGroupSuppressions("definition apply", true);
-            ApplyActiveAreaSuppressions("definition apply", transaction);
+        /// <summary>
+        /// Applies every currently claimed suppression (scene paths, track
+        /// groups, areas). Track-group changes route through
+        /// TrackAPI.RequestRebuild, so callers applying after a multi-package
+        /// registration pass should wrap this in TrackAPI.BeginBatch/EndBatch
+        /// to fold the per-group rebuilds into one.
+        /// </summary>
+        public static void ApplyAllActive(string reason, FuseApplyTransaction transaction = null)
+        {
+            ApplyActiveScenePathSuppressions(reason, transaction);
+            ApplyActiveTrackGroupSuppressions(reason ?? "apply", true);
+            ApplyActiveAreaSuppressions(reason, transaction);
         }
 
         public static void RegisterEarlyScenePathSuppressionsFromLoadedDefinitions(string reason)
@@ -465,6 +494,14 @@ namespace FUSE.Loading
 
         private static void RebuildAfterTrackGroupSuppression(Graph graph, string reason)
         {
+            // NOTE: _isRebuildingForGroupSuppression only covers the UNBATCHED
+            // path, where RequestRebuild() rebuilds synchronously inside this
+            // frame. When a caller has a TrackAPI batch open the rebuild is
+            // deferred past this method's finally, so the graph-rebuild event
+            // re-enters ApplyTrackGroupSuppressionsAfterGraphLoad without the
+            // guard; that re-walk is harmless because the groups were already
+            // suppressed synchronously above (changed=false, no recursive
+            // rebuild) — the protection there is idempotence, not this flag.
             if (_isRebuildingForGroupSuppression)
             {
                 return;
@@ -504,15 +541,15 @@ namespace FUSE.Loading
                 return;
             }
 
-            var area = TrackAPI.GetArea(areaId);
-            if (area == null)
-            {
-                Warn(transaction, "suppressed area", areaId, $"area was not found for '{reason}'");
-                return;
-            }
-
             try
             {
+                var area = TrackAPI.GetArea(areaId);
+                if (area == null)
+                {
+                    Warn(transaction, "suppressed area", areaId, $"area was not found for '{reason}'");
+                    return;
+                }
+
                 if (!Areas.TryGetValue(areaId, out var state))
                 {
                     state = new AreaSuppressionState(areaId);

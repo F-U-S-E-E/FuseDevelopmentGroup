@@ -333,7 +333,55 @@ namespace FUSE.Loading
                         var definition = candidate.Loaded.Definition;
                         var transaction = candidate.Transaction;
                         transaction.RunPhase("apply-progression", () => ApplyProgressionDefinition(definition, transaction));
-                        transaction.RunPhase("apply-world-suppressions", () => FuseWorldSuppressor.ApplyDefinition(definition, transaction));
+                        // Registration only — claims must land in load order for
+                        // precedence, but the apply pass walks the full claimed
+                        // set, so it runs once after the loop instead of N times.
+                        transaction.RunPhase("register-world-suppressions", () => FuseWorldSuppressor.RegisterDefinition(definition, transaction));
+                    }
+
+                    // One merged suppression apply for all packages. Must run
+                    // before the progression refresh below: area suppression
+                    // flips ProgressionDisabled flags that the refresh reads.
+                    // The batch folds the per-group RequestRebuild calls from
+                    // track-group suppression into a single rebuild.
+                    var suppressionTransaction = new FuseApplyTransaction("__merged-world-suppressions__", reason, false);
+                    TrackAPI.BeginBatch();
+                    try
+                    {
+                        suppressionTransaction.RunPhase("apply-world-suppressions", () => FuseWorldSuppressor.ApplyAllActive("merged suppression apply", suppressionTransaction));
+                    }
+                    finally
+                    {
+                        // Close WITHOUT rebuilding: EndBatch(true) would run the
+                        // deferred rebuild unguarded inside this finally, where a
+                        // throw (TrackObjectManager fragility, GraphRebuilt
+                        // subscribers) skips the per-package outcome/commit loop
+                        // and rolls back every registry transaction while the
+                        // runtime mutations stay applied. The rebuild runs below
+                        // in its own guarded, timed phase instead.
+                        TrackAPI.EndBatch(false);
+                    }
+
+                    // With no outer batch, consume the request the suppression
+                    // pass deferred and rebuild inside RunPhase — a throw becomes
+                    // a fatal on the synthetic report (logged below) and the load
+                    // continues, matching the old per-package behavior where
+                    // RebuildAfterTrackGroupSuppression caught and warned. If an
+                    // outer batch IS open, leave the flag for its EndBatch — the
+                    // pre-existing deferral semantics.
+                    if (!TrackAPI.IsBatching && TrackAPI.ConsumePendingRebuildRequest())
+                    {
+                        suppressionTransaction.RunPhase("merged-suppression-graph-rebuild", () => TrackAPI.RebuildGraph());
+                    }
+
+                    suppressionTransaction.Report.LogSummary();
+                    if (suppressionTransaction.Report.IsFatal || suppressionTransaction.Report.HasErrors)
+                    {
+                        var failure =
+                            "FUSE merged world-suppression apply reported problems: " +
+                            $"fatal={suppressionTransaction.Report.IsFatal} errors={suppressionTransaction.Report.Errors.Count} reason='{reason}'.";
+                        FuseLog.Warning(failure);
+                        FuseLoadReport.RecordNotice(failure);
                     }
 
                     ProgressionAPI.RefreshRuntimeStateAfterApply("staged ApplyProgressionDefinition");
@@ -900,14 +948,28 @@ namespace FUSE.Loading
                     ApplyMergedSpanRemoval(removal);
                 }
 
-                foreach (var removal in plan.RemovedSegments.Values.OrderBy(item => item.Sequence))
+                // Opened after the span removals; the lazily-built index sees the
+                // same scene state the per-removal live scan would — including
+                // spans removed above, which are still pending deferred Destroy
+                // and appear in both (parity with the old per-segment scan, not
+                // exclusion). Segment and node removals below share one scene
+                // scan instead of one per removal.
+                FuseTrackRemovalSnapshotStore.BeginCaptureBatch();
+                try
                 {
-                    ApplyMergedSegmentRemoval(removal);
-                }
+                    foreach (var removal in plan.RemovedSegments.Values.OrderBy(item => item.Sequence))
+                    {
+                        ApplyMergedSegmentRemoval(removal);
+                    }
 
-                foreach (var removal in plan.RemovedNodes.Values.OrderBy(item => item.Sequence))
+                    foreach (var removal in plan.RemovedNodes.Values.OrderBy(item => item.Sequence))
+                    {
+                        ApplyMergedNodeRemoval(removal);
+                    }
+                }
+                finally
                 {
-                    ApplyMergedNodeRemoval(removal);
+                    FuseTrackRemovalSnapshotStore.EndCaptureBatch();
                 }
 
                 foreach (var entry in plan.Turntables.Values.OrderBy(item => item.Sequence))
