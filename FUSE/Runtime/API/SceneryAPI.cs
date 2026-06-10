@@ -76,14 +76,17 @@ namespace FUSE.Runtime.API
             // correctly falls into AddScenery for a brand-new entity.
             var marker = gameObject.AddComponent<FuseSceneryMarker>();
             marker.Id = id;
-            // Tag mask-bearing scenery. Three behaviours key off this: (1) the cull debounce
-            // pins it loaded+rendered (a safety net), (2) the OnDidLoadModels hook below re-homes
-            // its welded map masks into standalone, always-active objects the moment the model
-            // streams in (MapAPI.DecoupleAttachedMapMasks) — the real fix, so the terrain mask
-            // survives the building streaming out/in and teleport world-shifts, and (3) a
-            // visibility watcher (FuseDecoupledMaskVisibilityWatcher) drops that standalone mask
-            // while the building is intentionally hidden (renderers disabled) and restores it when
-            // shown, so a hidden building never leaves a flat patch of ground behind.
+            // Tag mask-bearing scenery. Three behaviours key off this: (1) the load throttle
+            // is bypassed so its first load — which registers the terrain flatten/cut — is
+            // immediate, (2) the OnDidLoadModels hook below re-homes its welded map masks into
+            // standalone, always-active objects the moment the model streams in
+            // (MapAPI.DecoupleAttachedMapMasks) so the terrain mask survives the building
+            // streaming out/in and teleport world-shifts, and (3) a visibility watcher
+            // (FuseDecoupledMaskVisibilityWatcher) drops that standalone mask only while the
+            // building is intentionally hidden (every renderer holder SetActive(false)) and
+            // restores it when shown, so a hidden building never leaves a flat patch of ground
+            // behind. The building MODEL itself culls like any other scenery — only its
+            // terrain contribution is permanent.
             marker.IsMaskBearing = FuseSceneryDeferralClassifier.HasMaskComponent(assetIdentifier);
             if (marker.IsMaskBearing)
             {
@@ -134,11 +137,12 @@ namespace FUSE.Runtime.API
         {
             public string Id;
 
-            // True when this scenery declares a map-mask component. The cull debounce
-            // (FuseSceneryCullingDebouncePatch) reads this to hold mask-bearing scenery
-            // resident at any distance — it must never unload, because the game does not
-            // reliably reload masked scenery after a teleport (and a missed reload also
-            // drops its baked terrain mask). Set once at AddScenery time.
+            // True when this scenery declares a map-mask component. Drives the mask
+            // decouple/visibility lifecycle (DecoupleAttachedMapMasks + the visibility
+            // watcher) and the load-throttle bypass so the first load — which registers the
+            // terrain flatten/cut — is immediate. The building model itself culls like any
+            // other scenery; only its terrain contribution is permanent. Set once at
+            // AddScenery time.
             public bool IsMaskBearing;
         }
 

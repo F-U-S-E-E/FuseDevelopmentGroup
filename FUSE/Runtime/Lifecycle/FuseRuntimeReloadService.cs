@@ -127,5 +127,68 @@ namespace FUSE.Runtime.Lifecycle
                 return false;
             }
         }
+
+        /// <summary>
+        /// Re-bakes terrain after FUSE decoupled map masks that registered AFTER the map-load
+        /// terrain rebuild (masks stream in with their building model and self-apply their
+        /// MapManager modifiers; the game's per-modifier invalidate is debounced and starved
+        /// behind the spawn tile-load backlog, so an already-built tile never re-evaluates them).
+        /// Prefers a targeted invalidate of just the touched tiles (terrain-only, so it never
+        /// re-streams scenery and cannot re-enter the decouple path); falls back to a full
+        /// rebuild only if the targeted reflection surface is unavailable. Called, coalesced,
+        /// by <see cref="FuseDecoupledMaskTerrainRebaker"/> once the decouple burst settles.
+        /// </summary>
+        public static bool RebakeDecoupledMaskTerrain(Bounds? gameBounds)
+        {
+            const string operation = "decoupled-mask post-stream terrain rebake";
+            if (!FuseMultiplayerGuard.CanApplyWorldMutations(operation))
+            {
+                return false;
+            }
+
+            try
+            {
+                var instance = MapManagerInstance?.GetValue(null);
+                if (instance == null)
+                {
+                    return false;
+                }
+
+                // The footprint arrives already in GAME space — the offset-independent space
+                // MapManager.Invalidate(Bounds) tiles in and modifiers are stored in (AddModifier
+                // does OffsetBy(-gameToWorldOffset)). No conversion here: converting at fire time
+                // through a live offset would shift bounds that were captured before a
+                // floating-origin rebase by a whole origin block.
+                if (MapManagerInvalidateBounds != null && gameBounds.HasValue)
+                {
+                    try
+                    {
+                        MapManagerInvalidateBounds.Invoke(instance, new object[] { gameBounds.Value });
+                        FuseLog.Info(
+                            $"FUSE {operation} (targeted invalidate) gameBounds.center={gameBounds.Value.center} size={gameBounds.Value.size}.");
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        FuseLog.Warning(
+                            $"FUSE {operation} targeted invalidate failed: {ex.GetBaseException().Message}; falling back to full rebuild.");
+                    }
+                }
+
+                if (MapManagerRebuildAll != null)
+                {
+                    MapManagerRebuildAll.Invoke(instance, null);
+                    FuseLog.Info($"FUSE {operation} (full rebuild).");
+                    return true;
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE {operation} failed: {ex.GetBaseException().Message}");
+                return false;
+            }
+        }
     }
 }

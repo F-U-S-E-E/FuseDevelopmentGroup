@@ -265,6 +265,10 @@ namespace FUSE.Runtime.Lifecycle
                 // Cancel any in-flight deferred scenery wave before the scenery
                 // GameObjects it references are destroyed below.
                 FuseDeferredSceneryActivator.CancelAndClear("map unload");
+                // Drop any settling decoupled-mask re-bake: its bounds belong to the map being
+                // torn down, and firing during/after unload would invalidate (or full-rebuild)
+                // a half-initialized MapManager on the next load.
+                FuseDecoupledMaskTerrainRebaker.Clear("map unload");
                 FuseWorldSuppressor.RestoreAll("map unload");
                 FuseEarlyLoader.RestoreOnMapUnload();
                 FuseModLoader.UnloadAll(resetDiscovery: true, restoreTrackSnapshots: false);

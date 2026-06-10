@@ -142,6 +142,21 @@ namespace FUSE.Runtime.API
 
                 marker.enabled = false;
 
+                // Also disable any TrackCurveMeshBuilder on the same GameObject. It reads
+                // this marker via GetComponent — DISABLED markers included — and an invalid
+                // location makes its culling-event handler throw INSIDE Unity's
+                // CullingGroup.SendEvents, aborting the whole event batch: every culling
+                // sphere later in that batch silently loses its event, so unrelated scenery
+                // never streams back in after a teleport. Disabling the builder disposes its
+                // culling token (OnDisable), taking the broken handler out of the dispatch.
+                foreach (var builder in marker.GetComponents<TrackCurveMeshBuilder>())
+                {
+                    if (builder != null && builder.enabled)
+                    {
+                        builder.enabled = false;
+                    }
+                }
+
                 // Don't deactivate the GameObject — that kills every other
                 // component on it. TrackMarker is frequently attached to
                 // scenery (water columns, diesel fueling stands, coaling

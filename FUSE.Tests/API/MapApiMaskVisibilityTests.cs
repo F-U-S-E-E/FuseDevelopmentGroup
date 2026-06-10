@@ -10,8 +10,10 @@ namespace FUSE.Tests.API
     /// Pure-logic coverage for <see cref="MapAPI.ClassifyMaskVisibility"/>, the decision that
     /// drives the visibility-driven decoupled-mask lifecycle
     /// (<c>FuseDecoupledMaskVisibilityWatcher</c>). It must separate three look-alike states that
-    /// need different mask handling: a building that is drawing (keep mask), one a pack has hidden
-    /// at the renderer level (drop mask), and one merely streamed out or culled (keep mask). The
+    /// need different mask handling: a building that is drawing (keep mask); one a pack has hidden
+    /// via <c>SetActive(false)</c> so every holder is inactive (drop mask); and one the game culler
+    /// merely streamed out or stopped drawing by clearing <c>renderer.enabled</c> while the holders
+    /// stay active (keep mask — the culler owns that flag, so it is a cull, not a hide). The
     /// Unity-side gather and the SetActive toggle need a live game and are exercised in-game.
     /// </summary>
     public class MapApiMaskVisibilityTests
@@ -42,37 +44,56 @@ namespace FUSE.Tests.API
         }
 
         [Fact]
-        public void AllRenderersDisabled_IsHidden()
+        public void AllRenderersDisabledButActive_IsIndeterminate_SoCullKeepsMask()
         {
-            // The canonical intentional hide: renderer.enabled cleared on every renderer.
+            // The game culler clears renderer.enabled on a resident-but-invisible building
+            // (distance band 2) or one that is off-screen, while the holders stay ACTIVE. The
+            // culler OWNS renderer.enabled, so this is a cull, NOT an intentional hide: keep the
+            // decoupled mask (Indeterminate folds to the last decisive state). This is the exact
+            // state that previously dropped the mask the instant a far building streamed in.
             var renderers = new List<Sample>
             {
                 new Sample(enabled: false, activeInHierarchy: true, forceRenderingOff: false),
                 new Sample(enabled: false, activeInHierarchy: true, forceRenderingOff: false),
+            };
+
+            Assert.Equal(Visibility.Indeterminate, MapAPI.ClassifyMaskVisibility(renderers));
+        }
+
+        [Fact]
+        public void EveryHolderInactive_IsHidden_TheIntentionalHide()
+        {
+            // The one hide the culler never performs: a pack/progression SetActive(false) on the
+            // holders (activeInHierarchy = false on every renderer). Nothing draws and it is not a
+            // cull -> drop the mask so a hidden building leaves no flat patch behind.
+            var renderers = new List<Sample>
+            {
+                new Sample(enabled: true, activeInHierarchy: false, forceRenderingOff: false),
+                new Sample(enabled: true, activeInHierarchy: false, forceRenderingOff: false),
             };
 
             Assert.Equal(Visibility.Hidden, MapAPI.ClassifyMaskVisibility(renderers));
         }
 
         [Fact]
-        public void AllRenderersOnInactiveObjects_IsHidden()
+        public void SomeHolderStillActive_EvenIfAllDisabled_KeepsMask()
         {
-            // Hide via a child SetActive(false): renderers stay enabled but are not in an active
-            // hierarchy, so nothing draws — treat as an intentional hide.
+            // As long as ANY holder is still active, the building is present and the culler merely
+            // stopped drawing it -> keep the mask. Only an ALL-inactive set is the intentional hide.
             var renderers = new List<Sample>
             {
-                new Sample(enabled: true, activeInHierarchy: false, forceRenderingOff: false),
-                new Sample(enabled: true, activeInHierarchy: false, forceRenderingOff: false),
+                new Sample(enabled: false, activeInHierarchy: false, forceRenderingOff: false),
+                new Sample(enabled: false, activeInHierarchy: true, forceRenderingOff: false),
             };
 
-            Assert.Equal(Visibility.Hidden, MapAPI.ClassifyMaskVisibility(renderers));
+            Assert.Equal(Visibility.Indeterminate, MapAPI.ClassifyMaskVisibility(renderers));
         }
 
         [Fact]
         public void CullerForceRenderingOff_ButEnabledAndActive_IsVisible_SoMaskIsKept()
         {
-            // The game culler parks a resident model with forceRenderingOff = true while leaving
-            // enabled/active set. That is NOT an intentional hide: the mask must stay so a
+            // The game culler can also park a resident model with forceRenderingOff = true while
+            // leaving enabled/active set. That is NOT an intentional hide: the mask must stay so a
             // culled/streamed building keeps its terrain contribution (the point of decoupling).
             var renderers = new List<Sample>
             {
@@ -85,7 +106,7 @@ namespace FUSE.Tests.API
         [Fact]
         public void DisabledAndInactive_IsHidden()
         {
-            // Both hide signals at once still resolves to hidden.
+            // No active holder at all -> the intentional-hide path (drop).
             var renderers = new List<Sample>
             {
                 new Sample(enabled: false, activeInHierarchy: false, forceRenderingOff: true),
@@ -123,7 +144,7 @@ namespace FUSE.Tests.API
         }
 
         [Fact]
-        public void MaskActiveLifecycle_HiddenSurvivesStreamOut_AndCullerKeepsMask()
+        public void MaskActiveLifecycle_CullKeepsMask_IntentionalHideDropsIt()
         {
             // Walk the watcher's decision pipeline (ClassifyMaskVisibility -> ResolveEffective...)
             // across a building's lifecycle. Visible == mask applied; Hidden == mask dropped. The
@@ -134,16 +155,26 @@ namespace FUSE.Tests.API
             last = Step(last, S(enabled: true, active: true, forceOff: false));
             Assert.Equal(Visibility.Visible, last);
 
-            // Pack hides it (all renderers disabled) -> mask dropped.
+            // Distance-culled at load: culler clears renderer.enabled while holders stay active ->
+            // KEEP. This is the bug the fix targets (a far building streaming in must not drop its
+            // terrain flatten).
             last = Step(last, S(enabled: false, active: true, forceOff: false));
+            Assert.Equal(Visibility.Visible, last);
+
+            // Off-screen near the building (same culler signal) -> still KEEP.
+            last = Step(last, S(enabled: false, active: true, forceOff: false));
+            Assert.Equal(Visibility.Visible, last);
+
+            // Pack hides it via SetActive(false) (every holder inactive) -> mask dropped.
+            last = Step(last, S(enabled: true, active: false, forceOff: false));
             Assert.Equal(Visibility.Hidden, last);
 
             // Streams out while hidden (no renderers) -> stays dropped (regression: no re-flatten).
             last = Step(last);
             Assert.Equal(Visibility.Hidden, last);
 
-            // Streams back in, still hidden -> still dropped.
-            last = Step(last, S(enabled: false, active: true, forceOff: false));
+            // Streams back in, still hidden (inactive) -> still dropped.
+            last = Step(last, S(enabled: true, active: false, forceOff: false));
             Assert.Equal(Visibility.Hidden, last);
 
             // Pack shows it again -> mask restored.
