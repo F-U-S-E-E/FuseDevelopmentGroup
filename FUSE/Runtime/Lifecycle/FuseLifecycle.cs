@@ -4,6 +4,7 @@ using GalaSoft.MvvmLight.Messaging;
 using Game.Events;
 using FUSE.Runtime.API;
 using FUSE.Runtime.Cache;
+using FUSE.Interface;
 using FUSE.Interface.Console;
 using FUSE.Runtime.Events;
 using FUSE.Infrastructure;
@@ -17,6 +18,7 @@ namespace FUSE.Runtime.Lifecycle
         {
             try
             {
+                Messenger.Default.Register<MapWillLoadEvent>(this, OnMapWillLoad);
                 Messenger.Default.Register<MapDidLoadEvent>(this, OnMapDidLoad);
                 Messenger.Default.Register<GraphDidRebuildCollections>(this, OnGraphDidRebuildCollections);
                 Messenger.Default.Register<MapWillUnloadEvent>(this, OnMapWillUnload);
@@ -44,7 +46,45 @@ namespace FUSE.Runtime.Lifecycle
             }
         }
 
+        // Earliest clean "load started" signal (sent at the top of
+        // GlobalGameManager._LoadMap, before any scene work). Shows the FUSE
+        // enhanced loading screen so it owns the visuals for the whole load.
+        private void OnMapWillLoad(MapWillLoadEvent message)
+        {
+            try
+            {
+                FuseLoadingScreen.BeginLoad("map load");
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE enhanced loading screen begin-load failed", ex);
+            }
+        }
+
         private void OnMapDidLoad(MapDidLoadEvent message)
+        {
+            // Run the whole FUSE post-load pipeline, then ALWAYS tell the enhanced
+            // loading screen the pipeline is done — even on a throw or a non-host
+            // multiplayer early-out — so the two-flag hide gate can release and the
+            // player is never trapped behind the screen.
+            try
+            {
+                RunMapDidLoadPipeline();
+            }
+            finally
+            {
+                try
+                {
+                    FuseLoadingScreen.NotifyFusePipelineComplete();
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception("FUSE enhanced loading screen pipeline-complete signal failed", ex);
+                }
+            }
+        }
+
+        private static void RunMapDidLoadPipeline()
         {
             var mapLoadStopwatch = Stopwatch.StartNew();
             var loadedCount = 0;
@@ -69,6 +109,7 @@ namespace FUSE.Runtime.Lifecycle
                 FusePerformanceMetrics.RecordTiming("cache rebuild before map load apply", cacheStopwatch.ElapsedMilliseconds);
                 FuseLog.Info($"FUSE load timing phase='cache rebuild before map load apply' elapsedMs={cacheStopwatch.ElapsedMilliseconds}.");
                 TrackAPI.CaptureBaseGraphSnapshot("map load before FUSE package apply");
+                FuseLoadingScreen.SetStep("Applying mods", "Loading mod packages");
                 loadedCount = FuseDataPackageDiscovery.LoadPackagesFromDisk(false);
                 if (canMutateWorld)
                 {
@@ -76,12 +117,14 @@ namespace FUSE.Runtime.Lifecycle
                     // created during apply is queued for post-load activation instead
                     // of being activated inline on the loading-screen critical path.
                     FuseDeferredSceneryActivator.OpenInitialMapLoadWave();
+                    FuseLoadingScreen.SetStep("Applying mods", "Applying definitions");
                     appliedCount = FuseDataPackageDiscovery.ApplyLoadedPackages("map load");
                     // Run the cleanup cluster inside one batch so the rebuild
                     // RemoveInvalidTrackSpans requests folds together with any
                     // rebuild industry/marker cleanup may also request. Without
                     // this, RemoveInvalidTrackSpans fires its own full rebuild
                     // while the rest of the cleanup is still running.
+                    FuseLoadingScreen.SetStep("Rebuilding track graph");
                     TrackAPI.BeginBatch();
                     try
                     {
@@ -145,6 +188,7 @@ namespace FUSE.Runtime.Lifecycle
             {
                 if (canMutateWorld)
                 {
+                    FuseLoadingScreen.SetStep("Rebaking terrain");
                     var mapRebuildStopwatch = Stopwatch.StartNew();
                     FuseRuntimeReloadService.ReloadTerrain("map-load map-mask rebuild");
                     FusePerformanceMetrics.RecordTiming("map mask rebuild", mapRebuildStopwatch.ElapsedMilliseconds);
@@ -209,6 +253,7 @@ namespace FUSE.Runtime.Lifecycle
             // registration here even if the early Load attempt missed it.
             try
             {
+                FuseLoadingScreen.SetStep("Finishing up", "Registering console");
                 var consoleStopwatch = Stopwatch.StartNew();
                 FuseConsoleRegistrar.TryRegisterAll();
                 FuseLegacyAssemblyHost.RetryPendingConsoleCommands();
@@ -262,6 +307,11 @@ namespace FUSE.Runtime.Lifecycle
         {
             try
             {
+                // FUSE does not own the unload screen (the stock "Tyin' down…"
+                // progress is fine), and the post-load pipeline never runs on an
+                // unload — so hide our screen immediately rather than letting the
+                // two-flag gate wait on a pipeline-complete signal that never comes.
+                FuseLoadingScreen.Abort("map unload");
                 // Cancel any in-flight deferred scenery wave before the scenery
                 // GameObjects it references are destroyed below.
                 FuseDeferredSceneryActivator.CancelAndClear("map unload");

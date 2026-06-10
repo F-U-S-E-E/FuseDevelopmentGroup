@@ -32,6 +32,11 @@ namespace FUSE.Infrastructure
         public const bool DefaultWorldLabelsShowTrackNodes = false;
         public const bool DefaultWorldLabelsShowTrackSegments = false;
         public const bool DefaultShowLegacyModsInUmm = true;
+        // FUSE-owned enhanced loading screen (issue #83): replaces the bare stock
+        // "Loading…" screen with staged progress + a current-step label that stays
+        // up until FUSE's own post-load pipeline finishes. On by default; one switch
+        // falls the whole feature back to the untouched stock screen.
+        public const bool DefaultEnableEnhancedLoadingScreen = true;
         // When off (default), the per-car Visual Condition slider can only make
         // a car look more worn than its mechanical condition; when on, the
         // visual override applies verbatim so worn cars can look fresh.
@@ -89,6 +94,8 @@ namespace FUSE.Infrastructure
 
         public static bool ShowLegacyModsInUmm { get; private set; } = DefaultShowLegacyModsInUmm;
 
+        public static bool EnableEnhancedLoadingScreen { get; private set; } = DefaultEnableEnhancedLoadingScreen;
+
         public static bool DecoupleVisualConditionLimits { get; private set; } = DefaultDecoupleVisualConditionLimits;
 
         public static bool RandomizeVisualConditionOnSpawn { get; private set; } = DefaultRandomizeVisualConditionOnSpawn;
@@ -118,6 +125,7 @@ namespace FUSE.Infrastructure
             WorldLabelsShowTrackNodes = DefaultWorldLabelsShowTrackNodes;
             WorldLabelsShowTrackSegments = DefaultWorldLabelsShowTrackSegments;
             ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
+            EnableEnhancedLoadingScreen = DefaultEnableEnhancedLoadingScreen;
             DecoupleVisualConditionLimits = DefaultDecoupleVisualConditionLimits;
             RandomizeVisualConditionOnSpawn = DefaultRandomizeVisualConditionOnSpawn;
             RandomVisualConditionMin = DefaultRandomVisualConditionMin;
@@ -173,6 +181,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "WorldLabelsShowTrackSegments", DefaultWorldLabelsShowTrackSegments);
                 ShowLegacyModsInUmm =
                     ReadBool(settings, "ShowLegacyModsInUmm", DefaultShowLegacyModsInUmm);
+                EnableEnhancedLoadingScreen =
+                    ReadBool(settings, "EnableEnhancedLoadingScreen", DefaultEnableEnhancedLoadingScreen);
                 DecoupleVisualConditionLimits =
                     ReadBool(settings, "DecoupleVisualConditionLimits", DefaultDecoupleVisualConditionLimits);
                 RandomizeVisualConditionOnSpawn =
@@ -205,6 +215,7 @@ namespace FUSE.Infrastructure
                     $"WorldLabelsShowTrackNodes={WorldLabelsShowTrackNodes} " +
                     $"WorldLabelsShowTrackSegments={WorldLabelsShowTrackSegments} " +
                     $"ShowLegacyModsInUmm={ShowLegacyModsInUmm} " +
+                    $"EnableEnhancedLoadingScreen={EnableEnhancedLoadingScreen} " +
                     $"DecoupleVisualConditionLimits={DecoupleVisualConditionLimits} " +
                     $"RandomizeVisualConditionOnSpawn={RandomizeVisualConditionOnSpawn} " +
                     $"RandomVisualConditionMin={RandomVisualConditionMin} " +
@@ -232,6 +243,7 @@ namespace FUSE.Infrastructure
                 WorldLabelsShowTrackNodes = DefaultWorldLabelsShowTrackNodes;
                 WorldLabelsShowTrackSegments = DefaultWorldLabelsShowTrackSegments;
                 ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
+                EnableEnhancedLoadingScreen = DefaultEnableEnhancedLoadingScreen;
                 DecoupleVisualConditionLimits = DefaultDecoupleVisualConditionLimits;
                 RandomizeVisualConditionOnSpawn = DefaultRandomizeVisualConditionOnSpawn;
                 RandomVisualConditionMin = DefaultRandomVisualConditionMin;
@@ -365,6 +377,13 @@ namespace FUSE.Infrastructure
             FuseLog.Info($"FUSE setting changed: {nameof(WorldLabelsShowTrackSegments)}={enabled}.");
         }
 
+        public static void SetEnableEnhancedLoadingScreen(bool enabled)
+        {
+            EnableEnhancedLoadingScreen = enabled;
+            SaveUserOverride(nameof(EnableEnhancedLoadingScreen), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(EnableEnhancedLoadingScreen)}={enabled}. Takes effect on the next map load.");
+        }
+
         public static void SetDecoupleVisualConditionLimits(bool enabled)
         {
             DecoupleVisualConditionLimits = enabled;
@@ -493,6 +512,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(WorldLabelsShowTrackSegments), WorldLabelsShowTrackSegments);
                 ShowLegacyModsInUmm =
                     ReadBool(settings, nameof(ShowLegacyModsInUmm), ShowLegacyModsInUmm);
+                EnableEnhancedLoadingScreen =
+                    ReadBool(settings, nameof(EnableEnhancedLoadingScreen), EnableEnhancedLoadingScreen);
                 DecoupleVisualConditionLimits =
                     ReadBool(settings, nameof(DecoupleVisualConditionLimits), DecoupleVisualConditionLimits);
                 RandomizeVisualConditionOnSpawn =

@@ -83,6 +83,7 @@ namespace FUSE
                 FuseTrackDebugOverlay.Ensure();
                 FuseSceneryDebugOverlay.Ensure();
                 FuseWorldLabelsOverlay.Ensure();
+                FuseLoadingScreen.Ensure();
                 FuseUmmInjector.ScheduleInjection(modEntry.Path, ReadInfoJsonString(Path.Combine(modEntry.Path ?? string.Empty, "Info.json"), "Version"));
                 FuseLegacyAssemblyHost.EnsureStartupHost();
 
@@ -227,6 +228,7 @@ namespace FUSE
             FuseTrackDebugOverlay.Shutdown();
             FuseSceneryDebugOverlay.Shutdown();
             FuseWorldLabelsOverlay.Shutdown();
+            FuseLoadingScreen.Shutdown();
 
             if (_isLoaded)
             {

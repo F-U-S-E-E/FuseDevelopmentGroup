@@ -16,6 +16,7 @@
     "BlockNonHostMultiplayerClientWorldApply": false,
     "ShowAdvancedHealthDetails": false,
     "ShowLegacyModsInUmm": true,
+    "EnableEnhancedLoadingScreen": true,
     "DecoupleVisualConditionLimits": false
   }
 }
