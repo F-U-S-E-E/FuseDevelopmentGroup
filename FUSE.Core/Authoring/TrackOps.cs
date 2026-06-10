@@ -129,16 +129,45 @@ namespace Fuse.Core.Authoring
 
         public static string NewSegmentId(FuseTrackDefinition tracks) => UniqueId(tracks.Segments.Keys, "s");
 
+        /// <summary>
+        /// Batch variant of <see cref="NewNodeId(FuseTrackDefinition)"/> for callers minting many
+        /// ids in one operation: build <paramref name="takenIds"/> from <c>tracks.Nodes.Keys</c>
+        /// once, start <paramref name="nextIndex"/> at 1, and reuse both across calls. Each
+        /// returned id is added to <paramref name="takenIds"/>, so as long as no ids are removed
+        /// mid-batch the sequence matches repeated single-shot calls (first free slot, gaps
+        /// filled) without rescanning every key per id.
+        /// </summary>
+        public static string NewNodeId(ISet<string> takenIds, ref int nextIndex) => UniqueId(takenIds, "n", ref nextIndex);
+
+        /// <summary>Batch variant of <see cref="NewSegmentId(FuseTrackDefinition)"/>; see <see cref="NewNodeId(ISet{string}, ref int)"/>.</summary>
+        public static string NewSegmentId(ISet<string> takenIds, ref int nextIndex) => UniqueId(takenIds, "s", ref nextIndex);
+
         private static string UniqueId(IEnumerable<string> existing, string prefix)
         {
             var set = new HashSet<string>(existing);
             var i = 1;
-            while (set.Contains($"{prefix}_{i:D4}"))
+            return UniqueId(set, prefix, ref i);
+        }
+
+        // Ids are only added while a batch runs, so the first free slot never moves backwards
+        // and the cursor can resume where the previous call stopped instead of rescanning from 1.
+        private static string UniqueId(ISet<string> takenIds, string prefix, ref int nextIndex)
+        {
+            if (nextIndex < 1)
             {
-                i++;
+                nextIndex = 1;
             }
 
-            return $"{prefix}_{i:D4}";
+            var id = $"{prefix}_{nextIndex:D4}";
+            while (!takenIds.Add(id))
+            {
+                nextIndex++;
+                id = $"{prefix}_{nextIndex:D4}";
+            }
+
+            // Leave the cursor past the minted slot so the next call doesn't re-test it.
+            nextIndex++;
+            return id;
         }
     }
 }
