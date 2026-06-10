@@ -112,11 +112,16 @@ public class TerrainGenerationServiceTests
         var svc = new TerrainGenerationService(new HttpClient(handler), new TerrainTileService());
         var tiles = Enumerable.Range(0, 6).Select(i => (i, 0)).ToList();
         var reports = new List<int>();
+        var allReported = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var progress = new Progress<TerrainGenProgress>(p =>
         {
             lock (reports)
             {
                 reports.Add(p.Completed);
+                if (reports.Count == 6)
+                {
+                    allReported.TrySetResult();
+                }
             }
         });
 
@@ -125,7 +130,12 @@ public class TerrainGenerationServiceTests
         Assert.Equal(6, done);
         Assert.True(handler.MaxConcurrent >= 2, $"expected parallel fetches, got {handler.MaxConcurrent}");
         Assert.True(handler.MaxConcurrent <= 3, $"expected bounded by MaxConcurrency, got {handler.MaxConcurrent}");
-        await Task.Delay(50); // let the last Progress callbacks post
+
+        // Progress<T> posts its callbacks asynchronously to the thread pool (no SynchronizationContext
+        // in headless xUnit), so they can trail GenerateRegionAsync's completion. Await their delivery
+        // with a bounded timeout instead of a fixed delay that a loaded CI runner can outrun.
+        var delivered = await Task.WhenAny(allReported.Task, Task.Delay(TimeSpan.FromSeconds(2)));
+        Assert.True(delivered == allReported.Task, "expected all 6 Progress<T> callbacks to be delivered");
         lock (reports)
         {
             Assert.Equal(6, reports.Count);
