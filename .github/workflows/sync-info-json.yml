@@ -22,12 +22,17 @@ jobs:
 
     steps:
       - name: Checkout main
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3 # zizmor: ignore[artipacked]
         with:
           ref: main
           # Default GITHUB_TOKEN can push back to main; branch protections
           # that require PRs will block this and need a separate token.
           token: ${{ secrets.GITHUB_TOKEN }}
+          # Deliberately persisted (the checkout default): the final step
+          # commits and pushes FUSE/Info.json back to main with this token.
+          # Every other workflow in the repo sets persist-credentials: false;
+          # this is the one lane that needs write access after checkout.
+          persist-credentials: true
 
       - name: Parse semantic version from release tag
         id: version
