@@ -177,10 +177,10 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "DecoupleVisualConditionLimits", DefaultDecoupleVisualConditionLimits);
                 RandomizeVisualConditionOnSpawn =
                     ReadBool(settings, "RandomizeVisualConditionOnSpawn", DefaultRandomizeVisualConditionOnSpawn);
-                RandomVisualConditionMin =
-                    ReadFloat(settings, "RandomVisualConditionMin", DefaultRandomVisualConditionMin);
-                RandomVisualConditionMax =
-                    ReadFloat(settings, "RandomVisualConditionMax", DefaultRandomVisualConditionMax);
+                RandomVisualConditionMin = Mathf.Clamp01(
+                    ReadFloat(settings, "RandomVisualConditionMin", DefaultRandomVisualConditionMin));
+                RandomVisualConditionMax = Mathf.Clamp01(
+                    ReadFloat(settings, "RandomVisualConditionMax", DefaultRandomVisualConditionMax));
                 ApplyUserOverrides();
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -497,10 +497,10 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(DecoupleVisualConditionLimits), DecoupleVisualConditionLimits);
                 RandomizeVisualConditionOnSpawn =
                     ReadBool(settings, nameof(RandomizeVisualConditionOnSpawn), RandomizeVisualConditionOnSpawn);
-                RandomVisualConditionMin =
-                    ReadFloat(settings, nameof(RandomVisualConditionMin), RandomVisualConditionMin);
-                RandomVisualConditionMax =
-                    ReadFloat(settings, nameof(RandomVisualConditionMax), RandomVisualConditionMax);
+                RandomVisualConditionMin = Mathf.Clamp01(
+                    ReadFloat(settings, nameof(RandomVisualConditionMin), RandomVisualConditionMin));
+                RandomVisualConditionMax = Mathf.Clamp01(
+                    ReadFloat(settings, nameof(RandomVisualConditionMax), RandomVisualConditionMax));
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
             }
             catch (Exception ex)

@@ -164,5 +164,14 @@ namespace FUSE.Tests.API
         {
             Assert.Equal(0.7f, FuseVisualConditionAPI.ComputeSpawnCondition(0.7f, 0.7f, 0.42f));
         }
+
+        [Fact]
+        public void ComputeSpawnCondition_NaNInputs_FallBackToPristine()
+        {
+            // Clamp01 neutralizes NaN to 1 (pristine), so a NaN roll lands on
+            // max and NaN bounds collapse the range to 1..1.
+            Assert.Equal(1f, FuseVisualConditionAPI.ComputeSpawnCondition(0.6f, 1f, float.NaN));
+            Assert.Equal(1f, FuseVisualConditionAPI.ComputeSpawnCondition(float.NaN, float.NaN, 0.5f));
+        }
     }
 }
