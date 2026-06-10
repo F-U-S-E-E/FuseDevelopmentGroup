@@ -53,9 +53,9 @@ public class OsmTileServiceTests
         return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(ms.ToArray()) };
     }
 
-    private static HttpResponseMessage RateLimited(RetryConditionHeaderValue? retryAfter = null)
+    private static HttpResponseMessage RateLimited(RetryConditionHeaderValue? retryAfter = null, HttpStatusCode status = HttpStatusCode.TooManyRequests)
     {
-        var resp = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        var resp = new HttpResponseMessage(status);
         if (retryAfter is not null)
         {
             resp.Headers.RetryAfter = retryAfter;
@@ -123,6 +123,23 @@ public class OsmTileServiceTests
     }
 
     [Fact]
+    public async Task Fetch_Retries_ServiceUnavailable_Like_TooManyRequests()
+    {
+        // 503 takes the same retry branch as 429 (OsmTileService treats them identically).
+        var handler = new ScriptedHandler(call => call < 2 ? RateLimited(status: HttpStatusCode.ServiceUnavailable) : OkTile());
+        var delays = new List<TimeSpan>();
+        var svc = Service(handler, delays);
+
+        var mosaic = await FetchSmallAsync(svc);
+
+        var tiles = (mosaic.Width / 256) * (mosaic.Height / 256);
+        Assert.Equal(tiles, mosaic.TileCount);
+        Assert.Equal(0, mosaic.FailedTileCount);
+        Assert.Equal(tiles + 2, handler.Calls); // two 503s cost one extra request each
+        Assert.Equal(2, delays.Count);
+    }
+
+    [Fact]
     public async Task Fetch_Backoff_Is_Exponential_With_Jitter_When_No_RetryAfter()
     {
         var handler = new ScriptedHandler(call => call < 3 ? RateLimited() : OkTile());
@@ -154,6 +171,28 @@ public class OsmTileServiceTests
 
         Assert.Equal(TimeSpan.FromSeconds(7), delays[0]);
         Assert.Equal(TimeSpan.FromSeconds(30), delays[1]); // 10 min clamped to the 30 s cap
+    }
+
+    [Fact]
+    public async Task Fetch_Honors_RetryAfter_HttpDate_Format_And_Clamps()
+    {
+        // Retry-After as an absolute HTTP-date (the .Date branch) rather than delta-seconds.
+        // Delay is computed as (date - UtcNow), so a sub-second gap elapses before the service
+        // reads it; the generous lower bound tolerates that while still excluding the backoff
+        // fallback (<=1 s) and the delta path, proving the date was actually parsed.
+        var handler = new ScriptedHandler(call => call switch
+        {
+            0 => RateLimited(new RetryConditionHeaderValue(DateTimeOffset.UtcNow.AddSeconds(10))),
+            1 => RateLimited(new RetryConditionHeaderValue(DateTimeOffset.UtcNow.AddMinutes(10))),
+            _ => OkTile(),
+        });
+        var delays = new List<TimeSpan>();
+        var svc = Service(handler, delays);
+
+        await FetchSmallAsync(svc);
+
+        Assert.InRange(delays[0].TotalSeconds, 8.0, 10.0); // ~10 s honored from the HTTP-date
+        Assert.Equal(TimeSpan.FromSeconds(30), delays[1]); // 10 min out clamped to the 30 s cap
     }
 
     [Fact]
