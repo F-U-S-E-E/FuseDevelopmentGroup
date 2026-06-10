@@ -28,6 +28,8 @@ namespace FUSE.Runtime.Events
         public static event Action<string, ValidationResult> ValidationCompleted;
         public static event Action<string> ModLoaded;
         public static event Action<string> ModUnloaded;
+        public static event Action<string> ModSetAdded;
+        public static event Action<string> ModSetRemoved;
 
         internal static void RaiseFuseLoaded()
         {
@@ -132,6 +134,16 @@ namespace FUSE.Runtime.Events
         public static void RaiseModUnloaded(string modId)
         {
             ModUnloaded?.Invoke(modId);
+        }
+
+        public static void RaiseModSetAdded(string modId)
+        {
+            ModSetAdded?.Invoke(modId);
+        }
+
+        public static void RaiseModSetRemoved(string modId)
+        {
+            ModSetRemoved?.Invoke(modId);
         }
     }
 }

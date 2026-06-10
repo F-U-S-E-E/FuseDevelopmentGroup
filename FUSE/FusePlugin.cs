@@ -16,9 +16,13 @@ using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityModManagerNet;
 using FUSE.Authoring.Editor;
+using FUSE.Interface.MenuWindow;
 
 namespace FUSE
 {
+#if DEBUG
+    [EnableReloading]
+#endif
     public static class FusePlugin
     {
         private const string HarmonyId = "FUSE";
@@ -74,8 +78,8 @@ namespace FUSE
 
                 FuseEditorAssemblyLoader.TryInitialize(modEntry.Path);
                 FuseEditorBridge.NotifyFuseLoaded();
-                FuseHealthUi.Ensure();
                 FuseOrphanedCarWindow.Ensure();
+                FuseMenuWindow.Ensure();
                 FuseTrackDebugOverlay.Ensure();
                 FuseSceneryDebugOverlay.Ensure();
                 FuseWorldLabelsOverlay.Ensure();
@@ -219,7 +223,7 @@ namespace FUSE
             FuseLegacyAssemblyHost.Shutdown();
             FuseLegacySupportAssemblyShim.Shutdown();
             FuseRuntimeRebindService.Shutdown();
-            FuseHealthUi.Shutdown();
+            FuseMenuWindow.Shutdown();
             FuseTrackDebugOverlay.Shutdown();
             FuseSceneryDebugOverlay.Shutdown();
             FuseWorldLabelsOverlay.Shutdown();

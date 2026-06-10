@@ -22,6 +22,7 @@ namespace FUSE.Loading
         private static string _lastSummary = "FUSE load report has not been generated yet.";
         private static string _lastDetails = "FUSE load report has not been generated yet.";
         private static string _lastJson = "{ \"status\": \"FUSE load report has not been generated yet.\" }";
+        private static ReportSnapshot _lastReportSnapshot = null;
 
         // Captured at the moment of <see cref="PublishMapLoadReport"/>
         // so the on-demand <see cref="GetLastDetailReport"/> /
@@ -74,6 +75,7 @@ namespace FUSE.Loading
                 _lastSummary = "FUSE load report is pending.";
                 _lastDetails = "FUSE load report is pending.";
                 _lastJson = "{ \"status\": \"FUSE load report is pending.\" }";
+                _lastReportSnapshot = null;
             }
         }
 
@@ -169,6 +171,7 @@ namespace FUSE.Loading
             }
 
             var snapshot = CaptureCurrentSnapshot();
+            _lastReportSnapshot = snapshot;
             var summary = BuildSummary(snapshot);
             return BuildDetails(snapshot, summary);
         }
@@ -190,8 +193,20 @@ namespace FUSE.Loading
             }
 
             var snapshot = CaptureCurrentSnapshot();
+            _lastReportSnapshot = snapshot;
             var summary = BuildSummary(snapshot);
             return BuildJson(snapshot, summary);
+        }
+
+        public static ReportSnapshot GetLastReportSnapshot()
+        {
+            if ( _lastReportSnapshot == null )
+            {
+                return _lastReportSnapshot;
+            }
+            var snapshot = CaptureCurrentSnapshot();
+            _lastReportSnapshot = snapshot;
+            return _lastReportSnapshot;
         }
 
         /// <summary>
@@ -289,6 +304,7 @@ namespace FUSE.Loading
                 _lastLoadedFromDiskThisPass = loadedFromDiskThisPass;
                 _lastAppliedToRuntimeThisPass = appliedToRuntimeThisPass;
                 _hasPublishedAtLeastOnce = true;
+                _lastReportSnapshot = snapshot;
             }
 
             if (snapshot.HasProblems)
@@ -577,7 +593,7 @@ namespace FUSE.Loading
             return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
         }
 
-        private sealed class UnknownSceneryAsset
+        internal sealed class UnknownSceneryAsset
         {
             public UnknownSceneryAsset(string packageId, string sceneryId, string assetIdentifier, string model)
             {
@@ -593,7 +609,7 @@ namespace FUSE.Loading
             public string Model { get; }
         }
 
-        private sealed class ReportSnapshot
+        internal sealed class ReportSnapshot
         {
             public string Reason { get; set; }
             public int LoadedFromDiskThisPass { get; set; }
