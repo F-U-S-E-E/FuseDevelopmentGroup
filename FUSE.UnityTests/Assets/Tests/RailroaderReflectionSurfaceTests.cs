@@ -389,6 +389,44 @@ namespace FUSE.UnityTests
         }
 
         // -----------------------------------------------------------------
+        // Car — FuseVisualConditionPatches swaps the private _condition
+        // field around the material refresh, re-invokes the private
+        // UpdateMaterialsForCondition method from key-value observers, and
+        // adds those observers to the car's protected Observers set via
+        // Harmony field injection.
+        // -----------------------------------------------------------------
+
+        [Test]
+        public void Car_condition_InstanceField()
+        {
+            var field = AccessTools.Field(RequireType("Model.Car"), "_condition");
+            Assert.NotNull(field,
+                "Car._condition not found — the visual-condition material patch cannot swap the wear input.");
+            Assert.AreEqual(typeof(float), field.FieldType,
+                "Car._condition is no longer a float — the visual-condition swap would corrupt the car's repair state.");
+        }
+
+        [Test]
+        public void Car_UpdateMaterialsForCondition_Method()
+        {
+            var method = AccessTools.Method(RequireType("Model.Car"), "UpdateMaterialsForCondition");
+            Assert.NotNull(method,
+                "Car.UpdateMaterialsForCondition not found — visual-condition overrides will never reach car materials.");
+            Assert.AreEqual(0, method.GetParameters().Length,
+                "Car.UpdateMaterialsForCondition gained parameters — FuseVisualConditionAPI invokes it parameterless.");
+        }
+
+        [Test]
+        public void Car_Observers_InstanceField()
+        {
+            var field = AccessTools.Field(RequireType("Model.Car"), "Observers");
+            Assert.NotNull(field,
+                "Car.Observers not found — the visual-condition observer patch cannot inject ___Observers.");
+            Assert.IsTrue(typeof(System.Collections.Generic.HashSet<System.IDisposable>).IsAssignableFrom(field.FieldType),
+                "Car.Observers is no longer a HashSet<IDisposable> — Harmony's ___Observers injection would fail to bind.");
+        }
+
+        // -----------------------------------------------------------------
         // MapFeature.Unlocked — FuseProgressionImpactLookup probes BOTH
         // a property and a field named "Unlocked" because Railroader
         // has shipped both shapes in different versions. The lookup

@@ -32,6 +32,10 @@ namespace FUSE.Infrastructure
         public const bool DefaultWorldLabelsShowTrackNodes = false;
         public const bool DefaultWorldLabelsShowTrackSegments = false;
         public const bool DefaultShowLegacyModsInUmm = true;
+        // When off (default), the per-car Visual Condition slider can only make
+        // a car look more worn than its mechanical condition; when on, the
+        // visual override applies verbatim so worn cars can look fresh.
+        public const bool DefaultDecoupleVisualConditionLimits = false;
         public const float ExperimentalEarlyScenePathSuppressionTimeoutSeconds = 8f;
 
         public static bool EnableExperimentalEarlyScenePathSuppression { get; private set; } =
@@ -79,6 +83,8 @@ namespace FUSE.Infrastructure
 
         public static bool ShowLegacyModsInUmm { get; private set; } = DefaultShowLegacyModsInUmm;
 
+        public static bool DecoupleVisualConditionLimits { get; private set; } = DefaultDecoupleVisualConditionLimits;
+
         public static void Load(UnityModManager.ModEntry modEntry)
         {
             EnableExperimentalEarlyScenePathSuppression = DefaultEnableExperimentalEarlyScenePathSuppression;
@@ -100,6 +106,7 @@ namespace FUSE.Infrastructure
             WorldLabelsShowTrackNodes = DefaultWorldLabelsShowTrackNodes;
             WorldLabelsShowTrackSegments = DefaultWorldLabelsShowTrackSegments;
             ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
+            DecoupleVisualConditionLimits = DefaultDecoupleVisualConditionLimits;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
             var infoPath = Path.Combine(modEntry?.Path ?? string.Empty, "Info.json");
@@ -151,6 +158,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "WorldLabelsShowTrackSegments", DefaultWorldLabelsShowTrackSegments);
                 ShowLegacyModsInUmm =
                     ReadBool(settings, "ShowLegacyModsInUmm", DefaultShowLegacyModsInUmm);
+                DecoupleVisualConditionLimits =
+                    ReadBool(settings, "DecoupleVisualConditionLimits", DefaultDecoupleVisualConditionLimits);
                 ApplyUserOverrides();
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -175,6 +184,7 @@ namespace FUSE.Infrastructure
                     $"WorldLabelsShowTrackNodes={WorldLabelsShowTrackNodes} " +
                     $"WorldLabelsShowTrackSegments={WorldLabelsShowTrackSegments} " +
                     $"ShowLegacyModsInUmm={ShowLegacyModsInUmm} " +
+                    $"DecoupleVisualConditionLimits={DecoupleVisualConditionLimits} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
             catch (Exception ex)
@@ -198,6 +208,7 @@ namespace FUSE.Infrastructure
                 WorldLabelsShowTrackNodes = DefaultWorldLabelsShowTrackNodes;
                 WorldLabelsShowTrackSegments = DefaultWorldLabelsShowTrackSegments;
                 ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
+                DecoupleVisualConditionLimits = DefaultDecoupleVisualConditionLimits;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Exception($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled", ex);
             }
@@ -327,6 +338,13 @@ namespace FUSE.Infrastructure
             FuseLog.Info($"FUSE setting changed: {nameof(WorldLabelsShowTrackSegments)}={enabled}.");
         }
 
+        public static void SetDecoupleVisualConditionLimits(bool enabled)
+        {
+            DecoupleVisualConditionLimits = enabled;
+            SaveUserOverride(nameof(DecoupleVisualConditionLimits), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(DecoupleVisualConditionLimits)}={enabled}.");
+        }
+
         public static string GetUserSettingsPath()
         {
             return Path.Combine(Application.persistentDataPath, "FUSE", "settings.json");
@@ -399,6 +417,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(WorldLabelsShowTrackSegments), WorldLabelsShowTrackSegments);
                 ShowLegacyModsInUmm =
                     ReadBool(settings, nameof(ShowLegacyModsInUmm), ShowLegacyModsInUmm);
+                DecoupleVisualConditionLimits =
+                    ReadBool(settings, nameof(DecoupleVisualConditionLimits), DecoupleVisualConditionLimits);
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
             }
             catch (Exception ex)

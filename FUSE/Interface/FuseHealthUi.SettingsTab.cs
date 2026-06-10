@@ -51,6 +51,21 @@ namespace FUSE.Interface
                     FuseSettings.SetBlockNonHostMultiplayerClientWorldApply(!FuseSettings.BlockNonHostMultiplayerClientWorldApply);
                     RebuildWindow();
                 });
+            AddSettingToggle(
+                builder,
+                "Visual Condition",
+                FuseSettings.DecoupleVisualConditionLimits ? "independent of repair state" : "capped by repair state",
+                FuseSettings.DecoupleVisualConditionLimits ? "Cap" : "Decouple",
+                () =>
+                {
+                    FuseSettings.SetDecoupleVisualConditionLimits(!FuseSettings.DecoupleVisualConditionLimits);
+                    // The setting changes how stored overrides render without
+                    // any per-car value changing, so repaint them explicitly —
+                    // nothing else re-derives car materials until a condition
+                    // change or a culling visibility transition.
+                    FuseVisualConditionAPI.RefreshAllOverriddenCars();
+                    RebuildWindow();
+                });
             builder.Spacer(4f);
 
             builder.AddSection("Reporting");
