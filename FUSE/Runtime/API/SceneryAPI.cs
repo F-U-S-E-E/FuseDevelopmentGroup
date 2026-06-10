@@ -402,29 +402,33 @@ namespace FUSE.Runtime.API
                 if (index == null)
                 {
                     var generationBeforeBuild = _knownSceneryIdentifierIndexGeneration;
-                    IEnumerable<string> known;
+                    // The try spans the enumeration too, not just the call:
+                    // GetSceneryDefinitionIdentifiers may hand back a lazy
+                    // enumerable whose real work (store.Container() walks) runs
+                    // here in the foreach, so a throw can surface mid-iteration.
+                    // On failure the partial local index is discarded — never
+                    // published, never returned (we return false below).
                     try
                     {
-                        known = manager.GetSceneryDefinitionIdentifiers();
+                        var known = manager.GetSceneryDefinitionIdentifiers();
+                        if (known == null)
+                        {
+                            return false;
+                        }
+
+                        index = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var id in known)
+                        {
+                            if (!string.IsNullOrEmpty(id) && !index.ContainsKey(id))
+                            {
+                                index.Add(id, id);
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
                         FuseLog.Exception($"FUSE scenery asset registry enumeration failed while resolving '{candidate}'", ex);
                         return false;
-                    }
-
-                    if (known == null)
-                    {
-                        return false;
-                    }
-
-                    index = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var id in known)
-                    {
-                        if (!string.IsNullOrEmpty(id) && !index.ContainsKey(id))
-                        {
-                            index.Add(id, id);
-                        }
                     }
 
                     // The enumeration itself touches store.Container(), whose postfix

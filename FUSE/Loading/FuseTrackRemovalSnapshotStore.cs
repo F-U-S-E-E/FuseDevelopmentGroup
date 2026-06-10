@@ -28,6 +28,13 @@ namespace FUSE.Loading
         // single scan and every later lookup is a dictionary hit. The index is
         // batch-scoped only: live-reload single-package paths never open a
         // batch and keep the always-fresh scan.
+        //
+        // Thread-safety: these statics carry no synchronization by design. The
+        // whole capture/removal path runs on the Unity main thread (driven
+        // synchronously from the map-load apply pipeline, which calls
+        // FindObjectsOfType — itself main-thread-only), so Begin/EndCaptureBatch
+        // and the lazy build below cannot race. Do not call them off the main
+        // thread.
         private static bool _captureBatchActive;
         private static Dictionary<string, List<TrackSpan>> _captureBatchSpansBySegment;
 
@@ -331,6 +338,10 @@ namespace FUSE.Loading
             {
                 var index = _captureBatchSpansBySegment ??
                             (_captureBatchSpansBySegment = BuildSpansBySegmentIndex(packageId));
+                // The null filter mirrors the live scan below (which also skips
+                // null spans) and guards the caller's span.id access: index
+                // entries are non-null at build, but a span an earlier removal in
+                // this same batch destroyed could read back null here.
                 return index.TryGetValue(segmentId, out var spans)
                     ? spans.Where(span => span != null)
                     : Enumerable.Empty<TrackSpan>();

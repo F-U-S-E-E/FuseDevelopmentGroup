@@ -287,13 +287,24 @@ namespace FUSE.Runtime.Lifecycle
                     framesSinceResort++;
                 }
 
-                // Re-validate the streaming camera EVERY frame, not just at wave
-                // start: camera-mode transitions right after the loading screen can
-                // blank or replace Camera.main mid-wave. A frame without a live
-                // streaming camera drains at the near cap — activations that frame
-                // resolve against the null-camera nearest band, so they must stay
-                // throttle-sized.
-                var frameCamera = hadLiveAnchor ? FuseSceneryCameraRef.Resolve() : null;
+                // Re-resolve the streaming camera EVERY frame, not just at wave
+                // start. Two transitions matter: (1) it can blank or be replaced
+                // mid-wave (camera-mode change right after the loading screen) — a
+                // frame without one drains at the near cap, since those
+                // activations resolve against the null-camera nearest band; (2) it
+                // can come up just AFTER the initial 2s wait expired, the
+                // slow-startup path this wave most wants to help — arm the far
+                // drain then by re-anchoring and re-sorting the unprocessed tail.
+                var frameCamera = FuseSceneryCameraRef.Resolve();
+                if (!hadLiveAnchor && frameCamera != null)
+                {
+                    hadLiveAnchor = true;
+                    anchor = frameCamera.transform.position;
+                    ResortUnprocessed(index, anchor);
+                    farStartIndex = FindFarPartitionStart(index);
+                    framesSinceResort = 0;
+                }
+
                 var frameStart = Time.realtimeSinceStartup;
                 var thisFrame = 0;
                 var maxPerFrame = index >= farStartIndex && frameCamera != null
