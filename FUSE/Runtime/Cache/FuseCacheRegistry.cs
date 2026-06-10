@@ -71,6 +71,10 @@ namespace FUSE.Runtime.Cache
             FuseSceneryRuntimeIndex.Instance.Rebuild();
             FuseSplineyRuntimeIndex.Instance.Rebuild();
             FuseMapLabelRuntimeIndex.Instance.Rebuild();
+            // Full rebuilds mark session boundaries (map load, manual reload) where
+            // SceneryAssetManager.Shared and its catalog may have been replaced
+            // wholesale — drop the identifier index so misses re-probe the new one.
+            API.SceneryAPI.InvalidateKnownSceneryIdentifierIndex();
             _isReady = true;
 
             _fullRebuildCount++;

@@ -34,9 +34,6 @@ namespace FUSE.Authoring.Entities
         [FuseHidden]
         public SceneryAssetInstance RuntimeScenery { get; private set; }
 
-        [FuseHidden]
-        public Bounds RuntimeBounds { get; private set; }
-
         [FuseEditable("Anchor Spans", Group = "Scenery", Order = 12)]
         public string[] AnchorSpanIds { get; set; } = System.Array.Empty<string>();
 
@@ -107,7 +104,11 @@ namespace FUSE.Authoring.Entities
             RuntimeScenery = SceneryAPI.GetScenery(Id);
             if (RuntimeScenery == null)
             {
-                RuntimeScenery = SceneryAPI.AddScenery(Id, definition, RefreshRuntimeBoundsAfterDeferredActivation);
+                // No deferred-activation callback: the RuntimeBounds it used to
+                // recompute had no readers, and the per-item
+                // GetComponentsInChildren scan sat inside the post-load
+                // activation wave for nothing.
+                RuntimeScenery = SceneryAPI.AddScenery(Id, definition);
             }
             else
             {
@@ -115,7 +116,6 @@ namespace FUSE.Authoring.Entities
                 RuntimeScenery = SceneryAPI.GetScenery(Id);
             }
 
-            UpdateRuntimeBounds();
             BindRuntime(RuntimeScenery != null ? RuntimeScenery.gameObject : null, RuntimeScenery);
         }
 
@@ -139,7 +139,6 @@ namespace FUSE.Authoring.Entities
             Rotation = runtime.transform.localEulerAngles;
             Scale = runtime.transform.localScale;
             RuntimeScenery = runtime;
-            UpdateRuntimeBounds();
             BindRuntime(runtime.gameObject, runtime);
             MarkDirty("captured scenery from runtime");
         }
@@ -149,36 +148,5 @@ namespace FUSE.Authoring.Entities
             return SceneryAPI.GetAvailableSceneryModels();
         }
 
-        /// <summary>
-        /// Re-computes runtime bounds after the deferred scenery activator finally
-        /// activates this scenery; its renderers do not exist until activation. No-op
-        /// for scenery that was activated inline (bounds were already computed).
-        /// </summary>
-        internal void RefreshRuntimeBoundsAfterDeferredActivation()
-        {
-            UpdateRuntimeBounds();
-        }
-
-        private void UpdateRuntimeBounds()
-        {
-            RuntimeBounds = default;
-            var runtime = RuntimeScenery;
-            if (runtime == null)
-            {
-                return;
-            }
-
-            var renderers = runtime.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0)
-            {
-                return;
-            }
-
-            RuntimeBounds = renderers[0].bounds;
-            for (var index = 1; index < renderers.Length; index++)
-            {
-                RuntimeBounds.Encapsulate(renderers[index].bounds);
-            }
-        }
     }
 }

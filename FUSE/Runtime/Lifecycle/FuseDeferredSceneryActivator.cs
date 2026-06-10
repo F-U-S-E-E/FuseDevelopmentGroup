@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using FUSE.Infrastructure;
+using FUSE.Patches;
 using FUSE.Runtime.API;
 using Helpers;
 using UnityEngine;
@@ -59,10 +60,31 @@ namespace FUSE.Runtime.Lifecycle
 
         // Activation-wave tuning: per-frame time budget, the hard wave timeout after
         // which any remaining scenery is activated inline, and a per-frame item cap so
-        // a burst of sub-millisecond activations can't spike GC in one frame.
-        private const float FrameBudgetMilliseconds = 6f;
+        // a burst of sub-millisecond activations can't spike GC in one frame. Measured
+        // per-item work is ~0.5ms; the old 6ms/64 settings made the wave budget-bound
+        // (~180 frames, 17-21s wall-clock on a 2,100-item load) rather than work-bound.
+        private const float FrameBudgetMilliseconds = 24f;
         private const float WaveTimeoutSeconds = 30f;
-        private const int MaxItemsPerFrame = 64;
+        private const int MaxItemsPerFrame = 128;
+
+        // Items beyond this distance from the activation anchor cannot trigger model
+        // streaming (the game's streaming band is 1,500m; 2x leaves margin for the
+        // player moving while the wave drains), so SetActive on them is pure
+        // bookkeeping. They drain at a higher item cap to kill the wave's long tail —
+        // on the reference load ~1,550 of 2,111 items sat beyond the band yet were
+        // throttled to the near-item trickle. Only used when a live camera anchored
+        // the distance sort: with no camera the game treats distance as "nearest", so
+        // bulk activation would force-stream everything (see class comment).
+        private const float FarActivationThresholdMeters = 3000f;
+        private const int FarMaxItemsPerFrame = 256;
+
+        // Re-sort trigger: if the camera anchor moves this far from the position the
+        // unprocessed queue was last sorted against (teleport, fast travel), the
+        // nearest-first ordering is stale and near-player items would otherwise
+        // activate up to several seconds late. The frame gap caps how often the
+        // O(n log n) re-sort can run if a camera oscillates across the threshold.
+        private const float AnchorResortDistanceMeters = 500f;
+        private const int MinFramesBetweenResorts = 10;
 
         internal static bool IsDraining => _coroutine != null;
 
@@ -222,21 +244,72 @@ namespace FUSE.Runtime.Lifecycle
                 yield return null;
             }
 
-            SortByDistance(ResolveAnchor());
+            // Do not lengthen this gate: past WaveTimeoutSeconds the remainder
+            // flushes in a single frame, so a longer wait just converts the wave
+            // into one big hitch.
+            //
+            // The far-drain gate is keyed to Camera.main specifically — that is
+            // the camera the game's streaming band resolves against (see
+            // FuseSceneryCameraRef). Camera.current may be live while Camera.main
+            // is still null (common in-editor), and arming the far drain on it
+            // would bulk-activate into the null-camera "nearest band" — the
+            // force-stream-everything case this gate exists to prevent. It
+            // remains acceptable as a position-only fallback for sort ordering.
+            var streamingCamera = Camera.main;
+            var hadLiveAnchor = streamingCamera != null;
+            var sortCamera = streamingCamera != null ? streamingCamera : Camera.current;
+            var anchor = sortCamera != null ? sortCamera.transform.position : Vector3.zero;
+            SortByDistance(anchor);
+
+            // The far partition (no streaming side effects) only exists when the
+            // streaming camera anchored the sort; with no camera every distance is
+            // "nearest" to the game and bulk activation would force-stream the
+            // entire queue.
+            var farStartIndex = hadLiveAnchor ? FindFarPartitionStart(0) : Queue.Count;
 
             var budgetSeconds = Mathf.Max(0.001f, FrameBudgetMilliseconds / 1000f);
-            var maxPerFrame = Mathf.Max(1, MaxItemsPerFrame);
 
             var index = 0;
             var processed = 0;
             var activated = 0;
             var failed = 0;
             var keptHidden = 0;
+            var frames = 0;
+            var farDrained = 0;
+            var resorts = 0;
+            var framesSinceResort = int.MaxValue;
 
             while (index < Queue.Count)
             {
+                frames++;
+                if (framesSinceResort < int.MaxValue)
+                {
+                    framesSinceResort++;
+                }
+
+                // Re-resolve the streaming camera EVERY frame, not just at wave
+                // start. Two transitions matter: (1) it can blank or be replaced
+                // mid-wave (camera-mode change right after the loading screen) — a
+                // frame without one drains at the near cap, since those
+                // activations resolve against the null-camera nearest band; (2) it
+                // can come up just AFTER the initial 2s wait expired, the
+                // slow-startup path this wave most wants to help — arm the far
+                // drain then by re-anchoring and re-sorting the unprocessed tail.
+                var frameCamera = FuseSceneryCameraRef.Resolve();
+                if (!hadLiveAnchor && frameCamera != null)
+                {
+                    hadLiveAnchor = true;
+                    anchor = frameCamera.transform.position;
+                    ResortUnprocessed(index, anchor);
+                    farStartIndex = FindFarPartitionStart(index);
+                    framesSinceResort = 0;
+                }
+
                 var frameStart = Time.realtimeSinceStartup;
                 var thisFrame = 0;
+                var maxPerFrame = index >= farStartIndex && frameCamera != null
+                    ? FarMaxItemsPerFrame
+                    : Mathf.Max(1, MaxItemsPerFrame);
 
                 // Always do at least one item per frame so a single heavy prefab can't
                 // stall progress, then keep going until the time budget or item cap.
@@ -255,6 +328,11 @@ namespace FUSE.Runtime.Lifecycle
                         default:
                             failed++;
                             break;
+                    }
+
+                    if (index >= farStartIndex)
+                    {
+                        farDrained++;
                     }
 
                     index++;
@@ -290,12 +368,45 @@ namespace FUSE.Runtime.Lifecycle
                 }
 
                 yield return null;
+
+                // Teleport/fast-travel handling: if the camera moved far from the
+                // position the remaining items were sorted against, re-sort ONLY the
+                // unprocessed range so near-player scenery activates next instead of
+                // up to several seconds late. Already-processed items are untouched.
+                // Resolved fresh each frame (not the wave-start camera object) so a
+                // destroyed-and-replaced camera keeps the re-sort armed. The frame
+                // gap bounds sort cost if a camera oscillates across the threshold.
+                if (hadLiveAnchor && index < Queue.Count && framesSinceResort >= MinFramesBetweenResorts)
+                {
+                    var current = FuseSceneryCameraRef.Resolve();
+                    if (current != null)
+                    {
+                        var position = current.transform.position;
+                        if ((position - anchor).sqrMagnitude >
+                            AnchorResortDistanceMeters * AnchorResortDistanceMeters)
+                        {
+                            anchor = position;
+                            ResortUnprocessed(index, anchor);
+                            farStartIndex = FindFarPartitionStart(index);
+                            resorts++;
+                            framesSinceResort = 0;
+                        }
+                    }
+                }
             }
 
-            OnDrainComplete(reason, processed, activated, failed, keptHidden);
+            OnDrainComplete(reason, processed, activated, failed, keptHidden, frames, farDrained, resorts);
         }
 
-        private static void OnDrainComplete(string reason, int processed, int activated, int failed, int keptHidden)
+        private static void OnDrainComplete(
+            string reason,
+            int processed,
+            int activated,
+            int failed,
+            int keptHidden,
+            int frames,
+            int farDrained,
+            int resorts)
         {
             _coroutine = null;
             Queue.Clear();
@@ -311,9 +422,50 @@ namespace FUSE.Runtime.Lifecycle
             // 'keptHidden' counts props a locked progression feature is intentionally
             // holding inactive (gameObjectsEnableOnUnlock); leaving them hidden is the
             // point of the lock check and is expected for any not-yet-unlocked area.
+            // 'cullingDiagnostics' is logged because the per-item cost (and therefore
+            // the wave duration) measures higher with the diagnostic logging enabled —
+            // benchmark wave changes against a diagnostics-off log.
             FuseLog.Info(
                 $"FUSE load timing phase='deferred scenery activation wave' elapsedMs={elapsedMs} " +
-                $"reason='{reason ?? "map load"}' activated={activated} failed={failed} keptHidden={keptHidden} processed={processed}.");
+                $"reason='{reason ?? "map load"}' activated={activated} failed={failed} keptHidden={keptHidden} processed={processed} " +
+                $"frames={frames} farDrained={farDrained} resorts={resorts} " +
+                $"cullingDiagnostics={FuseSettings.EnableSceneryCullingDiagnostics}.");
+        }
+
+        /// <summary>
+        /// First index in the (sorted, ascending) queue at or after
+        /// <paramref name="fromIndex"/> where every later item is beyond the
+        /// far-activation threshold. Returns Queue.Count when no far partition exists.
+        /// </summary>
+        private static int FindFarPartitionStart(int fromIndex)
+        {
+            var thresholdSqr = FarActivationThresholdMeters * FarActivationThresholdMeters;
+            var start = Queue.Count;
+            while (start > fromIndex && Queue[start - 1].SortKey > thresholdSqr)
+            {
+                start--;
+            }
+
+            return start;
+        }
+
+        private static void ResortUnprocessed(int fromIndex, Vector3 anchor)
+        {
+            var count = Queue.Count - fromIndex;
+            if (count <= 1)
+            {
+                return;
+            }
+
+            for (var i = fromIndex; i < Queue.Count; i++)
+            {
+                var instance = Queue[i].Instance;
+                Queue[i].SortKey = instance != null
+                    ? (instance.transform.position - anchor).sqrMagnitude
+                    : float.MaxValue;
+            }
+
+            Queue.Sort(fromIndex, count, DeferredScenerySortKeyComparer.Instance);
         }
 
         private static ActivationResult ActivateOne(DeferredScenery item)
@@ -407,14 +559,6 @@ namespace FUSE.Runtime.Lifecycle
             Queue.Sort((left, right) => left.SortKey.CompareTo(right.SortKey));
         }
 
-        private static Vector3 ResolveAnchor()
-        {
-            // Camera.main is usually live by the time the wait above completes; fall
-            // back to the active camera, then the world origin.
-            var camera = Camera.main ?? Camera.current;
-            return camera != null ? camera.transform.position : Vector3.zero;
-        }
-
         private static void EnsureRunner()
         {
             if (_runner != null)
@@ -433,6 +577,16 @@ namespace FUSE.Runtime.Lifecycle
             public string Id;
             public Action OnActivated;
             public float SortKey;
+        }
+
+        private sealed class DeferredScenerySortKeyComparer : IComparer<DeferredScenery>
+        {
+            public static readonly DeferredScenerySortKeyComparer Instance = new DeferredScenerySortKeyComparer();
+
+            public int Compare(DeferredScenery left, DeferredScenery right)
+            {
+                return left.SortKey.CompareTo(right.SortKey);
+            }
         }
 
         private sealed class FuseDeferredSceneryRunner : MonoBehaviour

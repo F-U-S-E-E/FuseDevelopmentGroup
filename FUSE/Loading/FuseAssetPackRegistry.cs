@@ -145,6 +145,7 @@ namespace FUSE.Loading
             }
             FuseLegacyContainerMixintoRegistry.Reset();
             FuseAssetCollisionRegistry.Reset();
+            FUSE.Runtime.API.SceneryAPI.InvalidateKnownSceneryIdentifierIndex();
             FuseLog.Info("FUSE asset pack mount state reset.");
         }
 

@@ -90,6 +90,7 @@ namespace FUSE.Loading
 
             if (applied > 0)
             {
+                FUSE.Runtime.API.SceneryAPI.InvalidateKnownSceneryIdentifierIndex();
                 FuseLog.Info(
                     $"FUSE legacy support applied {applied} container mixinto object(s) to asset store '{store.Identifier}'. " +
                     "This is temporary legacy compatibility, not native FUSE package data.");

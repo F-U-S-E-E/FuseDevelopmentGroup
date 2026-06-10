@@ -257,6 +257,7 @@ namespace FUSE.Interface
 
             return InsertBreakHints(value
                 .Replace("__merged-graph-rebuild__", "merged graph rebuild")
+                .Replace("__merged-world-suppressions__", "merged suppressions")
                 .Replace("merged-single-graph-rebuild", "single graph rebuild")
                 .Replace("apply-resident-definitions", "runtime apply"));
         }

@@ -93,6 +93,21 @@ namespace FUSE.Runtime.API
         }
 
         /// <summary>
+        /// Consumes a rebuild request left pending by a batch that ended with
+        /// rebuild=false, so the caller can run <see cref="RebuildGraph"/> under
+        /// its own exception guard and timing phase instead of inside EndBatch's
+        /// unguarded call. Returns whether a request was pending; the flag is
+        /// cleared either way. Only call with no batch open — while batching,
+        /// the pending flag belongs to the outermost EndBatch.
+        /// </summary>
+        public static bool ConsumePendingRebuildRequest()
+        {
+            var pending = _rebuildRequested;
+            _rebuildRequested = false;
+            return pending;
+        }
+
+        /// <summary>
         /// Request a graph rebuild — runs immediately if no batch is active, or
         /// folds into the outermost <see cref="EndBatch(bool)"/> when callers
         /// have opened one. Cleanup paths that need a rebuild "if the caller
