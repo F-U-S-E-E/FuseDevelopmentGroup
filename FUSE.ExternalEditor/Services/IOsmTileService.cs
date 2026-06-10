@@ -6,12 +6,13 @@ namespace Fuse.ExternalEditor.Services;
 /// <summary>A stitched OSM raster mosaic plus the geo bounds it covers (for alignment).</summary>
 public sealed class OsmMosaic
 {
-    public OsmMosaic(byte[] rgba, int width, int height, int tileCount, double northLat, double westLon, double southLat, double eastLon)
+    public OsmMosaic(byte[] rgba, int width, int height, int tileCount, int failedTileCount, double northLat, double westLon, double southLat, double eastLon)
     {
         Rgba = rgba;
         Width = width;
         Height = height;
         TileCount = tileCount;
+        FailedTileCount = failedTileCount;
         NorthLat = northLat;
         WestLon = westLon;
         SouthLat = southLat;
@@ -22,6 +23,9 @@ public sealed class OsmMosaic
     public int Width { get; }
     public int Height { get; }
     public int TileCount { get; }
+
+    /// <summary>Tiles left transparent after rate-limit retries were exhausted (429/503).</summary>
+    public int FailedTileCount { get; }
     public double NorthLat { get; }
     public double WestLon { get; }
     public double SouthLat { get; }

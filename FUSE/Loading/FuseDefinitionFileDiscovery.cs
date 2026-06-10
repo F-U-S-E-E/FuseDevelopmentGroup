@@ -6,13 +6,29 @@ namespace FUSE.Loading
 {
     internal static class FuseDefinitionFileDiscovery
     {
+        // The bridge mods (FUSE.LiveBridge, FUSE.TestBridge) write their runtime
+        // protocol files (heartbeats, RPC requests/results) into their own mod
+        // folders, where they would otherwise be picked up as fallback definition
+        // JSON and faulted as packages missing an id. The names mirror
+        // Fuse.Core.Bridge.BridgeProtocol; FUSE.dll cannot reference FUSE.Core
+        // (it ships only with the bridge mods), so FuseDefinitionFileDiscoveryTests
+        // pins this list against those constants instead.
         private static readonly string[] ExcludedFallbackJsonFileNames =
         {
             "Info.json",
             "conversion-report.json",
             "Catalog.json",
             "Definitions.json",
-            "Definition.json"
+            "Definition.json",
+            "bridge_state.json",
+            "bridge_command.json",
+            "test_state.json"
+        };
+
+        private static readonly string[] ExcludedFallbackJsonFileNamePrefixes =
+        {
+            "test_request_",
+            "test_result_"
         };
 
         public static string[] ResolveFallbackDefinitionPaths(string folderPath)
@@ -52,8 +68,14 @@ namespace FUSE.Loading
                 return false;
             }
 
-            return !ExcludedFallbackJsonFileNames.Any(excluded =>
-                string.Equals(fileName, excluded, StringComparison.OrdinalIgnoreCase));
+            if (ExcludedFallbackJsonFileNames.Any(excluded =>
+                string.Equals(fileName, excluded, StringComparison.OrdinalIgnoreCase)))
+            {
+                return false;
+            }
+
+            return !ExcludedFallbackJsonFileNamePrefixes.Any(prefix =>
+                fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
         }
 
         private static int GetJsonFallbackRank(string path)
