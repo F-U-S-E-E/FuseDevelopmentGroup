@@ -109,7 +109,7 @@
   },
   "fuse.operations.component.carTypeFilter.malformed": {
     "title": "Whitespace inside car type filter entry",
-    "why": "A carTypeFilter entry has surrounding whitespace (e.g. \"FB, XM\"). The game splits the expression on commas without trimming and matches each token verbatim, so a padded token can never match any car type; the validator rejects this as an error that must be fixed.",
+    "why": "A carTypeFilter entry has surrounding whitespace (e.g. \"FB, XM\"). The game splits the expression on commas without trimming and matches each token verbatim, so a padded token can never match any car type. The validator reports this as a warning rather than an error — packages with padded tokens still load, as they did under the legacy modding stack — but the filter will not work until it is fixed.",
     "fix": "Write the filter as a single comma-delimited string with no spaces around the commas; tokens match verbatim, with optional * suffix wildcards or a bare * for any car.",
     "example": "{\"components\": {\"loader\": {\"carTypeFilter\": \"FB,XM\"}}}"
   },
