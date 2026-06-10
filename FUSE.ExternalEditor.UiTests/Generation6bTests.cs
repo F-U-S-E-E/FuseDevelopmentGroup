@@ -40,7 +40,7 @@ public class Generation6bTests
     private sealed class FakeOsm : IOsmTileService
     {
         public Task<OsmMosaic> FetchAsync(double minLat, double minLon, double maxLat, double maxLon, int zoom, CancellationToken ct = default)
-            => Task.FromResult(new OsmMosaic(new byte[4 * 4 * 4], 4, 4, 1, maxLat, minLon, minLat, maxLon));
+            => Task.FromResult(new OsmMosaic(new byte[4 * 4 * 4], 4, 4, 1, 0, maxLat, minLon, minLat, maxLon));
     }
 
     private static ViewportViewModel Viewport() => new(new TerrainTileService());

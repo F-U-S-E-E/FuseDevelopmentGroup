@@ -69,7 +69,9 @@ public partial class OsmOverlayViewModel : ViewModelBase
                 Math.Min(nw.WorldX, se.WorldX), Math.Max(nw.WorldX, se.WorldX),
                 Math.Min(nw.WorldZ, se.WorldZ), Math.Max(nw.WorldZ, se.WorldZ));
             Enabled = true;
-            Status = $"OSM: {mosaic.TileCount} tile(s) @ z{Zoom}.";
+            Status = mosaic.FailedTileCount > 0
+                ? $"OSM: {mosaic.TileCount} tile(s) @ z{Zoom}; {mosaic.FailedTileCount} skipped (rate limited)."
+                : $"OSM: {mosaic.TileCount} tile(s) @ z{Zoom}.";
         }
         catch (Exception e)
         {
