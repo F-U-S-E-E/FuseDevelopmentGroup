@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,13 +16,36 @@ namespace Fuse.ExternalEditor.Services;
 /// can align it to the world tiles. Sends a User-Agent per OSM tile-usage policy. HTTP is
 /// injectable for testing.
 /// </summary>
+/// <remarks>
+/// The OSM tile servers actively rate-limit, so 429/503 responses get a bounded retry:
+/// the <c>Retry-After</c> header is honoured when present, otherwise exponential backoff
+/// with jitter. A tile that exhausts its retries is left transparent (the overlay is a
+/// best-effort guide layer) and counted in <see cref="OsmMosaic.FailedTileCount"/>; once
+/// one tile gives up, later tiles get a single attempt each so a persistently throttling
+/// server is not hammered with more backoff rounds.
+/// </remarks>
 public sealed class OsmTileService : IOsmTileService
 {
     private const int TileSize = 256;
     private const int MaxTiles = 256; // guard against runaway requests
-    private readonly HttpClient _http;
+    private const int DefaultMaxAttempts = 4;
+    private static readonly TimeSpan BaseRetryDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(30);
 
-    public OsmTileService(HttpClient http) => _http = http;
+    private readonly HttpClient _http;
+    private readonly int _maxAttempts;
+    private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+
+    /// <param name="http">Transport; injectable for testing.</param>
+    /// <param name="maxAttempts">Total tries per tile (first attempt + retries) on 429/503.</param>
+    /// <param name="delay">Backoff wait; defaults to <see cref="Task.Delay(TimeSpan, CancellationToken)"/>, injectable for testing.</param>
+    public OsmTileService(HttpClient http, int maxAttempts = DefaultMaxAttempts, Func<TimeSpan, CancellationToken, Task>? delay = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxAttempts, 1);
+        _http = http;
+        _maxAttempts = maxAttempts;
+        _delay = delay ?? Task.Delay;
+    }
 
     public async Task<OsmMosaic> FetchAsync(double minLat, double minLon, double maxLat, double maxLon, int zoom, CancellationToken ct = default)
     {
@@ -45,14 +69,21 @@ public sealed class OsmTileService : IOsmTileService
         }
 
         int w = cols * TileSize, h = rows * TileSize;
-        var rgba = new byte[w * h * 4];
+        var rgba = new byte[w * h * 4]; // zero-initialised = transparent, so failed tiles need no blit
         var count = 0;
+        var failed = 0;
         for (var ty = y0; ty <= y1; ty++)
         {
             for (var tx = x0; tx <= x1; tx++)
             {
                 var url = $"https://tile.openstreetmap.org/{zoom}/{tx}/{ty}.png";
-                var tile = await FetchTileAsync(url, ct).ConfigureAwait(false);
+                var tile = await FetchTileAsync(url, failed > 0 ? 1 : _maxAttempts, ct).ConfigureAwait(false);
+                if (tile is null)
+                {
+                    failed++;
+                    continue;
+                }
+
                 Blit(tile, rgba, w, (tx - x0) * TileSize, (ty - y0) * TileSize);
                 count++;
             }
@@ -60,17 +91,52 @@ public sealed class OsmTileService : IOsmTileService
 
         var nw = OsmTileMath.Tile2Deg(x0, y0, zoom);
         var se = OsmTileMath.Tile2Deg(x1 + 1, y1 + 1, zoom);
-        return new OsmMosaic(rgba, w, h, count, nw.Lat, nw.Lon, se.Lat, se.Lon);
+        return new OsmMosaic(rgba, w, h, count, failed, nw.Lat, nw.Lon, se.Lat, se.Lon);
     }
 
-    private async Task<byte[]> FetchTileAsync(string url, CancellationToken ct)
+    /// <summary>One tile with bounded 429/503 retry; null when retries are exhausted.</summary>
+    private async Task<byte[]?> FetchTileAsync(string url, int maxAttempts, CancellationToken ct)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.TryAddWithoutValidation("User-Agent", "FUSE.ExternalEditor/1.0 (+https://github.com/F-U-S-E-E/FuseDevelopmentGroup)");
-        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
-        resp.EnsureSuccessStatusCode();
-        var bytes = await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+        for (var attempt = 1; ; attempt++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.TryAddWithoutValidation("User-Agent", "FUSE.ExternalEditor/1.0 (+https://github.com/F-U-S-E-E/FuseDevelopmentGroup)");
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+            if (resp.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable)
+            {
+                if (attempt >= maxAttempts)
+                {
+                    return null;
+                }
 
+                await _delay(RetryDelay(resp, attempt), ct).ConfigureAwait(false);
+                continue;
+            }
+
+            resp.EnsureSuccessStatusCode();
+            var bytes = await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            return DecodeTile(bytes);
+        }
+    }
+
+    /// <summary>Server-directed wait (clamped <c>Retry-After</c>) or exponential backoff with jitter.</summary>
+    private static TimeSpan RetryDelay(HttpResponseMessage resp, int attempt)
+    {
+        var retryAfter = resp.Headers.RetryAfter;
+        var wait = retryAfter?.Delta ?? (retryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : null);
+        if (wait is { } server)
+        {
+            return server < TimeSpan.Zero ? TimeSpan.Zero
+                : server > MaxRetryDelay ? MaxRetryDelay
+                : server;
+        }
+
+        var backoff = BaseRetryDelay * (1 << Math.Min(attempt - 1, 6)) * (0.5 + (Random.Shared.NextDouble() * 0.5));
+        return backoff > MaxRetryDelay ? MaxRetryDelay : backoff;
+    }
+
+    private static byte[] DecodeTile(byte[] bytes)
+    {
         using var ms = new MemoryStream(bytes);
         using var image = Image.Load<Rgba32>(ms);
         var tile = new byte[TileSize * TileSize * 4];
