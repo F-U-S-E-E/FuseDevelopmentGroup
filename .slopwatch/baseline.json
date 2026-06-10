@@ -1,0 +1,737 @@
+{
+  "version": 1,
+  "createdAt": "2026-06-10T00:48:37.7917457+00:00",
+  "updatedAt": "2026-06-10T00:48:37.7962367+00:00",
+  "description": "Initial baseline created by 'slopwatch init' on 2026-06-10 00:48:37 UTC",
+  "entries": [
+    {
+      "hash": "f2f2e6a296b37d3a",
+      "ruleId": "SW005",
+      "filePath": "FUSE/FUSE.csproj",
+      "lineNumber": 13,
+      "codeSnippet": "<NoWarn>$(NoWarn);0618</NoWarn>",
+      "message": "Adding warnings to NoWarn: 0618",
+      "baselinedAt": "2026-06-10T00:48:37.7957631+00:00"
+    },
+    {
+      "hash": "ab5e403421f0c0e5",
+      "ruleId": "SW005",
+      "filePath": "FUSE/FUSE.csproj",
+      "lineNumber": 11,
+      "codeSnippet": "<Nullable>disable</Nullable>",
+      "message": "Nullable reference types are disabled",
+      "baselinedAt": "2026-06-10T00:48:37.7958507+00:00"
+    },
+    {
+      "hash": "6ae0e133de6dc801",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Infrastructure/FuseLog.cs",
+      "lineNumber": 145,
+      "codeSnippet": "catch\r\n                {\r\n                    // Best effort.\r\n                }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7958625+00:00"
+    },
+    {
+      "hash": "2ce0ed9086b7f2c4",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Infrastructure/FuseLog.cs",
+      "lineNumber": 237,
+      "codeSnippet": "catch (InvalidOperationException)\r\n            {\r\n                // The queue was completed (shutdown) between the check above and\r\n                // the Add; drop the line rather than throw on the caller.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7958672+00:00"
+    },
+    {
+      "hash": "6bc0279526dce63f",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Infrastructure/FuseLog.cs",
+      "lineNumber": 272,
+      "codeSnippet": "catch\r\n                    {\r\n                        // Swallow a single failed write so one bad line doesn't\r\n                        // tear down logging for the rest of the session.\r\n                    }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7958735+00:00"
+    },
+    {
+      "hash": "ed61932872607b00",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Infrastructure/FuseLog.cs",
+      "lineNumber": 279,
+      "codeSnippet": "catch\r\n            {\r\n                // GetConsumingEnumerable only ends via CompleteAdding; guard\r\n                // against unexpected enumeration failures so the worker thread\r\n                // exits cleanly instead of crashing.\r\n    // ...",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7958781+00:00"
+    },
+    {
+      "hash": "6991874d69f798e0",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Infrastructure/FuseLog.cs",
+      "lineNumber": 293,
+      "codeSnippet": "catch\r\n                {\r\n                    // Best effort on the way out.\r\n                }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.795883+00:00"
+    },
+    {
+      "hash": "c877b92f758f10eb",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Infrastructure/FuseLog.cs",
+      "lineNumber": 318,
+      "codeSnippet": "catch\r\n            {\r\n                // Best-effort flush on quit; never throw out of a shutdown hook.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7958865+00:00"
+    },
+    {
+      "hash": "e24d026e2c48873f",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Interface/FuseProgressionImpactLookup.cs",
+      "lineNumber": 326,
+      "codeSnippet": "catch\r\n            {\r\n                // Fall through to the backing field probe below.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7958909+00:00"
+    },
+    {
+      "hash": "9dde187005e9ac19",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Interface/FuseSceneryBenchmark.cs",
+      "lineNumber": 840,
+      "codeSnippet": "catch\r\n                {\r\n                }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7958951+00:00"
+    },
+    {
+      "hash": "6c099ad11fbd747c",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Interface/FuseSceneryDebugOverlay.cs",
+      "lineNumber": 263,
+      "codeSnippet": "catch\r\n            {\r\n                // Ignore enumeration failures so the fallback can still consider scenery.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7958988+00:00"
+    },
+    {
+      "hash": "401b88950cdb85ce",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Interface/FuseSceneryDebugOverlay.cs",
+      "lineNumber": 278,
+      "codeSnippet": "catch\r\n            {\r\n                // Ignore enumeration failures; no hit is better than a noisy one.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959028+00:00"
+    },
+    {
+      "hash": "4e84f0dabbe3ecff",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Interface/FuseSceneryDebugOverlay.cs",
+      "lineNumber": 883,
+      "codeSnippet": "catch\r\n                {\r\n                    // Component enumeration is best-effort; skip the breakdown\r\n                    // rather than abort the whole sibling listing.\r\n                }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959065+00:00"
+    },
+    {
+      "hash": "3685af5e1b840176",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Interface/FuseSceneryDebugOverlay.cs",
+      "lineNumber": 953,
+      "codeSnippet": "catch\r\n                {\r\n                    // Best-effort; an ancestor with broken descendant components\r\n                    // shouldn't break the tooltip.\r\n                }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.795911+00:00"
+    },
+    {
+      "hash": "fa2a22937d9df1bf",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Interface/Console/FuseConsoleCommands.cs",
+      "lineNumber": 92,
+      "codeSnippet": "catch\r\n            {\r\n                // Fall back below.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959151+00:00"
+    },
+    {
+      "hash": "ce3f9efcc41a3313",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Interface/Console/FuseConsoleCommands.cs",
+      "lineNumber": 848,
+      "codeSnippet": "catch\r\n                {\r\n                    // Best-effort — without the claim list we still emit the audit.\r\n                }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959191+00:00"
+    },
+    {
+      "hash": "610ccb23836a17de",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Loading/FuseAssetCollisionRegistry.cs",
+      "lineNumber": 235,
+      "codeSnippet": "catch\r\n                    {\r\n                        // Best-effort release; a stuck registry entry is\r\n                        // better than a thrown reset.\r\n                    }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959236+00:00"
+    },
+    {
+      "hash": "572f875bf8a3bdcc",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Loading/FuseAssetPackRegistry.DirectStore.cs",
+      "lineNumber": 304,
+      "codeSnippet": "catch\r\n            {\r\n                // Best-effort; the caller treats null as \"skip this folder\r\n                // from collision detection\" which is the safe default.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959278+00:00"
+    },
+    {
+      "hash": "8d19245eedd3d35e",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Loading/FuseAssetPackRegistry.Mounting.cs",
+      "lineNumber": 133,
+      "codeSnippet": "catch\r\n            {\r\n                // Asset-pack discovery can still fall back to folder name.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959316+00:00"
+    },
+    {
+      "hash": "78c047a1d886a8e9",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Loading/FuseDataPackageDiscovery.cs",
+      "lineNumber": 709,
+      "codeSnippet": "catch\r\n            {\r\n                // Dependency checks can still fall back to the folder name.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959355+00:00"
+    },
+    {
+      "hash": "48265c19e831d9d5",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Loading/FuseLegacyGameGraphCompatibility.cs",
+      "lineNumber": 436,
+      "codeSnippet": "catch\r\n            {\r\n                // Fall through to the hierarchy scan.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959393+00:00"
+    },
+    {
+      "hash": "202631ab7018ba59",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Loading/FuseLegacyJsonPatch.cs",
+      "lineNumber": 453,
+      "codeSnippet": "catch\r\n            {\r\n                // Fall through to simple path traversal below.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959428+00:00"
+    },
+    {
+      "hash": "6245ef341310c812",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Loading/FuseSaveCarFaultRegistry.cs",
+      "lineNumber": 158,
+      "codeSnippet": "catch\r\n            {\r\n                // Logging is best-effort; the registry is the\r\n                // authoritative store.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959473+00:00"
+    },
+    {
+      "hash": "c11f4a5b33eec9c4",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Patches/FuseAnimatorDiagnosticPatches.cs",
+      "lineNumber": 275,
+      "codeSnippet": "catch\r\n            {\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959507+00:00"
+    },
+    {
+      "hash": "dd1fabb1ded219db",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Patches/FuseAssetPackPatchHelpers.cs",
+      "lineNumber": 178,
+      "codeSnippet": "catch\r\n            {\r\n                // Field-set failure means the original LoadedBundle will\r\n                // re-enter the Prefix and re-run the CAB dedup, which\r\n                // still produces the correct result — just slower.\r\n    // ...",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959546+00:00"
+    },
+    {
+      "hash": "80e2e97b0242bd3d",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Patches/FuseAssetPackResolutionTrace.cs",
+      "lineNumber": 68,
+      "codeSnippet": "catch\r\n            {\r\n                // Logging itself failed; swallow so a trace line never\r\n                // breaks the underlying lookup.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959589+00:00"
+    },
+    {
+      "hash": "75706ada38fd21cb",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Patches/FuseAssetPackResolutionTrace.cs",
+      "lineNumber": 93,
+      "codeSnippet": "catch\r\n            {\r\n                // Same swallow as above; the trace is best-effort.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959621+00:00"
+    },
+    {
+      "hash": "d3667009fdd543a4",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Patches/FuseCurveMeshCullingGuardPatch.cs",
+      "lineNumber": 59,
+      "codeSnippet": "catch\r\n                {\r\n                    // Naming is best-effort; never let diagnostics re-throw inside the batch.\r\n                }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959657+00:00"
+    },
+    {
+      "hash": "285755541593d251",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Patches/FuseGraphSetGroupEnabledDiagnosticPatches.cs",
+      "lineNumber": 69,
+      "codeSnippet": "catch\r\n            {\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959708+00:00"
+    },
+    {
+      "hash": "0e82dca57f1b27d6",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Patches/FuseMapFeatureEnableDiagnosticPatches.cs",
+      "lineNumber": 69,
+      "codeSnippet": "catch\r\n            {\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959769+00:00"
+    },
+    {
+      "hash": "1564a2b7ad81d844",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Patches/FuseMapFeatureProgressionDiagnosticPatches.cs",
+      "lineNumber": 89,
+      "codeSnippet": "catch\r\n            {\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959804+00:00"
+    },
+    {
+      "hash": "22b9fb8befe85c4f",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Patches/FusePrefabStoreAssetPackContainingIdentifierTracePatch.cs",
+      "lineNumber": 212,
+      "codeSnippet": "catch\r\n            {\r\n                // Log failure must not break the lookup.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7959852+00:00"
+    },
+    {
+      "hash": "aa97cfe06f6fa4a2",
+      "ruleId": "SW002",
+      "filePath": "FUSE/Patches/FuseSceneryLoadThrottlePatch.cs",
+      "lineNumber": 350,
+      "codeSnippet": "System.Diagnostics.CodeAnalysis.SuppressMessage(\r\n            \"Performance\", \"CA1822:Mark members as static\",\r\n            Justification = \"Unity invokes Update() as an instance message via reflection; a static method is never called.\")",
+      "message": "SuppressMessage attribute suppressing Performance:CA1822:Mark members as static",
+      "baselinedAt": "2026-06-10T00:48:37.7959967+00:00"
+    },
+    {
+      "hash": "3e2624adb1c26de6",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Patches/FuseSwitchGeometryDiagnostic.cs",
+      "lineNumber": 51,
+      "codeSnippet": "catch\r\n            {\r\n                // Never let our diagnostic itself break the vanilla\r\n                // exception flow.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960016+00:00"
+    },
+    {
+      "hash": "0befc8e9890f84e4",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Runtime/API/FuseAudioAPI.cs",
+      "lineNumber": 290,
+      "codeSnippet": "catch { }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960051+00:00"
+    },
+    {
+      "hash": "758a827a5905ed24",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Runtime/API/FuseAudioAPI.cs",
+      "lineNumber": 341,
+      "codeSnippet": "catch (OperationCanceledException)\r\n            {\r\n                // Expected when another swap interrupts us.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960183+00:00"
+    },
+    {
+      "hash": "bba4d9de29a1cfb7",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Runtime/API/ProgressionAPI.Conversions.cs",
+      "lineNumber": 145,
+      "codeSnippet": "catch\r\n            {\r\n                // Incomplete cloned components can throw while their parent industry identity is being rebuilt.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960225+00:00"
+    },
+    {
+      "hash": "a5c80f384eb118b3",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Runtime/API/ProgressionAPI.Diagnostics.cs",
+      "lineNumber": 248,
+      "codeSnippet": "catch\r\n            {\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960259+00:00"
+    },
+    {
+      "hash": "bbcd5926310fa7a8",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Runtime/API/ProgressionAPI.MapFeatureManager.cs",
+      "lineNumber": 647,
+      "codeSnippet": "catch\r\n                {\r\n                    // Best effort only; a feature's explicit include/exclude lists still apply above.\r\n                }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960465+00:00"
+    },
+    {
+      "hash": "e58d23cc2876d288",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Runtime/API/ProgressionAPI.MapFeatureManager.cs",
+      "lineNumber": 715,
+      "codeSnippet": "catch\r\n            {\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960498+00:00"
+    },
+    {
+      "hash": "026e08cb425d4d5b",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Runtime/API/ProgressionAPI.MapFeatureManager.cs",
+      "lineNumber": 738,
+      "codeSnippet": "catch\r\n            {\r\n                // Invalid spans should not block the rest of the inference pass.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960568+00:00"
+    },
+    {
+      "hash": "1440ff07ab5f0b10",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Runtime/API/ProgressionAPI.Resolution.cs",
+      "lineNumber": 402,
+      "codeSnippet": "catch\r\n            {\r\n                // Some freshly cloned components have incomplete parent identity.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960604+00:00"
+    },
+    {
+      "hash": "a691cf8ea6bacbec",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Testing/FuseTestApi.cs",
+      "lineNumber": 123,
+      "codeSnippet": "catch\r\n            {\r\n                // best-effort; if it can't be removed the host times out rather than returning stale data\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960641+00:00"
+    },
+    {
+      "hash": "de26b78ff4d6b60a",
+      "ruleId": "SW003",
+      "filePath": "FUSE/Testing/FuseTestApi.cs",
+      "lineNumber": 344,
+      "codeSnippet": "catch\r\n                {\r\n                    // skip a save we couldn't delete\r\n                }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960671+00:00"
+    },
+    {
+      "hash": "8e492110eff9378a",
+      "ruleId": "SW005",
+      "filePath": "FUSE.Converter/FUSE.Converter.csproj",
+      "lineNumber": 9,
+      "codeSnippet": "<Nullable>disable</Nullable>",
+      "message": "Nullable reference types are disabled",
+      "baselinedAt": "2026-06-10T00:48:37.7960701+00:00"
+    },
+    {
+      "hash": "a6ea186c91bdad69",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Converter/Conversion/LegacyKindDetector.cs",
+      "lineNumber": 104,
+      "codeSnippet": "catch (Exception) { /* malformed JSON ignored — counted in conversion later */ }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960732+00:00"
+    },
+    {
+      "hash": "a3d406db2c2fa2c2",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Converter/Conversion/LegacyManifestReader.cs",
+      "lineNumber": 57,
+      "codeSnippet": "catch (Exception)\r\n                {\r\n                    // Try the next manifest; the conversion report will\r\n                    // surface a clearer warning at a higher level.\r\n                }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960768+00:00"
+    },
+    {
+      "hash": "a8fcf564a07a3179",
+      "ruleId": "SW005",
+      "filePath": "FUSE.Core/FUSE.Core.csproj",
+      "lineNumber": 15,
+      "codeSnippet": "<NoWarn>$(NoWarn);CS0618</NoWarn>",
+      "message": "Adding warnings to NoWarn: CS0618",
+      "baselinedAt": "2026-06-10T00:48:37.7960797+00:00"
+    },
+    {
+      "hash": "be5082548e58c1a6",
+      "ruleId": "SW005",
+      "filePath": "FUSE.Core/FUSE.Core.csproj",
+      "lineNumber": 8,
+      "codeSnippet": "<Nullable>disable</Nullable>",
+      "message": "Nullable reference types are disabled",
+      "baselinedAt": "2026-06-10T00:48:37.7960828+00:00"
+    },
+    {
+      "hash": "1c4892e4378d9029",
+      "ruleId": "SW005",
+      "filePath": "FUSE.Core.Tests/FUSE.Core.Tests.csproj",
+      "lineNumber": 14,
+      "codeSnippet": "<NoWarn>$(NoWarn);CA1861</NoWarn>",
+      "message": "Adding warnings to NoWarn: CA1861",
+      "baselinedAt": "2026-06-10T00:48:37.7960865+00:00"
+    },
+    {
+      "hash": "a0c4b43d1c03bf63",
+      "ruleId": "SW005",
+      "filePath": "FUSE.Editor/FUSE.Editor.csproj",
+      "lineNumber": 13,
+      "codeSnippet": "<NoWarn>$(NoWarn);0618</NoWarn>",
+      "message": "Adding warnings to NoWarn: 0618",
+      "baselinedAt": "2026-06-10T00:48:37.7960896+00:00"
+    },
+    {
+      "hash": "ab75956e02afc84d",
+      "ruleId": "SW005",
+      "filePath": "FUSE.Editor/FUSE.Editor.csproj",
+      "lineNumber": 11,
+      "codeSnippet": "<Nullable>disable</Nullable>",
+      "message": "Nullable reference types are disabled",
+      "baselinedAt": "2026-06-10T00:48:37.7960924+00:00"
+    },
+    {
+      "hash": "e4be69500f4c2a89",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Editor/FuseEditor.cs",
+      "lineNumber": 336,
+      "codeSnippet": "catch (System.Exception)\r\n            {\r\n                // Static accessor can throw on early MapDidLoad — fall\r\n                // through to origin below.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7960966+00:00"
+    },
+    {
+      "hash": "ea9400689ff31a88",
+      "ruleId": "SW005",
+      "filePath": "FUSE.ExternalEditor.UiTests/FUSE.ExternalEditor.UiTests.csproj",
+      "lineNumber": 18,
+      "codeSnippet": "<NoWarn>$(NoWarn);CA1822</NoWarn>",
+      "message": "Adding warnings to NoWarn: CA1822",
+      "baselinedAt": "2026-06-10T00:48:37.7960999+00:00"
+    },
+    {
+      "hash": "449a6d8481cab94e",
+      "ruleId": "SW004",
+      "filePath": "FUSE.ExternalEditor.UiTests/TerrainGenerationServiceTests.cs",
+      "lineNumber": 45,
+      "codeSnippet": "Task.Delay(5, cancellationToken)",
+      "message": "Test uses Task.Delay(5) which may indicate a timing-dependent test",
+      "baselinedAt": "2026-06-10T00:48:37.7961029+00:00"
+    },
+    {
+      "hash": "b199870f952e4988",
+      "ruleId": "SW004",
+      "filePath": "FUSE.ExternalEditor.UiTests/TerrainGenerationServiceTests.cs",
+      "lineNumber": 128,
+      "codeSnippet": "Task.Delay(50)",
+      "message": "Test uses Task.Delay(50) which may indicate a timing-dependent test",
+      "baselinedAt": "2026-06-10T00:48:37.7961285+00:00"
+    },
+    {
+      "hash": "403588a8e6cf8a3e",
+      "ruleId": "SW005",
+      "filePath": "FUSE.LiveBridge/FUSE.LiveBridge.csproj",
+      "lineNumber": 14,
+      "codeSnippet": "<NoWarn>$(NoWarn);0618</NoWarn>",
+      "message": "Adding warnings to NoWarn: 0618",
+      "baselinedAt": "2026-06-10T00:48:37.7961314+00:00"
+    },
+    {
+      "hash": "783a15a87a71072d",
+      "ruleId": "SW005",
+      "filePath": "FUSE.LiveBridge/FUSE.LiveBridge.csproj",
+      "lineNumber": 12,
+      "codeSnippet": "<Nullable>disable</Nullable>",
+      "message": "Nullable reference types are disabled",
+      "baselinedAt": "2026-06-10T00:48:37.7961355+00:00"
+    },
+    {
+      "hash": "9c885709f8017472",
+      "ruleId": "SW003",
+      "filePath": "FUSE.LiveBridge/FuseLiveBridgeBehaviour.cs",
+      "lineNumber": 83,
+      "codeSnippet": "catch\r\n            {\r\n                // ignore\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7961389+00:00"
+    },
+    {
+      "hash": "fc59fa73acf10bda",
+      "ruleId": "SW003",
+      "filePath": "FUSE.LiveHarness/Bridge/BridgeClient.cs",
+      "lineNumber": 132,
+      "codeSnippet": "catch\r\n        {\r\n            // best-effort cleanup\r\n        }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7961455+00:00"
+    },
+    {
+      "hash": "d32743a1e57a44b0",
+      "ruleId": "SW005",
+      "filePath": "FUSE.LiveHarness.Tests/FUSE.LiveHarness.Tests.csproj",
+      "lineNumber": 17,
+      "codeSnippet": "<NoWarn>$(NoWarn);CA1822</NoWarn>",
+      "message": "Adding warnings to NoWarn: CA1822",
+      "baselinedAt": "2026-06-10T00:48:37.7961495+00:00"
+    },
+    {
+      "hash": "c7bc52f6c2309741",
+      "ruleId": "SW005",
+      "filePath": "FUSE.TestBridge/FUSE.TestBridge.csproj",
+      "lineNumber": 16,
+      "codeSnippet": "<NoWarn>$(NoWarn);0618</NoWarn>",
+      "message": "Adding warnings to NoWarn: 0618",
+      "baselinedAt": "2026-06-10T00:48:37.7961523+00:00"
+    },
+    {
+      "hash": "1795900f48558c5e",
+      "ruleId": "SW005",
+      "filePath": "FUSE.TestBridge/FUSE.TestBridge.csproj",
+      "lineNumber": 14,
+      "codeSnippet": "<Nullable>disable</Nullable>",
+      "message": "Nullable reference types are disabled",
+      "baselinedAt": "2026-06-10T00:48:37.7961551+00:00"
+    },
+    {
+      "hash": "6144950190133214",
+      "ruleId": "SW003",
+      "filePath": "FUSE.TestBridge/FuseTestBridgeBehaviour.cs",
+      "lineNumber": 110,
+      "codeSnippet": "catch\r\n            {\r\n                // ignore\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7961582+00:00"
+    },
+    {
+      "hash": "7324827efea01e53",
+      "ruleId": "SW003",
+      "filePath": "FUSE.TestBridge/FuseTestBridgeBehaviour.cs",
+      "lineNumber": 304,
+      "codeSnippet": "catch\r\n            {\r\n                // treat as not-yet-present\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7961614+00:00"
+    },
+    {
+      "hash": "9f29df829cfcaece",
+      "ruleId": "SW003",
+      "filePath": "FUSE.TestBridge/Main.cs",
+      "lineNumber": 59,
+      "codeSnippet": "catch\r\n            {\r\n                // A malformed or locked Info.json just leaves the bridge disabled.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7961712+00:00"
+    },
+    {
+      "hash": "4580de2d50751a44",
+      "ruleId": "SW005",
+      "filePath": "FUSE.Tests/FUSE.Tests.csproj",
+      "lineNumber": 17,
+      "codeSnippet": "<NoWarn>$(NoWarn);CA1861</NoWarn>",
+      "message": "Adding warnings to NoWarn: CA1861",
+      "baselinedAt": "2026-06-10T00:48:37.7961747+00:00"
+    },
+    {
+      "hash": "843ec9f4dded3fa1",
+      "ruleId": "SW005",
+      "filePath": "FUSE.Tests/FUSE.Tests.csproj",
+      "lineNumber": 9,
+      "codeSnippet": "<Nullable>disable</Nullable>",
+      "message": "Nullable reference types are disabled",
+      "baselinedAt": "2026-06-10T00:48:37.7961773+00:00"
+    },
+    {
+      "hash": "d7c1c4dbd111d9be",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Tests/Authoring/Editor/FuseEditorAssemblyLoaderTests.cs",
+      "lineNumber": 51,
+      "codeSnippet": "catch\r\n            {\r\n                // The synthesized DLL is held by the loaded AppDomain; on\r\n                // Windows that locks the file. Best-effort cleanup is\r\n                // acceptable here — temp folder lives under %TEMP% and\r\n    // ...",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7961815+00:00"
+    },
+    {
+      "hash": "890e86f9e577ea95",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Tests/Converter/FuseLegacyConverterTests.cs",
+      "lineNumber": 29,
+      "codeSnippet": "catch { /* best-effort */ }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7961846+00:00"
+    },
+    {
+      "hash": "535a71842f510943",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Tests/Converter/LegacyAudioConverterTests.cs",
+      "lineNumber": 29,
+      "codeSnippet": "catch { }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7961878+00:00"
+    },
+    {
+      "hash": "0130b19125a86878",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Tests/Converter/LegacyDefinitionConverterTests.cs",
+      "lineNumber": 131,
+      "codeSnippet": "catch { }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7961906+00:00"
+    },
+    {
+      "hash": "d49295b3dc41cba7",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Tests/Converter/LegacyKindDetectorTests.cs",
+      "lineNumber": 25,
+      "codeSnippet": "catch { }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7962091+00:00"
+    },
+    {
+      "hash": "0c49bbcf1c12b164",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Tests/Editor/FuseEditorBookmarkRegistryTests.cs",
+      "lineNumber": 43,
+      "codeSnippet": "catch\r\n            {\r\n                // Best-effort temp cleanup — Windows may hold the file\r\n                // briefly after the final flush; the OS reclaims %TEMP%.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7962133+00:00"
+    },
+    {
+      "hash": "e2190035637f057b",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Tests/Editor/FuseEditorModCatalogTests.cs",
+      "lineNumber": 42,
+      "codeSnippet": "catch\r\n            {\r\n                // Best-effort temp cleanup.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7962167+00:00"
+    },
+    {
+      "hash": "e665556879163bd3",
+      "ruleId": "SW004",
+      "filePath": "FUSE.Tests/Editor/FuseEditorModCatalogTests.cs",
+      "lineNumber": 301,
+      "codeSnippet": "System.Threading.Thread.Sleep(20)",
+      "message": "Test uses Thread.Sleep(20) which may indicate a timing-dependent test",
+      "baselinedAt": "2026-06-10T00:48:37.7962194+00:00"
+    },
+    {
+      "hash": "147d8e33725863c4",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Tests/Editor/FuseEditorSettingsTests.cs",
+      "lineNumber": 27,
+      "codeSnippet": "catch { }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7962224+00:00"
+    },
+    {
+      "hash": "928b40bc517992bb",
+      "ruleId": "SW004",
+      "filePath": "FUSE.Tests/Editor/FuseEditorSettingsTests.cs",
+      "lineNumber": 68,
+      "codeSnippet": "System.Threading.Thread.Sleep(10)",
+      "message": "Test uses Thread.Sleep(10) which may indicate a timing-dependent test",
+      "baselinedAt": "2026-06-10T00:48:37.796225+00:00"
+    },
+    {
+      "hash": "1420e32a793b17f1",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Tests/Loading/FuseAssetCollisionRegistryFilesystemTests.cs",
+      "lineNumber": 52,
+      "codeSnippet": "catch\r\n            {\r\n                // Best-effort temp cleanup; another test process touching\r\n                // the same path should never happen because of the GUID\r\n                // suffix, but if it does we leave the residue rather than\r\n    // ...",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.79623+00:00"
+    },
+    {
+      "hash": "cdfa2227b35baf0c",
+      "ruleId": "SW003",
+      "filePath": "FUSE.Tests/Loading/FuseAssetPackDiscoveryOrderTests.cs",
+      "lineNumber": 50,
+      "codeSnippet": "catch\r\n            {\r\n                // Best-effort cleanup. Stragglers in TEMP are harmless.\r\n            }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7962334+00:00"
+    },
+    {
+      "hash": "a9cad243a6db70ad",
+      "ruleId": "SW003",
+      "filePath": "scripts/Validate-ModPackage.cs",
+      "lineNumber": 286,
+      "codeSnippet": "catch { /* best effort */ }",
+      "message": "Empty catch block swallows exceptions without handling",
+      "baselinedAt": "2026-06-10T00:48:37.7962366+00:00"
+    }
+  ]
+}
