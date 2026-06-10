@@ -208,10 +208,15 @@ namespace FUSE.Patches
             {
                 return StateManager.CheckAuthorizedToChangeProperty(car.id, FuseVisualConditionAPI.VisualConditionKey);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Fail open: the worst case is the host rejecting the write.
-                return true;
+                // Fail closed: if the state layer cannot answer, offering a
+                // control that writes replicated persistent keys is worse
+                // than the read-only treatment.
+                FuseLog.Warning(
+                    $"FUSE visual condition auth check failed " +
+                    $"car='{(car != null ? car.id : null) ?? string.Empty}' message='{ex.Message}'.");
+                return false;
             }
         }
     }
