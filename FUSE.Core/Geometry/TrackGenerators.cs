@@ -280,9 +280,11 @@ namespace Fuse.Core.Geometry
         public static (List<string> NodeIds, List<string> SegmentIds) Commit(FuseTrackDefinition tracks, GeneratedTrack generated)
         {
             var nodeIds = new List<string>(generated.Nodes.Count);
+            var takenNodeIds = new HashSet<string>(tracks.Nodes.Keys);
+            var nextNodeIndex = 1;
             foreach (var n in generated.Nodes)
             {
-                var id = TrackOps.NewNodeId(tracks);
+                var id = TrackOps.NewNodeId(takenNodeIds, ref nextNodeIndex);
                 TrackOps.AddNode(
                     tracks, id,
                     new FuseVector3((float)n.X, (float)n.Y, (float)n.Z),
@@ -292,9 +294,11 @@ namespace Fuse.Core.Geometry
             }
 
             var segmentIds = new List<string>(generated.Segments.Count);
+            var takenSegmentIds = new HashSet<string>(tracks.Segments.Keys);
+            var nextSegmentIndex = 1;
             foreach (var s in generated.Segments)
             {
-                var id = TrackOps.NewSegmentId(tracks);
+                var id = TrackOps.NewSegmentId(takenSegmentIds, ref nextSegmentIndex);
                 TrackOps.ConnectSegment(
                     tracks, id, nodeIds[s.StartIndex], nodeIds[s.EndIndex],
                     s.TrackClass ?? "main", s.Style ?? "standard", s.SpeedLimit);
