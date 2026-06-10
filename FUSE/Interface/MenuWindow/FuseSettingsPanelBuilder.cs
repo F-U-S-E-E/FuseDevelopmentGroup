@@ -64,6 +64,19 @@ namespace FUSE.Interface.MenuWindow
 
             builder.Spacing = 6f;
 
+            builder.AddSection("Interface");
+
+            builder.AddField("Enhanced Loading Screen", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableEnhancedLoadingScreen,
+                () =>
+                {
+                    FuseSettings.SetEnableEnhancedLoadingScreen(!FuseSettings.EnableEnhancedLoadingScreen);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel("Staged progress and current-step labels during loading; takes effect on the next load.");
+
             builder.AddSection("Reporting");
 
             builder.AddField("Verbose Reporting", control: BuildToggleBoxWithButton(

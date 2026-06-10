@@ -66,6 +66,16 @@ namespace FUSE.Interface
                     FuseVisualConditionAPI.RefreshAllOverriddenCars();
                     RebuildWindow();
                 });
+            AddSettingToggle(
+                builder,
+                "Loading Screen",
+                FuseSettings.EnableEnhancedLoadingScreen ? "enhanced (FUSE)" : "stock game screen",
+                FuseSettings.EnableEnhancedLoadingScreen ? "Use Stock" : "Use Enhanced",
+                () =>
+                {
+                    FuseSettings.SetEnableEnhancedLoadingScreen(!FuseSettings.EnableEnhancedLoadingScreen);
+                    RebuildWindow();
+                });
             builder.Spacer(4f);
 
             builder.AddSection("Reporting");
