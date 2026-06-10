@@ -25,6 +25,11 @@ namespace FUSE.Patches
             {
                 FuseLog.Exception($"FUSE direct asset pack store patch failed softly", ex);
             }
+            finally
+            {
+                // Even a partial store add changes the identifier population.
+                FUSE.Runtime.API.SceneryAPI.InvalidateKnownSceneryIdentifierIndex();
+            }
         }
     }
 }

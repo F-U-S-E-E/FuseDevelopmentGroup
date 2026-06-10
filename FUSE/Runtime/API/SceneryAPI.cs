@@ -362,38 +362,89 @@ namespace FUSE.Runtime.API
                 return true;
             }
 
-            IEnumerable<string> known;
-            try
-            {
-                known = manager.GetSceneryDefinitionIdentifiers();
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception($"FUSE scenery asset registry enumeration failed while resolving '{candidate}'", ex);
-                return false;
-            }
+            return TryResolveFromKnownIdentifierIndex(manager, candidate, out resolvedIdentifier);
+        }
 
-            if (known == null)
-            {
-                return false;
-            }
+        // Case-insensitive identifier -> canonical identifier, built lazily from one
+        // GetSceneryDefinitionIdentifiers() call. That enumeration re-walks every
+        // mounted store's container per call (plus the editor-menu postfix's
+        // direct-store filter), so the miss fallback above used to pay ~200ms for
+        // every unresolved scenery item on the loading-screen critical path — and
+        // re-paid it for each repeat of the same missing identifier. First-wins
+        // insertion in enumeration order reproduces the old linear scan's pick
+        // exactly, and going through the manager (not PrefabStore._stores directly)
+        // keeps the patched direct-only filtering applied. The index must never be
+        // consulted before the exact-case probe and legacy-alias steps above.
+        private static readonly object KnownSceneryIdentifierIndexLock = new object();
+        private static Dictionary<string, string> _knownSceneryIdentifierIndex;
+        private static int _knownSceneryIdentifierIndexGeneration;
 
-            foreach (var id in known)
+        // The identifier population changes outside this class: direct-store
+        // mounting (PrefabStore.Create postfix), asset-pack reset, legacy container
+        // mixinto application, and map-load cache rebuilds all drop the index so the
+        // next miss rebuilds it against the current catalog.
+        internal static void InvalidateKnownSceneryIdentifierIndex()
+        {
+            lock (KnownSceneryIdentifierIndexLock)
             {
-                if (string.Equals(id, candidate, StringComparison.Ordinal))
+                _knownSceneryIdentifierIndex = null;
+                _knownSceneryIdentifierIndexGeneration++;
+            }
+        }
+
+        private static bool TryResolveFromKnownIdentifierIndex(SceneryAssetManager manager, string candidate, out string resolvedIdentifier)
+        {
+            resolvedIdentifier = null;
+            Dictionary<string, string> index;
+            lock (KnownSceneryIdentifierIndexLock)
+            {
+                index = _knownSceneryIdentifierIndex;
+                if (index == null)
                 {
-                    resolvedIdentifier = id;
-                    return true;
-                }
+                    var generationBeforeBuild = _knownSceneryIdentifierIndexGeneration;
+                    IEnumerable<string> known;
+                    try
+                    {
+                        known = manager.GetSceneryDefinitionIdentifiers();
+                    }
+                    catch (Exception ex)
+                    {
+                        FuseLog.Exception($"FUSE scenery asset registry enumeration failed while resolving '{candidate}'", ex);
+                        return false;
+                    }
 
-                if (string.Equals(id, candidate, StringComparison.OrdinalIgnoreCase))
-                {
-                    resolvedIdentifier = id;
-                    return true;
+                    if (known == null)
+                    {
+                        return false;
+                    }
+
+                    index = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var id in known)
+                    {
+                        if (!string.IsNullOrEmpty(id) && !index.ContainsKey(id))
+                        {
+                            index.Add(id, id);
+                        }
+                    }
+
+                    // The enumeration itself touches store.Container(), whose postfix
+                    // can apply legacy container mixintos and re-enter
+                    // InvalidateKnownSceneryIdentifierIndex on this thread (the lock is
+                    // reentrant). In that known case the list is actually complete —
+                    // each container is mutated before the manager reads it — but a
+                    // generation bump during the build means some mutation interleaved
+                    // and we can't prove the list reflects it. Use the list for this
+                    // lookup (the pre-cache code saw the same per-call snapshot) but
+                    // don't publish it; the next miss rebuilds, costing at most one
+                    // extra enumeration.
+                    if (_knownSceneryIdentifierIndexGeneration == generationBeforeBuild)
+                    {
+                        _knownSceneryIdentifierIndex = index;
+                    }
                 }
             }
 
-            return false;
+            return index.TryGetValue(candidate, out resolvedIdentifier);
         }
 
         private static bool IsKnownOptionalLegacyAssetReference(string value)
