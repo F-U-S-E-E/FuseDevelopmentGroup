@@ -36,6 +36,13 @@ Packages and tooling:
 
 Quality gates:
 - After substantial new or LLM-authored code: `slopwatch`
+  Install once with `dotnet tool restore` (manifest in `.config/dotnet-tools.json`), then run
+  `dotnet slopwatch analyze -d .` from the repo root. The relative `-d .` is required:
+  with an absolute path or no `-d`, slopwatch 0.4.1 silently reports 0 findings when run
+  inside a worktree nested under the main checkout (e.g. `.claude/worktrees/...`), and
+  `--hook` mode has the same blind spot there. Pre-existing findings are baselined in
+  `.slopwatch/baseline.json`; extend it only with documented justification via
+  `dotnet slopwatch analyze -d . --update-baseline`.
 - Coverage and risk analysis: `coverage-analysis`, `crap-analysis`, `crap-score`
 - Test smells and assertion quality: `test-anti-patterns`, `exp-assertion-quality`,
   `exp-test-smell-detection`, `exp-test-maintainability`, `exp-mock-usage-analysis`,
