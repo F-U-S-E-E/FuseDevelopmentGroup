@@ -24,20 +24,21 @@ namespace Fuse.Core.Authoring
 
         public static bool DeleteLoad(FuseOperationsDefinition operations, string id) => operations.Loads.Remove(id);
 
-        public static string NewIndustryId(FuseOperationsDefinition operations) => UniqueId(operations.Industries.Keys, "ind");
+        public static string NewIndustryId(FuseOperationsDefinition operations) => AuthoringIds.UniqueId(operations.Industries.Keys, "ind");
 
-        public static string NewLoadId(FuseOperationsDefinition operations) => UniqueId(operations.Loads.Keys, "load");
+        public static string NewLoadId(FuseOperationsDefinition operations) => AuthoringIds.UniqueId(operations.Loads.Keys, "load");
 
-        private static string UniqueId(IEnumerable<string> existing, string prefix)
-        {
-            var set = new HashSet<string>(existing);
-            var i = 1;
-            while (set.Contains($"{prefix}_{i:D4}"))
-            {
-                i++;
-            }
+        /// <summary>
+        /// Batch variant of <see cref="NewIndustryId(FuseOperationsDefinition)"/> for callers minting
+        /// many ids in one operation: build <paramref name="takenIds"/> from <c>operations.Industries.Keys</c>
+        /// once, start <paramref name="nextIndex"/> at 1, and reuse both across calls. Each returned
+        /// id is added to <paramref name="takenIds"/>, so as long as no ids are removed mid-batch the
+        /// sequence matches repeated single-shot calls (first free slot, gaps filled) without
+        /// rescanning every key per id.
+        /// </summary>
+        public static string NewIndustryId(ISet<string> takenIds, ref int nextIndex) => AuthoringIds.UniqueId(takenIds, "ind", ref nextIndex);
 
-            return $"{prefix}_{i:D4}";
-        }
+        /// <summary>Batch variant of <see cref="NewLoadId(FuseOperationsDefinition)"/>; see <see cref="NewIndustryId(ISet{string}, ref int)"/>.</summary>
+        public static string NewLoadId(ISet<string> takenIds, ref int nextIndex) => AuthoringIds.UniqueId(takenIds, "load", ref nextIndex);
     }
 }

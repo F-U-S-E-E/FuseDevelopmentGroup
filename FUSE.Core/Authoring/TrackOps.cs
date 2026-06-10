@@ -125,9 +125,9 @@ namespace Fuse.Core.Authoring
         public static int NodeValency(FuseTrackDefinition tracks, string nodeId) =>
             tracks.Segments.Values.Count(s => s != null && (s.StartNodeId == nodeId || s.EndNodeId == nodeId));
 
-        public static string NewNodeId(FuseTrackDefinition tracks) => UniqueId(tracks.Nodes.Keys, "n");
+        public static string NewNodeId(FuseTrackDefinition tracks) => AuthoringIds.UniqueId(tracks.Nodes.Keys, "n");
 
-        public static string NewSegmentId(FuseTrackDefinition tracks) => UniqueId(tracks.Segments.Keys, "s");
+        public static string NewSegmentId(FuseTrackDefinition tracks) => AuthoringIds.UniqueId(tracks.Segments.Keys, "s");
 
         /// <summary>
         /// Batch variant of <see cref="NewNodeId(FuseTrackDefinition)"/> for callers minting many
@@ -137,37 +137,9 @@ namespace Fuse.Core.Authoring
         /// mid-batch the sequence matches repeated single-shot calls (first free slot, gaps
         /// filled) without rescanning every key per id.
         /// </summary>
-        public static string NewNodeId(ISet<string> takenIds, ref int nextIndex) => UniqueId(takenIds, "n", ref nextIndex);
+        public static string NewNodeId(ISet<string> takenIds, ref int nextIndex) => AuthoringIds.UniqueId(takenIds, "n", ref nextIndex);
 
         /// <summary>Batch variant of <see cref="NewSegmentId(FuseTrackDefinition)"/>; see <see cref="NewNodeId(ISet{string}, ref int)"/>.</summary>
-        public static string NewSegmentId(ISet<string> takenIds, ref int nextIndex) => UniqueId(takenIds, "s", ref nextIndex);
-
-        private static string UniqueId(IEnumerable<string> existing, string prefix)
-        {
-            var set = new HashSet<string>(existing);
-            var i = 1;
-            return UniqueId(set, prefix, ref i);
-        }
-
-        // Ids are only added while a batch runs, so the first free slot never moves backwards
-        // and the cursor can resume where the previous call stopped instead of rescanning from 1.
-        private static string UniqueId(ISet<string> takenIds, string prefix, ref int nextIndex)
-        {
-            if (nextIndex < 1)
-            {
-                nextIndex = 1;
-            }
-
-            var id = $"{prefix}_{nextIndex:D4}";
-            while (!takenIds.Add(id))
-            {
-                nextIndex++;
-                id = $"{prefix}_{nextIndex:D4}";
-            }
-
-            // Leave the cursor past the minted slot so the next call doesn't re-test it.
-            nextIndex++;
-            return id;
-        }
+        public static string NewSegmentId(ISet<string> takenIds, ref int nextIndex) => AuthoringIds.UniqueId(takenIds, "s", ref nextIndex);
     }
 }
