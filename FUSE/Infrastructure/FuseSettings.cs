@@ -32,6 +32,10 @@ namespace FUSE.Infrastructure
         public const bool DefaultWorldLabelsShowTrackNodes = false;
         public const bool DefaultWorldLabelsShowTrackSegments = false;
         public const bool DefaultShowLegacyModsInUmm = true;
+        // When off (default), the per-car Visual Condition slider can only make
+        // a car look more worn than its mechanical condition; when on, the
+        // visual override applies verbatim so worn cars can look fresh.
+        public const bool DefaultDecoupleVisualConditionLimits = false;
         // Spawn-time visual-condition randomization is opt-in; the default
         // range mirrors the legacy behavior players already expect: mostly
         // presentable cars (0.6) up to factory-fresh (1.0).
@@ -85,6 +89,8 @@ namespace FUSE.Infrastructure
 
         public static bool ShowLegacyModsInUmm { get; private set; } = DefaultShowLegacyModsInUmm;
 
+        public static bool DecoupleVisualConditionLimits { get; private set; } = DefaultDecoupleVisualConditionLimits;
+
         public static bool RandomizeVisualConditionOnSpawn { get; private set; } = DefaultRandomizeVisualConditionOnSpawn;
 
         public static float RandomVisualConditionMin { get; private set; } = DefaultRandomVisualConditionMin;
@@ -112,6 +118,7 @@ namespace FUSE.Infrastructure
             WorldLabelsShowTrackNodes = DefaultWorldLabelsShowTrackNodes;
             WorldLabelsShowTrackSegments = DefaultWorldLabelsShowTrackSegments;
             ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
+            DecoupleVisualConditionLimits = DefaultDecoupleVisualConditionLimits;
             RandomizeVisualConditionOnSpawn = DefaultRandomizeVisualConditionOnSpawn;
             RandomVisualConditionMin = DefaultRandomVisualConditionMin;
             RandomVisualConditionMax = DefaultRandomVisualConditionMax;
@@ -166,6 +173,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "WorldLabelsShowTrackSegments", DefaultWorldLabelsShowTrackSegments);
                 ShowLegacyModsInUmm =
                     ReadBool(settings, "ShowLegacyModsInUmm", DefaultShowLegacyModsInUmm);
+                DecoupleVisualConditionLimits =
+                    ReadBool(settings, "DecoupleVisualConditionLimits", DefaultDecoupleVisualConditionLimits);
                 RandomizeVisualConditionOnSpawn =
                     ReadBool(settings, "RandomizeVisualConditionOnSpawn", DefaultRandomizeVisualConditionOnSpawn);
                 RandomVisualConditionMin =
@@ -196,6 +205,7 @@ namespace FUSE.Infrastructure
                     $"WorldLabelsShowTrackNodes={WorldLabelsShowTrackNodes} " +
                     $"WorldLabelsShowTrackSegments={WorldLabelsShowTrackSegments} " +
                     $"ShowLegacyModsInUmm={ShowLegacyModsInUmm} " +
+                    $"DecoupleVisualConditionLimits={DecoupleVisualConditionLimits} " +
                     $"RandomizeVisualConditionOnSpawn={RandomizeVisualConditionOnSpawn} " +
                     $"RandomVisualConditionMin={RandomVisualConditionMin} " +
                     $"RandomVisualConditionMax={RandomVisualConditionMax} " +
@@ -222,6 +232,7 @@ namespace FUSE.Infrastructure
                 WorldLabelsShowTrackNodes = DefaultWorldLabelsShowTrackNodes;
                 WorldLabelsShowTrackSegments = DefaultWorldLabelsShowTrackSegments;
                 ShowLegacyModsInUmm = DefaultShowLegacyModsInUmm;
+                DecoupleVisualConditionLimits = DefaultDecoupleVisualConditionLimits;
                 RandomizeVisualConditionOnSpawn = DefaultRandomizeVisualConditionOnSpawn;
                 RandomVisualConditionMin = DefaultRandomVisualConditionMin;
                 RandomVisualConditionMax = DefaultRandomVisualConditionMax;
@@ -354,6 +365,13 @@ namespace FUSE.Infrastructure
             FuseLog.Info($"FUSE setting changed: {nameof(WorldLabelsShowTrackSegments)}={enabled}.");
         }
 
+        public static void SetDecoupleVisualConditionLimits(bool enabled)
+        {
+            DecoupleVisualConditionLimits = enabled;
+            SaveUserOverride(nameof(DecoupleVisualConditionLimits), enabled);
+            FuseLog.Info($"FUSE setting changed: {nameof(DecoupleVisualConditionLimits)}={enabled}.");
+        }
+
         public static void SetRandomizeVisualConditionOnSpawn(bool enabled)
         {
             RandomizeVisualConditionOnSpawn = enabled;
@@ -475,6 +493,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(WorldLabelsShowTrackSegments), WorldLabelsShowTrackSegments);
                 ShowLegacyModsInUmm =
                     ReadBool(settings, nameof(ShowLegacyModsInUmm), ShowLegacyModsInUmm);
+                DecoupleVisualConditionLimits =
+                    ReadBool(settings, nameof(DecoupleVisualConditionLimits), DecoupleVisualConditionLimits);
                 RandomizeVisualConditionOnSpawn =
                     ReadBool(settings, nameof(RandomizeVisualConditionOnSpawn), RandomizeVisualConditionOnSpawn);
                 RandomVisualConditionMin =

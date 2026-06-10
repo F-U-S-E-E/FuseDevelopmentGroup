@@ -1,13 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
-using System.Reflection.Emit;
 using FUSE.Infrastructure;
 using FUSE.Runtime.API;
 using Game.State;
 using HarmonyLib;
-using KeyValue.Runtime;
 using Model;
 using UI.Builder;
 using UI.CarInspector;
@@ -16,127 +13,115 @@ using UnityEngine;
 namespace FUSE.Patches
 {
     /// <summary>
-    /// Re-runs the car's material/wear refresh whenever its visual
-    /// condition changes. The game only refreshes wear when the
-    /// MECHANICAL condition key changes, so without these observers a
-    /// visual-condition write (slider drag, spawn randomization, or a
-    /// replicated change on a multiplayer client) would not show until
-    /// the next unrelated condition update. Observers are added to the
-    /// car's own observer set so they're disposed with the car.
+    /// Routes the wear value the game bakes into car materials through the
+    /// FUSE visual-condition override. The game derives the shader wear blend
+    /// from the car's mechanical condition every time it refreshes materials
+    /// (condition changes, visibility/cull-in); swapping the condition field
+    /// for the duration of that refresh reuses the game's own renderer and
+    /// shader handling instead of duplicating it here.
     /// </summary>
-    [HarmonyPatch(typeof(Car), "SetupKeyValueObject")]
-    internal static class FuseCarVisualConditionObserverPatch
+    [HarmonyPatch(typeof(Car), "UpdateMaterialsForCondition")]
+    internal static class FuseCarVisualConditionMaterialPatch
     {
-        private static readonly MethodInfo UpdateMaterialsMethod =
-            AccessTools.Method(typeof(Car), "UpdateMaterialsForCondition");
+        private static readonly FieldInfo ConditionField = AccessTools.Field(typeof(Car), "_condition");
 
-        private static void Postfix(Car __instance, HashSet<IDisposable> ___Observers)
+        private static void Prefix(Car __instance, out float? __state)
         {
+            __state = null;
             try
             {
-                if (__instance == null || __instance.KeyValueObject == null ||
-                    ___Observers == null || UpdateMaterialsMethod == null)
+                if (ConditionField == null || __instance == null || __instance.ghost || __instance.KeyValueObject == null)
                 {
                     return;
                 }
 
-                void Refresh(Value _)
+                var visual = FuseVisualConditionAPI.TryGetVisualCondition(__instance);
+                if (!visual.HasValue)
                 {
-                    try
-                    {
-                        UpdateMaterialsMethod.Invoke(__instance, null);
-                    }
-                    catch (Exception ex)
-                    {
-                        FuseLog.Warning(
-                            $"FUSE visual-condition material refresh failed softly: {ex.GetBaseException().Message}");
-                    }
+                    return;
                 }
 
-                ___Observers.Add(__instance.KeyValueObject.Observe(
-                    FuseVisualConditionAPI.VisualConditionKey, Refresh, false));
-                ___Observers.Add(__instance.KeyValueObject.Observe(
-                    FuseVisualConditionAPI.LegacyVisualConditionKey, Refresh, false));
+                var actual = (float)ConditionField.GetValue(__instance);
+                var effective = FuseVisualConditionAPI.EffectiveCondition(
+                    actual, visual.Value, FuseSettings.DecoupleVisualConditionLimits);
+                if (Mathf.Approximately(effective, actual))
+                {
+                    return;
+                }
+
+                __state = actual;
+                ConditionField.SetValue(__instance, effective);
             }
             catch (Exception ex)
             {
                 FuseLog.Warning(
-                    $"FUSE visual-condition observer wiring failed softly: {ex.GetBaseException().Message}");
+                    $"FUSE visual condition override failed; using mechanical condition " +
+                    $"car='{(__instance != null ? __instance.id : null) ?? string.Empty}' message='{ex.Message}'.");
+            }
+        }
+
+        // Finalizer rather than Postfix so the mechanical condition is
+        // restored even when the material refresh throws mid-way. A void
+        // finalizer leaves any original exception untouched.
+        private static void Finalizer(Car __instance, float? __state)
+        {
+            if (!__state.HasValue || ConditionField == null || __instance == null)
+            {
+                return;
+            }
+
+            try
+            {
+                ConditionField.SetValue(__instance, __state.Value);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE visual condition restore failed car='{__instance.id ?? string.Empty}' message='{ex.Message}'.");
             }
         }
     }
 
     /// <summary>
-    /// Blends the visual condition into the wear amount the car shader
-    /// renders. The game computes wear inside a compiler-generated local
-    /// function of <c>Car.UpdateMaterialsForCondition</c> as
-    /// <c>Mathf.InverseLerp(1f, 0.25f, condition)</c> using the
-    /// mechanical condition; this transpiler routes that condition input
-    /// through <see cref="FuseVisualConditionAPI.EffectiveWearCondition"/>
-    /// (the lower of mechanical and visual wins) right before the
-    /// InverseLerp call. If the anchor can't be found after a game
-    /// update, the method is left untouched and vanilla wear behavior is
-    /// kept — visual condition then simply has no rendered effect rather
-    /// than breaking material updates.
+    /// Refreshes car materials whenever a visual-condition override arrives —
+    /// from the inspector slider, a loaded save (the key-value reset fires
+    /// per-key observers), or a multiplayer peer. The observers join the same
+    /// set the car uses for its own key-value subscriptions, so they are
+    /// disposed with the car.
     /// </summary>
-    [HarmonyPatch]
-    internal static class FuseCarWearVisualConditionPatch
+    [HarmonyPatch(typeof(Car), "SetupKeyValueObject")]
+    internal static class FuseCarVisualConditionObserverPatch
     {
-        private static MethodInfo TargetMethod()
-        {
-            // The local function keeps its parent method's name in the
-            // compiler-generated form "<UpdateMaterialsForCondition>g__Apply|...",
-            // which is stable across the numeric suffix changing between
-            // game builds.
-            return AccessTools.GetDeclaredMethods(typeof(Car))
-                .FirstOrDefault(method => method.Name.Contains("<UpdateMaterialsForCondition>g__Apply"));
-        }
-
-        private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-        {
-            var codes = new List<CodeInstruction>(instructions);
-            var inverseLerp = AccessTools.Method(typeof(Mathf), nameof(Mathf.InverseLerp));
-            var adjust = AccessTools.Method(
-                typeof(FuseCarWearVisualConditionPatch), nameof(AdjustWearCondition));
-
-            var index = codes.FindIndex(code => code.Calls(inverseLerp));
-            if (index < 0)
-            {
-                FuseLog.Warning(
-                    "FUSE visual-condition wear patch could not locate the InverseLerp anchor; " +
-                    "vanilla wear behavior is kept.");
-                return codes;
-            }
-
-            // Stack at the anchor is [edge0, edge1, condition]; push the
-            // Car instance (the local function is an instance method) and
-            // swap the condition for the blended value.
-            codes.Insert(index, new CodeInstruction(OpCodes.Ldarg_0));
-            codes.Insert(index + 1, new CodeInstruction(OpCodes.Call, adjust));
-            return codes;
-        }
-
-        private static float AdjustWearCondition(float mechanicalCondition, Car car)
+        private static void Postfix(Car __instance, HashSet<IDisposable> ___Observers)
         {
             try
             {
-                return FuseVisualConditionAPI.EffectiveWearCondition(mechanicalCondition, car);
+                if (__instance == null || __instance.KeyValueObject == null || ___Observers == null)
+                {
+                    return;
+                }
+
+                ___Observers.Add(__instance.KeyValueObject.Observe(
+                    FuseVisualConditionAPI.VisualConditionKey,
+                    _ => FuseVisualConditionAPI.RefreshCarMaterials(__instance),
+                    callInitial: false));
+                ___Observers.Add(__instance.KeyValueObject.Observe(
+                    FuseVisualConditionAPI.LegacyVisualConditionKey,
+                    _ => FuseVisualConditionAPI.RefreshCarMaterials(__instance),
+                    callInitial: false));
             }
             catch (Exception ex)
             {
                 FuseLog.Warning(
-                    $"FUSE visual-condition wear blend failed softly: {ex.GetBaseException().Message}");
-                return mechanicalCondition;
+                    $"FUSE visual condition observer install failed " +
+                    $"car='{(__instance != null ? __instance.id : null) ?? string.Empty}' message='{ex.Message}'.");
             }
         }
     }
 
     /// <summary>
-    /// Adds a "Visual Condition" slider to the car inspector's Equipment
-    /// tab. Writes route through <see cref="FuseVisualConditionAPI"/> so
-    /// they replicate and persist like any other car property; the
-    /// readout falls back to the legacy key so saves migrated from the
-    /// legacy mod show their existing weathering.
+    /// Adds the per-car "Visual Condition" slider to the car inspector's
+    /// Equipment tab, under the stock Condition and Mileage rows.
     /// </summary>
     [HarmonyPatch(typeof(CarInspector), "PopulateEquipmentPanel")]
     internal static class FuseCarInspectorVisualConditionSliderPatch
@@ -146,38 +131,108 @@ namespace FUSE.Patches
             try
             {
                 var car = ____car;
-                if (car == null || car.KeyValueObject == null)
+                if (car == null || car.ghost || car.KeyValueObject == null)
                 {
                     return;
                 }
 
-                builder.AddField("Visual Condition", builder.AddSlider(
-                    () => FuseVisualConditionAPI.GetVisualCondition(car),
-                    () => (FuseVisualConditionAPI.GetVisualCondition(car) * 100f).ToString("0") + "%",
+                // The patch classes apply independently; if the rendering
+                // half failed to install, do not offer a control that writes
+                // persistent, replicated keys nothing will ever honor.
+                if (RenderingPatchesFailed())
+                {
+                    return;
+                }
+
+                if (!CanEditVisualCondition(car))
+                {
+                    // The property-sync layer would reject this player's
+                    // writes host-side and the slider would rubber-band, so
+                    // give unauthorized players the read-only treatment the
+                    // game uses for controls they may not change. Only worth
+                    // a row when there is an override to report.
+                    if (FuseVisualConditionAPI.TryGetVisualCondition(car).HasValue)
+                    {
+                        var label = builder.AddField(
+                            "Visual Condition",
+                            () => FuseVisualConditionAPI.FormatPercent(FuseVisualConditionAPI.GetSliderValue(car)),
+                            UIPanelBuilder.Frequency.Periodic);
+                        label.RectTransform.SetSiblingIndex(2);
+                    }
+
+                    return;
+                }
+
+                var row = builder.AddField("Visual Condition", builder.AddSlider(
+                    () => FuseVisualConditionAPI.GetSliderValue(car),
+                    () => FuseVisualConditionAPI.FormatPercent(FuseVisualConditionAPI.GetSliderValue(car)),
                     value => FuseVisualConditionAPI.SetVisualCondition(car, value),
-                    0f,
-                    1f));
+                    0f, 1f));
+                row.Tooltip(
+                    "Visual Condition",
+                    "How weathered this car looks. Purely cosmetic — repair state and performance are unaffected. " +
+                    "100% removes the override. By default the look can only be made worse than the mechanical " +
+                    "condition; toggle \"Visual Condition\" in FUSE settings to also let worn cars look fresh.");
+                // The equipment panel ends with an expanding spacer and the
+                // Customize button, so an appended row would hug the window
+                // bottom. Tuck it under the stock Condition and Mileage rows
+                // instead, where it reads as part of the condition block.
+                row.RectTransform.SetSiblingIndex(2);
             }
             catch (Exception ex)
             {
                 FuseLog.Warning(
-                    $"FUSE visual-condition slider failed softly: {ex.GetBaseException().Message}");
+                    $"FUSE visual condition slider failed to attach " +
+                    $"car='{(____car != null ? ____car.id : null) ?? string.Empty}' message='{ex.Message}'.");
+            }
+        }
+
+        private static bool RenderingPatchesFailed()
+        {
+            var material = typeof(FuseCarVisualConditionMaterialPatch).FullName;
+            var observer = typeof(FuseCarVisualConditionObserverPatch).FullName;
+            foreach (var failed in FusePatchResilience.Failed)
+            {
+                if (failed != null && (failed.TypeName == material || failed.TypeName == observer))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool CanEditVisualCondition(Car car)
+        {
+            try
+            {
+                return StateManager.CheckAuthorizedToChangeProperty(car.id, FuseVisualConditionAPI.VisualConditionKey);
+            }
+            catch (Exception ex)
+            {
+                // Fail closed: if the state layer cannot answer, offering a
+                // control that writes replicated persistent keys is worse
+                // than the read-only treatment.
+                FuseLog.Warning(
+                    $"FUSE visual condition auth check failed " +
+                    $"car='{(car != null ? car.id : null) ?? string.Empty}' message='{ex.Message}'.");
+                return false;
             }
         }
     }
 
     /// <summary>
     /// Randomizes the visual condition of freshly spawned cars when the
-    /// <see cref="FuseSettings.RandomizeVisualConditionOnSpawn"/> setting
-    /// is on. The hook returns the just-created cars, after the game has
-    /// registered their key-value objects, so the writes land on live
-    /// cars.
+    /// <see cref="FuseSettings.RandomizeVisualConditionOnSpawn"/> setting is
+    /// on. The hook returns the just-created cars after their key-value
+    /// objects are registered, so the writes land on live cars and the
+    /// observer patch above repaints them immediately.
     ///
     /// <para>Host-only: the values replicate to clients through the
-    /// state manager, so letting clients roll their own would double-write
-    /// conflicting conditions. The per-car writes are wrapped in a single
-    /// transaction scope so a multi-car spawn replicates as one batch;
-    /// the scope is null in single player, which <c>using</c>
+    /// property-sync layer, so letting clients roll their own would
+    /// double-write conflicting conditions. The per-car writes are wrapped
+    /// in a single transaction scope so a multi-car spawn replicates as one
+    /// batch; the scope is null in single player, which <c>using</c>
     /// tolerates.</para>
     /// </summary>
     [HarmonyPatch(typeof(TrainController), "HandleCreateCarsAsTrain")]
@@ -198,7 +253,7 @@ namespace FUSE.Patches
                 {
                     foreach (var car in __result)
                     {
-                        if (car == null)
+                        if (car == null || car.ghost)
                         {
                             continue;
                         }
