@@ -30,20 +30,21 @@ namespace Fuse.Core.Authoring
 
         public static bool DeleteSpliney(FuseWorldDefinition world, string id) => world.Splineys.Remove(id);
 
-        public static string NewSceneryId(FuseWorldDefinition world) => UniqueId(world.Scenery.Keys, "scn");
+        public static string NewSceneryId(FuseWorldDefinition world) => AuthoringIds.UniqueId(world.Scenery.Keys, "scn");
 
-        public static string NewSplineyId(FuseWorldDefinition world) => UniqueId(world.Splineys.Keys, "spl");
+        public static string NewSplineyId(FuseWorldDefinition world) => AuthoringIds.UniqueId(world.Splineys.Keys, "spl");
 
-        private static string UniqueId(IEnumerable<string> existing, string prefix)
-        {
-            var set = new HashSet<string>(existing);
-            var i = 1;
-            while (set.Contains($"{prefix}_{i:D4}"))
-            {
-                i++;
-            }
+        /// <summary>
+        /// Batch variant of <see cref="NewSceneryId(FuseWorldDefinition)"/> for callers minting many
+        /// ids in one operation: build <paramref name="takenIds"/> from <c>world.Scenery.Keys</c>
+        /// once, start <paramref name="nextIndex"/> at 1, and reuse both across calls. Each returned
+        /// id is added to <paramref name="takenIds"/>, so as long as no ids are removed mid-batch the
+        /// sequence matches repeated single-shot calls (first free slot, gaps filled) without
+        /// rescanning every key per id.
+        /// </summary>
+        public static string NewSceneryId(ISet<string> takenIds, ref int nextIndex) => AuthoringIds.UniqueId(takenIds, "scn", ref nextIndex);
 
-            return $"{prefix}_{i:D4}";
-        }
+        /// <summary>Batch variant of <see cref="NewSplineyId(FuseWorldDefinition)"/>; see <see cref="NewSceneryId(ISet{string}, ref int)"/>.</summary>
+        public static string NewSplineyId(ISet<string> takenIds, ref int nextIndex) => AuthoringIds.UniqueId(takenIds, "spl", ref nextIndex);
     }
 }
