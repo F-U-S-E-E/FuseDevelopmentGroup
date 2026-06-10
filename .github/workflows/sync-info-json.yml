@@ -32,8 +32,13 @@ jobs:
       - name: Parse semantic version from release tag
         id: version
         shell: powershell
+        env:
+          # Pass the tag via the environment, not template expansion, so a
+          # crafted release tag name can't inject into the script before
+          # validation. Mirrors the TAG_NAME hardening in release.yml.
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          $tag = "${{ github.event.release.tag_name }}"
+          $tag = $env:TAG_NAME
           if ($tag -notmatch '^mod-v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$') {
             Write-Host "Release tag '$tag' is not a 3-part GA mod-v semver; skipping sync."
             "skip=true" >> $env:GITHUB_OUTPUT
@@ -45,19 +50,24 @@ jobs:
       - name: Stamp FUSE/Info.json
         if: steps.version.outputs.skip == 'false'
         shell: powershell
+        env:
+          MOD_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          .\scripts\stamp-info-version.ps1 -Path FUSE\Info.json -Version ${{ steps.version.outputs.version }}
+          .\scripts\stamp-info-version.ps1 -Path FUSE\Info.json -Version "$env:MOD_VERSION"
 
       - name: Commit and push
         if: steps.version.outputs.skip == 'false'
         shell: powershell
+        env:
+          MOD_VERSION: ${{ steps.version.outputs.version }}
         run: |
+          $version = $env:MOD_VERSION
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           $status = git status --porcelain FUSE/Info.json
           if (-not $status) {
-            Write-Host "FUSE/Info.json already at v${{ steps.version.outputs.version }}; nothing to commit."
+            Write-Host "FUSE/Info.json already at v$version; nothing to commit."
             exit 0
           }
 
@@ -65,5 +75,5 @@ jobs:
           # [skip ci] keeps this metadata bump from re-running the full CI
           # build matrix; the verify-stamping check is exercised on every
           # other push so we don't lose coverage.
-          git commit -m "Sync FUSE/Info.json Version to ${{ steps.version.outputs.version }} [skip ci]"
+          git commit -m "Sync FUSE/Info.json Version to $version [skip ci]"
           git push origin main
