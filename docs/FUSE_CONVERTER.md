@@ -56,6 +56,46 @@ If that folder does not exist, it writes to `converted` under the current workin
 python tools\fuse_converter.py "C:\Path\To\LegacyMod" --out "C:\Steam\steamapps\common\Railroader\Mods" --clean
 ```
 
+## fuse-convert (.NET CLI)
+
+`FUSE.ConverterCli` builds the `fuse-convert` binary: the C# converter
+(`FUSE.Converter`) plus the FUSE.Core validator in one convert → validate →
+report pipeline. Every validation finding is rendered with a fix-hint from the
+catalog embedded in FUSE.Core — what's wrong, why it matters, and exactly how
+to fix it.
+
+```powershell
+dotnet run --project FUSE.ConverterCli -- "C:\Path\To\LegacyMod" --out "C:\Steam\steamapps\common\Railroader\Mods" --clean
+```
+
+```text
+fuse-convert <inputs...> [--out <dir>] [--kind auto|route|audio|asset] [--clean] [--batch]
+             [--no-validate] [--strict] [--format console|json|markdown|all] [--quiet]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--out <dir>` | Output root; each mod converts into `<dir>\<ModFolder>.FUSE`. Default: `.\FUSEConverted`. |
+| `--kind <kind>` | Force a package kind instead of auto-detection. |
+| `--clean` | Replace an existing `.FUSE` output folder. |
+| `--batch` | Treat each input as a container and convert every recognized child folder. |
+| `--no-validate` | Skip validation (it is on by default). |
+| `--strict` | Validation warnings also fail the run (exit 2), not just errors. |
+| `--format <fmt>` | `console` (default) prints to stdout; `json` / `markdown` also write `conversion-report.json` / `conversion-report.md` into each output folder; `all` writes both. |
+| `--quiet` | Suppress per-diagnostic output; print only summaries. |
+
+Exit codes (CI can gate conversion and validation separately):
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success — validation warnings allowed unless `--strict`. |
+| `1` | Conversion failed. |
+| `2` | Validation errors (or `--strict` with validation warnings). |
+| `64` | Usage error. |
+
+Unlike the Python tool, `fuse-convert` takes mod **folders** only — extract a
+zip (or place a bare JSON in a mod folder) before converting.
+
 ## Linux / Folder Batch Mode
 
 For Linux or anyone who wants to convert a whole folder at once:

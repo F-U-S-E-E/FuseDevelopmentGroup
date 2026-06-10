@@ -27,6 +27,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- FUSE.Core supplies the unified FuseDiagnostic shape so conversion
+         reports render through the same path as validation issues. -->
+    <ProjectReference Include="..\FUSE.Core\FUSE.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- FUSE.Tests and the editor's Convert button reach into the
          internal types to drive conversion without exposing a wide API. -->
     <InternalsVisibleTo Include="FUSE.Tests" />

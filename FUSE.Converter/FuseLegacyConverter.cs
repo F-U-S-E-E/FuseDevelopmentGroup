@@ -24,7 +24,7 @@ namespace FUSE.Converter
     /// (<c>&lt;input&gt;.FUSE</c>) so the user sees the new mod next
     /// to the original in <c>Mods/</c>.
     /// </remarks>
-    internal static class FuseLegacyConverter
+    public static class FuseLegacyConverter
     {
         public static FuseConversionResult ConvertMod(string modFolder, string outputFolder)
         {
