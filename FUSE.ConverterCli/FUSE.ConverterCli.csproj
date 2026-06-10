@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Binary name is the user-facing contract: `fuse-convert`. -->
+    <AssemblyName>fuse-convert</AssemblyName>
+    <RootNamespace>Fuse.ConverterCli</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Convert → validate → report pipeline over FUSE.Core + FUSE.Converter;
+         no game/Unity DLLs, builds with no GameDir. -->
+    <FuseIsGameFree>true</FuseIsGameFree>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FUSE.Core\FUSE.Core.csproj" />
+    <ProjectReference Include="..\FUSE.Converter\FUSE.Converter.csproj" />
+  </ItemGroup>
+</Project>

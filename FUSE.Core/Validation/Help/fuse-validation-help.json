@@ -1,0 +1,650 @@
+{
+  "fuse.audio.bell.required": {
+    "title": "Bell audio entry is empty",
+    "why": "An entry under audio.bells maps to null instead of a bell definition object, so FUSE has nothing to build the bell sound from. This is an error: the definition fails validation until the entry is a real object.",
+    "fix": "Replace the null value with a bell object that provides at least name and file.",
+    "example": "{\"audio\":{\"bells\":{\"steelBell\":{\"name\":\"Steel Bell\",\"file\":\"sounds/steel-bell.ogg\"}}}}"
+  },
+  "fuse.audio.horn.keyframes.empty": {
+    "title": "Horn layer has no keyframes",
+    "why": "A horn layer's keyframes array is missing or empty. This is only a warning — the mod still loads, but FUSE falls back to a constant volume curve for that layer instead of a shaped one.",
+    "fix": "Add at least one keyframe with t and value to shape the layer's volume, or leave it empty if constant volume is what you want.",
+    "example": "{\"audio\":{\"horns\":{\"k5la\":{\"name\":\"K5LA\",\"layers\":[{\"file\":\"sounds/horn-low.ogg\",\"keyframes\":[{\"t\":0,\"value\":0},{\"t\":1,\"value\":1}]}]}}}}"
+  },
+  "fuse.audio.horn.layer.required": {
+    "title": "Horn layer entry is null",
+    "why": "An element inside the horn's layers array is null (for example a stray comma or an unfinished placeholder), so there is no layer definition at that index. This is an error and blocks validation.",
+    "fix": "Delete the null array element, or replace it with a layer object that has a file.",
+    "example": "{\"audio\":{\"horns\":{\"k5la\":{\"name\":\"K5LA\",\"layers\":[{\"file\":\"sounds/horn-low.ogg\"},{\"file\":\"sounds/horn-high.ogg\"}]}}}}"
+  },
+  "fuse.audio.horn.layers": {
+    "title": "Horn has no layers",
+    "why": "The horn's layers array is missing or empty, and a horn needs at least one layer to produce any sound. This is an error: validation stops for this horn until a layer exists.",
+    "fix": "Add a layers array with at least one layer object pointing at an audio file.",
+    "example": "{\"audio\":{\"horns\":{\"k5la\":{\"name\":\"K5LA\",\"layers\":[{\"file\":\"sounds/horn.ogg\"}]}}}}"
+  },
+  "fuse.audio.horn.required": {
+    "title": "Horn audio entry is empty",
+    "why": "An entry under audio.horns maps to null instead of a horn definition object, so FUSE has no name or layers to build the horn from. This is an error until the entry is a real object.",
+    "fix": "Replace the null value with a horn object that has a name and at least one layer.",
+    "example": "{\"audio\":{\"horns\":{\"k5la\":{\"name\":\"K5LA\",\"layers\":[{\"file\":\"sounds/horn.ogg\"}]}}}}"
+  },
+  "fuse.audio.whistle.required": {
+    "title": "Whistle audio entry is empty",
+    "why": "An entry under audio.whistles maps to null instead of a whistle definition object, so FUSE has no name or clip to build the whistle from. This is an error until the entry is a real object.",
+    "fix": "Replace the null value with a whistle object that provides at least name and clip.",
+    "example": "{\"audio\":{\"whistles\":{\"steamWhistle\":{\"name\":\"Steam Whistle\",\"clip\":\"sounds/whistle.ogg\"}}}}"
+  },
+  "fuse.definition.required": {
+    "title": "Mod definition is missing",
+    "why": "The *.fuse.json document deserialized to nothing — the file is empty or contains no definition object — so there is no definition to validate and nothing in the file can take effect. Validation stops immediately at the document root ($).",
+    "fix": "Make the top level of the file a JSON object, with at least id and name set.",
+    "example": "{\"id\":\"my-mod\",\"name\":\"My Mod\"}"
+  },
+  "fuse.mapMask.circle.radius": {
+    "title": "Circle mask needs a positive radius",
+    "why": "A map mask with type circle has no radius, or its radius is zero or negative, so the circle would cover no area. This is an error and must be fixed before the mask is usable.",
+    "fix": "Set radius on the circle mask to a value greater than 0.",
+    "example": "{\"world\":{\"mapMasks\":{\"yardClearing\":{\"type\":\"circle\",\"center\":{\"x\":1000,\"y\":0,\"z\":2000},\"radius\":75}}}}"
+  },
+  "fuse.mapMask.curve.points": {
+    "title": "Curve mask needs at least two points",
+    "why": "A map mask with type curve has a missing points array or fewer than two points, so no curve can be formed. This is an error and must be fixed before the mask is usable.",
+    "fix": "Give the curve mask a points array containing at least two positions.",
+    "example": "{\"world\":{\"mapMasks\":{\"trackCut\":{\"type\":\"curve\",\"width\":10,\"points\":[{\"x\":100,\"y\":0,\"z\":200},{\"x\":150,\"y\":0,\"z\":260}]}}}}"
+  },
+  "fuse.mapMask.rectangle.size": {
+    "title": "Rectangle mask needs a positive size",
+    "why": "A map mask with type rectangle has no size, or its size has an x or z component of zero or less, so the rectangle's footprint would be empty. This is an error and must be fixed before the mask is usable.",
+    "fix": "Set size on the rectangle mask with x and z both greater than 0.",
+    "example": "{\"world\":{\"mapMasks\":{\"depotPad\":{\"type\":\"rectangle\",\"center\":{\"x\":500,\"y\":0,\"z\":800},\"size\":{\"x\":40,\"y\":1,\"z\":25}}}}}"
+  },
+  "fuse.mapMask.type": {
+    "title": "Unknown map mask type",
+    "why": "The mask's type is missing or is not one of circle, rectangle, or curve (matched case-insensitively), so FUSE does not know what shape to build. This is an error and the mask cannot be validated further.",
+    "fix": "Set type to \"circle\", \"rectangle\", or \"curve\", then supply that shape's fields (radius, size, or points).",
+    "example": "{\"world\":{\"mapMasks\":{\"yardClearing\":{\"type\":\"circle\",\"center\":{\"x\":1000,\"y\":0,\"z\":2000},\"radius\":75}}}}"
+  },
+  "fuse.mapTiles.required": {
+    "title": "Map tile source is empty",
+    "why": "An entry under world.mapTiles maps to null instead of a tile source object, so FUSE has no directory or sourceFolder to load map tiles from. This is an error until the entry is a real object.",
+    "fix": "Replace the null value with an object that sets directory and sourceFolder.",
+    "example": "{\"world\":{\"mapTiles\":{\"newValley\":{\"directory\":\"mapTiles\",\"sourceFolder\":\"newValley\"}}}}"
+  },
+  "fuse.mixinto.requirement.id.blank": {
+    "title": "Mixinto requirement id is blank",
+    "why": "An entry in mixinto.requires has a blank or whitespace-only id, so FUSE ignores that requirement entirely. The fragment will not be gated on the mod you meant to require and may apply even when that mod is absent.",
+    "fix": "Set the requirement's id to the identifier of the mod this fragment depends on, or delete the entry if no dependency is intended.",
+    "example": "{\"mixinto\": {\"requires\": [{\"id\": \"ExampleMod\"}]}}"
+  },
+  "fuse.mixinto.requirement.null": {
+    "title": "Null mixinto requirement entry",
+    "why": "The mixinto.requires array contains a null entry, which FUSE skips at load. A null requirement cannot gate the fragment, so any conditional-loading intent behind it is silently lost.",
+    "fix": "Remove the null entry from the requires array, or replace it with a requirement object that has an id.",
+    "example": "{\"mixinto\": {\"requires\": [{\"id\": \"ExampleMod\"}]}}"
+  },
+  "fuse.mixinto.sourceFile.blank": {
+    "title": "Mixinto sourceFile is blank",
+    "why": "The mixinto section is present but sourceFile is blank. sourceFile records which legacy file produced this converted fragment; leaving it empty makes the conversion provenance less clear when debugging the mod later.",
+    "fix": "Set sourceFile to the path of the legacy file this fragment was converted from.",
+    "example": "{\"mixinto\": {\"target\": \"game-graph\", \"sourceFile\": \"legacy/game-graph.json\"}}"
+  },
+  "fuse.mixinto.target.blank": {
+    "title": "Mixinto target is blank",
+    "why": "The mixinto section is present but target is blank. FUSE still loads the fragment as a normal conditional data file, but the legacy mixinto target name (e.g. game-graph, progressions) that documents where this fragment came from is missing.",
+    "fix": "Set target to the legacy mixinto target name this fragment was converted from, or drop the mixinto section if the file is not a converted fragment.",
+    "example": "{\"mixinto\": {\"target\": \"game-graph\", \"sourceFile\": \"legacy/game-graph.json\"}}"
+  },
+  "fuse.operations.component.carTransferRate": {
+    "title": "Negative car transfer rate",
+    "why": "An industry component's carTransferRate is negative, which the validator rejects as an error: the rate must be greater than or equal to 0. This blocks the mod and must be fixed.",
+    "fix": "Set carTransferRate to 0 or a positive number, or remove the field (only a present, negative value is rejected).",
+    "example": "{\"components\": {\"unload\": {\"carTransferRate\": 1.0}}}"
+  },
+  "fuse.operations.component.carTypeFilter.emptyToken": {
+    "title": "Empty entry in car type filter",
+    "why": "The carTypeFilter expression contains a doubled, leading, or trailing comma, producing an empty entry between separators. The game splits the filter on commas and simply ignores the empty entry, so it does nothing.",
+    "fix": "Remove the extra comma so every comma sits between two real car-type tokens (e.g. \"FB,XM\", not \"FB,,XM\" or \"FB,XM,\").",
+    "example": "{\"components\": {\"loader\": {\"carTypeFilter\": \"FB,XM\"}}}"
+  },
+  "fuse.operations.component.carTypeFilter.malformed": {
+    "title": "Whitespace inside car type filter entry",
+    "why": "A carTypeFilter entry has surrounding whitespace (e.g. \"FB, XM\"). The game splits the expression on commas without trimming and matches each token verbatim, so a padded token can never match any car type; the validator rejects this as an error that must be fixed.",
+    "fix": "Write the filter as a single comma-delimited string with no spaces around the commas; tokens match verbatim, with optional * suffix wildcards or a bare * for any car.",
+    "example": "{\"components\": {\"loader\": {\"carTypeFilter\": \"FB,XM\"}}}"
+  },
+  "fuse.operations.component.loadId": {
+    "title": "Component is missing a loadId",
+    "why": "This component type (loader, unloader, repairTrack, interchangedLoader, or interchangedUnloader) usually needs a loadId to function, but none is set. Without it the component has no load to move and will likely do nothing in-game.",
+    "fix": "Set loadId to the id of the load this component handles (a built-in load or one defined under operations.loads).",
+    "example": "{\"components\": {\"logs-in\": {\"type\": \"unloader\", \"name\": \"Log Dump\", \"loadId\": \"logs\", \"trackSpanIds\": [\"sawmill-1\"]}}}"
+  },
+  "fuse.operations.component.maxStorage": {
+    "title": "Negative max storage",
+    "why": "An industry component's maxStorage is negative, which the validator rejects as an error: max storage must be greater than or equal to 0. This blocks the mod and must be fixed.",
+    "fix": "Set maxStorage to 0 or a positive number, or remove the field (only a present, negative value is rejected).",
+    "example": "{\"components\": {\"unload\": {\"maxStorage\": 5000}}}"
+  },
+  "fuse.operations.component.required": {
+    "title": "Industry component definition is null",
+    "why": "A key under an industry's components maps to null instead of a component object, which is an error — every component entry must be a definition. Note that null here is not a deletion: FUSE deletes runtime sub-components via a remove sentinel, not a null value.",
+    "fix": "Replace the null with a component object (at minimum type and name for a full definition), or use {\"remove\": true} if you intend to delete the matching runtime sub-component.",
+    "example": "{\"components\": {\"unload\": {\"type\": \"unloader\", \"name\": \"Log Unload\"}}}"
+  },
+  "fuse.operations.component.storageChangeRate": {
+    "title": "Negative storage change rate",
+    "why": "An industry component's storageChangeRate is negative, which the validator rejects as an error: the rate must be greater than or equal to 0. This blocks the mod and must be fixed.",
+    "fix": "Set storageChangeRate to 0 or a positive number, or remove the field (only a present, negative value is rejected).",
+    "example": "{\"components\": {\"load\": {\"storageChangeRate\": 0.25}}}"
+  },
+  "fuse.operations.component.trackSpanIds": {
+    "title": "Component has no track spans",
+    "why": "This component type (loader, unloader, repairTrack, teamTrack, interchange, interchangedLoader, interchangedUnloader, or progression) requires at least one track span, but trackSpanIds is missing or empty in a full (non-partial) definition. The error blocks the mod; only passengerStop components may legitimately omit spans (virtual timetable stops with no physical platform).",
+    "fix": "Add a trackSpanIds array containing at least one track span id where cars are spotted for this component.",
+    "example": "{\"components\": {\"team\": {\"type\": \"teamTrack\", \"name\": \"Team Track\", \"trackSpanIds\": [\"whittier-team-1\"]}}}"
+  },
+  "fuse.operations.component.type": {
+    "title": "Unknown industry component type",
+    "why": "The component's type is not one of FUSE's built-in component types and does not look like a fully-qualified custom type (it contains no dot), so FUSE cannot construct the component and the definition fails validation. Validation of the rest of this component is also skipped until the type is fixed.",
+    "fix": "Set type to one of the built-in values: formulaic, interchange, interchangedLoader, interchangedUnloader, loader, passengerStop, progression, repairTrack, teamTrack, teleportLoading, or unloader. For a custom component, use its fully-qualified type name (namespace included).",
+    "example": "{ \"operations\": { \"industries\": { \"sawmill\": { \"components\": { \"logDock\": { \"type\": \"loader\" } } } } } }"
+  },
+  "fuse.operations.component.type.custom": {
+    "title": "Component type resolved from loaded assemblies",
+    "why": "The component's type is not a built-in FUSE type, but because it is dotted (fully qualified) the runtime will attempt to resolve it from loaded assemblies. This is a warning: the mod still loads, but the component only works if an assembly actually provides that exact type.",
+    "fix": "Verify the fully-qualified type name is spelled exactly right and that the mod providing it is installed. If you meant a built-in component, use its canonical name (loader, unloader, teamTrack, ...) instead.",
+    "example": "{ \"operations\": { \"industries\": { \"depot\": { \"components\": { \"pay\": { \"type\": \"ConfusingSupplements.IndustryComponents.Pay4Resource\" } } } } } }"
+  },
+  "fuse.operations.formulaic.terms": {
+    "title": "Formulaic component missing terms",
+    "why": "A formulaic component declares neither inputTermsPerDay nor outputTermsPerDay entries, so it has no loads to consume or produce. The validator reports this as an error and the definition fails validation.",
+    "fix": "Add at least one entry to inputTermsPerDay and/or outputTermsPerDay, mapping a load id to its per-day rate.",
+    "example": "{ \"type\": \"formulaic\", \"inputTermsPerDay\": { \"logs\": 6 }, \"outputTermsPerDay\": { \"lumber\": 4 } }"
+  },
+  "fuse.operations.loads.density": {
+    "title": "Negative load density",
+    "why": "The load's density is set to a value below 0, which the validator rejects — density must be greater than or equal to 0. The definition fails validation until corrected.",
+    "fix": "Set density to 0 or a positive number, or omit the field to use the default.",
+    "example": "{ \"operations\": { \"loads\": { \"coal\": { \"name\": \"Coal\", \"units\": \"pounds\", \"density\": 47.5 } } } }"
+  },
+  "fuse.operations.loads.units": {
+    "title": "Invalid load units",
+    "why": "The load's units value is not one of the three recognized unit kinds. The validator only accepts Pounds, Gallons, or Quantity (case-insensitive), and anything else is an error that fails validation.",
+    "fix": "Set units to \"pounds\", \"gallons\", or \"quantity\".",
+    "example": "{ \"operations\": { \"loads\": { \"diesel\": { \"name\": \"Diesel Fuel\", \"units\": \"gallons\" } } } }"
+  },
+  "fuse.operations.loads.unitWeightInPounds": {
+    "title": "Negative load unit weight",
+    "why": "The load's unitWeightInPounds is set to a value below 0, which the validator rejects — it must be greater than or equal to 0. The definition fails validation until corrected.",
+    "fix": "Set unitWeightInPounds to 0 or a positive number of pounds per unit, or omit the field.",
+    "example": "{ \"operations\": { \"loads\": { \"crates\": { \"name\": \"Crates\", \"units\": \"quantity\", \"unitWeightInPounds\": 1200 } } } }"
+  },
+  "fuse.operations.teamTrack.profile": {
+    "title": "Team track missing team profiles",
+    "why": "A teamTrack component has an empty or missing teamProfiles map, but team track components require at least one team profile entry to define what gets loaded or unloaded there. The validator reports this as an error and the definition fails validation.",
+    "fix": "Add at least one entry to teamProfiles, keyed by a profile id, describing the load and car filter for that team service.",
+    "example": "{ \"type\": \"teamTrack\", \"trackSpanIds\": [\"myMod.span.team1\"], \"teamProfiles\": { \"merchandise\": { \"loadId\": \"crates\", \"isExport\": false, \"loadingTimeDays\": 0.5, \"carTypeFilter\": \"XM*\" } } }"
+  },
+  "fuse.operations.teleportLoading.carLengthFeet": {
+    "title": "Negative teleport loading car length",
+    "why": "A teleportLoading component sets carLengthFeet below 0, which the validator rejects — it must be greater than or equal to 0. The definition fails validation until corrected.",
+    "fix": "Set carLengthFeet to 0 or a positive length in feet, or omit the field to use the default.",
+    "example": "{ \"type\": \"teleportLoading\", \"inputSpanIds\": [\"myMod.span.loadout\"], \"carLengthFeet\": 40 }"
+  },
+  "fuse.operations.teleportLoading.carLoadPeriod": {
+    "title": "Negative teleport loading car load period",
+    "why": "A teleportLoading component sets carLoadPeriod below 0, which the validator rejects — it must be greater than or equal to 0. The definition fails validation until corrected.",
+    "fix": "Set carLoadPeriod to 0 or a positive value, or omit the field to use the default.",
+    "example": "{ \"type\": \"teleportLoading\", \"inputSpanIds\": [\"myMod.span.loadout\"], \"carLoadPeriod\": 0.5 }"
+  },
+  "fuse.operations.teleportLoading.spans": {
+    "title": "Teleport loading missing span ids",
+    "why": "A teleportLoading component declares neither inputSpanIds nor outputSpanIds, so it has no track spans to teleport cars onto or off of. The validator requires at least one of the two arrays to be non-empty and fails validation otherwise.",
+    "fix": "Add at least one span id to inputSpanIds and/or outputSpanIds.",
+    "example": "{ \"type\": \"teleportLoading\", \"inputSpanIds\": [\"myMod.span.inbound\"], \"outputSpanIds\": [\"myMod.span.outbound\"] }"
+  },
+  "fuse.progression.delivery.count": {
+    "title": "Delivery count not positive",
+    "why": "A progression delivery has a count below 1 (omitting count leaves it at 0), but a delivery must require at least one car. The validator reports \"Delivery count must be greater than 0\" as an error and the definition fails validation.",
+    "fix": "Set count to 1 or more on the delivery entry.",
+    "example": "{ \"deliveryPhases\": [ { \"cost\": 100, \"deliveries\": [ { \"load\": \"gravel\", \"count\": 4, \"direction\": \"loadToIndustry\", \"carTypeFilter\": \"GB*\" } ] } ] }"
+  },
+  "fuse.progression.delivery.direction": {
+    "title": "Invalid delivery direction",
+    "why": "The delivery's direction is not a recognized value. The validator accepts loadToIndustry (also toIndustry, to, import) and loadFromIndustry (also fromIndustry, from, export), case-insensitive; anything else is an error that fails validation.",
+    "fix": "Set direction to \"loadToIndustry\" for cars delivered to the industry, or \"loadFromIndustry\" for cars shipped out of it.",
+    "example": "{ \"deliveryPhases\": [ { \"cost\": 100, \"deliveries\": [ { \"load\": \"logs\", \"count\": 2, \"direction\": \"loadFromIndustry\" } ] } ] }"
+  },
+  "fuse.progression.delivery.required": {
+    "title": "Null entry in deliveries list",
+    "why": "An entry in a delivery phase's deliveries array is a literal null. This is an error: FUSE has no delivery to create from it, so the phase cannot load as written.",
+    "fix": "Replace the null entry with a full delivery object, or delete it from the array.",
+    "example": "\"deliveries\": [{\"carTypeFilter\": \"GB*\", \"count\": 4, \"direction\": \"loadToIndustry\"}]"
+  },
+  "fuse.progression.deliveryPhase.cost.legacyNegative": {
+    "title": "Negative delivery phase cost",
+    "why": "A delivery phase's cost is below zero. This is only a warning: FUSE keeps the negative value because some legacy route mods deliberately use negative costs as progression credits — but if that's not your intent, the phase acts as a credit instead of a charge.",
+    "fix": "Set cost to 0 or a positive amount unless you are intentionally using the legacy negative-cost-as-credit behavior.",
+    "example": "\"deliveryPhases\": [{\"cost\": 2500, \"industryComponentId\": \"sylva-paper-siding\", \"deliveries\": [{\"count\": 3, \"direction\": \"loadFromIndustry\"}]}]"
+  },
+  "fuse.progression.deliveryPhase.industryComponentId": {
+    "title": "Delivery phase missing industry component id",
+    "why": "The phase contains deliveries but has no industryComponentId, and none of its deliveries carries a destinationIndustryId for runtime inference. This is an error: FUSE cannot determine which industry component the deliveries belong to.",
+    "fix": "Add industryComponentId to the phase, or give at least one delivery a destinationIndustryId so the component can be inferred at runtime.",
+    "example": "\"deliveryPhases\": [{\"cost\": 500, \"industryComponentId\": \"sylva-paper-siding\", \"deliveries\": [{\"carTypeFilter\": \"GB*\", \"count\": 4, \"direction\": \"loadToIndustry\"}]}]"
+  },
+  "fuse.progression.deliveryPhase.required": {
+    "title": "Null entry in deliveryPhases list",
+    "why": "An entry in a section's deliveryPhases array is a literal null. This is an error: FUSE cannot build a phase from nothing, so the section's delivery progression cannot load as written.",
+    "fix": "Replace the null entry with a phase object (cost plus deliveries), or remove it from the array.",
+    "example": "\"deliveryPhases\": [{\"cost\": 1000, \"industryComponentId\": \"alarka-depot\", \"deliveries\": [{\"count\": 2, \"direction\": \"loadToIndustry\"}]}]"
+  },
+  "fuse.progression.interchangeTransfer.sameTarget": {
+    "title": "Interchange transfer targets itself",
+    "why": "A transfer's source and target ids are the same (compared case-insensitively after trimming). This is only a warning — FUSE will still create the transfer — but it has no practical effect in-game.",
+    "fix": "Point the transfer at a different target interchange, or delete the entry if it was a copy-paste slip.",
+    "example": "\"interchangeTransfers\": {\"sylva-interchange\": \"dillsboro-interchange\"}"
+  },
+  "fuse.progression.interchangeTransfer.source.empty": {
+    "title": "Blank interchange transfer source id",
+    "why": "A key in the interchangeTransfers map is empty or whitespace. The key is the source interchange id, so a blank one identifies no source interchange — this is an error.",
+    "fix": "Use the real source interchange id as the map key.",
+    "example": "\"interchangeTransfers\": {\"sylva-interchange\": \"dillsboro-interchange\"}"
+  },
+  "fuse.progression.mapFeature.area.empty": {
+    "title": "Blank area id in map feature",
+    "why": "An entry added via areasEnableOnUnlock is empty or whitespace. This is a warning: areas are resolved by their identifier, so a blank entry can never match an area — it usually means an id was lost or a stray comma left an empty string.",
+    "fix": "Fill in the intended area identifier or delete the blank entry from the list.",
+    "example": "\"progression\": {\"mapFeatures\": {\"alarka\": {\"areasEnableOnUnlock\": [\"alarka\"]}}}"
+  },
+  "fuse.progression.mapFeature.gameObject.empty": {
+    "title": "Blank game object path in map feature",
+    "why": "An entry added via gameObjectsEnableOnUnlock is empty or whitespace. This is a warning: each entry must be a hierarchical scene path (e.g. \"World/Foo/Bar\") resolved at apply time, so a blank entry can never resolve to a GameObject to enable on unlock.",
+    "fix": "Fill in the full scene path of the object to enable, or delete the blank entry.",
+    "example": "\"progression\": {\"mapFeatures\": {\"alarka\": {\"gameObjectsEnableOnUnlock\": [\"World/Alarka/Depot\"]}}}"
+  },
+  "fuse.progression.mapFeature.industry.empty": {
+    "title": "Blank industry id in map feature",
+    "why": "An entry added via unlockIncludeIndustries or unlockExcludeIndustries is empty or whitespace. This is a warning: a blank id matches no industry, so it contributes nothing to the feature's unlock graph and almost certainly hides a missing id.",
+    "fix": "Fill in the intended industry id or remove the blank entry from the list.",
+    "example": "\"progression\": {\"mapFeatures\": {\"alarka\": {\"unlockIncludeIndustries\": [\"alarka-depot\"]}}}"
+  },
+  "fuse.progression.mapFeature.industryComponent.empty": {
+    "title": "Blank industry component id in map feature",
+    "why": "An entry added via unlockIncludeIndustryComponents is empty or whitespace. This is a warning: a blank id matches no industry component, so it adds nothing to the feature's unlock graph and usually indicates a lost id or stray comma.",
+    "fix": "Fill in the intended industry component id or delete the blank entry.",
+    "example": "\"progression\": {\"mapFeatures\": {\"alarka\": {\"unlockIncludeIndustryComponents\": [\"alarka-depot.platform\"]}}}"
+  },
+  "fuse.progression.mapFeature.required": {
+    "title": "Map feature definition is null",
+    "why": "A key under progression.mapFeatures maps to null instead of a map feature object. This is an error: FUSE has no definition to apply, and the rest of the feature (displayName, unlock lists) is never validated or created.",
+    "fix": "Give the key a feature object — at minimum a displayName — or remove the key entirely.",
+    "example": "\"progression\": {\"mapFeatures\": {\"alarka\": {\"displayName\": \"Alarka Branch\"}}}"
+  },
+  "fuse.progression.mapFeature.trackGroup.empty": {
+    "title": "Blank track group id in map feature",
+    "why": "An entry added via trackGroupsEnableOnUnlock or trackGroupsAvailableOnUnlock is empty or whitespace. This is a warning: a blank id names no track group, so unlocking the feature cannot enable or make available any track for that entry.",
+    "fix": "Fill in the intended track group id or remove the blank entry from the list.",
+    "example": "\"progression\": {\"mapFeatures\": {\"alarka\": {\"trackGroupsEnableOnUnlock\": [\"alarka-branch\"]}}}"
+  },
+  "fuse.progression.required": {
+    "title": "Missing progression definition",
+    "why": "An entry under progression.progressions maps to null instead of a progression object, so there is nothing to validate or load. This is an error: the package fails validation until the entry is a real progression.",
+    "fix": "Give the key a real progression object with its sections (each section needs a displayName), or delete the key entirely. Do not leave the value as null.",
+    "example": "{\"progression\": {\"progressions\": {\"myProgression\": {\"sections\": {\"phase-1\": {\"displayName\": \"Phase 1\"}}}}}}"
+  },
+  "fuse.progression.section.area.empty": {
+    "title": "Blank area name in unlock list",
+    "why": "A progression section's areasEnableOnUnlock list (under progression.progressions.*.sections) contains an entry that is empty or only whitespace. A blank entry names no area, so it can never enable anything when the section unlocks; this is a warning and the mod still loads with the entry doing nothing.",
+    "fix": "Remove the blank entry, or replace it with the identifier of the area you meant to enable on unlock.",
+    "example": "{\"areasEnableOnUnlock\": [\"sylva\", \"dillsboro\"]}"
+  },
+  "fuse.progression.section.duplicate": {
+    "title": "Duplicate root section ID",
+    "why": "Two or more sections in the root progression.sections array share the same id (compared case-insensitively). Root progression section IDs must be unique within a package; this is an error and the package fails validation.",
+    "fix": "Rename one of the sections so every root section has a unique id. Remember that IDs differing only in letter case still count as duplicates.",
+    "example": "{\"progression\": {\"sections\": [{\"id\": \"east-yard\"}, {\"id\": \"west-yard\"}]}}"
+  },
+  "fuse.progression.section.gameObject.empty": {
+    "title": "Blank game object path in unlock list",
+    "why": "A progression section's gameObjectsEnableOnUnlock list contains an empty or whitespace-only entry. It points at no scene object, so nothing can be enabled by it when the section unlocks; this is a warning and the mod still loads with the entry doing nothing.",
+    "fix": "Delete the blank entry, or fill in the hierarchical scene path of the object you intended to enable on unlock.",
+    "example": "{\"gameObjectsEnableOnUnlock\": [\"Large Scenery/Sylva Depot\"]}"
+  },
+  "fuse.progression.section.industry.empty": {
+    "title": "Blank industry ID in unlock list",
+    "why": "A progression section's unlockIncludeIndustries or unlockExcludeIndustries list contains an empty or whitespace-only entry. A blank ID matches no industry, so it cannot include or exclude anything when the section unlocks; this is a warning and the mod still loads with the entry ignored.",
+    "fix": "Remove the blank entry, or replace it with the industry identifier you meant to include or exclude.",
+    "example": "{\"unlockIncludeIndustries\": [\"sylva-paperboard\"], \"unlockExcludeIndustries\": [\"dillsboro-interchange\"]}"
+  },
+  "fuse.progression.section.industryComponent.empty": {
+    "title": "Blank industry component ID in unlocks",
+    "why": "A progression section's unlockIncludeIndustryComponents list contains an empty or whitespace-only entry. It identifies no component, so it cannot add anything to the unlock graph; this is a warning and the mod still loads with the entry doing nothing.",
+    "fix": "Delete the blank entry, or put in the real industry component identifier to include on unlock.",
+    "example": "{\"unlockIncludeIndustryComponents\": [\"sylva-paperboard.unload\"]}"
+  },
+  "fuse.progression.section.required": {
+    "title": "Missing progression section",
+    "why": "A section slot is null — either an entry in the root progression.sections array or a value in a progression's sections map. There is no section content to validate or load, so this is an error and the package fails validation.",
+    "fix": "Replace the null with a real section object — root sections need at least an id, and sections inside a named progression need at least a displayName — or remove the entry entirely.",
+    "example": "{\"progression\": {\"sections\": [{\"id\": \"phase-1\"}], \"progressions\": {\"myProgression\": {\"sections\": {\"phase-1\": {\"displayName\": \"Phase 1\"}}}}}}"
+  },
+  "fuse.progression.section.trackGroup.empty": {
+    "title": "Blank track group in unlock list",
+    "why": "A progression section's trackGroupsEnableOnUnlock or trackGroupsAvailableOnUnlock list contains an empty or whitespace-only entry. A blank entry names no track group, so it can never enable or make anything available; this is a warning and the mod still loads with the entry doing nothing.",
+    "fix": "Remove the blank entry, or replace it with the actual track group ID you intended.",
+    "example": "{\"trackGroupsEnableOnUnlock\": [\"tg-sylva-yard\"], \"trackGroupsAvailableOnUnlock\": [\"tg-dillsboro-spur\"]}"
+  },
+  "fuse.required": {
+    "title": "Required value is missing",
+    "why": "A field that FUSE requires (such as an id, name, prefab, displayName, targetPath, or file) is missing, empty, or only whitespace at the flagged path. This is an error: the definition cannot be loaded without it and the package fails validation.",
+    "fix": "Set the flagged field to a real, non-blank value. The field path on the message tells you exactly which entry and property to fill in.",
+    "example": "{\"displayName\": \"Sylva Depot\"}"
+  },
+  "fuse.sceneClone.required": {
+    "title": "Missing scene clone definition",
+    "why": "An entry under world.sceneClones maps to null instead of a scene clone object, so FUSE has nothing to clone. This is an error and the package fails validation; a valid clone also needs a non-blank targetPath (flagged separately as fuse.required).",
+    "fix": "Give the key a real scene clone object including its targetPath, or delete the key if the clone is no longer wanted.",
+    "example": "{\"world\": {\"sceneClones\": {\"depot-copy\": {\"targetPath\": \"Large Scenery/Sylva Depot\"}}}}"
+  },
+  "fuse.schema.version": {
+    "title": "Unsupported schema version",
+    "why": "The document's schemaVersion is not the version this runtime supports (1.0) and does not parse as a newer version — typically an older schema version. This is an error: the message states the schema version must be 1.0, and the package fails validation until it is.",
+    "fix": "Set schemaVersion to \"1.0\" at the top of the document and make sure the document follows the current schema.",
+    "example": "{\"schemaVersion\": \"1.0\"}"
+  },
+  "fuse.schema.version.future": {
+    "title": "Schema version newer than runtime",
+    "why": "The document declares a schemaVersion newer than this runtime supports (1.0), so FUSE only applies a best-effort load — anything the newer schema adds may be misread or ignored. This is a warning, not a hard failure.",
+    "fix": "Set schemaVersion to \"1.0\" if the document does not actually use newer schema features; otherwise update FUSE to a runtime that supports the declared version.",
+    "example": "{\"schemaVersion\": \"1.0\"}"
+  },
+  "fuse.settings.enum.values.empty": {
+    "title": "Enum setting has no values",
+    "why": "An enum-type setting (type enum, choice, or select) has a missing or empty values array, so FUSE has no options to offer and falls back to rendering the setting as a plain text field.",
+    "fix": "Add a values array listing the selectable options for the setting. If free-form input is actually intended, change the type to text instead.",
+    "example": "{\"settings\": {\"theme\": {\"type\": \"enum\", \"values\": [\"light\", \"dark\"], \"default\": \"light\"}}}"
+  },
+  "fuse.settings.id.blank": {
+    "title": "Blank setting ID",
+    "why": "A key in the settings object is empty or only whitespace, so the setting cannot be identified. This is an error and the definition fails validation until fixed.",
+    "fix": "Give every entry under settings a non-empty key; the key is the setting's ID. Remove or rename any \"\" or whitespace-only keys.",
+    "example": "{\"settings\": {\"maxTrainLength\": {\"type\": \"number\", \"default\": 30}}}"
+  },
+  "fuse.settings.null": {
+    "title": "Setting definition is null",
+    "why": "The setting's value is JSON null instead of an object. The Settings UI ignores null definitions, so the setting will silently not appear in-game.",
+    "fix": "Replace the null with a setting object declaring a type (and usually a default), or delete the entry entirely.",
+    "example": "{\"settings\": {\"enableLogging\": {\"type\": \"bool\", \"default\": false}}}"
+  },
+  "fuse.settings.number.range": {
+    "title": "Number setting min exceeds max",
+    "why": "A number-type setting declares both min and max, but min is greater than max, leaving the setting with no valid range. This is an error and must be fixed.",
+    "fix": "Correct min and max so that min is less than or equal to max (you may have swapped the two values).",
+    "example": "{\"settings\": {\"volume\": {\"type\": \"number\", \"min\": 0, \"max\": 100, \"default\": 50}}}"
+  },
+  "fuse.settings.number.step": {
+    "title": "Number setting step not positive",
+    "why": "A number-type setting declares a step of zero or less. Step should be greater than zero; a non-positive value is not a usable increment.",
+    "fix": "Set step to a positive value such as 1 or 0.5, or remove the step field to use the default behavior.",
+    "example": "{\"settings\": {\"volume\": {\"type\": \"number\", \"min\": 0, \"max\": 100, \"step\": 5}}}"
+  },
+  "fuse.settings.server.reloadRequired": {
+    "title": "Server setting needs reload documentation",
+    "why": "The setting is server-scoped (scope server, shared, or multiplayer) and marked reloadRequired, so values shared via multiplayer profile sharing only take effect after a reload. The validator emits this warning as a reminder to document that behavior for users.",
+    "fix": "Document the reload requirement in the setting's description so multiplayer users know a reload is needed. Alternatively drop reloadRequired or move the setting off server scope if either is unnecessary.",
+    "example": "{\"settings\": {\"trackGauge\": {\"type\": \"number\", \"scope\": \"server\", \"reloadRequired\": true, \"description\": \"Synced to all players; requires a reload to apply.\"}}}"
+  },
+  "fuse.spliney.points": {
+    "title": "Spliney needs at least two points",
+    "why": "The spliney's points array is missing or has fewer than two entries. Spliney objects require at least two points to define a path; this is an error and must be fixed.",
+    "fix": "Add a points array with two or more point entries (each with a position) tracing the spliney's path.",
+    "example": "{\"world\": {\"splineys\": {\"yardFence\": {\"type\": \"fence\", \"points\": [{\"position\": {\"x\": 0, \"y\": 560, \"z\": 0}}, {\"position\": {\"x\": 25, \"y\": 560, \"z\": 10}}]}}}}"
+  },
+  "fuse.telegraph.points": {
+    "title": "Telegraph pole set needs two points",
+    "why": "The telegraph pole set's points array is missing or has fewer than two entries, so there is no run to place poles and string wire along; this is an error and must be fixed.",
+    "fix": "Add a points array with at least two positions defining the line the poles follow.",
+    "example": "{\"world\": {\"telegraphPoles\": {\"mainLine\": {\"points\": [{\"x\": 0, \"y\": 560, \"z\": 0}, {\"x\": 40, \"y\": 561, \"z\": 25}]}}}}"
+  },
+  "fuse.telegraphPoleMovement.duplicatePoleIndex": {
+    "title": "Duplicate pole index in movement",
+    "why": "The same pole index appears more than once in a single movement's poleIndices array. The validator warns about the repeat, which is often a typo for a different pole index.",
+    "fix": "List each pole index only once per movement; remove the repeated entries or correct them to the intended indices.",
+    "example": "{\"world\": {\"telegraphPoleMovements\": [{\"poleIndices\": [2, 3, 4], \"offset\": {\"x\": 0, \"y\": 0, \"z\": 5}}]}}"
+  },
+  "fuse.telegraphPoleMovement.poleIndex": {
+    "title": "Negative telegraph pole index",
+    "why": "An entry in poleIndices is less than 0. Pole indices must be greater than or equal to 0; this is an error and must be fixed.",
+    "fix": "Replace any negative entries with the correct zero-based index of the pole you want to move.",
+    "example": "{\"world\": {\"telegraphPoleMovements\": [{\"poleIndices\": [0, 1], \"offset\": {\"x\": 0, \"y\": 0, \"z\": 5}}]}}"
+  },
+  "fuse.telegraphPoleMovement.poleIndices": {
+    "title": "Movement has no pole indices",
+    "why": "The movement's poleIndices array is missing or empty, so it does not target any poles and has nothing to move; this is an error and must be fixed.",
+    "fix": "Add a poleIndices array with at least one zero-based pole index that the movement should apply to.",
+    "example": "{\"world\": {\"telegraphPoleMovements\": [{\"poleIndices\": [3], \"offset\": {\"x\": 2, \"y\": 0, \"z\": 0}}]}}"
+  },
+  "fuse.telegraphPoleMovement.required": {
+    "title": "Null telegraph pole movement entry",
+    "why": "An entry in the world.telegraphPoleMovements array is JSON null instead of a movement object. Every entry must be a movement; this is an error and must be fixed.",
+    "fix": "Remove the null entry, or replace it with a movement object containing poleIndices and an offset.",
+    "example": "{\"world\": {\"telegraphPoleMovements\": [{\"poleIndices\": [0], \"offset\": {\"x\": 0, \"y\": 0, \"z\": 3}}]}}"
+  },
+  "fuse.telegraphPoleMovement.zeroOffset": {
+    "title": "Telegraph pole movement offset is zero",
+    "why": "The movement's offset is the zero vector (omitting offset leaves it at all zeros), so the listed pole indices would not be moved at all. Flagged as a warning because the entry has no effect and usually means a forgotten value.",
+    "fix": "Set offset to the displacement you want applied to the listed poles, or delete the movement entry if it is no longer needed.",
+    "example": "{\"world\":{\"telegraphPoleMovements\":[{\"poleIndices\":[412,413],\"offset\":{\"x\":1.5,\"y\":0,\"z\":-2.0}}]}}"
+  },
+  "fuse.track.area.radius": {
+    "title": "Area radius is negative",
+    "why": "The area's radius is set to a value less than 0, which the validator rejects as an error; a radius must be greater than or equal to 0.",
+    "fix": "Set radius to 0 or greater, or omit it entirely — the check only runs when radius is present.",
+    "example": "{\"tracks\":{\"areas\":{\"elaYard\":{\"name\":\"Ela Yard\",\"radius\":150}}}}"
+  },
+  "fuse.track.area.tagColor": {
+    "title": "Area tagColor has wrong component count",
+    "why": "tagColor must contain exactly 3 (RGB) or 4 (RGBA) numeric components; any other array length is rejected as an error.",
+    "fix": "Provide exactly 3 or 4 components in the tagColor array.",
+    "example": "{\"tracks\":{\"areas\":{\"elaYard\":{\"name\":\"Ela Yard\",\"tagColor\":[0.9,0.2,0.2,1.0]}}}}"
+  },
+  "fuse.track.location.distance": {
+    "title": "Track location distance is negative",
+    "why": "The location's distance is less than 0; distance measures meters along the segment and must be 0 or greater, so a negative value is an error.",
+    "fix": "Set distance to a non-negative number of meters along the segment, or use normalized (a 0..1 fraction) instead — never both.",
+    "example": "{\"tracks\":{\"spans\":{\"spanEla1\":{\"upper\":{\"segmentId\":\"segEla1\",\"distance\":12.5},\"lower\":{\"segmentId\":\"segEla1\",\"distance\":80,\"end\":\"B\"}}}}}"
+  },
+  "fuse.track.location.end": {
+    "title": "Track location end value not recognized",
+    "why": "end is set to something other than A/B or Start/End (matched case-insensitively), so the validator cannot tell which end of the segment to measure from and reports an error.",
+    "fix": "Set end to \"A\", \"B\", \"Start\", or \"End\" — or omit it, which defaults to the A end.",
+    "example": "{\"tracks\":{\"spans\":{\"spanEla1\":{\"upper\":{\"segmentId\":\"segEla1\",\"normalized\":0.25,\"end\":\"B\"},\"lower\":{\"segmentId\":\"segEla1\",\"normalized\":0.75}}}}}"
+  },
+  "fuse.track.location.measure": {
+    "title": "Track location missing normalized or distance",
+    "why": "The location sets neither normalized nor distance, so there is no way to know where on the segment it sits; the validator reports an error.",
+    "fix": "Add exactly one measure: normalized (a 0..1 fraction of the segment) or distance (meters along the segment).",
+    "example": "{\"tracks\":{\"spans\":{\"spanEla1\":{\"upper\":{\"segmentId\":\"segEla1\",\"normalized\":0.5},\"lower\":{\"segmentId\":\"segEla1\",\"normalized\":0.9,\"end\":\"B\"}}}}}"
+  },
+  "fuse.track.location.measure.exclusive": {
+    "title": "Track location sets both normalized and distance",
+    "why": "The location sets both normalized and distance, but a track location must position itself with one measure or the other; setting both is rejected as an error.",
+    "fix": "Keep exactly one of normalized or distance and delete the other.",
+    "example": "{\"tracks\":{\"spans\":{\"spanEla1\":{\"upper\":{\"segmentId\":\"segEla1\",\"distance\":30},\"lower\":{\"segmentId\":\"segEla1\",\"distance\":75,\"end\":\"B\"}}}}}"
+  },
+  "fuse.track.location.normalized": {
+    "title": "Normalized location outside 0 to 1",
+    "why": "normalized positions the location as a fraction of the segment's length and must be between 0 and 1 inclusive; the value here falls outside that range, which is an error.",
+    "fix": "Bring the value into the 0..1 range, or switch to distance (meters) if you meant an absolute measure.",
+    "example": "{\"tracks\":{\"spans\":{\"spanEla1\":{\"upper\":{\"segmentId\":\"segEla1\",\"normalized\":0.1},\"lower\":{\"segmentId\":\"segEla1\",\"normalized\":0.85,\"end\":\"B\"}}}}}"
+  },
+  "fuse.track.location.required": {
+    "title": "Required track location is missing",
+    "why": "A span's upper or lower track location is null or absent, so the span cannot be anchored to a segment and the validator reports an error.",
+    "fix": "Add the missing location object with a segmentId and exactly one measure (normalized or distance).",
+    "example": "{\"tracks\":{\"spans\":{\"spanEla1\":{\"upper\":{\"segmentId\":\"segEla1\",\"normalized\":0.1},\"lower\":{\"segmentId\":\"segEla1\",\"normalized\":0.9,\"end\":\"B\"}}}}}"
+  },
+  "fuse.track.node.external": {
+    "title": "Segment references node outside this document",
+    "why": "The segment's startNodeId or endNodeId is not defined under tracks.nodes in this document and is not generated by its operations, so it must already exist in the base game graph at runtime. This is a warning: intentional when attaching to base-game track, but a typo means the segment cannot resolve in-game.",
+    "fix": "Verify the id matches a real base-game node, or define the node under tracks.nodes if it is meant to be new.",
+    "example": "{\"tracks\":{\"nodes\":{\"nodeSpur1\":{\"position\":{\"x\":120,\"y\":4,\"z\":-310}},\"nodeSpur2\":{\"position\":{\"x\":160,\"y\":4,\"z\":-340}}},\"segments\":{\"segSpur1\":{\"startNodeId\":\"nodeSpur1\",\"endNodeId\":\"nodeSpur2\"}}}}"
+  },
+  "fuse.track.removal.blank": {
+    "title": "Blank ID in track removals list",
+    "why": "An entry in a tracks.removals list (nodes, segments, or spans) is empty or whitespace-only. A blank id cannot target anything to remove, so it is rejected as an error.",
+    "fix": "Delete the empty or whitespace-only entry, or replace it with the real id of the node, segment, or span you want removed.",
+    "example": "{\"tracks\":{\"removals\":{\"segments\":[\"segOldWye1\",\"segOldWye2\"]}}}"
+  },
+  "fuse.track.removal.conflict": {
+    "title": "Same track object defined and removed",
+    "why": "An id in tracks.removals also appears (matched case-insensitively) as a definition key in the matching section of the same document — removals.nodes against tracks.nodes, removals.segments against tracks.segments, removals.spans against tracks.spans. Defining and removing the same object is contradictory, so it is rejected as an error.",
+    "fix": "Drop the id from the removals list if you mean to define it, or delete the definition if you mean to remove the base-game object.",
+    "example": "{\"tracks\":{\"nodes\":{\"nodeNew1\":{\"position\":{\"x\":0,\"y\":0,\"z\":0}}},\"removals\":{\"nodes\":[\"nodeOldBase1\"]}}}"
+  },
+  "fuse.track.removal.duplicate": {
+    "title": "Duplicate removal ID",
+    "why": "The same ID is listed more than once in a tracks.removals list (nodes, segments, or spans); IDs compare case-insensitively. The repeated entry is redundant and the validator flags it as a warning.",
+    "fix": "Delete the repeated entry so each removal ID appears exactly once in the list.",
+    "example": "{\"tracks\": {\"removals\": {\"segments\": [\"sOldYard1\", \"sOldYard2\"]}}}"
+  },
+  "fuse.track.segment.external": {
+    "title": "Span references segment outside this document",
+    "why": "A span endpoint's segmentId is not defined in this document's tracks.segments (and is not an ID FUSE generates for a turntable in the same document), so it must exist in the base game's track graph at runtime. If no base-game segment has that exact ID, the span cannot resolve when the mod loads.",
+    "fix": "Verify the segmentId exactly matches a base-game segment ID, or define that segment in tracks.segments. If you are intentionally anchoring to base-game track, you can leave this warning as-is.",
+    "example": "{\"tracks\": {\"segments\": {\"sDepot1\": {\"startNodeId\": \"nDepot1\", \"endNodeId\": \"nDepot2\"}}, \"spans\": {\"spanDepot\": {\"upper\": {\"segmentId\": \"sDepot1\", \"normalized\": 1.0, \"end\": \"B\"}, \"lower\": {\"segmentId\": \"sDepot1\", \"normalized\": 0.0, \"end\": \"A\"}}}}}"
+  },
+  "fuse.track.segment.partialEndpoint": {
+    "title": "Partial segment patch missing one endpoint",
+    "why": "A segment with \"partial\": true supplies only one of startNodeId / endNodeId. The runtime will hydrate the missing endpoint from the runtime graph — fine if intentional, but you are not controlling that end of the segment.",
+    "fix": "If you meant to patch only one end, leave it as-is. Otherwise add the missing startNodeId or endNodeId so both endpoints are explicit.",
+    "example": "{\"tracks\": {\"segments\": {\"sMain12\": {\"partial\": true, \"startNodeId\": \"nNewJunction\", \"endNodeId\": \"nMain13\"}}}}"
+  },
+  "fuse.track.segment.partialEndpoint.empty": {
+    "title": "Partial segment patch has no endpoints",
+    "why": "A segment marked \"partial\": true provides neither startNodeId nor endNodeId, leaving the patch nothing to anchor to. This is an error and the document fails validation until fixed.",
+    "fix": "Add startNodeId, endNodeId, or both to the partial segment patch.",
+    "example": "{\"tracks\": {\"segments\": {\"sMain12\": {\"partial\": true, \"endNodeId\": \"nMain13\"}}}}"
+  },
+  "fuse.track.segment.required": {
+    "title": "Track segment entry is empty",
+    "why": "An entry under tracks.segments has no value (e.g. \"sYard1\": null), so there is no segment definition to validate or apply. This is an error and breaks the mod.",
+    "fix": "Replace the null with a segment object that includes startNodeId and endNodeId, or delete the key. To remove an existing segment, list its ID under tracks.removals.segments instead.",
+    "example": "{\"tracks\": {\"segments\": {\"sYard1\": {\"startNodeId\": \"nYard1\", \"endNodeId\": \"nYard2\"}}}}"
+  },
+  "fuse.track.span.lower.distance": {
+    "title": "Lower span endpoint outside segment length",
+    "why": "Both span endpoints sit on a segment defined in this document, and the lower endpoint's computed position (distance, or normalized times the segment length, plus offset) falls outside the segment's estimated straight-line length. The estimate ignores curvature, so this is a warning — runtime graph validation uses the actual curved length — but a position genuinely off the segment will not land where you intend.",
+    "fix": "Adjust the lower location's distance, normalized, or offset so the resulting position lies between 0 and the segment's length.",
+    "example": "{\"tracks\": {\"nodes\": {\"nSide1\": {\"position\": {\"x\": 0, \"y\": 0, \"z\": 0}}, \"nSide2\": {\"position\": {\"x\": 0, \"y\": 0, \"z\": 100}}}, \"segments\": {\"sSiding1\": {\"startNodeId\": \"nSide1\", \"endNodeId\": \"nSide2\"}}, \"spans\": {\"spanSiding\": {\"lower\": {\"segmentId\": \"sSiding1\", \"distance\": 5.0, \"end\": \"A\"}, \"upper\": {\"segmentId\": \"sSiding1\", \"distance\": 85.0, \"end\": \"B\"}}}}}"
+  },
+  "fuse.track.span.required": {
+    "title": "Track span entry is empty",
+    "why": "An entry under tracks.spans has no value (e.g. \"spanDepot\": null), so there is no span definition to validate or apply. This is an error and breaks the mod.",
+    "fix": "Replace the null with a span object containing upper and lower track locations (each with a segmentId and either normalized or distance), or delete the key. To remove an existing span, list its ID under tracks.removals.spans instead.",
+    "example": "{\"tracks\": {\"spans\": {\"spanDepot\": {\"upper\": {\"segmentId\": \"sDepot1\", \"normalized\": 1.0, \"end\": \"B\"}, \"lower\": {\"segmentId\": \"sDepot1\", \"normalized\": 0.0, \"end\": \"A\"}}}}}"
+  },
+  "fuse.track.span.sameSegment.sameDirection": {
+    "title": "Same-segment span endpoints face same direction",
+    "why": "Both span endpoints sit on the same segment and resolve to the same end (end defaults to \"A\" when omitted), so the authored span direction is ambiguous. The validator warns; the runtime will re-anchor this legacy-compatible span if the physical positions are valid, but the document should state the intent explicitly.",
+    "fix": "Give the two endpoints opposite ends: set one to \"A\" (or \"Start\") and the other to \"B\" (or \"End\").",
+    "example": "{\"tracks\": {\"spans\": {\"spanYard\": {\"upper\": {\"segmentId\": \"sYard1\", \"distance\": 120.0, \"end\": \"B\"}, \"lower\": {\"segmentId\": \"sYard1\", \"distance\": 40.0, \"end\": \"A\"}}}}}"
+  },
+  "fuse.track.span.upper.distance": {
+    "title": "Upper span endpoint outside segment length",
+    "why": "Both span endpoints sit on a segment defined in this document, and the upper endpoint's computed position (distance, or normalized times the segment length, plus offset) falls outside the segment's estimated straight-line length. The estimate ignores curvature, so this is a warning — runtime graph validation uses the actual curved length — but a position genuinely off the segment will not land where you intend.",
+    "fix": "Adjust the upper location's distance, normalized, or offset so the resulting position lies between 0 and the segment's length.",
+    "example": "{\"tracks\": {\"nodes\": {\"nSide1\": {\"position\": {\"x\": 0, \"y\": 0, \"z\": 0}}, \"nSide2\": {\"position\": {\"x\": 0, \"y\": 0, \"z\": 100}}}, \"segments\": {\"sSiding1\": {\"startNodeId\": \"nSide1\", \"endNodeId\": \"nSide2\"}}, \"spans\": {\"spanSiding\": {\"upper\": {\"segmentId\": \"sSiding1\", \"distance\": 85.0, \"end\": \"B\"}, \"lower\": {\"segmentId\": \"sSiding1\", \"distance\": 5.0, \"end\": \"A\"}}}}}"
+  },
+  "fuse.track.speedLimit": {
+    "title": "Speed limit out of range",
+    "why": "A segment's speedLimit is below 0 or above 80; the validator only accepts values from 0 to 80. This is an error and the document fails validation until corrected.",
+    "fix": "Set speedLimit to a value between 0 and 80, or omit the field to use the default of 45.",
+    "example": "{\"tracks\": {\"segments\": {\"sMain1\": {\"startNodeId\": \"nA\", \"endNodeId\": \"nB\", \"speedLimit\": 45}}}}"
+  },
+  "fuse.turntable.radius": {
+    "title": "Turntable radius not positive",
+    "why": "A turntable's radius is 0 or negative. The field has no default, so leaving radius out of the definition also triggers this error — the turntable must declare a positive radius.",
+    "fix": "Add a radius greater than 0 to the turntable definition.",
+    "example": "{\"operations\": {\"turntables\": {\"ttSylva\": {\"radius\": 11.5, \"subdivisions\": 16}}}}"
+  },
+  "fuse.turntable.roundhouse.trackLength": {
+    "title": "Roundhouse track length not positive",
+    "why": "A turntable's roundhouse declares stalls (stalls greater than 0) but its trackLength is explicitly set to 0 or negative. Stall tracks need a positive length; this is an error and fails validation.",
+    "fix": "Set roundhouse.trackLength to a value greater than 0, or remove the field to use the default of 46.",
+    "example": "{\"operations\": {\"turntables\": {\"ttSylva\": {\"radius\": 11.5, \"roundhouse\": {\"stalls\": 6, \"trackLength\": 46}}}}}"
+  },
+  "fuse.turntable.subdivisions": {
+    "title": "Turntable subdivisions out of range",
+    "why": "Error: the turntable's subdivisions value is below 4 or above 32, outside the range the validator allows. The document fails validation, so the turntable definition is rejected.",
+    "fix": "Set subdivisions to a whole number between 4 and 32 (inclusive) under operations.turntables.<id>. The default is 16 if you have no specific need.",
+    "example": "{\"operations\": {\"turntables\": {\"ewh-turntable\": {\"radius\": 12.5, \"subdivisions\": 16}}}}"
+  },
+  "fuse.world.removal.blank": {
+    "title": "Blank world removal ID",
+    "why": "Error: an entry in a world.removals list (scenery, splineys, telegraphPoles, mapLabels, mapMasks, or sceneClones) is empty or whitespace. A blank ID cannot identify any world object to remove.",
+    "fix": "Delete the empty entry (often left behind by a trailing comma) or replace it with the real ID of the object you want removed.",
+    "example": "{\"world\": {\"removals\": {\"scenery\": [\"old-water-tower\"]}}}"
+  },
+  "fuse.world.removal.conflict": {
+    "title": "World object both defined and removed",
+    "why": "Error: an ID in a world.removals list is also a definition key in the matching world section of the same document (compared case-insensitively). A world object cannot be defined and removed in the same FUSE document — the two instructions contradict each other.",
+    "fix": "Remove the ID from one side: drop the removals entry if you mean to keep your definition, or delete the definition if you mean to remove a base-game object. If they are different objects, rename yours.",
+    "example": "{\"world\": {\"scenery\": {\"new-depot\": {\"assetIdentifier\": \"depot\"}}, \"removals\": {\"scenery\": [\"old-depot\"]}}}"
+  },
+  "fuse.world.removal.duplicate": {
+    "title": "World removal ID listed twice",
+    "why": "Warning: the same ID appears more than once in a world.removals list (compared case-insensitively). The repeated entry is redundant.",
+    "fix": "Keep one occurrence of the ID and delete the duplicates.",
+    "example": "{\"world\": {\"removals\": {\"mapLabels\": [\"label-sylva\", \"label-dillsboro\"]}}}"
+  },
+  "fuse.world.scenery.anchorSpan.empty": {
+    "title": "Blank scenery anchor span ID",
+    "why": "Warning: an entry in world.scenery.<id>.anchorSpanIds is empty or whitespace. A blank entry cannot reference any track span, so it contributes nothing to anchoring the scenery.",
+    "fix": "Delete the blank entry from anchorSpanIds, or replace it with the ID of the track span the scenery should anchor to.",
+    "example": "{\"world\": {\"scenery\": {\"depot-shed\": {\"assetIdentifier\": \"shed\", \"anchorSpanIds\": [\"yard-span-1\"]}}}}"
+  },
+  "fuse.world.scenery.assetIdentifier.required": {
+    "title": "Scenery missing asset identifier",
+    "why": "Error: this scenery entry has neither assetIdentifier nor the legacy model field set. Without one FUSE cannot resolve a PrefabStore asset, so there is nothing to place in the world.",
+    "fix": "Add an assetIdentifier naming the PrefabStore asset to place. Prefer it over the legacy model field, which is only a display label and never used as the asset key.",
+    "example": "{\"world\": {\"scenery\": {\"water-tower-1\": {\"assetIdentifier\": \"watertower\", \"position\": {\"x\": 1200.0, \"y\": 560.0, \"z\": -340.0}}}}}"
+  },
+  "fuse.world.spawnPoint.duplicate": {
+    "title": "Duplicate spawn point name",
+    "why": "Error: two spawn points in this package share the same name (compared trimmed and case-insensitively). Spawn point names must be unique within a package so each one can be addressed unambiguously.",
+    "fix": "Give every entry in world.spawnPoints a distinct name; rename or delete the duplicate.",
+    "example": "{\"world\": {\"spawnPoints\": [{\"name\": \"Ela Yard\", \"position\": {\"x\": 100.0, \"y\": 560.0, \"z\": 200.0}}, {\"name\": \"Wilmot Siding\", \"position\": {\"x\": 800.0, \"y\": 590.0, \"z\": -50.0}}]}}"
+  },
+  "fuse.world.spawnPoint.radius": {
+    "title": "Spawn point radius not positive",
+    "why": "Error: the spawn point sets a radius of 0 or less. When present, radius must be greater than 0.",
+    "fix": "Set radius to a positive number, or omit the field entirely since it is optional.",
+    "example": "{\"world\": {\"spawnPoints\": [{\"name\": \"Ela Yard\", \"position\": {\"x\": 100.0, \"y\": 560.0, \"z\": 200.0}, \"radius\": 25.0}]}}"
+  },
+  "fuse.world.spawnPoint.required": {
+    "title": "Null spawn point entry",
+    "why": "Error: an entry in the world.spawnPoints array is null, so there is no spawn point definition at that index. This is usually a stray null or trailing-comma artifact in the JSON array.",
+    "fix": "Remove the null entry, or replace it with a spawn point object that has at least a name.",
+    "example": "{\"world\": {\"spawnPoints\": [{\"name\": \"Ela Yard\", \"position\": {\"x\": 100.0, \"y\": 560.0, \"z\": 200.0}}]}}"
+  },
+  "fuse.world.suppression.area.empty": {
+    "title": "Empty area suppression ID",
+    "why": "Warning: an entry in world.suppressBaseAreas is empty or whitespace. A blank ID cannot match any base-game area, so the entry suppresses nothing.",
+    "fix": "Delete the blank entry, or fill in the ID of the base-game area you want suppressed.",
+    "example": "{\"world\": {\"suppressBaseAreas\": [\"sylva\"]}}"
+  },
+  "fuse.world.suppression.scenePath.empty": {
+    "title": "Empty scene suppression path",
+    "why": "Warning: an entry in world.suppressBaseScenePaths is empty or whitespace. A blank path cannot match any base-game scene object, so the entry suppresses nothing.",
+    "fix": "Delete the blank entry, or fill in the scene path of the base-game object you want suppressed.",
+    "example": "{\"world\": {\"suppressBaseScenePaths\": [\"Scenery/Sylva/Old Depot\"]}}"
+  },
+  "fuse.world.suppression.trackGroup.empty": {
+    "title": "Empty track group suppression ID",
+    "why": "Warning: an entry in world.suppressBaseTrackGroups is empty or whitespace. A blank ID cannot match any base-game track group, so the entry suppresses nothing.",
+    "fix": "Delete the blank entry, or fill in the ID of the base-game track group you want suppressed.",
+    "example": "{\"world\": {\"suppressBaseTrackGroups\": [\"tg-whittier\"]}}"
+  }
+}

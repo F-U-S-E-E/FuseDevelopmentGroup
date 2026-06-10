@@ -6,7 +6,7 @@ namespace FUSE.Converter.Models
     /// button surfaces warnings in the status panel so the modder can
     /// see what's missing without the conversion outright failing.
     /// </summary>
-    internal enum FuseConversionReportLevel
+    public enum FuseConversionReportLevel
     {
         Info,
         Warning,
@@ -18,7 +18,7 @@ namespace FUSE.Converter.Models
     /// <c>ReportEntry</c> dataclass: level + message + optional
     /// originating file + originating concept.
     /// </summary>
-    internal sealed class FuseConversionReportEntry
+    public sealed class FuseConversionReportEntry
     {
         public FuseConversionReportLevel Level { get; set; }
         public string Message { get; set; }

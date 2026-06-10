@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="FUSE.Converter/FUSE.Converter.csproj" />
+  <Project Path="FUSE.ConverterCli/FUSE.ConverterCli.csproj" />
   <Project Path="FUSE.Core/FUSE.Core.csproj" />
   <Project Path="FUSE.Core.Tests/FUSE.Core.Tests.csproj" />
   <Project Path="FUSE.Editor/FUSE.Editor.csproj" />

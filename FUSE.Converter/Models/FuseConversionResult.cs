@@ -9,7 +9,7 @@ namespace FUSE.Converter.Models
     /// partial conversion shows the modder the work that DID complete
     /// alongside the error that stopped it).
     /// </summary>
-    internal sealed class FuseConversionResult
+    public sealed class FuseConversionResult
     {
         public bool Success { get; set; }
 

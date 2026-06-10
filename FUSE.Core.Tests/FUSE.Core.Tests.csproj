@@ -33,6 +33,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The fix-hint coverage test scans BOTH validator sources (the FUSE.Core
+         mirror and the shipping in-game copy) so every emitted code is checked
+         against the catalog no matter which validator gains a rule first. -->
+    <EmbeddedResource Include="..\FUSE.Core\Validation\FuseDefinitionValidator.cs" LogicalName="ValidatorSource.Core.cs" />
+    <EmbeddedResource Include="..\FUSE\Authoring\Validation\FuseDefinitionValidator.cs" LogicalName="ValidatorSource.Game.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="..\schemas\fuse-mod.example.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

@@ -441,6 +441,7 @@ namespace Fuse.Core.Validation
                         result.AddError($"{path}.unitWeightInPounds", "Load unitWeightInPounds must be greater than or equal to 0.", "fuse.operations.loads.unitWeightInPounds", load.Value.UnitWeightInPounds.Value);
                     }
 
+                    ValidateCarTypeFilter(result, $"{path}.carTypeFilter", load.Value.CarTypeFilter);
                 }
             }
 
@@ -942,6 +943,8 @@ namespace Fuse.Core.Validation
                             result.AddError($"{deliveryPath}.direction", "Delivery direction must be loadToIndustry or loadFromIndustry.", "fuse.progression.delivery.direction", delivery.Direction);
                         }
                     }
+
+                    ValidateCarTypeFilter(result, $"{deliveryPath}.carTypeFilter", delivery.CarTypeFilter);
                 }
             }
         }
@@ -971,6 +974,32 @@ namespace Fuse.Core.Validation
                 }
 
                 index++;
+            }
+        }
+
+        private static void ValidateCarTypeFilter(ValidationResult result, string path, string filter)
+        {
+            // Empty and "*" both mean "any car type" at runtime, so only a
+            // filter with real tokens needs checking. The game splits the
+            // expression on ',' without trimming, so a token with surrounding
+            // whitespace can never match a car type.
+            if (string.IsNullOrWhiteSpace(filter) || filter == "*")
+            {
+                return;
+            }
+
+            var tokens = filter.Split(',');
+            for (var index = 0; index < tokens.Length; index++)
+            {
+                var token = tokens[index];
+                if (string.IsNullOrWhiteSpace(token))
+                {
+                    result.AddWarning(path, "Car type filter contains an empty entry (doubled, leading, or trailing comma); the game ignores it.", "fuse.operations.component.carTypeFilter.emptyToken", filter);
+                }
+                else if (token.Trim().Length != token.Length)
+                {
+                    result.AddError(path, $"Car type filter entry '{token}' has surrounding whitespace and can never match a car type; write the filter without spaces (e.g. \"FB,XM\").", "fuse.operations.component.carTypeFilter.malformed", filter);
+                }
             }
         }
 
@@ -1065,6 +1094,15 @@ namespace Fuse.Core.Validation
             if (component.CarTransferRate.HasValue && component.CarTransferRate.Value < 0f)
             {
                 result.AddError($"{path}.carTransferRate", "Car transfer rate must be greater than or equal to 0.", "fuse.operations.component.carTransferRate", component.CarTransferRate.Value);
+            }
+
+            ValidateCarTypeFilter(result, $"{path}.carTypeFilter", component.CarTypeFilter);
+            if (component.TeamProfiles != null)
+            {
+                foreach (var profile in component.TeamProfiles)
+                {
+                    ValidateCarTypeFilter(result, $"{path}.teamProfiles.{profile.Key}.carTypeFilter", profile.Value?.CarTypeFilter);
+                }
             }
 
             if (!partial &&
