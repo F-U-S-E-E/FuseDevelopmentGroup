@@ -165,6 +165,8 @@ namespace Fuse.Core.Authoring
                 id = $"{prefix}_{nextIndex:D4}";
             }
 
+            // Leave the cursor past the minted slot so the next call doesn't re-test it.
+            nextIndex++;
             return id;
         }
     }

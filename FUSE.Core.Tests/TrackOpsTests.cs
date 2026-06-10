@@ -136,6 +136,8 @@ public class TrackOpsTests
         var nextIndex = -3;
 
         Assert.Equal("n_0001", TrackOps.NewNodeId(takenIds, ref nextIndex));
-        Assert.Equal(1, nextIndex);
+        // The cursor is clamped to 1, then advanced past the minted slot.
+        Assert.Equal(2, nextIndex);
+        Assert.Equal("n_0002", TrackOps.NewNodeId(takenIds, ref nextIndex));
     }
 }
