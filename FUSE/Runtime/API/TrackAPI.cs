@@ -79,6 +79,20 @@ namespace FUSE.Runtime.API
         public static void RebuildGraph()
         {
             _rebuildRequested = false;
+
+            BeginBatch();
+            try
+            {
+                FuseEvents.RaiseTrackGraphApplying(RequireGraph());
+            }
+            finally
+            {
+                // Changes made by TrackGraphApplying subscribers are included in
+                // the rebuild below, so do not leave a second rebuild queued.
+                EndBatch(false);
+                _rebuildRequested = false;
+            }
+
             var manager = TrackObjectManager.Instance;
             if (manager != null)
             {
