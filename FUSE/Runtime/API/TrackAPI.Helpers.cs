@@ -67,7 +67,14 @@ namespace FUSE.Runtime.API
                 SpeedLimit = definition.SpeedLimit,
                 Priority = definition.Priority,
                 GroupId = definition.GroupId,
-                Tags = definition.Tags?.ToArray()
+                Tags = definition.Tags?.ToArray(),
+                Gauge = definition.Gauge,
+                Partial = definition.Partial,
+                PreserveStyle = definition.PreserveStyle,
+                PreserveTrackClass = definition.PreserveTrackClass,
+                PreserveSpeedLimit = definition.PreserveSpeedLimit,
+                PreservePriority = definition.PreservePriority,
+                PreserveGroupId = definition.PreserveGroupId
             };
         }
 

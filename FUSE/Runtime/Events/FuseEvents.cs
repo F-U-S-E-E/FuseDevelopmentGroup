@@ -1,10 +1,26 @@
 using System;
 using FUSE.Authoring.Validation;
+using FUSE.Infrastructure;
 using Model.Ops;
 using Track;
 
 namespace FUSE.Runtime.Events
 {
+    /// <summary>
+    /// Published immediately before FUSE rebuilds Railroader's native track graph.
+    /// Handlers run inside a TrackAPI batch, so companion modules may use public
+    /// TrackAPI methods without causing a nested or additional graph rebuild.
+    /// </summary>
+    public sealed class FuseTrackGraphApplyingContext
+    {
+        internal FuseTrackGraphApplyingContext(Graph graph)
+        {
+            Graph = graph;
+        }
+
+        public Graph Graph { get; }
+    }
+
     public static class FuseEvents
     {
         public static event Action FuseLoaded;
@@ -24,6 +40,7 @@ namespace FUSE.Runtime.Events
         public static event Action<IndustryComponent> IndustryComponentAdded;
         public static event Action<IndustryComponent> IndustryComponentUpdated;
         public static event Action<string> IndustryComponentRemoved;
+        public static event Action<FuseTrackGraphApplyingContext> TrackGraphApplying;
         public static event Action GraphRebuilt;
         public static event Action<string, ValidationResult> ValidationCompleted;
         public static event Action<string> ModLoaded;
@@ -114,6 +131,30 @@ namespace FUSE.Runtime.Events
         public static void RaiseIndustryComponentRemoved(string id)
         {
             IndustryComponentRemoved?.Invoke(id);
+        }
+
+        internal static void RaiseTrackGraphApplying(Graph graph)
+        {
+            var handlers = TrackGraphApplying;
+            if (handlers == null)
+            {
+                return;
+            }
+
+            var context = new FuseTrackGraphApplyingContext(graph);
+            foreach (Action<FuseTrackGraphApplyingContext> handler in handlers.GetInvocationList())
+            {
+                try
+                {
+                    handler(context);
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception(
+                        $"FUSE track-graph applying subscriber '{handler.Method?.DeclaringType?.FullName ?? "<unknown>"}.{handler.Method?.Name ?? "<unknown>"}' failed",
+                        ex);
+                }
+            }
         }
 
         public static void RaiseGraphRebuilt()
