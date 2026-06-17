@@ -8,8 +8,10 @@ namespace FUSE.Tests.Validation
         /// <summary>
         /// Mirror of the FUSE.Core carTypeFilter tests for the shipping
         /// validator: the filter is matched verbatim per comma-separated
-        /// token at runtime, so surrounding whitespace is an error and an
-        /// empty token from a doubled/edge comma is a warning.
+        /// token at runtime, so surrounding whitespace can never match —
+        /// but legacy packages with padded tokens still loaded, so both
+        /// that and an empty token from a doubled/edge comma are warnings,
+        /// never errors.
         /// </summary>
         public class CarTypeFilterRules
         {
@@ -31,13 +33,14 @@ namespace FUSE.Tests.Validation
             }
 
             [Fact]
-            public void Component_Filter_With_Surrounding_Whitespace_Is_An_Error()
+            public void Component_Filter_With_Surrounding_Whitespace_Is_A_Warning()
             {
                 var result = NewValidator().Validate(WithComponentFilter("FB, XM"));
 
                 Assert.Contains(
-                    result.Errors,
-                    e => e.Code == MalformedCode && e.Field == "operations.industries.mill.components.dock.carTypeFilter");
+                    result.Warnings,
+                    w => w.Code == MalformedCode && w.Field == "operations.industries.mill.components.dock.carTypeFilter");
+                Assert.DoesNotContain(result.Errors, e => e.Code == MalformedCode);
             }
 
             [Fact]
@@ -46,7 +49,7 @@ namespace FUSE.Tests.Validation
                 var result = NewValidator().Validate(WithComponentFilter("FB,,XM"));
 
                 Assert.Contains(result.Warnings, w => w.Code == EmptyTokenCode);
-                Assert.DoesNotContain(result.Errors, e => e.Code == MalformedCode);
+                Assert.DoesNotContain(result.Warnings, w => w.Code == MalformedCode);
             }
 
             [Theory]
@@ -59,7 +62,7 @@ namespace FUSE.Tests.Validation
             {
                 var result = NewValidator().Validate(WithComponentFilter(filter));
 
-                Assert.DoesNotContain(result.Errors, e => e.Code == MalformedCode);
+                Assert.DoesNotContain(result.Warnings, w => w.Code == MalformedCode);
                 Assert.DoesNotContain(result.Warnings, w => w.Code == EmptyTokenCode);
             }
 
@@ -86,9 +89,9 @@ namespace FUSE.Tests.Validation
                 var result = NewValidator().Validate(definition);
 
                 Assert.Contains(
-                    result.Errors,
-                    e => e.Code == MalformedCode &&
-                         e.Field == "operations.industries.mill.components.team.teamProfiles.lumber.carTypeFilter");
+                    result.Warnings,
+                    w => w.Code == MalformedCode &&
+                         w.Field == "operations.industries.mill.components.team.teamProfiles.lumber.carTypeFilter");
             }
 
             [Fact]
@@ -100,8 +103,8 @@ namespace FUSE.Tests.Validation
                 var result = NewValidator().Validate(definition);
 
                 Assert.Contains(
-                    result.Errors,
-                    e => e.Code == MalformedCode && e.Field == "operations.loads.coal.carTypeFilter");
+                    result.Warnings,
+                    w => w.Code == MalformedCode && w.Field == "operations.loads.coal.carTypeFilter");
             }
 
             [Fact]
@@ -133,9 +136,22 @@ namespace FUSE.Tests.Validation
                 var result = NewValidator().Validate(definition);
 
                 Assert.Contains(
-                    result.Errors,
-                    e => e.Code == MalformedCode &&
-                         e.Field == "progression.progressions.main.sections.s1.deliveryPhases[0].deliveries[0].carTypeFilter");
+                    result.Warnings,
+                    w => w.Code == MalformedCode &&
+                         w.Field == "progression.progressions.main.sections.s1.deliveryPhases[0].deliveries[0].carTypeFilter");
+            }
+
+            [Fact]
+            public void Legacy_Padded_Filter_Stays_Valid()
+            {
+                // Padded filters shipped in legacy packages and loaded fine
+                // there, so the definition must stay loadable: warning, not
+                // error.
+                var result = NewValidator().Validate(WithComponentFilter("HM, HT"));
+
+                Assert.Contains(result.Warnings, w => w.Code == MalformedCode);
+                Assert.DoesNotContain(result.Errors, e => e.Code == MalformedCode);
+                Assert.True(result.IsValid);
             }
         }
     }

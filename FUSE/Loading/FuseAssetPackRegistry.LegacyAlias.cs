@@ -126,8 +126,11 @@ namespace FUSE.Loading
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
             {
-                FuseLog.Exception(
-                    $"FUSE could not inspect asset pack Catalog.json '{catalogPath}' for legacy aliases", ex);
+                // Warning, not error: Catalog.json is third-party data and this inspection is
+                // best-effort — the path-derived aliases were already registered above, so only
+                // the optional catalog-declared aliases are lost when the file is unreadable.
+                FuseLog.Warning(
+                    $"FUSE could not inspect asset pack Catalog.json '{catalogPath}' for legacy aliases: {ex.Message}");
             }
         }
 

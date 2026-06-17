@@ -982,7 +982,11 @@ namespace Fuse.Core.Validation
             // Empty and "*" both mean "any car type" at runtime, so only a
             // filter with real tokens needs checking. The game splits the
             // expression on ',' without trimming, so a token with surrounding
-            // whitespace can never match a car type.
+            // whitespace can never match a car type. That is still only a
+            // warning, not an error: packages with padded tokens loaded and
+            // ran under the legacy modding stack, so FUSE must load them
+            // too — the warning plus its fix hint tells the author how to
+            // repair the filter.
             if (string.IsNullOrWhiteSpace(filter) || filter == "*")
             {
                 return;
@@ -998,7 +1002,7 @@ namespace Fuse.Core.Validation
                 }
                 else if (token.Trim().Length != token.Length)
                 {
-                    result.AddError(path, $"Car type filter entry '{token}' has surrounding whitespace and can never match a car type; write the filter without spaces (e.g. \"FB,XM\").", "fuse.operations.component.carTypeFilter.malformed", filter);
+                    result.AddWarning(path, $"Car type filter entry '{token}' has surrounding whitespace and can never match a car type; write the filter without spaces (e.g. \"FB,XM\").", "fuse.operations.component.carTypeFilter.malformed", filter);
                 }
             }
         }

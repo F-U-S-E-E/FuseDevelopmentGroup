@@ -8,9 +8,9 @@ namespace Fuse.Core.Tests
     /// <summary>
     /// Exercises the carTypeFilter rule at all four model sites. The filter
     /// is matched verbatim per comma-separated token at runtime, so
-    /// surrounding whitespace is an error (the token can never match) and an
-    /// empty token from a doubled/edge comma is a warning (the game ignores
-    /// it).
+    /// surrounding whitespace can never match — but packages with padded
+    /// tokens loaded under the legacy modding stack, so both that and an
+    /// empty token from a doubled/edge comma are warnings, never errors.
     /// </summary>
     public class CarTypeFilterValidationTests
     {
@@ -37,13 +37,14 @@ namespace Fuse.Core.Tests
         }
 
         [Fact]
-        public void Component_Filter_With_Surrounding_Whitespace_Is_An_Error()
+        public void Component_Filter_With_Surrounding_Whitespace_Is_A_Warning()
         {
             var result = Validate(WithComponentFilter("FB, XM"));
 
-            var issue = Assert.Single(result.Errors, e => e.Code == MalformedCode);
+            var issue = Assert.Single(result.Warnings, w => w.Code == MalformedCode);
             Assert.Equal("operations.industries.mill.components.dock.carTypeFilter", issue.Field);
             Assert.Equal("FB, XM", issue.Value);
+            Assert.DoesNotContain(result.Errors, e => e.Code == MalformedCode);
         }
 
         [Fact]
@@ -53,7 +54,7 @@ namespace Fuse.Core.Tests
 
             var issue = Assert.Single(result.Warnings, w => w.Code == EmptyTokenCode);
             Assert.Equal("operations.industries.mill.components.dock.carTypeFilter", issue.Field);
-            Assert.DoesNotContain(result.Errors, e => e.Code == MalformedCode);
+            Assert.DoesNotContain(result.Warnings, w => w.Code == MalformedCode);
         }
 
         [Theory]
@@ -66,27 +67,27 @@ namespace Fuse.Core.Tests
         {
             var result = Validate(WithComponentFilter(filter));
 
-            Assert.DoesNotContain(result.Errors, e => e.Code == MalformedCode);
+            Assert.DoesNotContain(result.Warnings, w => w.Code == MalformedCode);
             Assert.DoesNotContain(result.Warnings, w => w.Code == EmptyTokenCode);
         }
 
         [Fact]
-        public void Trailing_Comma_Is_A_Warning_Not_An_Error()
+        public void Trailing_Comma_Is_An_Empty_Token_Warning_Not_Malformed()
         {
             var result = Validate(WithComponentFilter("FB,XM,"));
 
             Assert.Contains(result.Warnings, w => w.Code == EmptyTokenCode);
-            Assert.DoesNotContain(result.Errors, e => e.Code == MalformedCode);
+            Assert.DoesNotContain(result.Warnings, w => w.Code == MalformedCode);
         }
 
         [Fact]
-        public void Whitespace_Padded_Wildcard_Is_An_Error()
+        public void Whitespace_Padded_Wildcard_Is_A_Warning()
         {
             // " * " is not the bare "any" wildcard: the runtime keeps the
             // padding and the token can never match.
             var result = Validate(WithComponentFilter(" * "));
 
-            Assert.Contains(result.Errors, e => e.Code == MalformedCode);
+            Assert.Contains(result.Warnings, w => w.Code == MalformedCode);
         }
 
         [Fact]
@@ -111,7 +112,7 @@ namespace Fuse.Core.Tests
 
             var result = Validate(definition);
 
-            var issue = Assert.Single(result.Errors, e => e.Code == MalformedCode);
+            var issue = Assert.Single(result.Warnings, w => w.Code == MalformedCode);
             Assert.Equal("operations.industries.mill.components.team.teamProfiles.lumber.carTypeFilter", issue.Field);
         }
 
@@ -123,7 +124,7 @@ namespace Fuse.Core.Tests
 
             var result = Validate(definition);
 
-            var issue = Assert.Single(result.Errors, e => e.Code == MalformedCode);
+            var issue = Assert.Single(result.Warnings, w => w.Code == MalformedCode);
             Assert.Equal("operations.loads.coal.carTypeFilter", issue.Field);
         }
 
@@ -155,7 +156,7 @@ namespace Fuse.Core.Tests
 
             var result = Validate(definition);
 
-            var issue = Assert.Single(result.Errors, e => e.Code == MalformedCode);
+            var issue = Assert.Single(result.Warnings, w => w.Code == MalformedCode);
             Assert.Equal(
                 "progression.progressions.main.sections.s1.deliveryPhases[0].deliveries[0].carTypeFilter",
                 issue.Field);
@@ -166,7 +167,20 @@ namespace Fuse.Core.Tests
         {
             var result = Validate(WithComponentFilter(" FB , XM "));
 
-            Assert.Equal(2, result.Errors.Count(e => e.Code == MalformedCode));
+            Assert.Equal(2, result.Warnings.Count(w => w.Code == MalformedCode));
+        }
+
+        [Fact]
+        public void Legacy_Padded_Filter_Stays_Valid()
+        {
+            // Padded filters shipped in legacy packages and loaded fine
+            // there, so the definition must stay loadable: warning, not
+            // error.
+            var result = Validate(WithComponentFilter("HM, HT"));
+
+            Assert.Contains(result.Warnings, w => w.Code == MalformedCode);
+            Assert.DoesNotContain(result.Errors, e => e.Code == MalformedCode);
+            Assert.True(result.IsValid);
         }
     }
 }

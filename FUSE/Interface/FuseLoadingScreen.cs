@@ -39,6 +39,7 @@ namespace FUSE.Interface
 
         private GameObject _stockLoadingScreen;
         private bool _renderedOnce;
+        private float _loadBeganAt;
         private bool _renderingDisabled;
         private bool _renderFailureLogged;
 
@@ -182,6 +183,7 @@ namespace FUSE.Interface
         {
             _state.BeginLoad(Now);
             _renderedOnce = false;
+            _loadBeganAt = Now;
             FuseLog.Info($"FUSE enhanced loading screen shown ({reason}).");
         }
 
@@ -199,10 +201,30 @@ namespace FUSE.Interface
 
         private void Update()
         {
+            // Capture the pre-update state: UpdateVisibility flips Active off exactly
+            // once, so wasActive distinguishes "the gate just closed" from "still
+            // hidden", and the gate flags read before the flip classify the close
+            // reason even if a future refactor resets them on close.
+            var wasActive = _state.Active;
+            var gameScreenHidden = _state.GameScreenHidden;
+            var fusePipelineDone = _state.FusePipelineDone;
+
             if (!_state.UpdateVisibility(Now))
             {
-                // Either still hidden, or the gate just closed. We never re-show the
-                // stock screen on a normal hide — the game has already hidden it.
+                // We never re-show the stock screen on a normal hide — the game has
+                // already hidden it. Abort paths close the state synchronously and
+                // log on their own, so they never surface as a transition here.
+                if (wasActive)
+                {
+                    // Both flags set means the two-flag gate released; anything else
+                    // can only be the watchdog backstop. renderFailed marks the OnGUI
+                    // fallback where the stock screen carried the load, so this line
+                    // can't read as a healthy FUSE-screen session in that case.
+                    var watchdog = !(gameScreenHidden && fusePipelineDone);
+                    FuseLog.Info(
+                        $"FUSE enhanced loading screen hidden (gameScreenHidden={gameScreenHidden}, fusePipelineDone={fusePipelineDone}, watchdog={watchdog}, renderFailed={_renderingDisabled}) after {Now - _loadBeganAt:0.0}s.");
+                }
+
                 return;
             }
 
