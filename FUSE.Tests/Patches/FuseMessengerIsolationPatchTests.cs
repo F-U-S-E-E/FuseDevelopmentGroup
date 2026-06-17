@@ -179,9 +179,49 @@ namespace FUSE.Tests.Patches
             Assert.Null(result);
         }
 
+        [Fact]
+        public void Finalizer_LogsNewOffender_ThenThrottlesTheRepeat()
+        {
+            // The throttle promise: a previously-unseen offender is always surfaced
+            // (even after the global first-5 budget is spent), but the SAME offender
+            // on a later, non-heartbeat suppression is counted yet not logged.
+            // SuppressedExceptions is a process-global counter the other tests also
+            // advance, so drive it to a known residue first: residue 50 puts the two
+            // calls below at xx51/xx52, clear of both the "<= 5" and "% 100 == 0"
+            // branches no matter what order xUnit ran the suite in.
+            while (FuseMessengerIsolationPatch.SuppressedExceptions % 100 != 50)
+            {
+                FuseMessengerIsolationPatch.Finalizer(new InvalidOperationException("warmup"), new object());
+            }
+
+            // A recipient type unique to this test, so its description is guaranteed
+            // absent from the remembered-offender set (i.e. genuinely "new").
+            var probe = new ThrottleProbe();
+            var weakAction = new WeakAction<MapDidLoadEvent>(probe, probe.Handler);
+
+            var loggedBeforeNew = FuseMessengerIsolationPatch.LoggedExceptions;
+            FuseMessengerIsolationPatch.Finalizer(new InvalidOperationException("first sighting"), weakAction);
+            var loggedAfterNew = FuseMessengerIsolationPatch.LoggedExceptions;
+
+            FuseMessengerIsolationPatch.Finalizer(new InvalidOperationException("repeat"), weakAction);
+            var loggedAfterRepeat = FuseMessengerIsolationPatch.LoggedExceptions;
+
+            Assert.Equal(loggedBeforeNew + 1, loggedAfterNew);   // new offender surfaced
+            Assert.Equal(loggedAfterNew, loggedAfterRepeat);     // repeat throttled away
+        }
+
         private void OnMapDidLoadThatThrows(MapDidLoadEvent message)
         {
             throw new InvalidOperationException("listener exploded");
+        }
+
+        // Distinct recipient type so its DescribeListener output is unique to this
+        // test and never collides with another test's remembered offender.
+        private sealed class ThrottleProbe
+        {
+            public void Handler(MapDidLoadEvent message)
+            {
+            }
         }
     }
 }

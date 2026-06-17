@@ -59,6 +59,7 @@ namespace FUSE.Patches
 
         private static long _suppressed;
         private static long _diagnosticFailures;
+        private static long _logged;
 
         // Offenders already named in the log, so a NEW broken listener is always
         // reported even after the global first-5 budget is spent (otherwise a noisy
@@ -73,14 +74,21 @@ namespace FUSE.Patches
         /// <summary>Log attempts the finalizer had to abandon (diagnostics).</summary>
         internal static long DiagnosticFailures => _diagnosticFailures;
 
+        /// <summary>Suppressed exceptions actually surfaced to the log, i.e. not throttled (diagnostics).</summary>
+        internal static long LoggedExceptions => _logged;
+
         internal static IEnumerable<MethodBase> TargetMethods()
         {
             var targets = new HashSet<MethodBase>();
             foreach (var eventTypeName in LifecycleEventTypeNames)
             {
-                // The lifecycle events ship in the same assembly as WeakAction
-                // itself, so prefer that direct lookup; fall back to a global
-                // search in case a game update ever moves them.
+                // WeakAction<T> and the lifecycle event structs are defined in the
+                // SAME assembly: MvvmLight is compiled into the game's Assembly-CSharp
+                // rather than shipped as a separate DLL, so only the namespace differs
+                // (GalaSoft.MvvmLight.Helpers vs Game.Events), not the assembly. That
+                // makes typeof(WeakAction<>).Assembly.GetType the path actually taken;
+                // AccessTools.TypeByName is a cross-assembly fallback that only engages
+                // if a future game build relocates the events.
                 var eventType = typeof(WeakAction<>).Assembly.GetType(eventTypeName)
                                 ?? AccessTools.TypeByName(eventTypeName);
                 if (eventType == null)
@@ -168,6 +176,7 @@ namespace FUSE.Patches
                         $"FUSE contained map lifecycle listener exception #{_suppressed} from {listener}; " +
                         "the exception was suppressed and dispatch continued, so later-registered listeners " +
                         "still received the event", __exception);
+                    _logged++;
                 }
             }
             catch
