@@ -19,6 +19,24 @@ namespace FUSE.Runtime.API
 {
     public static partial class ProgressionAPI
     {
+        // Captured-at-apply-time identifier lists for each MapFeature's industry /
+        // component gate arrays. A MapFeature stores its gate targets as live
+        // Object references (Industry[] / IndustryComponent[]); when FUSE later
+        // Remove+Add's one of those industries (multi-package apply, resident
+        // re-apply, reload), the array keeps the DESTROYED reference. The runtime
+        // unlock (MapFeatureManager.UpdateFeatureForUnlocked) then toggles
+        // ProgressionDisabled on the dead instance while the live one stays gated —
+        // so e.g. a progression-gated interchange shows a working panel yet is
+        // excluded from OpsController.EnabledInterchanges forever. A destroyed
+        // Unity object reads back as null and can no longer report its identifier,
+        // so we cannot recover the intended id from the array itself; we remember it
+        // here at apply time and re-resolve to the live instance on every refresh.
+        private static readonly Dictionary<string, string[]> _featureIncludeIndustryIds =
+            new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, string[]> _featureExcludeIndustryIds =
+            new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, string[]> _featureIncludeComponentIds =
+            new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
 
         private static void RefreshMapFeatureManager(MapFeatureManager manager)
         {
@@ -910,6 +928,275 @@ namespace FUSE.Runtime.API
             feature.unlockExcludeIndustries = feature.unlockExcludeIndustries ?? Array.Empty<Industry>();
             feature.unlockIncludeIndustries = feature.unlockIncludeIndustries ?? Array.Empty<Industry>();
             feature.unlockIncludeIndustryComponents = feature.unlockIncludeIndustryComponents ?? Array.Empty<IndustryComponent>();
+        }
+
+        /// <summary>
+        /// Records the identifiers currently bound into a feature's industry /
+        /// component gate arrays so <see cref="ReResolveMapFeatureLiveReferences"/>
+        /// can re-bind them to live instances after an industry is destroyed and
+        /// recreated. Called at the end of <c>ApplyMapFeatureDefinition</c>, when the
+        /// arrays hold freshly-resolved live references.
+        /// </summary>
+        internal static void RememberMapFeatureReferenceIds(MapFeature feature)
+        {
+            if (feature == null || string.IsNullOrWhiteSpace(feature.identifier))
+            {
+                return;
+            }
+
+            _featureIncludeIndustryIds[feature.identifier] = CollectIndustryIds(feature.unlockIncludeIndustries);
+            _featureExcludeIndustryIds[feature.identifier] = CollectIndustryIds(feature.unlockExcludeIndustries);
+            _featureIncludeComponentIds[feature.identifier] = CollectComponentIds(feature.unlockIncludeIndustryComponents);
+        }
+
+        private static string[] CollectIndustryIds(Industry[] industries)
+        {
+            if (industries == null || industries.Length == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            return industries
+                .Where(industry => industry != null && !string.IsNullOrWhiteSpace(industry.identifier))
+                .Select(industry => industry.identifier)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        private static string[] CollectComponentIds(IndustryComponent[] components)
+        {
+            if (components == null || components.Length == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            return components
+                .Where(component => component != null)
+                .Select(SafeIndustryComponentId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        /// <summary>
+        /// Re-binds every <see cref="MapFeature"/>'s gate arrays
+        /// (<c>unlockIncludeIndustries</c>, <c>unlockExcludeIndustries</c>,
+        /// <c>unlockIncludeIndustryComponents</c>) to the LIVE scene instances for
+        /// their intended identifiers, dropping Unity-destroyed entries and
+        /// re-resolving any intended id whose live reference is missing. Runs during
+        /// the progression refresh, immediately before
+        /// <c>ForceApplyCurrentMapFeatureState</c> re-applies the gate, so the
+        /// unlock toggles <c>ProgressionDisabled</c> on the live industry rather than
+        /// a destroyed reference left over from a Remove+Add re-apply.
+        ///
+        /// Conservative by construction: it keeps every live reference already in the
+        /// array, only prunes destroyed (null) entries and adds intended-but-missing
+        /// live references. An identifier removed by a later patch is no longer in the
+        /// captured intent (or the live array), so it is not re-added.
+        /// </summary>
+        private static int ReResolveMapFeatureLiveReferences(MapFeatureManager manager, string reason)
+        {
+            if (manager == null)
+            {
+                return 0;
+            }
+
+            var changed = 0;
+            foreach (var feature in manager.AvailableFeatures ?? Enumerable.Empty<MapFeature>())
+            {
+                if (feature == null || string.IsNullOrWhiteSpace(feature.identifier))
+                {
+                    continue;
+                }
+
+                changed += RebindIndustryReferences(
+                    feature.identifier, ref feature.unlockIncludeIndustries,
+                    _featureIncludeIndustryIds, "unlockIncludeIndustries", reason);
+                changed += RebindIndustryReferences(
+                    feature.identifier, ref feature.unlockExcludeIndustries,
+                    _featureExcludeIndustryIds, "unlockExcludeIndustries", reason);
+                changed += RebindIndustryComponentReferences(
+                    feature.identifier, ref feature.unlockIncludeIndustryComponents,
+                    _featureIncludeComponentIds, "unlockIncludeIndustryComponents", reason);
+            }
+
+            return changed;
+        }
+
+        private static int RebindIndustryReferences(
+            string featureId, ref Industry[] array,
+            Dictionary<string, string[]> intentMap, string label, string reason)
+        {
+            var current = array ?? Array.Empty<Industry>();
+
+            // Live entries still in the array, keyed by id. Unity-destroyed
+            // references compare == null via the engine overload and are skipped.
+            var liveById = new Dictionary<string, Industry>(StringComparer.OrdinalIgnoreCase);
+            var hadDestroyed = false;
+            foreach (var industry in current)
+            {
+                if (industry == null)
+                {
+                    hadDestroyed = true;
+                    continue;
+                }
+
+                var id = industry.identifier;
+                if (!string.IsNullOrWhiteSpace(id) && !liveById.ContainsKey(id))
+                {
+                    liveById[id] = industry;
+                }
+            }
+
+            // Desired ids = captured apply-time intent (survives destruction) unioned
+            // with whatever live references remain (covers inference-added includes).
+            var desired = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (intentMap.TryGetValue(featureId, out var intentIds) && intentIds != null)
+            {
+                foreach (var id in intentIds)
+                {
+                    if (!string.IsNullOrWhiteSpace(id) && seen.Add(id))
+                    {
+                        desired.Add(id);
+                    }
+                }
+            }
+
+            foreach (var id in liveById.Keys)
+            {
+                if (seen.Add(id))
+                {
+                    desired.Add(id);
+                }
+            }
+
+            if (desired.Count == 0)
+            {
+                if (!hadDestroyed)
+                {
+                    return 0;
+                }
+
+                array = Array.Empty<Industry>();
+                return 1;
+            }
+
+            var rebuilt = new List<Industry>(desired.Count);
+            var addedMissingLive = false;
+            foreach (var id in desired)
+            {
+                if (liveById.TryGetValue(id, out var existing))
+                {
+                    rebuilt.Add(existing);
+                    continue;
+                }
+
+                var live = ResolveIndustry(id);
+                if (live != null)
+                {
+                    rebuilt.Add(live);
+                    addedMissingLive = true;
+                }
+            }
+
+            if (!hadDestroyed && !addedMissingLive && rebuilt.Count == current.Length)
+            {
+                return 0;
+            }
+
+            array = rebuilt.ToArray();
+            FuseLog.Info(
+                $"FUSE progression rebound live {label} feature='{featureId}' " +
+                $"count={array.Length} droppedDestroyed={hadDestroyed} addedMissingLive={addedMissingLive} " +
+                $"reason='{reason ?? "unspecified"}'.");
+            return 1;
+        }
+
+        private static int RebindIndustryComponentReferences(
+            string featureId, ref IndustryComponent[] array,
+            Dictionary<string, string[]> intentMap, string label, string reason)
+        {
+            var current = array ?? Array.Empty<IndustryComponent>();
+
+            var liveById = new Dictionary<string, IndustryComponent>(StringComparer.OrdinalIgnoreCase);
+            var hadDestroyed = false;
+            foreach (var component in current)
+            {
+                if (component == null)
+                {
+                    hadDestroyed = true;
+                    continue;
+                }
+
+                var id = SafeIndustryComponentId(component);
+                if (!string.IsNullOrWhiteSpace(id) && !liveById.ContainsKey(id))
+                {
+                    liveById[id] = component;
+                }
+            }
+
+            var desired = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (intentMap.TryGetValue(featureId, out var intentIds) && intentIds != null)
+            {
+                foreach (var id in intentIds)
+                {
+                    if (!string.IsNullOrWhiteSpace(id) && seen.Add(id))
+                    {
+                        desired.Add(id);
+                    }
+                }
+            }
+
+            foreach (var id in liveById.Keys)
+            {
+                if (seen.Add(id))
+                {
+                    desired.Add(id);
+                }
+            }
+
+            if (desired.Count == 0)
+            {
+                if (!hadDestroyed)
+                {
+                    return 0;
+                }
+
+                array = Array.Empty<IndustryComponent>();
+                return 1;
+            }
+
+            var rebuilt = new List<IndustryComponent>(desired.Count);
+            var addedMissingLive = false;
+            foreach (var id in desired)
+            {
+                if (liveById.TryGetValue(id, out var existing))
+                {
+                    rebuilt.Add(existing);
+                    continue;
+                }
+
+                var live = ResolveAnyIndustryComponent(id);
+                if (live != null)
+                {
+                    rebuilt.Add(live);
+                    addedMissingLive = true;
+                }
+            }
+
+            if (!hadDestroyed && !addedMissingLive && rebuilt.Count == current.Length)
+            {
+                return 0;
+            }
+
+            array = rebuilt.ToArray();
+            FuseLog.Info(
+                $"FUSE progression rebound live {label} feature='{featureId}' " +
+                $"count={array.Length} droppedDestroyed={hadDestroyed} addedMissingLive={addedMissingLive} " +
+                $"reason='{reason ?? "unspecified"}'.");
+            return 1;
         }
 
         private static void RefreshProgressionManager()
