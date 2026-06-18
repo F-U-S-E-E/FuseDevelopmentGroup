@@ -324,6 +324,7 @@ namespace FUSE.Runtime.Lifecycle
                 FuseModLoader.UnloadAll(resetDiscovery: true, restoreTrackSnapshots: false);
                 FuseMapTileRegistry.ClearAll();
                 TrackAPI.ClearBaseGraphSnapshot();
+                ProgressionAPI.ClearRememberedReferenceIds();
                 FuseCacheRegistry.ClearAll();
                 FuseRuntimeRebindService.ResetUnknownKindLog();
                 FuseSplineyPluginHost.Reset();

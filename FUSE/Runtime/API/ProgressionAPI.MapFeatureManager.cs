@@ -949,6 +949,20 @@ namespace FUSE.Runtime.API
             _featureIncludeComponentIds[feature.identifier] = CollectComponentIds(feature.unlockIncludeIndustryComponents);
         }
 
+        /// <summary>
+        /// Drops the captured map-feature gate identifier snapshots so the next map
+        /// load starts clean. Called from <c>FuseLifecycle.OnMapWillUnload</c>
+        /// alongside the other runtime-state resets, so the intent dictionaries do
+        /// not accumulate entries for features that no longer exist across many map
+        /// loads in a single session. Safe to call repeatedly.
+        /// </summary>
+        public static void ClearRememberedReferenceIds()
+        {
+            _featureIncludeIndustryIds.Clear();
+            _featureExcludeIndustryIds.Clear();
+            _featureIncludeComponentIds.Clear();
+        }
+
         private static string[] CollectIndustryIds(Industry[] industries)
         {
             if (industries == null || industries.Length == 0)
