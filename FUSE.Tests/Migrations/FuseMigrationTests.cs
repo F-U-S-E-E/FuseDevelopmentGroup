@@ -1,6 +1,6 @@
 using System;
-using FUSE.Data;
-using FUSE.Migrations;
+using FUSE.Authoring.Data;
+using FUSE.Authoring.Migrations;
 using Xunit;
 
 namespace FUSE.Tests.Migrations

@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net48;net10.0</TargetFrameworks>
+    <AssemblyName>FUSE.Core</AssemblyName>
+    <RootNamespace>Fuse.Core</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <Platforms>AnyCPU</Platforms>
+    <FuseIsGameFree>true</FuseIsGameFree>
+    <!-- BSON read/write mirrors the shipping FuseSerializer for parity; the
+         Newtonsoft in-box BsonReader/Writer are obsolete (moved to a separate
+         package) but kept identical here on purpose. The editor itself only
+         emits JSON. -->
+    <NoWarn>$(NoWarn);CS0618</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="FUSE.Tests" />
+    <InternalsVisibleTo Include="FUSE.Editor" />
+    <InternalsVisibleTo Include="FUSE.ExternalEditor" />
+    <InternalsVisibleTo Include="FUSE.Core.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Fix-hint catalog: one embedded copy shared by the CLI, the editors,
+         and the coverage test in FUSE.Core.Tests. -->
+    <EmbeddedResource Include="Validation\Help\fuse-validation-help.json" LogicalName="Fuse.Core.Validation.Help.fuse-validation-help.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\schemas\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>schemas\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
+  </ItemGroup>
+</Project>

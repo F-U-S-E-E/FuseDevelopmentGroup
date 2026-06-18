@@ -1,0 +1,205 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Paths.user is imported by Directory.Build.props so that $(GameDir) is
+       available to the property defaults below. -->
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>FUSE</AssemblyName>
+    <RootNamespace>FUSE</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <Platforms>AnyCPU</Platforms>
+    <NoWarn>$(NoWarn);0618</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GameDir Condition="'$(GameDir)' == ''">C:\Steam\steamapps\common\Railroader</GameDir>
+    <UnityManagedDir Condition="'$(UnityManagedDir)' == ''">$(GameDir)\Railroader_Data\Managed</UnityManagedDir>
+    <UnityModManagerDir Condition="'$(UnityModManagerDir)' == ''">$(UnityManagedDir)\UnityModManager</UnityModManagerDir>
+    <ModDeployDir Condition="'$(ModDeployDir)' == ''">$(GameDir)\Mods\FUSE</ModDeployDir>
+    <EnableModDeploy Condition="'$(EnableModDeploy)' == ''">false</EnableModDeploy>
+  </PropertyGroup>
+
+  <!-- No <Compile Remove> entries needed: the default `**/*.cs` glob is
+       rooted at this csproj's directory (FUSE/), which only contains
+       FUSE production source. The xUnit test project lives at FUSE.Tests/,
+       scratch artifacts at tmp/, and Unity test sources at
+       FUSE.UnityTests/ — all OUTSIDE FUSE/ and therefore never picked up
+       by the default compile pattern. -->
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FUSE.Tests" />
+    <!-- EditMode tests in FUSE.UnityTests/ reach in to internal types
+         (FusePrefabResolver, the apply-planner enums, etc.) to drive
+         the production code paths against a real Transform tree. The
+         assembly name matches the asmdef name at
+         FUSE.UnityTests/Assets/Tests/. -->
+    <InternalsVisibleTo Include="FUSE.UnityTests.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Serilog: compile-time only. The game ships its own copy (AssemblyVersion 2.0.0.0,
+         PublicKeyToken 24c2f752a8e58a10); ExcludeAssets="runtime" keeps us from shipping a
+         second DLL while still letting our PatchingContext shim type-check against the same
+         identity legacy SC plugins were compiled with. -->
+    <PackageReference Include="Serilog" Version="2.12.0" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">$(UnityModManagerDir)\UnityModManagerNet.dll</UnityModManagerAssemblyPath>
+    <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManager.dll')">$(UnityModManagerDir)\UnityModManager.dll</UnityModManagerAssemblyPath>
+    <UnityModManagerReferenceName Condition="'$(UnityModManagerReferenceName)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">UnityModManagerNet</UnityModManagerReferenceName>
+    <UnityModManagerReferenceName Condition="'$(UnityModManagerReferenceName)' == '' and Exists('$(UnityModManagerDir)\UnityModManager.dll')">UnityModManager</UnityModManagerReferenceName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="0Harmony" Condition="Exists('$(UnityModManagerDir)\0Harmony.dll')">
+      <HintPath>$(UnityModManagerDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony" Condition="!Exists('$(UnityModManagerDir)\0Harmony.dll') and Exists('$(UnityManagedDir)\0Harmony.dll')">
+      <HintPath>$(UnityManagedDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(UnityModManagerReferenceName)" Condition="Exists('$(UnityModManagerAssemblyPath)')">
+      <HintPath>$(UnityModManagerAssemblyPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json" Condition="Exists('$(UnityManagedDir)\Newtonsoft.Json.dll')">
+      <HintPath>$(UnityManagedDir)\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp" Condition="Exists('$(UnityManagedDir)\Assembly-CSharp.dll')">
+      <HintPath>$(UnityManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Core" Condition="Exists('$(UnityManagedDir)\Core.dll')">
+      <HintPath>$(UnityManagedDir)\Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Definition" Condition="Exists('$(UnityManagedDir)\Definition.dll')">
+      <HintPath>$(UnityManagedDir)\Definition.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="KeyValue.Runtime" Condition="Exists('$(UnityManagedDir)\KeyValue.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\KeyValue.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Map.Runtime" Condition="Exists('$(UnityManagedDir)\Map.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\Map.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="SimpleGraph.Runtime" Condition="Exists('$(UnityManagedDir)\SimpleGraph.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\SimpleGraph.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.Mathematics" Condition="Exists('$(UnityManagedDir)\Unity.Mathematics.dll')">
+      <HintPath>$(UnityManagedDir)\Unity.Mathematics.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro" Condition="Exists('$(UnityManagedDir)\Unity.TextMeshPro.dll')">
+      <HintPath>$(UnityManagedDir)\Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.InputSystem" Condition="Exists('$(UnityManagedDir)\Unity.InputSystem.dll')">
+      <HintPath>$(UnityManagedDir)\Unity.InputSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine" Condition="Exists('$(UnityManagedDir)\UnityEngine.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.AudioModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.TextRenderingModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.UIModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.UnityWebRequestModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestAudioModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.UnityWebRequestAudioModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.UnityWebRequestAudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI" Condition="Exists('$(UnityManagedDir)\UnityEngine.UI.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Info.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- schemas/ and tools/assets/ remain at the repo root so the JSON-schema
+         lint, the CI mod-zip step, and the converter all read them from a
+         single canonical location. The csproj reaches up one level via "..\"
+         to include + ship them with FUSE.dll's build output. -->
+    <None Include="..\schemas\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>schemas\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
+    <None Include="..\tools\assets\fuse_converter_icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>assets\fuse_icon.png</Link>
+    </None>
+    <SchemaFiles Include="..\schemas\**\*" />
+    <FuseAssets Include="..\tools\assets\fuse_converter_icon.png" />
+  </ItemGroup>
+
+  <Target Name="ValidateUnityReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(UnityModManagerAssemblyPath)')" Text="UnityModManagerNet.dll or UnityModManager.dll was not found. Set UnityModManagerDir or GameDir to your installed Railroader + UMM location." />
+    <Error Condition="!Exists('$(UnityModManagerDir)\0Harmony.dll') and !Exists('$(UnityManagedDir)\0Harmony.dll')" Text="0Harmony.dll was not found. Set UnityModManagerDir or GameDir to your installed Railroader + UMM location." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Newtonsoft.Json.dll')" Text="Newtonsoft.Json.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Assembly-CSharp.dll')" Text="Assembly-CSharp.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Core.dll')" Text="Core.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Definition.dll')" Text="Definition.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\KeyValue.Runtime.dll')" Text="KeyValue.Runtime.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Map.Runtime.dll')" Text="Map.Runtime.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\SimpleGraph.Runtime.dll')" Text="SimpleGraph.Runtime.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Unity.TextMeshPro.dll')" Text="Unity.TextMeshPro.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.dll')" Text="UnityEngine.dll was not found in the Railroader Managed folder. This shim assembly is required for UnityEngine.AssetBundle compile-time references." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')" Text="UnityEngine.IMGUIModule.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll')" Text="UnityEngine.ImageConversionModule.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.TextRenderingModule.dll')" Text="UnityEngine.TextRenderingModule.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.UIModule.dll')" Text="UnityEngine.UIModule.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.UI.dll')" Text="UnityEngine.UI.dll was not found in the Railroader Managed folder." />
+  </Target>
+
+  <Target Name="DeployToUnityModManagerFolder" AfterTargets="Build" Condition="'$(EnableModDeploy)' == 'true'">
+    <MakeDir Directories="$(ModDeployDir)" />
+    <MakeDir Directories="$(ModDeployDir)\schemas" />
+    <MakeDir Directories="$(ModDeployDir)\assets" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" />
+	<Copy SourceFiles="Info.json" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" />
+	<Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" Condition="Exists('$(TargetDir)$(TargetName).pdb') and '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' "/>
+    <Copy SourceFiles="@(SchemaFiles)" DestinationFiles="@(SchemaFiles->'$(ModDeployDir)\schemas\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(FuseAssets)" DestinationFiles="@(FuseAssets->'$(ModDeployDir)\assets\fuse_icon.png')" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

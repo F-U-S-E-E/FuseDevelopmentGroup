@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual trigger lets you opt into the Unity EditMode tests on
+  # demand without flipping the repo variable. The input below is
+  # the one knob that controls the gate.
+  workflow_dispatch:
+    inputs:
+      run_unity_editmode:
+        description: "Run Unity EditMode tests (FUSE.UnityTests/) - requires Unity 2022.3.62f2 on the runner"
+        type: boolean
+        default: false
 
 # Cancel in-progress runs for the same branch/PR when a new commit lands.
 concurrency:
@@ -13,37 +22,54 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write    # needed by the sticky comment step on PR builds
 
 jobs:
   build:
     runs-on: self-hosted
+    # pull-requests: write is scoped to this job rather than the whole workflow
+    # because only the sticky PR-comment step below needs it. The build-net10
+    # job inherits the read-only workflow default. (Job-level permissions
+    # replace the workflow default for this job, so contents:read is repeated.)
+    permissions:
+      contents: read
+      pull-requests: write
     env:
       DOTNET_NOLOGO: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # No step in this job pushes back to the repo, so don't leave the
+          # checkout token persisted in .git/config on the runner.
+          persist-credentials: false
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
         with:
           dotnet-version: "10.0.x"
+
+      # JSON lint and .NET format checks are split out into dedicated
+      # workflows (.github/workflows/json-lint.yml and dotnet-lint.yml)
+      # so PR reviewers see them as separate checks and they can run
+      # in parallel with the build.
 
       # Pass a non-default ModVersion so the InjectModVersionIntoInfoJson
       # target runs (it is gated on '$(ModVersion)' != '0.0.0'). This catches
       # regressions in the post-build PowerShell that stamps Info.json.
+      # Build FUSE.Editor.csproj since it ProjectReferences FUSE.csproj —
+      # MSBuild builds FUSE.dll first, FUSE.Editor.dll second.
       - name: Build (Debug)
-        run: dotnet build FUSE.csproj -c Debug -p:ModVersion=0.0.1-ci
+        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Debug -p:ModVersion=0.0.1-ci
 
       - name: Build (Release)
-        run: dotnet build FUSE.csproj -c Release -p:ModVersion=0.0.1-ci
+        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Release -p:ModVersion=0.0.1-ci
 
       - name: Verify Info.json stamped with version
         shell: powershell
         run: |
-          $info = Get-Content 'bin\Release\net48\Info.json' -Raw | ConvertFrom-Json
+          $info = Get-Content 'FUSE\bin\Release\net48\Info.json' -Raw | ConvertFrom-Json
           if ($info.Version -ne '0.0.1') { throw "Info.json Version is '$($info.Version)', expected '0.0.1' (core only)" }
           Write-Host "Manifest stamped correctly: Info.Version=$($info.Version)"
 
@@ -53,13 +79,157 @@ jobs:
       - name: Run tests
         run: dotnet test FUSE.Tests/FUSE.Tests.csproj -c Debug --verbosity minimal --logger "trx;LogFileName=test-results.trx" --results-directory FUSE.Tests/TestResults
 
+      # continue-on-error: a storage-quota or transient upload hiccup must never
+      # fail the job after the build + tests have already passed. Short retention
+      # keeps debug artifacts from accumulating against the Actions storage quota.
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results
           path: FUSE.Tests/TestResults/test-results.trx
-          retention-days: 7
+          retention-days: 3
+
+      # --- EditMode Unity tests (FUSE.UnityTests/) ---
+      # These exercise SceneCloneAPI.ApplyDefinition,
+      # FusePrefabResolver.FindChild, and the Harmony patch
+      # installation pipeline against real Unity Transforms +
+      # game types, catching regressions the pure xUnit suite
+      # cannot reach. They require Unity Editor 2022.3.62f2
+      # installed on the runner (matches Railroader's shipped
+      # Unity version).
+      #
+      # Off by default - flip on with EITHER:
+      #   * Repository variable RUN_UNITY_EDITMODE_TESTS=true
+      #     (Settings -> Secrets and variables -> Actions -> Variables)
+      #     to enable on every push/PR.
+      #   * Workflow dispatch with the `run_unity_editmode` input
+      #     checked, for one-off runs.
+      #
+      # Even when enabled, the steps use `continue-on-error: true`
+      # so a Unity install / probe / runtime hiccup leaves the job
+      # green for the rest of CI. The EditMode result still
+      # appears in the workflow summary, and the result XML
+      # artifact uploads either way.
+      - name: Decide EditMode-gate
+        id: editmode_gate
+        shell: powershell
+        env:
+          # Pass the gate inputs through the environment rather than ${{ }}
+          # template expansion so they can't inject into the script. Mirrors
+          # the TAG_NAME hardening in release.yml.
+          MANUAL_GATE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_unity_editmode == true }}
+          REPO_VAR: ${{ vars.RUN_UNITY_EDITMODE_TESTS }}
+        run: |
+          $manual = $env:MANUAL_GATE
+          $repoVar = $env:REPO_VAR
+          $enabled = ($manual -eq 'True') -or ($repoVar -eq 'true')
+          if ($enabled) {
+            Write-Host "EditMode tests ENABLED (manual=$manual, repo-var=$repoVar)"
+            "enabled=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "EditMode tests skipped - set vars.RUN_UNITY_EDITMODE_TESTS=true or"
+            Write-Host "  trigger the workflow manually with run_unity_editmode=true to enable."
+            "enabled=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Probe for Unity Editor
+        id: unity_probe
+        if: steps.editmode_gate.outputs.enabled == 'true'
+        shell: powershell
+        run: |
+          # Honour an explicit override first so an operator can point
+          # at a non-standard install (e.g. a portable Unity instance).
+          $unity = $env:UNITY_EDITOR_PATH
+          if (-not $unity -or -not (Test-Path $unity)) {
+            # Search both the default Unity Hub layout AND the
+            # standalone layout some installers use (e.g. when a
+            # specific LTS was downloaded outside Hub). We pin to
+            # 2022.3.62f2 because that's Railroader's shipped Unity
+            # version - the FUSE.dll being tested is compiled against
+            # its UnityEngine.dll set, and a mismatched Editor would
+            # risk subtle type-load failures.
+            $candidates = @(
+              # Unity Hub install layout (Editor under ...\Hub\Editor\<version>\Editor\)
+              'C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe',
+              'D:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe',
+              'D:\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe',
+              # Standalone install layout (Editor under ...\Unity <version>\Editor\)
+              'C:\Program Files\Unity 2022.3.62f2\Editor\Unity.exe',
+              'D:\Program Files\Unity 2022.3.62f2\Editor\Unity.exe',
+              'C:\Unity\2022.3.62f2\Editor\Unity.exe',
+              'D:\Unity\2022.3.62f2\Editor\Unity.exe'
+            )
+            foreach ($c in $candidates) {
+              if (Test-Path $c) { $unity = $c; break }
+            }
+          }
+
+          if (-not $unity -or -not (Test-Path $unity)) {
+            Write-Host "Unity Editor 2022.3.62f2 not found; skipping EditMode tests."
+            Write-Host "To enable: install Unity 2022.3.62f2 via Unity Hub and set"
+            Write-Host "  UNITY_EDITOR_PATH on the runner, or place the editor at the"
+            Write-Host "  default 'C:\Program Files\Unity\Hub\Editor\2022.3.62f2\Editor\Unity.exe'."
+            "available=false" >> $env:GITHUB_OUTPUT
+          }
+          else {
+            Write-Host "Unity Editor: $unity"
+            "available=true"  >> $env:GITHUB_OUTPUT
+            "path=$unity"     >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Prepare FUSE.UnityTests assets
+        if: steps.editmode_gate.outputs.enabled == 'true' && steps.unity_probe.outputs.available == 'true'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          # Copies FUSE.dll + Railroader-shipped DLLs into
+          # FUSE.UnityTests/Assets/Plugins/ so Unity can resolve all of FUSE's
+          # references at import time.
+          & "$PWD\FUSE.UnityTests\prepare_assets.ps1"
+
+      - name: Run EditMode tests
+        if: steps.editmode_gate.outputs.enabled == 'true' && steps.unity_probe.outputs.available == 'true'
+        continue-on-error: true
+        shell: powershell
+        env:
+          # Pass the probed editor path through the environment rather than
+          # ${{ }} template expansion. Mirrors the TAG_NAME hardening in release.yml.
+          UNITY_PATH: ${{ steps.unity_probe.outputs.path }}
+        run: |
+          # -batchmode -nographics: no GUI, no GPU needed.
+          # -runTests: invokes the Test Runner against -testPlatform.
+          # -testResults: NUnit XML output for the upload step below.
+          # -logFile -: stream Unity's log to stdout for the CI logs.
+          # An exit code of 0/2 means tests passed (2 = "all tests
+          # passed but Unity wanted to be picky about something else").
+          # Anything else fails the job.
+          $unity = $env:UNITY_PATH
+          $project = "$PWD\FUSE.UnityTests"
+          $results = "$PWD\FUSE.UnityTests\TestResults\editmode-results.xml"
+          New-Item -ItemType Directory -Force -Path (Split-Path $results) | Out-Null
+
+          & $unity `
+            -batchmode -nographics `
+            -projectPath $project `
+            -runTests `
+            -testPlatform EditMode `
+            -testResults $results `
+            -logFile -
+
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+            throw "Unity Test Runner exited with code $LASTEXITCODE"
+          }
+
+      - name: Upload EditMode test results
+        if: always() && steps.editmode_gate.outputs.enabled == 'true' && steps.unity_probe.outputs.available == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unity-editmode-results
+          path: FUSE.UnityTests/TestResults/editmode-results.xml
+          retention-days: 3
 
       # --- Build a stamped Release zip and attach it as a workflow artifact.
       # Runs on both PR and push events; PR runs additionally get a sticky comment.
@@ -67,16 +237,26 @@ jobs:
       - name: Compute build identity
         id: build_id
         shell: powershell
+        env:
+          # Pass attacker-influenceable context (branch name via ref_name, plus
+          # PR metadata and commit SHAs) through the environment rather than
+          # ${{ }} template expansion, so a crafted branch name can't inject into
+          # the script. Mirrors the TAG_NAME hardening in release.yml.
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if ("${{ github.event_name }}" -eq "pull_request") {
-            $sha = "${{ github.event.pull_request.head.sha }}".Substring(0, 7)
-            $prNumber = "${{ github.event.pull_request.number }}"
+          if ($env:EVENT_NAME -eq "pull_request") {
+            $sha = $env:PR_HEAD_SHA.Substring(0, 7)
+            $prNumber = $env:PR_NUMBER
             $version = "0.0.0-pr$prNumber.$sha"
             $archive = "FUSE-pr$prNumber-$sha.zip"
           }
           else {
-            $sha = "${{ github.sha }}".Substring(0, 7)
-            $branch = "${{ github.ref_name }}" -replace '[^A-Za-z0-9.-]', '-'
+            $sha = $env:COMMIT_SHA.Substring(0, 7)
+            $branch = $env:REF_NAME -replace '[^A-Za-z0-9.-]', '-'
             $version = "0.0.0-$branch.$sha"
             $archive = "FUSE-$branch-$sha.zip"
           }
@@ -85,14 +265,23 @@ jobs:
           "short_sha=$sha" >> $env:GITHUB_OUTPUT
 
       - name: Rebuild Release with stamped version
-        run: dotnet build FUSE.csproj -c Release -p:ModVersion=${{ steps.build_id.outputs.version }}
+        shell: powershell
+        env:
+          # Read the computed version from the environment rather than ${{ }}
+          # template expansion. Mirrors the TAG_NAME hardening in release.yml.
+          MOD_VERSION: ${{ steps.build_id.outputs.version }}
+        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Release "-p:ModVersion=$env:MOD_VERSION"
 
       - name: Package mod zip
         shell: powershell
+        env:
+          # Read the computed archive name from the environment rather than
+          # ${{ }} template expansion. Mirrors the TAG_NAME hardening in release.yml.
+          ARCHIVE_NAME: ${{ steps.build_id.outputs.archive }}
         run: |
           $stagingRoot = Join-Path $PWD "staging-ci"
           $modFolder = Join-Path $stagingRoot "FUSE"
-          $archivePath = Join-Path $PWD "${{ steps.build_id.outputs.archive }}"
+          $archivePath = Join-Path $PWD "$env:ARCHIVE_NAME"
 
           if (Test-Path $stagingRoot) { Remove-Item $stagingRoot -Recurse -Force }
           if (Test-Path $archivePath) { Remove-Item $archivePath -Force }
@@ -100,28 +289,67 @@ jobs:
           New-Item -ItemType Directory -Path $modFolder | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $modFolder 'assets') | Out-Null
 
-          Copy-Item "bin\Release\net48\FUSE.dll" $modFolder
-          Copy-Item "bin\Release\net48\Info.json" $modFolder
+          Copy-Item "FUSE\bin\Release\net48\FUSE.dll" $modFolder
+          Copy-Item "FUSE\bin\Release\net48\Info.json" $modFolder
+          # FUSE.Editor.dll ships side-by-side with FUSE.dll; FUSE loads it
+          # lazily from this folder via Assembly.LoadFrom after UMM boots.
+          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Editor.dll" $modFolder
+          # FUSE.Converter.dll is referenced by the editor's Convert
+          # button. Project-reference flows it to FUSE.Editor's output
+          # naturally; the deploy step explicitly copies it so the
+          # zipped mod folder is self-contained.
+          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Converter.dll" $modFolder
           Copy-Item -Recurse "schemas" $modFolder
           Copy-Item "tools\assets\fuse_converter_icon.png" (Join-Path $modFolder 'assets\fuse_icon.png')
 
           Compress-Archive -Path $modFolder -DestinationPath $archivePath -CompressionLevel Optimal
 
+      # Prove the freshly-packaged zip is actually loadable by Unity Mod Manager
+      # before publishing it as an artifact. scripts/Validate-ModPackage.cs resolves
+      # the Info.json EntryMethod against the game's UnityModManager assembly via
+      # MetadataLoadContext (no game launch), checks the manifest fields, and asserts
+      # the archive layout (DLL set + schemas/ + assets/, no stray files or PDBs).
+      # The expected version is the CI build identity (0.0.0-<branch|pr>.<sha>); the
+      # validator tolerates the 0.0.0 version core that PR/push builds intentionally
+      # stamp, while still enforcing it on real release tags (see release.yml).
+      - name: Validate mod package (UMM compatibility)
+        shell: powershell
+        env:
+          # Pass the archive name + build version through the environment rather
+          # than ${{ }} template expansion, so a crafted branch name can't inject
+          # into the script before validation. Mirrors the TAG_NAME hardening in
+          # release.yml.
+          ARCHIVE_PATH: ${{ steps.build_id.outputs.archive }}
+          MOD_VERSION: ${{ steps.build_id.outputs.version }}
+        run: |
+          # Resolve the reference dir through the same Paths.user / GameDir the build
+          # used, so the UnityModManager assembly set always matches this runner.
+          $ummDir = (dotnet msbuild FUSE/FUSE.csproj -getProperty:UnityModManagerDir -nologo 2>$null | Select-Object -Last 1)
+          if ($ummDir) { $ummDir = $ummDir.Trim() }
+          Write-Host "UnityModManager reference dir: $ummDir"
+          if ($ummDir -and (Test-Path $ummDir)) {
+            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
+          } else {
+            Write-Host "UnityModManagerDir unresolved; falling back to validator env-based resolution."
+            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION"
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Upload build artifact
         id: build_upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.build_id.outputs.archive }}
           path: ${{ steps.build_id.outputs.archive }}
-          retention-days: 30
+          retention-days: 14
           if-no-files-found: error
 
       # Posts (or updates, on re-runs) a single PR comment with the download link.
-      # The `header` field is the dedup key — subsequent runs replace the same comment
+      # The `header` field is the dedup key - subsequent runs replace the same comment
       # in place rather than spamming the conversation.
       - name: Post / update PR comment with download link
         if: github.event_name == 'pull_request' && success()
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
         with:
           header: pr-build-artifact
           message: |
@@ -134,7 +362,7 @@ jobs:
             | Archive | `${{ steps.build_id.outputs.archive }}` |
             | Run | [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
 
-            **[⬇ Download from this workflow run](${{ steps.build_upload.outputs.artifact-url }})**
+            **[Download from this workflow run](${{ steps.build_upload.outputs.artifact-url }})**
 
             ### Install
 
@@ -142,4 +370,73 @@ jobs:
             2. Replace `Railroader/Mods/FUSE/` with the extracted `FUSE/` folder
             3. Launch Railroader; verify with `/fuse.report`
 
-            > Artifact retention: 30 days. This comment refreshes automatically on each push to the PR.
+            > Artifact retention: 14 days. This comment refreshes automatically on each push to the PR.
+
+  # Cross-platform editor lane. Builds the game-free net10 projects (FUSE.Core,
+  # FUSE.ExternalEditor, the converter's net10 facet) on a STOCK GitHub runner —
+  # no Unity/UMM DLLs, no GameDir/Paths.user — and runs the net10 test suites.
+  # This is what proves the standalone Avalonia editor builds + tests anywhere,
+  # independent of the self-hosted Railroader runner above.
+  build-net10:
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # No step in this job pushes back to the repo, so don't leave the
+          # checkout token persisted in .git/config on the runner.
+          persist-credentials: false
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5.3.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build FUSE.Core (net10)
+        run: dotnet build FUSE.Core/FUSE.Core.csproj -c Release -f net10.0
+
+      - name: Build FUSE.ExternalEditor
+        run: dotnet build FUSE.ExternalEditor/FUSE.ExternalEditor.csproj -c Release
+
+      - name: Test FUSE.Core.Tests (net10)
+        run: dotnet test FUSE.Core.Tests/FUSE.Core.Tests.csproj -c Release --logger "trx;LogFileName=core-tests.trx" --results-directory TestResults
+
+      - name: Test FUSE.ExternalEditor.UiTests (headless)
+        run: dotnet test FUSE.ExternalEditor.UiTests/FUSE.ExternalEditor.UiTests.csproj -c Release --logger "trx;LogFileName=ui-tests.trx" --results-directory TestResults
+
+      # Per-RID publish smoke (framework-dependent to keep CI artifacts small;
+      # release.yml builds the self-contained per-OS bundles for distribution).
+      - name: Publish editor per-RID
+        run: |
+          for rid in win-x64 linux-x64 osx-x64; do
+            dotnet publish FUSE.ExternalEditor/FUSE.ExternalEditor.csproj -c Release -r $rid --self-contained false -o publish/$rid
+          done
+
+      # Keep this artifact's storage footprint tiny. It is ~60 MB per run (three
+      # framework-dependent RID publishes), so retaining a copy for every PR push
+      # is what exhausts the Actions storage quota. The publish STEP above still
+      # runs on PRs as a build smoke test; we just don't retain its output there
+      # (skip the upload on pull_request events). On main/manual runs we keep a
+      # short-lived copy for grabbing the latest editor build. continue-on-error
+      # so a quota/transient upload failure can never fail this job after the
+      # build + tests have passed.
+      - name: Upload editor publish artifacts
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuse-external-editor
+          path: publish/
+          retention-days: 2
+
+      - name: Upload net10 test results
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: net10-test-results
+          path: TestResults/*.trx
+          retention-days: 3

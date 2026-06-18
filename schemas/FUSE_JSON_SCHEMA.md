@@ -102,7 +102,7 @@ The shipped examples cover the public beta authoring cases:
 | Span-anchored scenery | `fuse-mod.example.json` | `world.scenery.*.anchorSpanIds`. |
 | Signals | Not included | Signals are deferred for beta and should not be treated as supported yet. |
 
-The converter guide at `tools/FUSE_CONVERTER.md` covers drag/drop conversion, batch conversion, output reports, and warning classification.
+The converter guide at `docs/FUSE_CONVERTER.md` covers drag/drop conversion, batch conversion, output reports, and warning classification.
 
 Areas are defined under `tracks.areas` and can be used to group industries in the company window. `order` is a signed sort key that controls the display order of areas and industries; lower values appear earlier. Legacy conversions preserve source order values, including negative values, when the source file provides them:
 

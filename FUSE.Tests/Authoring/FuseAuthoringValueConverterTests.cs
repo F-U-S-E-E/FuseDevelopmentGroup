@@ -1,5 +1,5 @@
 using System;
-using FUSE.Authoring;
+using FUSE.Authoring.Entities;
 using Newtonsoft.Json.Linq;
 using Xunit;
 

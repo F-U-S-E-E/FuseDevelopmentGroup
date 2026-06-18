@@ -1,5 +1,9 @@
 <Project>
-  <PropertyGroup>
+  <!-- Mod-version stamping applies only to in-game (net48) mod assemblies.
+       Game-free projects (FUSE.Core, FUSE.Core.Tests, FUSE.ExternalEditor,
+       FUSE.ExternalEditor.UiTests) set FuseIsGameFree=true and keep their own
+       <Version>, so they are excluded here. -->
+  <PropertyGroup Condition="'$(FuseIsGameFree)' != 'true'">
     <ModVersionCore>$([System.Text.RegularExpressions.Regex]::Match('$(ModVersion)', '^[0-9]+\.[0-9]+\.[0-9]+').Value)</ModVersionCore>
     <ModVersionCore Condition="'$(ModVersionCore)' == ''">0.0.0</ModVersionCore>
     <Version>$(ModVersion)</Version>
@@ -11,11 +15,14 @@
 
   <!--
     Stamp the build-deployed Info.json with the real ModVersion. The source
-    Info.json keeps a sentinel "0.0.0" placeholder so debug builds without
-    -p:ModVersion=... stay obviously unversioned. The CI/release workflow passes
-    -p:ModVersion=<semver from tag> so the artifact carries the right version.
+    Info.json tracks the latest published release version, kept in sync by
+    .github/workflows/sync-info-json.yml. Local/CI debug builds without
+    -p:ModVersion=... skip stamping so the bin output mirrors source. The
+    release workflow passes -p:ModVersion=<semver from tag>, so the
+    published artifact always carries the right version regardless of what
+    the source manifest currently shows.
   -->
-  <Target Name="InjectModVersionIntoInfoJson" AfterTargets="AfterBuild" Condition="'$(ModVersion)' != '0.0.0'">
-    <Exec Command="powershell -NoProfile -Command &quot;$f = '$(TargetDir)Info.json'; if (Test-Path $f) { (Get-Content $f -Raw) -replace '0\.0\.0', '$(ModVersionCore)' | Set-Content $f -NoNewline }&quot;" />
+  <Target Name="InjectModVersionIntoInfoJson" AfterTargets="AfterBuild" Condition="'$(ModVersion)' != '0.0.0' AND Exists('$(TargetDir)Info.json') and '$(FuseIsGameFree)' != 'true'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\stamp-info-version.ps1&quot; -Path &quot;$(TargetDir)Info.json&quot; -Version $(ModVersionCore)" />
   </Target>
 </Project>

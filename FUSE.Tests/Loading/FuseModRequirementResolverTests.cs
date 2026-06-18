@@ -1,5 +1,5 @@
 using System;
-using FUSE.Data;
+using FUSE.Authoring.Data;
 using FUSE.Loading;
 using Xunit;
 

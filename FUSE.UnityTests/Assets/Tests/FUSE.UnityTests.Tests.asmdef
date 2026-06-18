@@ -1,0 +1,25 @@
+{
+  "name": "FUSE.UnityTests.Tests",
+  "rootNamespace": "FUSE.UnityTests",
+  "references": [
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll",
+    "FUSE.dll",
+    "Assembly-CSharp.dll",
+    "0Harmony.dll",
+    "Definition.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

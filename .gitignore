@@ -10,9 +10,11 @@ TestResults/
 /.idea
 /_work
 /dist
-/tools/__pycache__/fuse_installer*.pyc
+/tools/__pycache__/
 
 # Release workflow scratch space
 /staging/
 /FUSE-v*.zip
 Local.Build.props
+
+tmp/
