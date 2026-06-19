@@ -292,6 +292,11 @@ namespace FUSE.Runtime.API
             // required for correctness.
             var initialized = InitializeMissingMapFeatureStates(manager);
             var inferredIndustryIncludes = InferMapFeatureIndustryIncludes(manager, reason);
+            // Re-bind each feature's industry/component gate arrays to live instances
+            // BEFORE re-applying the feature state, so the gate toggles
+            // ProgressionDisabled on the live industry rather than a destroyed
+            // reference left behind by a Remove+Add re-apply.
+            var reboundLiveReferences = ReResolveMapFeatureLiveReferences(manager, reason);
             var forcedFeatureState = ForceApplyCurrentMapFeatureState(manager, reason);
             var invokedCurrentProgressionAfterFeatureState = TryRefreshCurrentProgression(reason, "after map feature replay");
             var restoredTrackGroups = RestoreDisabledTrackGroups(manager, reason);
@@ -302,7 +307,7 @@ namespace FUSE.Runtime.API
                 $"currentProgressionRefreshedBeforeFeatureState={invokedCurrentProgressionBeforeFeatureState} " +
                 $"currentProgressionRefreshedAfterFeatureState={invokedCurrentProgressionAfterFeatureState} " +
                 $"initializedFeatureStates={initialized} " +
-                $"inferredIndustryIncludes={inferredIndustryIncludes} forcedFeatureState={forcedFeatureState} " +
+                $"inferredIndustryIncludes={inferredIndustryIncludes} reboundLiveReferences={reboundLiveReferences} forcedFeatureState={forcedFeatureState} " +
                 $"restoredDisabledTrackGroups={restoredTrackGroups} " +
                 $"finalisedOrphanTrackGroups={finalisedOrphans}.");
 

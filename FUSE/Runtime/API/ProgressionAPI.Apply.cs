@@ -114,6 +114,12 @@ namespace FUSE.Runtime.API
                     definition.UnlockIncludeIndustryComponents.ApplyTo(existingIds));
             }
             SanitizeMapFeature(feature);
+            // Capture the resolved gate identifiers so the progression refresh can
+            // re-bind them to live instances if an industry is later Remove+Add'd
+            // (otherwise the unlock toggles ProgressionDisabled on a destroyed
+            // reference and the live industry stays gated — e.g. a progression-gated
+            // interchange that shows a panel but is excluded from EnabledInterchanges).
+            RememberMapFeatureReferenceIds(feature);
 
             if (FuseSettings.VerboseApplyReportDetails)
             {

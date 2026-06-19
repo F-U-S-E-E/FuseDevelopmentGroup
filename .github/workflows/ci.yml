@@ -337,6 +337,12 @@ jobs:
 
       - name: Upload build artifact
         id: build_upload
+        # continue-on-error: a storage-quota or transient upload hiccup must never
+        # fail the job after the build, tests, and package validation have already
+        # passed (same rationale as the other upload steps in this workflow). A
+        # genuinely missing archive is still caught upstream by the Package mod zip
+        # and Validate mod package steps, so this only tolerates upload-side failures.
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.build_id.outputs.archive }}
