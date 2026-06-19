@@ -2344,7 +2344,7 @@ namespace FUSE.Editor.Screen
                 alignment = TextAnchor.MiddleLeft,
             };
 
-            _propertyValueStyle = new GUIStyle(GUI.skin.label)
+            _propertyValueStyle = new GUIStyle(GUI.skin.textField)
             {
                 fontSize = 12,
                 normal = { textColor = new Color(0.92f, 0.92f, 0.92f) },
