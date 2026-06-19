@@ -57,14 +57,25 @@ namespace FUSE.Editor.Screen
 
         private Vector2 _entityTreeScroll;
         private Vector2 _propertiesScroll;
-        private string _selectedEntityKind = "Node";
-        private string _selectedEntityId;
+
+        // Properties panel instance
+        private FuseEditorPropertiesPanel _propertiesPanel;
+
+        // Selection system - supports multiple selected entities
+        private readonly List<string> _selectedEntityKinds = new List<string>();
+        private readonly List<string> _selectedEntityIds = new List<string>();
+
+        // Legacy single-selection properties for backwards compatibility
+        private string _selectedEntityKind => _selectedEntityKinds.Count > 0 ? _selectedEntityKinds[0] : "Node";
+        private string _selectedEntityId => _selectedEntityIds.Count > 0 ? _selectedEntityIds[0] : null;
+
         private readonly HashSet<string> _expandedCategories = new HashSet<string>(StringComparer.Ordinal);
 
         // Per-field IMGUI buffers for the Properties panel's inline
         // float editors. The user's in-flight typing lives in the
         // buffer; we reseed from the model on selection change so the
         // user always sees the committed value of the new selection.
+        // TODO: These will migrate to FuseEditorPropertiesPanel once full property editing is implemented.
         private string _posXBuffer = string.Empty;
         private string _posYBuffer = string.Empty;
         private string _posZBuffer = string.Empty;
@@ -109,6 +120,213 @@ namespace FUSE.Editor.Screen
         private List<FuseEditorModEntry> _legacyCatalogCache;
         private int _legacyCatalogRefreshedFrame = -1;
         private bool _stylesInitialized;
+
+        /// <summary>
+        /// Sets the selected entity in the editor screen. This updates the
+        /// entity tree selection and properties panel to reflect the new selection.
+        /// Clears any existing selections.
+        /// </summary>
+        /// <param name="entityKind">The kind of entity (e.g., "Node", "Segment", "Span")</param>
+        /// <param name="entityId">The unique identifier of the entity</param>
+        public void SetSelectedEntity(string entityKind, string entityId)
+        {
+            ClearSelection();
+            AddToSelection(entityKind, entityId);
+        }
+
+        /// <summary>
+        /// Sets multiple selected entities in the editor screen. This updates the
+        /// entity tree selection and properties panel to reflect the new selections.
+        /// Clears any existing selections.
+        /// </summary>
+        /// <param name="entityKinds">List of entity kinds</param>
+        /// <param name="entityIds">List of entity IDs (must match length of entityKinds)</param>
+        public void SetSelectedEntities(IList<string> entityKinds, IList<string> entityIds)
+        {
+            if (entityKinds == null || entityIds == null)
+            {
+                FuseLog.Warning("FUSE editor: SetSelectedEntities called with null list(s).");
+                return;
+            }
+
+            if (entityKinds.Count != entityIds.Count)
+            {
+                FuseLog.Warning($"FUSE editor: SetSelectedEntities kind/id count mismatch ({entityKinds.Count} vs {entityIds.Count}).");
+                return;
+            }
+
+            ClearSelection();
+            for (int i = 0; i < entityKinds.Count; i++)
+            {
+                AddToSelection(entityKinds[i], entityIds[i]);
+            }
+        }
+
+        /// <summary>
+        /// Adds an entity to the current selection without clearing existing selections.
+        /// </summary>
+        /// <param name="entityKind">The kind of entity to add</param>
+        /// <param name="entityId">The unique identifier of the entity to add</param>
+        public void AddToSelection(string entityKind, string entityId)
+        {
+            if (string.IsNullOrEmpty(entityId))
+            {
+                return;
+            }
+
+            // Check if already selected
+            for (int i = 0; i < _selectedEntityIds.Count; i++)
+            {
+                if (string.Equals(_selectedEntityIds[i], entityId, StringComparison.Ordinal) &&
+                    string.Equals(_selectedEntityKinds[i], entityKind, StringComparison.Ordinal))
+                {
+                    return; // Already selected
+                }
+            }
+
+            _selectedEntityKinds.Add(entityKind);
+            _selectedEntityIds.Add(entityId);
+        }
+
+        /// <summary>
+        /// Adds multiple entities to the current selection without clearing existing selections.
+        /// </summary>
+        /// <param name="entityKinds">List of entity kinds to add</param>
+        /// <param name="entityIds">List of entity IDs to add (must match length of entityKinds)</param>
+        public void AddToSelection(IList<string> entityKinds, IList<string> entityIds)
+        {
+            if (entityKinds == null || entityIds == null)
+            {
+                FuseLog.Warning("FUSE editor: AddToSelection called with null list(s).");
+                return;
+            }
+
+            if (entityKinds.Count != entityIds.Count)
+            {
+                FuseLog.Warning($"FUSE editor: AddToSelection kind/id count mismatch ({entityKinds.Count} vs {entityIds.Count}).");
+                return;
+            }
+
+            for (int i = 0; i < entityKinds.Count; i++)
+            {
+                AddToSelection(entityKinds[i], entityIds[i]);
+            }
+        }
+
+        /// <summary>
+        /// Removes an entity from the current selection.
+        /// </summary>
+        /// <param name="entityKind">The kind of entity to remove</param>
+        /// <param name="entityId">The unique identifier of the entity to remove</param>
+        /// <returns>True if the entity was found and removed, false otherwise</returns>
+        public bool RemoveFromSelection(string entityKind, string entityId)
+        {
+            for (int i = 0; i < _selectedEntityIds.Count; i++)
+            {
+                if (string.Equals(_selectedEntityIds[i], entityId, StringComparison.Ordinal) &&
+                    string.Equals(_selectedEntityKinds[i], entityKind, StringComparison.Ordinal))
+                {
+                    _selectedEntityIds.RemoveAt(i);
+                    _selectedEntityKinds.RemoveAt(i);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Removes multiple entities from the current selection.
+        /// </summary>
+        /// <param name="entityKinds">List of entity kinds to remove</param>
+        /// <param name="entityIds">List of entity IDs to remove (must match length of entityKinds)</param>
+        /// <returns>The number of entities that were successfully removed</returns>
+        public int RemoveFromSelection(IList<string> entityKinds, IList<string> entityIds)
+        {
+            if (entityKinds == null || entityIds == null)
+            {
+                FuseLog.Warning("FUSE editor: RemoveFromSelection called with null list(s).");
+                return 0;
+            }
+
+            if (entityKinds.Count != entityIds.Count)
+            {
+                FuseLog.Warning($"FUSE editor: RemoveFromSelection kind/id count mismatch ({entityKinds.Count} vs {entityIds.Count}).");
+                return 0;
+            }
+
+            int removedCount = 0;
+            for (int i = 0; i < entityKinds.Count; i++)
+            {
+                if (RemoveFromSelection(entityKinds[i], entityIds[i]))
+                {
+                    removedCount++;
+                }
+            }
+            return removedCount;
+        }
+
+        /// <summary>
+        /// Clears all current selections.
+        /// </summary>
+        public void ClearSelection()
+        {
+            _selectedEntityKinds.Clear();
+            _selectedEntityIds.Clear();
+        }
+
+        /// <summary>
+        /// Checks if a specific entity is currently selected.
+        /// </summary>
+        /// <param name="entityKind">The kind of entity to check</param>
+        /// <param name="entityId">The unique identifier of the entity to check</param>
+        /// <returns>True if the entity is selected, false otherwise</returns>
+        public bool IsEntitySelected(string entityKind, string entityId)
+        {
+            for (int i = 0; i < _selectedEntityIds.Count; i++)
+            {
+                if (string.Equals(_selectedEntityIds[i], entityId, StringComparison.Ordinal) &&
+                    string.Equals(_selectedEntityKinds[i], entityKind, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Toggles the selection state of an entity. If selected, it will be removed.
+        /// If not selected, it will be added.
+        /// </summary>
+        /// <param name="entityKind">The kind of entity to toggle</param>
+        /// <param name="entityId">The unique identifier of the entity to toggle</param>
+        /// <returns>True if the entity is now selected, false if it was deselected</returns>
+        public bool ToggleSelection(string entityKind, string entityId)
+        {
+            if (RemoveFromSelection(entityKind, entityId))
+            {
+                return false; // Was selected, now removed
+            }
+            else
+            {
+                AddToSelection(entityKind, entityId);
+                return true; // Was not selected, now added
+            }
+        }
+
+        /// <summary>
+        /// Gets the number of currently selected entities.
+        /// </summary>
+        public int SelectionCount => _selectedEntityIds.Count;
+
+        /// <summary>
+        /// Gets read-only access to the list of selected entity kinds.
+        /// </summary>
+        public IReadOnlyList<string> SelectedEntityKinds => _selectedEntityKinds.AsReadOnly();
+
+        /// <summary>
+        /// Gets read-only access to the list of selected entity IDs.
+        /// </summary>
+        public IReadOnlyList<string> SelectedEntityIds => _selectedEntityIds.AsReadOnly();
 
         // EDEN-style chrome — owns its own state so the screen body
         // stays a thin orchestrator over composed components.
@@ -884,13 +1102,31 @@ namespace FUSE.Editor.Screen
                     foreach (var entityId in bucket.EntityIds)
                     {
                         var rowRect = new Rect(36f, y, viewRect.width - 36f, rowHeight);
-                        var isSelected = string.Equals(_selectedEntityId, entityId, StringComparison.Ordinal)
-                                         && string.Equals(_selectedEntityKind, bucket.Name, StringComparison.Ordinal);
+                        var isSelected = IsEntitySelected(bucket.Name, entityId);
                         var style = isSelected ? _entityRowSelectedStyle : _entityRowStyle;
                         if (GUI.Button(rowRect, "  " + entityId, style))
                         {
-                            _selectedEntityKind = bucket.Name;
-                            _selectedEntityId = entityId;
+                            // Multi-selection support via modifier keys
+                            var evt = Event.current;
+                            bool ctrl = evt.control || evt.command; // Command for macOS
+                            bool shift = evt.shift;
+
+                            if (ctrl)
+                            {
+                                // Ctrl-click: toggle selection of this item
+                                ToggleSelection(bucket.Name, entityId);
+                            }
+                            else if (shift && _selectedEntityIds.Count > 0)
+                            {
+                                // Shift-click: select range from last selection to this one
+                                // (simplified: just adds this one to selection for now)
+                                AddToSelection(bucket.Name, entityId);
+                            }
+                            else
+                            {
+                                // Normal click: replace selection with this item
+                                SetSelectedEntity(bucket.Name, entityId);
+                            }
 
                             // Reach into the runtime: for Nodes,
                             // pre-spawn markers if needed (so the user
@@ -1049,18 +1285,13 @@ namespace FUSE.Editor.Screen
         /// </summary>
         private void DrawRightPanelInto(Rect panelRect)
         {
-            var contentRect = new Rect(panelRect.x + Padding,
-                                       panelRect.y + Padding,
-                                       panelRect.width - Padding * 2,
-                                       panelRect.height - Padding * 2);
-
-            if (string.IsNullOrEmpty(_selectedEntityId))
+            if (_propertiesPanel == null)
             {
-                GUI.Label(contentRect, "  " + FuseEditorStrings.Get("fuse.editor.properties.empty_hint"), _propertyLabelStyle);
-                return;
+                _propertiesPanel = new FuseEditorPropertiesPanel();
             }
 
-            DrawPropertiesContent(contentRect);
+            _propertiesPanel.Draw(panelRect, _selectedEntityKinds, _selectedEntityIds,
+                                 _propertyLabelStyle, _propertyValueStyle, _toolButtonStyle);
         }
 
         private void DrawPropertiesContent(Rect contentRect)
@@ -1215,8 +1446,7 @@ namespace FUSE.Editor.Screen
             // Existing marker (if any) is dangling now that the
             // TrackNode is destroyed; let the active tool's next
             // markers-refresh path clean it up.
-            _selectedEntityId = null;
-            _selectedEntityKind = "Node";
+            ClearSelection();
             _lastBufferedEntityId = null;
             Track.FuseNodeEditorController.DeselectCurrent();
         }

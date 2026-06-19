@@ -1,4 +1,3 @@
-using System.Reflection;
 using FUSE.Authoring.Editor;
 using FUSE.Editor.Bookmarks;
 using FUSE.Editor.Screen;
@@ -6,10 +5,16 @@ using FUSE.Editor.Screen.UI;
 using FUSE.Editor.Track.Tools;
 using FUSE.Infrastructure;
 using FUSE.Loading;
+using Fuse.Core.Model;
 using GalaSoft.MvvmLight.Messaging;
 using Game.Events;
 using HarmonyLib;
 using JetBrains.Annotations;
+using RLD;
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using UI.CarEditor;
 using UnityEngine;
 
 namespace FUSE.Editor
@@ -49,6 +54,81 @@ namespace FUSE.Editor
         private const int StrategyWatchdogFrames = 120;
         private int _strategyWatchdogFramesRemaining;
 
+        /// <summary>
+        /// Maps string entity type names (as used in the entity tree) to their
+        /// corresponding Fuse data class types. Supports reflection-based lookups,
+        /// serialization helpers, and type-based property editing.
+        /// </summary>
+        public static readonly IReadOnlyDictionary<string, Type> EntityTypeMap = new Dictionary<string, Type>
+        {
+            // Track entities
+            { "Node", typeof(FuseNode) },
+            { "Segment", typeof(FuseSegment) },
+            { "Span", typeof(FuseSpan) },
+            { "Area", typeof(FuseArea) },
+
+            // World entities
+            { "Scenery", typeof(FuseScenery) },
+            { "Spliney", typeof(FuseSpliney) },
+            { "MapLabel", typeof(FuseMapLabel) },
+            { "Telegraph", typeof(FuseTelegraphPoles) },
+
+            // Operations entities
+            { "Industry", typeof(FuseIndustry) },
+            { "Load", typeof(FuseLoad) },
+            { "Station", typeof(FuseStation) },
+            { "Turntable", typeof(FuseTurntable) },
+            { "Loader", typeof(FuseLoader) }
+        };
+
+        /// <summary>
+        /// Reverse mapping from Fuse data class types to their string entity type names.
+        /// Built lazily from <see cref="EntityTypeMap"/> on first access.
+        /// </summary>
+        private static IReadOnlyDictionary<Type, string> _entityTypeReverseMap;
+
+        /// <summary>
+        /// Gets the reverse mapping from Fuse data class types to entity type names.
+        /// </summary>
+        public static IReadOnlyDictionary<Type, string> EntityTypeReverseMap
+        {
+            get
+            {
+                if (_entityTypeReverseMap == null)
+                {
+                    var reverse = new Dictionary<Type, string>();
+                    foreach (var kvp in EntityTypeMap)
+                    {
+                        reverse[kvp.Value] = kvp.Key;
+                    }
+                    _entityTypeReverseMap = reverse;
+                }
+                return _entityTypeReverseMap;
+            }
+        }
+
+        /// <summary>
+        /// Tries to get the Fuse data class type for a given entity type name.
+        /// </summary>
+        /// <param name="entityTypeName">The entity type name (e.g., "Nodes", "Segments")</param>
+        /// <param name="type">The corresponding data class type if found</param>
+        /// <returns>True if the type was found, false otherwise</returns>
+        public static bool TryGetEntityType(string entityTypeName, out Type type)
+        {
+            return EntityTypeMap.TryGetValue(entityTypeName, out type);
+        }
+
+        /// <summary>
+        /// Tries to get the entity type name for a given Fuse data class type.
+        /// </summary>
+        /// <param name="type">The Fuse data class type</param>
+        /// <param name="entityTypeName">The corresponding entity type name if found</param>
+        /// <returns>True if the name was found, false otherwise</returns>
+        public static bool TryGetEntityTypeName(Type type, out string entityTypeName)
+        {
+            return EntityTypeReverseMap.TryGetValue(type, out entityTypeName);
+        }
+
         static FuseEditor _instance;
 
         FuseEditorScreen _screen;
@@ -59,6 +139,9 @@ namespace FUSE.Editor
         public bool ModSelected => ActiveMod != null;
 
         public bool IsInEditor => _screen != null;
+
+        [CanBeNull]
+        internal FuseEditorScreen Screen => _screen;
 
         public static FuseEditor Instance
         {
@@ -124,6 +207,14 @@ namespace FUSE.Editor
             catch (System.Exception ex)
             {
                 FuseLog.Exception("FUSE failed to suppress the built-in DefinitionEditorModeController.", ex);
+            }
+            try
+            {
+                SetupRLDGizmoComponents();
+            }
+            catch (System.Exception ex)
+            {
+                FuseLog.Exception("FUSE failed to set up RLD gizmo components.", ex);
             }
 
             // Avatar wrestling: the previous JumpToPoint-only approach
@@ -376,6 +467,10 @@ namespace FUSE.Editor
             // and stops re-applying once it hits zero, so steady-state
             // cost is a single int compare per frame.
             TickStrategyWatchdog();
+
+            // Update marker visibility based on camera distance
+            // (culls distant markers to improve performance)
+            Track.FuseNodeEditorController.UpdateMarkerVisibility();
         }
 
         private void TickStrategyWatchdog()
@@ -634,8 +729,42 @@ namespace FUSE.Editor
             var controller = GameObject.Find(DefinitionEditorModeControllerName);
             if (controller != null)
             {
+                // Before suppressing, set up the RLD gizmo system components
+                // that are attached to this controller
+
                 controller.SetActive(false);
                 FuseLog.Info("FUSE editor suppressed the built-in DefinitionEditorModeController.");
+            }
+        }
+
+        /// <summary>
+        /// Sets up the RLD gizmo system components attached to the
+        /// DefinitionEditorModeController. The controller has rtFocusCamera
+        /// and rldApp components that need to be initialized before the
+        /// move/rotate gizmos can work properly.
+        /// </summary>
+        private static void SetupRLDGizmoComponents()
+        {
+            try
+            {
+                // Find the rtFocusCamera component and set it to use Camera.main
+                var rtFocusCamera = GameObject.FindAnyObjectByType<RTFocusCamera>(FindObjectsInactive.Include);
+                if (rtFocusCamera != null)
+                {
+                    rtFocusCamera.SetTargetCamera(Camera.main);
+                }
+
+                // Find the rldApp component and activate its GameObject
+                var rldApp = GameObject.FindAnyObjectByType<RLDApp>(FindObjectsInactive.Include);
+                if (rldApp != null)
+                {
+                    rldApp.gameObject.SetActive(true);
+                    FuseLog.Info("FUSE editor: Activated RLD App GameObject.");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                FuseLog.Exception("FUSE editor: Failed to set up RLD gizmo components.", ex);
             }
         }
 

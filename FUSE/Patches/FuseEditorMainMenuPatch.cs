@@ -45,7 +45,7 @@ namespace FUSE.Patches
         // static readonly (not a const) so the gated-off injection path
         // below doesn't trip an unreachable-code warning. Flip to true to
         // surface the button once the editor is shippable.
-        private static readonly bool EditorButtonEnabled = false;
+        private static readonly bool EditorButtonEnabled = true;
 
         private static readonly FieldInfo MenuManagerGameManagerField =
             AccessTools.Field(typeof(MenuManager), "gameManager");

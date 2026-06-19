@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using FUSE.Infrastructure;
 using FUSE.Loading;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace FUSE.Editor.Mods
@@ -308,8 +309,17 @@ namespace FUSE.Editor.Mods
                     ["DisplayName"] = string.IsNullOrWhiteSpace(displayName) ? sanitized : displayName.Trim(),
                     ["Author"] = string.IsNullOrWhiteSpace(author) ? "(unknown)" : author.Trim(),
                     ["Version"] = "0.1.0",
+                    ["LoadAfter"] = new JArray
+                    {
+                        "FUSE",
+                    },
+                    ["FuseLoadPriority"] = 100,
+                    ["FuseDataFiles"] = new JArray
+                    {
+                        $"{sanitized}.fuse.json",
+                    },
                 };
-                File.WriteAllText(Path.Combine(folder, "Info.json"), info.ToString(Newtonsoft.Json.Formatting.Indented));
+                File.WriteAllText(Path.Combine(folder, "Info.json"), JsonConvert.SerializeObject(info, Formatting.Indented));
 
                 // Empty FUSE definition. The schema layer fills in
                 // defaults for missing sections at load time so we
@@ -322,7 +332,7 @@ namespace FUSE.Editor.Mods
                     ["Author"] = string.IsNullOrWhiteSpace(author) ? "(unknown)" : author.Trim(),
                     ["ModVersion"] = "0.1.0",
                 };
-                File.WriteAllText(Path.Combine(folder, sanitized + ".fuse.json"), fuse.ToString(Newtonsoft.Json.Formatting.Indented));
+                File.WriteAllText(Path.Combine(folder, sanitized + ".fuse.json"), JsonConvert.SerializeObject(fuse, Formatting.Indented));
 
                 FuseLog.Info($"FUSE editor mod catalog: created new mod scaffold at '{folder}'.");
                 return folder;

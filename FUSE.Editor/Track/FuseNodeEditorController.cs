@@ -22,6 +22,10 @@ namespace FUSE.Editor.Track
         private static FuseNodeMarker _selected;
         private static Material _markerMaterial;
 
+        // Distance threshold for marker culling (in world units)
+        private const float CullingDistance = 150f;
+        private const float CullingDistanceSq = CullingDistance * CullingDistance;
+
         public static FuseNodeMarker Selected => _selected;
 
         public static void ShowMarkersForActiveMod()
@@ -29,24 +33,35 @@ namespace FUSE.Editor.Track
             ClearMarkers();
 
             var mod = FuseEditor.Instance != null ? FuseEditor.Instance.ActiveMod : null;
-            if (mod?.Definition?.Tracks?.Nodes == null)
+            if (mod == null)
             {
-                FuseLog.Info("FUSE node editor: no active mod or no track nodes to show.");
+                FuseLog.Info("FUSE node editor: no active mod selected.");
                 return;
             }
 
-            foreach (var pair in mod.Definition.Tracks.Nodes)
+            // Create markers for ALL nodes in the graph, not just the active mod's nodes
+            var allNodes = FUSE.Runtime.API.TrackAPI.GetAllNodes();
+            if (allNodes == null)
             {
-                var trackNode = global::Track.Graph.Shared.GetNode(pair.Key);
+                FuseLog.Info("FUSE node editor: no track nodes available in the graph.");
+                return;
+            }
+
+            int markerCount = 0;
+            foreach (var trackNode in allNodes)
+            {
                 if (trackNode == null)
                 {
                     continue;
                 }
 
-                AttachMarker(trackNode, mod.Definition.Id);
+                // Check which mod owns this node (if any)
+                string owningModId = DetermineOwningMod(trackNode.id, mod.Definition.Id);
+                AttachMarker(trackNode, owningModId);
+                markerCount++;
             }
 
-            FuseLog.Info($"FUSE node editor: attached {ActiveMarkers.Count} marker(s) for mod '{mod.Definition.Id}'.");
+            FuseLog.Info($"FUSE node editor: attached {markerCount} marker(s) for all nodes in the graph (active mod: '{mod.Definition.Id}').");
         }
 
         public static void ClearMarkers()
@@ -84,6 +99,13 @@ namespace FUSE.Editor.Track
 
             _selected = marker;
             _selected.SetSelected(true);
+
+            // Update the editor screen's selected entity to match the marker selection
+            var screen = FuseEditor.Instance?.Screen;
+            if (screen != null && marker.Node != null)
+            {
+                screen.SetSelectedEntity("Node", marker.Node.id);
+            }
         }
 
         /// <summary>
@@ -129,6 +151,69 @@ namespace FUSE.Editor.Track
             _selected.Deselect();
             _selected.SetSelected(false);
             _selected = null;
+        }
+
+        /// <summary>
+        /// Determines which mod owns a given node. Checks the active mod first,
+        /// then falls back to checking all loaded mods.
+        /// </summary>
+        private static string DetermineOwningMod(string nodeId, string activeModId)
+        {
+            if (string.IsNullOrEmpty(nodeId))
+            {
+                return null;
+            }
+
+            // First check the active mod
+            if (!string.IsNullOrEmpty(activeModId))
+            {
+                if (FuseModLoader.TryGetLoadedMod(activeModId, out var activeMod) &&
+                    activeMod?.Definition?.Tracks?.Nodes != null &&
+                    activeMod.Definition.Tracks.Nodes.ContainsKey(nodeId))
+                {
+                    return activeModId;
+                }
+            }
+
+            // Check all other loaded mods
+            var loadedMods = FuseModLoader.GetLoadedModsInOrder();
+            foreach (var mod in loadedMods)
+            {
+                if (mod?.Definition?.Tracks?.Nodes != null &&
+                    mod.Definition.Tracks.Nodes.ContainsKey(nodeId))
+                {
+                    return mod.Definition.Id;
+                }
+            }
+
+            return null; // Node doesn't belong to any known mod
+        }
+
+        /// <summary>
+        /// Updates visibility of all markers based on camera distance.
+        /// Should be called every frame while markers are active.
+        /// </summary>
+        public static void UpdateMarkerVisibility()
+        {
+            if (Camera.main == null)
+            {
+                return;
+            }
+
+            Vector3 camPos = Camera.main.transform.position;
+
+            for (int i = 0; i < ActiveMarkers.Count; i++)
+            {
+                var marker = ActiveMarkers[i];
+                if (marker == null || marker.Node == null)
+                {
+                    continue;
+                }
+
+                float distanceSq = (marker.Node.transform.position - camPos).sqrMagnitude;
+                bool shouldBeVisible = distanceSq <= CullingDistanceSq;
+                marker.SetVisibility(shouldBeVisible);
+            }
         }
 
         public static bool TryCreateNodeAtCameraRaycast(string newNodeId, out string error)
@@ -266,6 +351,9 @@ namespace FUSE.Editor.Track
             if (renderer != null)
             {
                 renderer.material = GetMarkerMaterial();
+                // Disable shadow casting/receiving for editor markers
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
             }
 
             var marker = sphere.AddComponent<FuseNodeMarker>();
@@ -281,11 +369,55 @@ namespace FUSE.Editor.Track
                 return _markerMaterial;
             }
 
-            var shader = Shader.Find("Standard") ?? Shader.Find("Unlit/Color");
-            _markerMaterial = new Material(shader)
+            // Try URP shaders first (for Universal Render Pipeline)
+            // Fall back to built-in shaders if URP is not available
+            var shader = Shader.Find("Universal Render Pipeline/Unlit") 
+                      ?? Shader.Find("Universal Render Pipeline/Lit")
+                      ?? Shader.Find("Unlit/Color")
+                      ?? Shader.Find("Standard");
+
+            if (shader == null)
             {
-                color = new Color(1f, 0.4f, 0.2f, 0.85f),
-            };
+                FuseLog.Warning("FUSE node editor: Could not find a suitable shader for node markers. Using default.");
+                _markerMaterial = new Material(Shader.Find("Standard"));
+            }
+            else
+            {
+                _markerMaterial = new Material(shader);
+            }
+
+            // Set color (with alpha for transparency)
+            _markerMaterial.color = new Color(1f, 0.4f, 0.2f, 0.85f);
+
+            // Enable transparency for URP Unlit shader
+            if (_markerMaterial.HasProperty("_Surface"))
+            {
+                _markerMaterial.SetFloat("_Surface", 1); // 1 = Transparent
+            }
+            if (_markerMaterial.HasProperty("_Blend"))
+            {
+                _markerMaterial.SetFloat("_Blend", 0); // 0 = Alpha blending
+            }
+            if (_markerMaterial.HasProperty("_AlphaClip"))
+            {
+                _markerMaterial.SetFloat("_AlphaClip", 0); // Disable alpha clipping
+            }
+            if (_markerMaterial.HasProperty("_SrcBlend"))
+            {
+                _markerMaterial.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            }
+            if (_markerMaterial.HasProperty("_DstBlend"))
+            {
+                _markerMaterial.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            }
+            if (_markerMaterial.HasProperty("_ZWrite"))
+            {
+                _markerMaterial.SetFloat("_ZWrite", 0); // Disable depth writing for transparency
+            }
+
+            // Set render queue for transparency
+            _markerMaterial.renderQueue = 3000; // Transparent queue
+
             return _markerMaterial;
         }
     }

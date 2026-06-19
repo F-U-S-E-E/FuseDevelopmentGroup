@@ -136,7 +136,7 @@ namespace FUSE.Editor
                 _panel = null;
             }
 
-            _panel = WindowCreatorHelper.Shared.PopulateWindow(_window, builder =>
+            _panel = WindowCreatorHelper.PopulateWindow(_window, builder =>
             {
                 if (FuseEditor.Instance.ModSelected)
                 {
@@ -159,7 +159,7 @@ namespace FUSE.Editor
             if (!WindowCreatorHelper.CanCreateWindow)
                 return;
 
-            _window = WindowCreatorHelper.Shared.CreateWindow(400, 500, Window.Position.Center);
+            _window = WindowCreatorHelper.CreateWindow(400, 500, Window.Position.Center);
             _window.Title = "FUSE Editor";
         }
 

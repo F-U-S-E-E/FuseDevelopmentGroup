@@ -23,6 +23,9 @@ namespace FUSE.Editor.Track
         private int _mode;
         private bool _isDirty;
         private Color? _baselineColor;
+        private bool _isVisible = true;
+        private MeshRenderer _meshRenderer;
+        private TextMeshPro _label;
 
         // Selected markers shift to a warm yellow so the active
         // selection is visible at a glance even when the Select tool
@@ -35,15 +38,20 @@ namespace FUSE.Editor.Track
 
         private void Start()
         {
+            _meshRenderer = GetComponent<MeshRenderer>();
+
             _textObj = new GameObject("FuseNodeMarker.Label");
             _textObj.transform.SetParent(transform, worldPositionStays: false);
             _textObj.transform.localPosition = Vector3.zero;
 
-            var label = _textObj.AddComponent<TextMeshPro>();
-            label.text = Node != null ? Node.id : "<null>";
-            label.fontSize = 8;
-            label.horizontalAlignment = HorizontalAlignmentOptions.Center;
-            label.verticalAlignment = VerticalAlignmentOptions.Top;
+            _label = _textObj.AddComponent<TextMeshPro>();
+            _label.text = Node != null ? Node.id : "<null>";
+            _label.fontSize = 8;
+            _label.horizontalAlignment = HorizontalAlignmentOptions.Center;
+            _label.verticalAlignment = VerticalAlignmentOptions.Top;
+
+            // Apply initial visibility state
+            ApplyVisibility();
         }
 
         private void OnMouseDown()
@@ -72,23 +80,65 @@ namespace FUSE.Editor.Track
         /// </summary>
         public void SetSelected(bool selected)
         {
-            var renderer = GetComponent<MeshRenderer>();
-            if (renderer == null || renderer.material == null)
+            if (_meshRenderer == null)
+            {
+                _meshRenderer = GetComponent<MeshRenderer>();
+            }
+
+            if (_meshRenderer == null || _meshRenderer.material == null)
             {
                 return;
             }
 
             if (!_baselineColor.HasValue)
             {
-                _baselineColor = renderer.material.color;
+                _baselineColor = _meshRenderer.material.color;
             }
 
-            renderer.material.color = selected ? SelectedTint : _baselineColor.Value;
+            _meshRenderer.material.color = selected ? SelectedTint : _baselineColor.Value;
+        }
+
+        /// <summary>
+        /// Sets whether this marker should be visible. Used for camera-based
+        /// culling to avoid rendering/updating distant markers.
+        /// </summary>
+        public void SetVisibility(bool visible)
+        {
+            if (_isVisible == visible)
+            {
+                return;
+            }
+
+            _isVisible = visible;
+            ApplyVisibility();
+        }
+
+        /// <summary>
+        /// Applies the current visibility state to the marker's renderer and label.
+        /// </summary>
+        private void ApplyVisibility()
+        {
+            // Don't hide if we're in an active gizmo mode (moving/rotating)
+            if (_mode != ModeIdle)
+            {
+                return;
+            }
+
+            if (_meshRenderer != null)
+            {
+                _meshRenderer.enabled = _isVisible;
+            }
+
+            if (_textObj != null)
+            {
+                _textObj.SetActive(_isVisible);
+            }
         }
 
         private void LateUpdate()
         {
-            if (_textObj == null || Camera.main == null)
+            // Skip updates if marker is not visible (culled)
+            if (!_isVisible || _textObj == null || Camera.main == null)
             {
                 return;
             }
@@ -115,10 +165,9 @@ namespace FUSE.Editor.Track
 
             _mode = mode;
 
-            var renderer = GetComponent<MeshRenderer>();
-            if (renderer != null)
+            if (_meshRenderer != null)
             {
-                renderer.enabled = false;
+                _meshRenderer.enabled = false;
             }
 
             DestroyGizmo();
@@ -128,9 +177,87 @@ namespace FUSE.Editor.Track
             _gizmoTarget.transform.rotation = Node.transform.rotation;
 
             var engine = MonoSingleton<RTGizmosEngine>.Get;
+            if (engine == null)
+            {
+                FuseLog.Error("FUSE node editor: RTGizmosEngine singleton is not available. Gizmo cannot be created.");
+                // Restore renderer visibility since we're not entering gizmo mode
+                if (_meshRenderer != null)
+                {
+                    _meshRenderer.enabled = true;
+                }
+                // Clean up the gizmo target we just created
+                if (_gizmoTarget != null)
+                {
+                    Destroy(_gizmoTarget);
+                    _gizmoTarget = null;
+                }
+                _mode = ModeIdle;
+                return;
+            }
+
+            // Ensure the engine has a camera set before creating gizmos
+            if (Camera.main != null)
+            {
+                try
+                {
+                    var appField = typeof(RTGizmosEngine).GetField("_app", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (appField != null)
+                    {
+                        var app = appField.GetValue(engine);
+                        if (app != null)
+                        {
+                            var focusCameraProperty = app.GetType().GetProperty("FocusCamera");
+                            if (focusCameraProperty != null)
+                            {
+                                focusCameraProperty.SetValue(app, Camera.main);
+                            }
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    FuseLog.Exception("FUSE node editor: Failed to set gizmo focus camera.", ex);
+                }
+            }
+            else
+            {
+                FuseLog.Error("FUSE node editor: Camera.main is null. Cannot create gizmo.");
+                // Restore renderer visibility since we're not entering gizmo mode
+                if (_meshRenderer != null)
+                {
+                    _meshRenderer.enabled = true;
+                }
+                // Clean up the gizmo target
+                if (_gizmoTarget != null)
+                {
+                    Destroy(_gizmoTarget);
+                    _gizmoTarget = null;
+                }
+                _mode = ModeIdle;
+                return;
+            }
+
             _activeGizmo = mode == ModeMove
                 ? engine.CreateObjectMoveGizmo()
                 : engine.CreateObjectRotationGizmo();
+
+            if (_activeGizmo == null)
+            {
+                FuseLog.Error($"FUSE node editor: Failed to create {(mode == ModeMove ? "move" : "rotate")} gizmo from RTGizmosEngine.");
+                // Restore renderer visibility since we're not entering gizmo mode
+                if (_meshRenderer != null)
+                {
+                    _meshRenderer.enabled = true;
+                }
+                // Clean up the gizmo target
+                if (_gizmoTarget != null)
+                {
+                    Destroy(_gizmoTarget);
+                    _gizmoTarget = null;
+                }
+                _mode = ModeIdle;
+                return;
+            }
 
             _activeGizmo.SetTransformSpace(GizmoSpace.Global);
             _activeGizmo.SetTargetObject(_gizmoTarget);
@@ -181,11 +308,8 @@ namespace FUSE.Editor.Track
             _mode = ModeIdle;
             DestroyGizmo();
 
-            var renderer = GetComponent<MeshRenderer>();
-            if (renderer != null)
-            {
-                renderer.enabled = true;
-            }
+            // Re-apply visibility state (which will restore renderer if visible)
+            ApplyVisibility();
 
             if (_isDirty)
             {
