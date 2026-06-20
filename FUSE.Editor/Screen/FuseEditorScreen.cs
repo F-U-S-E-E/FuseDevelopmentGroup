@@ -57,17 +57,8 @@ namespace FUSE.Editor.Screen
 
         private Vector2 _entityTreeScroll;
         private Vector2 _propertiesScroll;
-
         // Properties panel instance
         private FuseEditorPropertiesPanel _propertiesPanel;
-
-        // Selection system - supports multiple selected entities
-        private readonly List<string> _selectedEntityKinds = new List<string>();
-        private readonly List<string> _selectedEntityIds = new List<string>();
-
-        // Legacy single-selection properties for backwards compatibility
-        private string _selectedEntityKind => _selectedEntityKinds.Count > 0 ? _selectedEntityKinds[0] : "Node";
-        private string _selectedEntityId => _selectedEntityIds.Count > 0 ? _selectedEntityIds[0] : null;
 
         private readonly HashSet<string> _expandedCategories = new HashSet<string>(StringComparer.Ordinal);
 
@@ -120,213 +111,6 @@ namespace FUSE.Editor.Screen
         private List<FuseEditorModEntry> _legacyCatalogCache;
         private int _legacyCatalogRefreshedFrame = -1;
         private bool _stylesInitialized;
-
-        /// <summary>
-        /// Sets the selected entity in the editor screen. This updates the
-        /// entity tree selection and properties panel to reflect the new selection.
-        /// Clears any existing selections.
-        /// </summary>
-        /// <param name="entityKind">The kind of entity (e.g., "Node", "Segment", "Span")</param>
-        /// <param name="entityId">The unique identifier of the entity</param>
-        public void SetSelectedEntity(string entityKind, string entityId)
-        {
-            ClearSelection();
-            AddToSelection(entityKind, entityId);
-        }
-
-        /// <summary>
-        /// Sets multiple selected entities in the editor screen. This updates the
-        /// entity tree selection and properties panel to reflect the new selections.
-        /// Clears any existing selections.
-        /// </summary>
-        /// <param name="entityKinds">List of entity kinds</param>
-        /// <param name="entityIds">List of entity IDs (must match length of entityKinds)</param>
-        public void SetSelectedEntities(IList<string> entityKinds, IList<string> entityIds)
-        {
-            if (entityKinds == null || entityIds == null)
-            {
-                FuseLog.Warning("FUSE editor: SetSelectedEntities called with null list(s).");
-                return;
-            }
-
-            if (entityKinds.Count != entityIds.Count)
-            {
-                FuseLog.Warning($"FUSE editor: SetSelectedEntities kind/id count mismatch ({entityKinds.Count} vs {entityIds.Count}).");
-                return;
-            }
-
-            ClearSelection();
-            for (int i = 0; i < entityKinds.Count; i++)
-            {
-                AddToSelection(entityKinds[i], entityIds[i]);
-            }
-        }
-
-        /// <summary>
-        /// Adds an entity to the current selection without clearing existing selections.
-        /// </summary>
-        /// <param name="entityKind">The kind of entity to add</param>
-        /// <param name="entityId">The unique identifier of the entity to add</param>
-        public void AddToSelection(string entityKind, string entityId)
-        {
-            if (string.IsNullOrEmpty(entityId))
-            {
-                return;
-            }
-
-            // Check if already selected
-            for (int i = 0; i < _selectedEntityIds.Count; i++)
-            {
-                if (string.Equals(_selectedEntityIds[i], entityId, StringComparison.Ordinal) &&
-                    string.Equals(_selectedEntityKinds[i], entityKind, StringComparison.Ordinal))
-                {
-                    return; // Already selected
-                }
-            }
-
-            _selectedEntityKinds.Add(entityKind);
-            _selectedEntityIds.Add(entityId);
-        }
-
-        /// <summary>
-        /// Adds multiple entities to the current selection without clearing existing selections.
-        /// </summary>
-        /// <param name="entityKinds">List of entity kinds to add</param>
-        /// <param name="entityIds">List of entity IDs to add (must match length of entityKinds)</param>
-        public void AddToSelection(IList<string> entityKinds, IList<string> entityIds)
-        {
-            if (entityKinds == null || entityIds == null)
-            {
-                FuseLog.Warning("FUSE editor: AddToSelection called with null list(s).");
-                return;
-            }
-
-            if (entityKinds.Count != entityIds.Count)
-            {
-                FuseLog.Warning($"FUSE editor: AddToSelection kind/id count mismatch ({entityKinds.Count} vs {entityIds.Count}).");
-                return;
-            }
-
-            for (int i = 0; i < entityKinds.Count; i++)
-            {
-                AddToSelection(entityKinds[i], entityIds[i]);
-            }
-        }
-
-        /// <summary>
-        /// Removes an entity from the current selection.
-        /// </summary>
-        /// <param name="entityKind">The kind of entity to remove</param>
-        /// <param name="entityId">The unique identifier of the entity to remove</param>
-        /// <returns>True if the entity was found and removed, false otherwise</returns>
-        public bool RemoveFromSelection(string entityKind, string entityId)
-        {
-            for (int i = 0; i < _selectedEntityIds.Count; i++)
-            {
-                if (string.Equals(_selectedEntityIds[i], entityId, StringComparison.Ordinal) &&
-                    string.Equals(_selectedEntityKinds[i], entityKind, StringComparison.Ordinal))
-                {
-                    _selectedEntityIds.RemoveAt(i);
-                    _selectedEntityKinds.RemoveAt(i);
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Removes multiple entities from the current selection.
-        /// </summary>
-        /// <param name="entityKinds">List of entity kinds to remove</param>
-        /// <param name="entityIds">List of entity IDs to remove (must match length of entityKinds)</param>
-        /// <returns>The number of entities that were successfully removed</returns>
-        public int RemoveFromSelection(IList<string> entityKinds, IList<string> entityIds)
-        {
-            if (entityKinds == null || entityIds == null)
-            {
-                FuseLog.Warning("FUSE editor: RemoveFromSelection called with null list(s).");
-                return 0;
-            }
-
-            if (entityKinds.Count != entityIds.Count)
-            {
-                FuseLog.Warning($"FUSE editor: RemoveFromSelection kind/id count mismatch ({entityKinds.Count} vs {entityIds.Count}).");
-                return 0;
-            }
-
-            int removedCount = 0;
-            for (int i = 0; i < entityKinds.Count; i++)
-            {
-                if (RemoveFromSelection(entityKinds[i], entityIds[i]))
-                {
-                    removedCount++;
-                }
-            }
-            return removedCount;
-        }
-
-        /// <summary>
-        /// Clears all current selections.
-        /// </summary>
-        public void ClearSelection()
-        {
-            _selectedEntityKinds.Clear();
-            _selectedEntityIds.Clear();
-        }
-
-        /// <summary>
-        /// Checks if a specific entity is currently selected.
-        /// </summary>
-        /// <param name="entityKind">The kind of entity to check</param>
-        /// <param name="entityId">The unique identifier of the entity to check</param>
-        /// <returns>True if the entity is selected, false otherwise</returns>
-        public bool IsEntitySelected(string entityKind, string entityId)
-        {
-            for (int i = 0; i < _selectedEntityIds.Count; i++)
-            {
-                if (string.Equals(_selectedEntityIds[i], entityId, StringComparison.Ordinal) &&
-                    string.Equals(_selectedEntityKinds[i], entityKind, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Toggles the selection state of an entity. If selected, it will be removed.
-        /// If not selected, it will be added.
-        /// </summary>
-        /// <param name="entityKind">The kind of entity to toggle</param>
-        /// <param name="entityId">The unique identifier of the entity to toggle</param>
-        /// <returns>True if the entity is now selected, false if it was deselected</returns>
-        public bool ToggleSelection(string entityKind, string entityId)
-        {
-            if (RemoveFromSelection(entityKind, entityId))
-            {
-                return false; // Was selected, now removed
-            }
-            else
-            {
-                AddToSelection(entityKind, entityId);
-                return true; // Was not selected, now added
-            }
-        }
-
-        /// <summary>
-        /// Gets the number of currently selected entities.
-        /// </summary>
-        public int SelectionCount => _selectedEntityIds.Count;
-
-        /// <summary>
-        /// Gets read-only access to the list of selected entity kinds.
-        /// </summary>
-        public IReadOnlyList<string> SelectedEntityKinds => _selectedEntityKinds.AsReadOnly();
-
-        /// <summary>
-        /// Gets read-only access to the list of selected entity IDs.
-        /// </summary>
-        public IReadOnlyList<string> SelectedEntityIds => _selectedEntityIds.AsReadOnly();
 
         // EDEN-style chrome — owns its own state so the screen body
         // stays a thin orchestrator over composed components.
@@ -1102,39 +886,33 @@ namespace FUSE.Editor.Screen
                     foreach (var entityId in bucket.EntityIds)
                     {
                         var rowRect = new Rect(36f, y, viewRect.width - 36f, rowHeight);
-                        var isSelected = IsEntitySelected(bucket.Name, entityId);
-                        var style = isSelected ? _entityRowSelectedStyle : _entityRowStyle;
+                        var selection = FuseEditor.Instance?.EntitySelection;
+                        var isSelected = selection?.IsEntitySelected(bucket.Name, entityId) ?? false;
+                        var style = isSelected ? FuseEditorTheme.TreeRowSelected : FuseEditorTheme.TreeRow;
+
                         if (GUI.Button(rowRect, "  " + entityId, style))
                         {
-                            // Multi-selection support via modifier keys
-                            var evt = Event.current;
-                            bool ctrl = evt.control || evt.command; // Command for macOS
-                            bool shift = evt.shift;
+                            // Handle selection: Ctrl for multi-select, Shift for range select, single click to select
+                            var currentEvent = Event.current;
+                            bool controlPressed = currentEvent?.control ?? false;
+                            bool shiftPressed = currentEvent?.shift ?? false;
 
-                            if (ctrl)
+                            if (controlPressed)
                             {
-                                // Ctrl-click: toggle selection of this item
-                                ToggleSelection(bucket.Name, entityId);
+                                selection?.ToggleSelection(bucket.Name, entityId);
                             }
-                            else if (shift && _selectedEntityIds.Count > 0)
+                            else if (shiftPressed && selection?.HasSelection == true)
                             {
-                                // Shift-click: select range from last selection to this one
-                                // (simplified: just adds this one to selection for now)
-                                AddToSelection(bucket.Name, entityId);
+                                // Shift-click range select (simplified: just add to selection)
+                                selection?.AddToSelection(bucket.Name, entityId);
                             }
                             else
                             {
-                                // Normal click: replace selection with this item
-                                SetSelectedEntity(bucket.Name, entityId);
+                                // Single click: set as sole selection
+                                selection?.SetSelectedEntity(bucket.Name, entityId);
                             }
 
-                            // Reach into the runtime: for Nodes,
-                            // pre-spawn markers if needed (so the user
-                            // doesn't have to switch tools), find the
-                            // marker for this id, select it through the
-                            // controller (which also drives the active
-                            // tool's OnNodeSelected → gizmo engage), and
-                            // pan the camera there.
+                            // Also handle the navigation behavior
                             HandleEntityTreeRowClick(bucket.Name, entityId);
                         }
                         y += rowHeight;
@@ -1290,105 +1068,27 @@ namespace FUSE.Editor.Screen
                 _propertiesPanel = new FuseEditorPropertiesPanel();
             }
 
-            _propertiesPanel.Draw(panelRect, _selectedEntityKinds, _selectedEntityIds,
+            // Convert object kinds to strings for the properties panel
+            // Properties panel is now empty since entity selection logic has been removed
+            if (_propertiesPanel == null)
+            {
+                _propertiesPanel = new FuseEditorPropertiesPanel();
+            }
+
+            var selection = FuseEditor.Instance?.EntitySelection;
+
+            _propertiesPanel.Draw(panelRect, selection?.SelectedObjects ?? new List<object>(), selection?.SelectedIds ?? new List<string>(),
                                  _propertyLabelStyle, _propertyValueStyle, _toolButtonStyle);
+
+            // Flush any pending property changes after drawing is complete to avoid
+            // ReaderWriterLockSlim lock promotion errors during the draw cycle
+            _propertiesPanel.FlushPendingChanges();
         }
 
         private void DrawPropertiesContent(Rect contentRect)
         {
-            // Resolve the underlying FuseNode for the current selection.
-            // When it's not a node, or no mod is selected, fall back to
-            // a read-only label-only display.
-            var mod = FuseEditor.Instance?.ActiveMod;
-            FuseNode node = null;
-            var isNode = string.Equals(_selectedEntityKind, "Nodes", StringComparison.Ordinal);
-            if (isNode && mod?.Definition?.Tracks?.Nodes != null)
-            {
-                mod.Definition.Tracks.Nodes.TryGetValue(_selectedEntityId, out node);
-            }
-
-            // Buffer reseed on selection change. Without this the
-            // previous selection's typing would leak into the new
-            // selection's fields on first render.
-            if (!string.Equals(_lastBufferedEntityId, _selectedEntityId, StringComparison.Ordinal))
-            {
-                SeedPositionBuffersFromNode(node);
-                _lastBufferedEntityId = _selectedEntityId;
-            }
-
-            const float rowHeight = 22f;
-            const float labelWidth = 96f;
-            const float axisLabelWidth = 16f;
-
-            // Five conceptual rows: Kind, Id, Position, Rotation, Group,
-            // Tags. Position takes one row with three sub-fields. The
-            // others render as read-only labels.
-            var rowsToDraw = 6;
-            var viewRect = new Rect(0f, 0f, contentRect.width - 16f, rowsToDraw * rowHeight + 8f);
-            _propertiesScroll = GUI.BeginScrollView(contentRect, _propertiesScroll, viewRect);
-
-            int row = 0;
-
-            // Kind (read-only)
-            DrawPropertyLabelRow(row++, rowHeight, labelWidth, viewRect.width,
-                                 FuseEditorStrings.Get("fuse.editor.properties.kind"),
-                                 _selectedEntityKind);
-
-            // Id (read-only)
-            DrawPropertyLabelRow(row++, rowHeight, labelWidth, viewRect.width,
-                                 FuseEditorStrings.Get("fuse.editor.properties.id"),
-                                 _selectedEntityId);
-
-            // Position — editable when we resolved a FuseNode; otherwise
-            // a fallback message in the value slot.
-            if (node != null)
-            {
-                DrawPositionRow(row++, rowHeight, labelWidth, axisLabelWidth, viewRect.width, mod, node);
-            }
-            else
-            {
-                DrawPropertyLabelRow(row++, rowHeight, labelWidth, viewRect.width,
-                                     FuseEditorStrings.Get("fuse.editor.properties.position"),
-                                     isNode ? "(not loaded)" : "(not editable for this kind)");
-            }
-
-            // Rotation — three editable Euler-component fields,
-            // matching the Position row's pattern.
-            if (node != null)
-            {
-                DrawRotationRow(row++, rowHeight, labelWidth, axisLabelWidth, viewRect.width, mod, node);
-            }
-            else
-            {
-                DrawPropertyLabelRow(row++, rowHeight, labelWidth, viewRect.width,
-                                     FuseEditorStrings.Get("fuse.editor.properties.rotation"),
-                                     "—");
-            }
-
-            // Group + Tags — editable when a FuseNode is resolved.
-            if (node != null)
-            {
-                DrawGroupRow(row++, rowHeight, labelWidth, viewRect.width, mod, node);
-                DrawTagsRow(row++, rowHeight, labelWidth, viewRect.width, mod, node);
-            }
-            else
-            {
-                DrawPropertyLabelRow(row++, rowHeight, labelWidth, viewRect.width,
-                                     FuseEditorStrings.Get("fuse.editor.properties.group"), "—");
-                DrawPropertyLabelRow(row++, rowHeight, labelWidth, viewRect.width,
-                                     FuseEditorStrings.Get("fuse.editor.properties.tags"), "—");
-            }
-
-            // Delete affordance — only when a real FuseNode is resolved.
-            // No confirmation prompt: re-creation via the Place tool is
-            // trivial, and the action is persisted, not destructive of
-            // anything beyond the in-mod definition.
-            if (node != null && mod != null)
-            {
-                DrawDeleteButton(row++, rowHeight, viewRect.width, mod);
-            }
-
-            GUI.EndScrollView();
+            // Properties panel content is now delegated to FuseEditorPropertiesPanel
+            // which uses the EntitySelection from FuseEditor
         }
 
         private void DrawDeleteButton(int row, float rowHeight, float totalWidth, FuseLoadedMod mod)
@@ -1403,12 +1103,13 @@ namespace FUSE.Editor.Screen
 
         private void DeleteSelectedNode(FuseLoadedMod mod)
         {
-            if (mod == null || string.IsNullOrEmpty(_selectedEntityId))
+            var selection = FuseEditor.Instance?.EntitySelection;
+            if (mod == null || selection == null || string.IsNullOrEmpty(selection.PrimaryId))
             {
                 return;
             }
 
-            var nodeId = _selectedEntityId;
+            var nodeId = selection.PrimaryId;
 
             // Destroy the live runtime TrackNode first so the world
             // reflects the removal even if the persist step fails.
@@ -1446,7 +1147,7 @@ namespace FUSE.Editor.Screen
             // Existing marker (if any) is dangling now that the
             // TrackNode is destroyed; let the active tool's next
             // markers-refresh path clean it up.
-            ClearSelection();
+            selection.ClearSelection();
             _lastBufferedEntityId = null;
             Track.FuseNodeEditorController.DeselectCurrent();
         }
@@ -1473,22 +1174,25 @@ namespace FUSE.Editor.Screen
 
             var x = fieldsStart;
 
+            var selection = FuseEditor.Instance?.EntitySelection;
+            var selectedId = selection?.PrimaryId;
+
             DrawAxisField(new Rect(x, y, axisLabelWidth, rowHeight),
                           new Rect(x + axisLabelWidth, y, perField, rowHeight),
                           "X", ref _posXBuffer, node.Position.x,
-                          newValue => ApplyNodePositionEdit(mod, _selectedEntityId, node, new Vector3(newValue, node.Position.y, node.Position.z)));
+                          newValue => ApplyNodePositionEdit(mod, selectedId, node, new Vector3(newValue, node.Position.y, node.Position.z)));
             x += axisLabelWidth + perField + Padding;
 
             DrawAxisField(new Rect(x, y, axisLabelWidth, rowHeight),
                           new Rect(x + axisLabelWidth, y, perField, rowHeight),
                           "Y", ref _posYBuffer, node.Position.y,
-                          newValue => ApplyNodePositionEdit(mod, _selectedEntityId, node, new Vector3(node.Position.x, newValue, node.Position.z)));
+                          newValue => ApplyNodePositionEdit(mod, selectedId, node, new Vector3(node.Position.x, newValue, node.Position.z)));
             x += axisLabelWidth + perField + Padding;
 
             DrawAxisField(new Rect(x, y, axisLabelWidth, rowHeight),
                           new Rect(x + axisLabelWidth, y, perField, rowHeight),
                           "Z", ref _posZBuffer, node.Position.z,
-                          newValue => ApplyNodePositionEdit(mod, _selectedEntityId, node, new Vector3(node.Position.x, node.Position.y, newValue)));
+                          newValue => ApplyNodePositionEdit(mod, selectedId, node, new Vector3(node.Position.x, node.Position.y, newValue)));
         }
 
         private void DrawAxisField(Rect labelRect, Rect fieldRect, string axisLabel,
@@ -1543,22 +1247,25 @@ namespace FUSE.Editor.Screen
 
             var x = fieldsStart;
 
+            var selection = FuseEditor.Instance?.EntitySelection;
+            var selectedId = selection?.PrimaryId;
+
             DrawAxisField(new Rect(x, y, axisLabelWidth, rowHeight),
                           new Rect(x + axisLabelWidth, y, perField, rowHeight),
                           "X", ref _rotXBuffer, node.Rotation.x,
-                          newValue => ApplyNodeRotationEdit(mod, _selectedEntityId, node, new Vector3(newValue, node.Rotation.y, node.Rotation.z)));
+                          newValue => ApplyNodeRotationEdit(mod, selectedId, node, new Vector3(newValue, node.Rotation.y, node.Rotation.z)));
             x += axisLabelWidth + perField + Padding;
 
             DrawAxisField(new Rect(x, y, axisLabelWidth, rowHeight),
                           new Rect(x + axisLabelWidth, y, perField, rowHeight),
                           "Y", ref _rotYBuffer, node.Rotation.y,
-                          newValue => ApplyNodeRotationEdit(mod, _selectedEntityId, node, new Vector3(node.Rotation.x, newValue, node.Rotation.z)));
+                          newValue => ApplyNodeRotationEdit(mod, selectedId, node, new Vector3(node.Rotation.x, newValue, node.Rotation.z)));
             x += axisLabelWidth + perField + Padding;
 
             DrawAxisField(new Rect(x, y, axisLabelWidth, rowHeight),
                           new Rect(x + axisLabelWidth, y, perField, rowHeight),
                           "Z", ref _rotZBuffer, node.Rotation.z,
-                          newValue => ApplyNodeRotationEdit(mod, _selectedEntityId, node, new Vector3(node.Rotation.x, node.Rotation.y, newValue)));
+                          newValue => ApplyNodeRotationEdit(mod, selectedId, node, new Vector3(node.Rotation.x, node.Rotation.y, newValue)));
         }
 
         private void DrawGroupRow(int row, float rowHeight, float labelWidth, float totalWidth,
@@ -1574,7 +1281,8 @@ namespace FUSE.Editor.Screen
             if (!string.Equals(newBuffer, _groupBuffer, StringComparison.Ordinal))
             {
                 _groupBuffer = newBuffer;
-                ApplyNodeGroupEdit(mod, _selectedEntityId, node, newBuffer);
+                var selection = FuseEditor.Instance?.EntitySelection;
+                ApplyNodeGroupEdit(mod, selection?.PrimaryId, node, newBuffer);
             }
         }
 
@@ -1591,7 +1299,8 @@ namespace FUSE.Editor.Screen
             if (!string.Equals(newBuffer, _tagsBuffer, StringComparison.Ordinal))
             {
                 _tagsBuffer = newBuffer;
-                ApplyNodeTagsEdit(mod, _selectedEntityId, node, FuseEditorFieldHelper.ParseTags(newBuffer));
+                var selection = FuseEditor.Instance?.EntitySelection;
+                ApplyNodeTagsEdit(mod, selection?.PrimaryId, node, FuseEditorFieldHelper.ParseTags(newBuffer));
             }
         }
 

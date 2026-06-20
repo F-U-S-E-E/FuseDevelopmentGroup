@@ -1,12 +1,14 @@
-using FUSE.Infrastructure;
-using FUSE.Loading;
 using Fuse.Core.Model;
 using FUSE.Editor.Screen.UI;
+using FUSE.Infrastructure;
+using FUSE.Loading;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
-using UnityEngine;
 using UnityEditor;
+using UnityEngine;
+using static Core.SpatialHashLinear;
 
 namespace FUSE.Editor.Screen
 {
@@ -27,10 +29,6 @@ namespace FUSE.Editor.Screen
         /// The default resolver is always registered first and handles all built-in FUSE types.
         /// External mods can register additional resolvers via <see cref="RegisterEntityResolver"/>.
         /// </summary>
-        private static readonly List<IEntityResolver> _entityResolvers = new List<IEntityResolver>
-        {
-            new DefaultEntityResolver()
-        };
 
         /// <summary>
         /// Registers a custom entity resolver for handling entity types beyond the built-in FUSE types.
@@ -39,33 +37,27 @@ namespace FUSE.Editor.Screen
         /// </summary>
         /// <param name="resolver">The entity resolver to register</param>
         /// <exception cref="ArgumentNullException">Thrown if resolver is null</exception>
-        public static void RegisterEntityResolver(IEntityResolver resolver)
-        {
-            if (resolver == null)
-            {
-                throw new ArgumentNullException(nameof(resolver));
-            }
 
-            _entityResolvers.Add(resolver);
-        }
         private const float RowHeight = 22f;
         private const float LabelWidth = 96f;
         private const float Padding = 6f;
 
         private Vector2 _scrollPosition;
         private string _lastBufferedEntityId;
-        private string _currentEntityKind;
+        private object _currentEntityObject;
         private FuseLoadedMod _currentMod;
         private object _currentEntity;
         private PropertyInfo[] _currentProperties;
 
         // Per-property IMGUI buffers for editable fields
-        private Dictionary<string, string> _propertyBuffers = new Dictionary<string, string>();
+        private Dictionary<string, object> _propertyBuffers = new Dictionary<string, object>();
 
-        // Separate buffers for vector components
-        private Dictionary<string, string> _vectorXBuffers = new Dictionary<string, string>();
-        private Dictionary<string, string> _vectorYBuffers = new Dictionary<string, string>();
-        private Dictionary<string, string> _vectorZBuffers = new Dictionary<string, string>();
+        // Buffer for vector components (key format: "propertyName.X", "propertyName.Y", etc.)
+        private Dictionary<string, float> _axisBuffers = new Dictionary<string, float>();
+
+        // Queue for deferred property changes to avoid lock contention
+        private Dictionary<string, object> _pendingPropertyChanges = new Dictionary<string, object>();
+        private string _pendingEntityId;
 
         // GUI styles (provided by caller)
         private GUIStyle _propertyLabelStyle;
@@ -79,7 +71,7 @@ namespace FUSE.Editor.Screen
         /// <summary>
         /// Draws the properties panel into the given rect.
         /// </summary>
-        public void Draw(Rect panelRect, List<string> selectedEntityKinds, List<string> selectedEntityIds,
+        public void Draw(Rect panelRect, List<object> selectedEntityObjects, List<string> selectedEntityIds,
                         GUIStyle propertyLabelStyle, GUIStyle propertyValueStyle, GUIStyle toolButtonStyle)
         {
             _propertyLabelStyle = propertyLabelStyle;
@@ -100,20 +92,20 @@ namespace FUSE.Editor.Screen
             // Handle multi-selection with multiple types
             if (selectedEntityIds.Count > 1)
             {
-                DrawMultiSelectionState(contentRect, selectedEntityKinds, selectedEntityIds);
+                DrawMultiSelectionState(contentRect, selectedEntityObjects, selectedEntityIds);
                 return;
             }
 
             // Single selection: draw type-specific properties
-            DrawSingleSelectionProperties(contentRect, selectedEntityKinds[0], selectedEntityIds[0]);
+            DrawSingleSelectionProperties(contentRect, selectedEntityObjects[0], selectedEntityIds[0]);
         }
 
-        private void DrawMultiSelectionState(Rect contentRect, List<string> selectedEntityKinds, List<string> selectedEntityIds)
+        private void DrawMultiSelectionState(Rect contentRect, List<object> selectedEntityObjects, List<string> selectedEntityIds)
         {
             var y = contentRect.y;
 
             // Check if we have multiple different types
-            var uniqueTypes = new HashSet<string>(selectedEntityKinds);
+            var uniqueTypes = new HashSet<string>(selectedEntityObjects.Select(x => x.GetType().Name));
             if (uniqueTypes.Count > 1)
             {
                 // Multi-type selection: show unsupported message
@@ -129,7 +121,7 @@ namespace FUSE.Editor.Screen
 
                 // Group selected entities by kind for display
                 var groupedByKind = new Dictionary<string, int>();
-                foreach (var kind in selectedEntityKinds)
+                foreach (var kind in selectedEntityObjects.Select(x => x.GetType().Name))
                 {
                     if (!groupedByKind.ContainsKey(kind))
                     {
@@ -150,7 +142,7 @@ namespace FUSE.Editor.Screen
             {
                 // Single-type multi-selection: show summary only (no editing)
                 GUI.Label(new Rect(contentRect.x, y, contentRect.width, RowHeight),
-                          $"  Multiple Selection ({selectedEntityIds.Count} {selectedEntityKinds[0]})",
+                          $"  Multiple Selection ({selectedEntityIds.Count} {selectedEntityObjects[0]})",
                           _propertyLabelStyle);
                 y += RowHeight + Padding;
 
@@ -160,15 +152,8 @@ namespace FUSE.Editor.Screen
             }
         }
 
-        private void DrawSingleSelectionProperties(Rect contentRect, string entityKind, string entityId)
+        private void DrawSingleSelectionProperties(Rect contentRect, object entityObject, string entityId)
         {
-            // Get the entity type from the map
-            if (!FuseEditor.TryGetEntityType(entityKind, out Type entityType))
-            {
-                GUI.Label(contentRect, $"  Unknown entity type: {entityKind}", _propertyLabelStyle);
-                return;
-            }
-
             // Get the entity instance from the active mod
             var mod = FuseEditor.Instance?.ActiveMod;
             if (mod == null)
@@ -177,25 +162,18 @@ namespace FUSE.Editor.Screen
                 return;
             }
 
-            var entity = GetEntityInstance(mod, entityKind, entityId);
-            if (entity == null)
-            {
-                GUI.Label(contentRect, $"  Entity not found: {entityKind}/{entityId}", _propertyLabelStyle);
-                return;
-            }
-
             // Store current mod and entity kind for property change application
             _currentMod = mod;
-            _currentEntityKind = entityKind;
+            _currentEntityObject = entityObject;
 
             // Use the actual runtime type of the entity, not the mapped type
             // This prevents InvalidCastException when the entity's actual type differs from the mapped type
-            var actualEntityType = entity.GetType();
+            var actualEntityType = entityObject.GetType();
 
             // Reseed buffers on selection change
             if (!string.Equals(_lastBufferedEntityId, entityId, StringComparison.Ordinal))
             {
-                SeedBuffersFromEntity(actualEntityType, entity);
+                SeedBuffersFromEntity(actualEntityType, entityObject);
                 _lastBufferedEntityId = entityId;
             }
 
@@ -203,7 +181,7 @@ namespace FUSE.Editor.Screen
             var viewRect = new Rect(0f, 0f, contentRect.width - 16f, CalculateViewHeight(actualEntityType));
             _scrollPosition = GUI.BeginScrollView(contentRect, _scrollPosition, viewRect);
 
-            DrawEntityProperties(viewRect, actualEntityType, entity, mod, entityKind, entityId);
+            DrawEntityProperties(viewRect, actualEntityType, entityObject, mod, entityId);
 
             GUI.EndScrollView();
         }
@@ -215,14 +193,13 @@ namespace FUSE.Editor.Screen
             return (2 + properties.Length) * RowHeight + Padding * 2;
         }
 
-        private void DrawEntityProperties(Rect viewRect, Type entityType, object entity, FuseLoadedMod mod,
-                                         string entityKind, string entityId)
+        private void DrawEntityProperties(Rect viewRect, Type entityType, object entity, FuseLoadedMod mod, string entityId)
         {
             var y = viewRect.y;
 
             // Header: Kind
             DrawPropertyLabelRow(y, LabelWidth, viewRect.width,
-                                 FuseEditorStrings.Get("fuse.editor.properties.kind"), entityKind);
+                                 FuseEditorStrings.Get("fuse.editor.properties.kind"), entityType.Name);
             y += RowHeight;
 
             // Header: Id
@@ -246,19 +223,19 @@ namespace FUSE.Editor.Screen
                 if (propType == typeof(Vector2))
                 {
                     DrawVectorField(new Rect(viewRect.x, y, viewRect.width, RowHeight),
-                                  property, entity, property.Name, propType, y);
+                                  property, entity, entityId, property.Name, propType, y);
                     y += RowHeight;
                 }
                 else if (propType == typeof(Vector3) || propType == typeof(FuseVector3))
                 {
                     DrawVectorField(new Rect(viewRect.x, y, viewRect.width, RowHeight),
-                                  property, entity, property.Name, propType, y);
+                                  property, entity, entityId, property.Name, propType, y);
                     y += RowHeight;
                 }
                 else
                 {
                     DrawPropertyField(new Rect(viewRect.x, y, viewRect.width, RowHeight),
-                                      property, entity, mod, entityKind, entityId);
+                                      property, entity, mod, entityId);
                     y += RowHeight;
                 }
             }
@@ -278,8 +255,7 @@ namespace FUSE.Editor.Screen
                    !property.CanWrite; // Read-only properties are ok (we'll show labels)
         }
 
-        private void DrawPropertyField(Rect rect, PropertyInfo property, object entity, FuseLoadedMod mod,
-                                       string entityKind, string entityId)
+        private void DrawPropertyField(Rect rect, PropertyInfo property, object entity, FuseLoadedMod mod, string entityId)
         {
             var propName = property.Name;
             var propType = property.PropertyType;
@@ -304,11 +280,11 @@ namespace FUSE.Editor.Screen
             else
             {
                 // Editable property: show type-specific input field
-                DrawEditablePropertyField(rect, property, entity, propName, propType);
+                DrawEditablePropertyField(rect, property, entity, entityId, propName, propType);
             }
         }
 
-        private void DrawEditablePropertyField(Rect rect, PropertyInfo property, object entity, string propName, Type propType)
+        private void DrawEditablePropertyField(Rect rect, PropertyInfo property, object entity, string entityId, string propName, Type propType)
         {
             // For vectors, we need to handle specially. Return early to let the parent handle layout
             if (propType == typeof(Vector2) || propType == typeof(Vector3) || propType == typeof(FuseVector3))
@@ -324,81 +300,79 @@ namespace FUSE.Editor.Screen
             // Input field area stretches to fill remaining width
             var inputRect = new Rect(rect.x + LabelWidth, rect.y, rect.width - LabelWidth - Padding, RowHeight);
 
-            // Get or create buffer
-            if (!_propertyBuffers.TryGetValue(propName, out string bufferValue))
+            // Get or create buffer from current entity value if not present
+            if (!_propertyBuffers.TryGetValue(propName, out object bufferValue))
             {
-                bufferValue = "";
+                bufferValue = property.GetValue(entity);
+                _propertyBuffers[propName] = bufferValue;
             }
 
-            string newValue = bufferValue;
+            object newValue = bufferValue;
             bool changed = false;
 
             // Type-specific input fields using IMGUI
             if (propType == typeof(string))
             {
-                newValue = GUI.TextField(inputRect, bufferValue ?? "", _propertyValueStyle);
-                changed = newValue != bufferValue;
+                newValue = GUI.TextField(inputRect, (string)bufferValue ?? "", _propertyValueStyle);
+                changed = (string)newValue != (string)bufferValue;
             }
             else if (propType == typeof(int))
             {
-                newValue = GUI.TextField(inputRect, bufferValue ?? "", _propertyValueStyle);
-                if (int.TryParse(newValue, out int _))
+                string displayStr = ((int)bufferValue).ToString();
+                string inputStr = GUI.TextField(inputRect, displayStr, _propertyValueStyle);
+
+                if (int.TryParse(inputStr, out int newInt))
                 {
-                    changed = newValue != bufferValue;
+                    newValue = newInt;
+                    changed = newInt != (int)bufferValue;
                 }
-                else if (!string.IsNullOrEmpty(newValue))
+                else if (inputStr != displayStr)
                 {
-                    // Invalid int input, don't accept it
+                    // User typed something that doesn't parse, but don't revert immediately
+                    // Keep the display as-is and don't apply
                     newValue = bufferValue;
+                    changed = false;
                 }
             }
             else if (propType == typeof(float))
             {
-                newValue = GUI.TextField(inputRect, bufferValue ?? "", _propertyValueStyle);
-                if (float.TryParse(newValue, out float _))
+                string displayStr = ((float)bufferValue).ToString();
+                string inputStr = GUI.TextField(inputRect, displayStr, _propertyValueStyle);
+
+                if (float.TryParse(inputStr, out float newFloat))
                 {
-                    changed = newValue != bufferValue;
+                    newValue = newFloat;
+                    changed = !Mathf.Approximately(newFloat, (float)bufferValue);
                 }
-                else if (!string.IsNullOrEmpty(newValue))
+                else if (inputStr != displayStr)
                 {
-                    // Invalid float input, don't accept it
+                    // User typed something that doesn't parse, but don't revert immediately
                     newValue = bufferValue;
+                    changed = false;
                 }
             }
             else if (propType == typeof(bool))
             {
                 // For bools, provide a toggle
-                if (bool.TryParse(bufferValue, out bool boolValue))
-                {
-                    bool newBool = GUI.Toggle(inputRect, boolValue, "");
-                    newValue = newBool.ToString();
-                    changed = newValue != bufferValue;
-                }
-                else
-                {
-                    GUI.TextField(inputRect, bufferValue ?? "", _propertyValueStyle);
-                }
+                bool newBool = GUI.Toggle(inputRect, (bool)bufferValue, "");
+                newValue = newBool;
+                changed = newBool != (bool)bufferValue;
             }
             else
             {
                 // Fallback: show as label
-                GUI.Label(inputRect, bufferValue, _propertyValueStyle);
+                GUI.Label(inputRect, bufferValue?.ToString() ?? "<null>", _propertyValueStyle);
             }
 
-            // Update buffer
-            if (changed || !_propertyBuffers.ContainsKey(propName))
-            {
-                _propertyBuffers[propName] = newValue;
-            }
-
-            // Apply changes to entity
+            // Update buffer and apply changes only if actually changed
             if (changed)
             {
-                ApplyPropertyChange(property, entity, propType, newValue);
+                _propertyBuffers[propName] = newValue;
+                ApplyPropertyChange(property, entity, entityId, propType, newValue);
             }
         }
 
-        private void DrawVectorField(Rect rect, PropertyInfo property, object entity, string propName, Type propType, float y)
+        private void DrawVectorField(Rect rect, PropertyInfo property, object entity, string entityId, string propName, Type propType, float y)
         {
             // Get current value
             try
@@ -408,18 +382,18 @@ namespace FUSE.Editor.Screen
                 if (propType == typeof(Vector2))
                 {
                     Vector2 vec2 = (Vector2)value;
-                    DrawVector2Field(rect, propName, property, entity, vec2, y);
+                    DrawVector2Field(rect, propName, property, entity, entityId, vec2, y);
                 }
                 else if (propType == typeof(Vector3))
                 {
                     Vector3 vec3 = (Vector3)value;
-                    DrawVector3Field(rect, propName, property, entity, vec3, y);
+                    DrawVector3Field(rect, propName, property, entity, entityId, vec3, y);
                 }
                 else if (propType == typeof(FuseVector3))
                 {
                     FuseVector3 fuseVec3 = (FuseVector3)value;
                     Vector3 vec3 = new Vector3(fuseVec3.x, fuseVec3.y, fuseVec3.z);
-                    DrawVector3Field(rect, propName, property, entity, vec3, y, isFuseVector: true);
+                    DrawVector3Field(rect, propName, property, entity, entityId, vec3, y, isFuseVector: true);
                 }
             }
             catch (Exception ex)
@@ -428,7 +402,7 @@ namespace FUSE.Editor.Screen
             }
         }
 
-        private void DrawVector2Field(Rect rect, string propName, PropertyInfo property, object entity, Vector2 value, float y)
+        private void DrawVector2Field(Rect rect, string propName, PropertyInfo property, object entity, string entityId, Vector2 value, float y)
         {
             const float axisLabelWidth = 16f;
             const float spacing = Padding;
@@ -448,10 +422,12 @@ namespace FUSE.Editor.Screen
             GUI.Label(xLabelRect, "X", _propertyLabelStyle);
             var xValue = DrawAxisInput(xFieldRect, propName, "X", value.x);
 
-            if (float.TryParse(xValue, out float newX) && newX != value.x)
+            bool xChanged = false;
+            float newX = value.x;
+            if (float.TryParse(xValue, out float parsedX))
             {
-                value.x = newX;
-                ApplyPropertyChange(property, entity, typeof(Vector2), value);
+                xChanged = !Mathf.Approximately(parsedX, value.x);
+                newX = parsedX;
             }
 
             // Y component  
@@ -461,14 +437,23 @@ namespace FUSE.Editor.Screen
             GUI.Label(yLabelRect, "Y", _propertyLabelStyle);
             var yValue = DrawAxisInput(yFieldRect, propName, "Y", value.y);
 
-            if (float.TryParse(yValue, out float newY) && newY != value.y)
+            bool yChanged = false;
+            float newY = value.y;
+            if (float.TryParse(yValue, out float parsedY))
             {
-                value.y = newY;
-                ApplyPropertyChange(property, entity, typeof(Vector2), value);
+                yChanged = !Mathf.Approximately(parsedY, value.y);
+                newY = parsedY;
+            }
+
+            // Apply only if something actually changed
+            if (xChanged || yChanged)
+            {
+                Vector2 newVec = new Vector2(newX, newY);
+                ApplyPropertyChange(property, entity, entityId, typeof(Vector2), newVec);
             }
         }
 
-        private void DrawVector3Field(Rect rect, string propName, PropertyInfo property, object entity, Vector3 value, float y, bool isFuseVector = false)
+        private void DrawVector3Field(Rect rect, string propName, PropertyInfo property, object entity, string entityId, Vector3 value, float y, bool isFuseVector = false)
         {
             const float axisLabelWidth = 16f;
             const float spacing = Padding;
@@ -488,11 +473,12 @@ namespace FUSE.Editor.Screen
             GUI.Label(xLabelRect, "X", _propertyLabelStyle);
             var xValue = DrawAxisInput(xFieldRect, propName, "X", value.x);
 
-            if (float.TryParse(xValue, out float newX) && newX != value.x)
+            bool xChanged = false;
+            float newX = value.x;
+            if (float.TryParse(xValue, out float parsedX))
             {
-                value.x = newX;
-                var newVec = isFuseVector ? (object)new FuseVector3(value.x, value.y, value.z) : (object)value;
-                ApplyPropertyChange(property, entity, isFuseVector ? typeof(FuseVector3) : typeof(Vector3), newVec);
+                xChanged = !Mathf.Approximately(parsedX, value.x);
+                newX = parsedX;
             }
 
             // Y component
@@ -503,11 +489,12 @@ namespace FUSE.Editor.Screen
             GUI.Label(yLabelRect, "Y", _propertyLabelStyle);
             var yValue = DrawAxisInput(yFieldRect, propName, "Y", value.y);
 
-            if (float.TryParse(yValue, out float newY) && newY != value.y)
+            bool yChanged = false;
+            float newY = value.y;
+            if (float.TryParse(yValue, out float parsedY))
             {
-                value.y = newY;
-                var newVec = isFuseVector ? (object)new FuseVector3(value.x, value.y, value.z) : (object)value;
-                ApplyPropertyChange(property, entity, isFuseVector ? typeof(FuseVector3) : typeof(Vector3), newVec);
+                yChanged = !Mathf.Approximately(parsedY, value.y);
+                newY = parsedY;
             }
 
             // Z component
@@ -518,30 +505,45 @@ namespace FUSE.Editor.Screen
             GUI.Label(zLabelRect, "Z", _propertyLabelStyle);
             var zValue = DrawAxisInput(zFieldRect, propName, "Z", value.z);
 
-            if (float.TryParse(zValue, out float newZ) && newZ != value.z)
+            bool zChanged = false;
+            float newZ = value.z;
+            if (float.TryParse(zValue, out float parsedZ))
             {
-                value.z = newZ;
-                var newVec = isFuseVector ? (object)new FuseVector3(value.x, value.y, value.z) : (object)value;
-                ApplyPropertyChange(property, entity, isFuseVector ? typeof(FuseVector3) : typeof(Vector3), newVec);
+                zChanged = !Mathf.Approximately(parsedZ, value.z);
+                newZ = parsedZ;
+            }
+
+            // Apply only if something actually changed
+            if (xChanged || yChanged || zChanged)
+            {
+                object newVec = isFuseVector 
+                    ? (object)new FuseVector3(newX, newY, newZ) 
+                    : (object)new Vector3(newX, newY, newZ);
+                ApplyPropertyChange(property, entity, entityId, isFuseVector ? typeof(FuseVector3) : typeof(Vector3), newVec);
             }
         }
 
         private string DrawAxisInput(Rect fieldRect, string propName, string axis, float currentValue)
         {
             string bufferKey = $"{propName}.{axis}";
-            if (!_vectorXBuffers.TryGetValue(bufferKey, out string bufferValue))
+
+            // Get or initialize buffer with current value if needed
+            if (!_axisBuffers.TryGetValue(bufferKey, out float bufferValue))
             {
-                bufferValue = currentValue.ToString();
+                bufferValue = currentValue;
+                _axisBuffers[bufferKey] = bufferValue;
             }
 
-            string newValue = GUI.TextField(fieldRect, bufferValue, _propertyValueStyle);
+            // Draw input field
+            string newValueStr = GUI.TextField(fieldRect, bufferValue.ToString(), _propertyValueStyle);
 
-            if (!_vectorXBuffers.ContainsKey(bufferKey) || _vectorXBuffers[bufferKey] != newValue)
+            // Update buffer if parsing succeeds
+            if (float.TryParse(newValueStr, out float newFloat))
             {
-                _vectorXBuffers[bufferKey] = newValue;
+                _axisBuffers[bufferKey] = newFloat;
             }
 
-            return newValue;
+            return newValueStr;
         }
 
         private bool TryParseVector2(string value, out Vector2 result)
@@ -587,85 +589,53 @@ namespace FUSE.Editor.Screen
             return false;
         }
 
-        private void ApplyPropertyChange(PropertyInfo property, object entity, Type propType, string newValue)
+        private void ApplyPropertyChange(PropertyInfo property, object entity, string entityId, Type propType, object newValue)
         {
-            ApplyPropertyChangeInternal(property, entity, propType, newValue);
+            // Queue the change instead of applying immediately to avoid lock contention
+            // during the draw cycle. Changes will be applied by the caller after drawing is complete.
+            _pendingPropertyChanges[property.Name] = newValue;
+            _pendingEntityId = entityId;
         }
 
-        private void ApplyPropertyChange(PropertyInfo property, object entity, Type propType, object newValue)
+        /// <summary>
+        /// Flushes any pending property changes. This should be called after the Draw cycle completes
+        /// to avoid ReaderWriterLockSlim promotion errors. Returns true if changes were applied.
+        /// </summary>
+        public bool FlushPendingChanges()
         {
+            if (_pendingPropertyChanges.Count == 0)
+            {
+                return false;
+            }
+
             try
             {
-                property.SetValue(entity, newValue);
+                foreach (var kvp in _pendingPropertyChanges)
+                {
+                    string propName = kvp.Key;
+                    object newValue = kvp.Value;
+
+                    // Find the property info
+                    var property = _currentEntityObject?.GetType().GetProperty(propName, BindingFlags.Public | BindingFlags.Instance);
+                    if (property != null && _currentEntityObject != null)
+                    {
+                        property.SetValue(_currentEntityObject, newValue);
+                        FuseEditor.Instance.EntitySelection.EntityHandler.ApplyEntity(_pendingEntityId, _currentEntityObject);
+                        FuseLog.Info($"Applied queued change to '{propName}': {newValue}. Entity ID: {_pendingEntityId}");
+                    }
+                }
+
+                return true;
             }
             catch (Exception ex)
             {
-                FuseLog.Warning($"Failed to apply property change '{property.Name}': {ex.Message}");
+                FuseLog.Warning($"Failed to flush pending property changes: {ex.Message}");
+                return false;
             }
-        }
-
-        private void ApplyPropertyChangeInternal(PropertyInfo property, object entity, Type propType, string newValue)
-        {
-            try
+            finally
             {
-                object convertedValue = null;
-
-                if (propType == typeof(string))
-                {
-                    convertedValue = newValue;
-                }
-                else if (propType == typeof(int))
-                {
-                    if (int.TryParse(newValue, out int intVal))
-                        convertedValue = intVal;
-                    else
-                        return; // Invalid format, don't apply
-                }
-                else if (propType == typeof(float))
-                {
-                    if (float.TryParse(newValue, out float floatVal))
-                        convertedValue = floatVal;
-                    else
-                        return;
-                }
-                else if (propType == typeof(bool))
-                {
-                    if (bool.TryParse(newValue, out bool boolVal))
-                        convertedValue = boolVal;
-                    else
-                        return;
-                }
-                else if (propType == typeof(Vector2))
-                {
-                    if (TryParseVector2(newValue, out Vector2 vec2Val))
-                        convertedValue = vec2Val;
-                    else
-                        return;
-                }
-                else if (propType == typeof(Vector3))
-                {
-                    if (TryParseVector3(newValue, out Vector3 vec3Val))
-                        convertedValue = vec3Val;
-                    else
-                        return;
-                }
-                else if (propType == typeof(FuseVector3))
-                {
-                    if (TryParseVector3(newValue, out Vector3 vec3Val))
-                        convertedValue = new FuseVector3(vec3Val.x, vec3Val.y, vec3Val.z);
-                    else
-                        return;
-                }
-                else
-                {
-                    return; // Unsupported type
-                }
-
-                property.SetValue(entity, convertedValue);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Warning($"Failed to apply property change '{property.Name}': {ex.Message}");
+                _pendingPropertyChanges.Clear();
+                _pendingEntityId = null;
             }
         }
 
@@ -678,6 +648,7 @@ namespace FUSE.Editor.Screen
         private void SeedBuffersFromEntity(Type entityType, object entity)
         {
             _propertyBuffers.Clear();
+            _axisBuffers.Clear();
 
             if (entity == null)
             {
@@ -696,14 +667,29 @@ namespace FUSE.Editor.Screen
                 try
                 {
                     object value = property.GetValue(entity);
-                    // Format vector types nicely for parsing
-                    string strValue = value?.ToString() ?? string.Empty;
-                    if (value is Vector2 vec2)
-                        strValue = $"({vec2.x}, {vec2.y})";
-                    else if (value is Vector3 vec3)
-                        strValue = $"({vec3.x}, {vec3.y}, {vec3.z})";
+                    var propType = property.PropertyType;
 
-                    _propertyBuffers[property.Name] = strValue;
+                    // Store scalar value in property buffers
+                    _propertyBuffers[property.Name] = value;
+
+                    // Initialize axis buffers for vector types
+                    if (propType == typeof(Vector2) && value is Vector2 vec2)
+                    {
+                        _axisBuffers[$"{property.Name}.X"] = vec2.x;
+                        _axisBuffers[$"{property.Name}.Y"] = vec2.y;
+                    }
+                    else if (propType == typeof(Vector3) && value is Vector3 vec3)
+                    {
+                        _axisBuffers[$"{property.Name}.X"] = vec3.x;
+                        _axisBuffers[$"{property.Name}.Y"] = vec3.y;
+                        _axisBuffers[$"{property.Name}.Z"] = vec3.z;
+                    }
+                    else if (propType == typeof(FuseVector3) && value is FuseVector3 fuseVec3)
+                    {
+                        _axisBuffers[$"{property.Name}.X"] = fuseVec3.x;
+                        _axisBuffers[$"{property.Name}.Y"] = fuseVec3.y;
+                        _axisBuffers[$"{property.Name}.Z"] = fuseVec3.z;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -714,37 +700,16 @@ namespace FUSE.Editor.Screen
             }
         }
 
-        private object GetEntityInstance(FuseLoadedMod mod, string entityKind, string entityId)
-        {
-            if (mod?.Definition == null)
-            {
-                return null;
-            }
-
-            // Try each resolver in order. The first resolver that can handle this entity kind
-            // will be used to look it up. This allows built-in types to be resolved first,
-            // and custom types to be handled by registered resolvers.
-            foreach (var resolver in _entityResolvers)
-            {
-                if (resolver.CanResolve(entityKind))
-                {
-                    return resolver.TryResolveEntity(mod, entityKind, entityId);
-                }
-            }
-
-            return null;
-        }
-
         public void Clear()
         {
             _scrollPosition = Vector2.zero;
             _lastBufferedEntityId = null;
             _currentMod = null;
-            _currentEntityKind = null;
+            _currentEntityObject = null;
             _propertyBuffers.Clear();
-            _vectorXBuffers.Clear();
-            _vectorYBuffers.Clear();
-            _vectorZBuffers.Clear();
+            _axisBuffers.Clear();
+            _pendingPropertyChanges.Clear();
+            _pendingEntityId = null;
         }
     }
 }

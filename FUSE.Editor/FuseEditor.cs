@@ -54,84 +54,10 @@ namespace FUSE.Editor
         private const int StrategyWatchdogFrames = 120;
         private int _strategyWatchdogFramesRemaining;
 
-        /// <summary>
-        /// Maps string entity type names (as used in the entity tree) to their
-        /// corresponding Fuse data class types. Supports reflection-based lookups,
-        /// serialization helpers, and type-based property editing.
-        /// </summary>
-        public static readonly IReadOnlyDictionary<string, Type> EntityTypeMap = new Dictionary<string, Type>
-        {
-            // Track entities
-            { "Node", typeof(FuseNode) },
-            { "Segment", typeof(FuseSegment) },
-            { "Span", typeof(FuseSpan) },
-            { "Area", typeof(FuseArea) },
-
-            // World entities
-            { "Scenery", typeof(FuseScenery) },
-            { "Spliney", typeof(FuseSpliney) },
-            { "MapLabel", typeof(FuseMapLabel) },
-            { "Telegraph", typeof(FuseTelegraphPoles) },
-
-            // Operations entities
-            { "Industry", typeof(FuseIndustry) },
-            { "Load", typeof(FuseLoad) },
-            { "Station", typeof(FuseStation) },
-            { "Turntable", typeof(FuseTurntable) },
-            { "Loader", typeof(FuseLoader) }
-        };
-
-        /// <summary>
-        /// Reverse mapping from Fuse data class types to their string entity type names.
-        /// Built lazily from <see cref="EntityTypeMap"/> on first access.
-        /// </summary>
-        private static IReadOnlyDictionary<Type, string> _entityTypeReverseMap;
-
-        /// <summary>
-        /// Gets the reverse mapping from Fuse data class types to entity type names.
-        /// </summary>
-        public static IReadOnlyDictionary<Type, string> EntityTypeReverseMap
-        {
-            get
-            {
-                if (_entityTypeReverseMap == null)
-                {
-                    var reverse = new Dictionary<Type, string>();
-                    foreach (var kvp in EntityTypeMap)
-                    {
-                        reverse[kvp.Value] = kvp.Key;
-                    }
-                    _entityTypeReverseMap = reverse;
-                }
-                return _entityTypeReverseMap;
-            }
-        }
-
-        /// <summary>
-        /// Tries to get the Fuse data class type for a given entity type name.
-        /// </summary>
-        /// <param name="entityTypeName">The entity type name (e.g., "Nodes", "Segments")</param>
-        /// <param name="type">The corresponding data class type if found</param>
-        /// <returns>True if the type was found, false otherwise</returns>
-        public static bool TryGetEntityType(string entityTypeName, out Type type)
-        {
-            return EntityTypeMap.TryGetValue(entityTypeName, out type);
-        }
-
-        /// <summary>
-        /// Tries to get the entity type name for a given Fuse data class type.
-        /// </summary>
-        /// <param name="type">The Fuse data class type</param>
-        /// <param name="entityTypeName">The corresponding entity type name if found</param>
-        /// <returns>True if the name was found, false otherwise</returns>
-        public static bool TryGetEntityTypeName(Type type, out string entityTypeName)
-        {
-            return EntityTypeReverseMap.TryGetValue(type, out entityTypeName);
-        }
-
         static FuseEditor _instance;
 
         FuseEditorScreen _screen;
+        FuseEditorEntitySelection _entitySelection;
 
         [CanBeNull]
         public FuseLoadedMod ActiveMod { get; private set; } = null;
@@ -142,6 +68,9 @@ namespace FUSE.Editor
 
         [CanBeNull]
         internal FuseEditorScreen Screen => _screen;
+
+        [NotNull]
+        internal FuseEditorEntitySelection EntitySelection => _entitySelection ??= new FuseEditorEntitySelection();
 
         public static FuseEditor Instance
         {

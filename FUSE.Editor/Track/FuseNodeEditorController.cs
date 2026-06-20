@@ -100,11 +100,11 @@ namespace FUSE.Editor.Track
             _selected = marker;
             _selected.SetSelected(true);
 
-            // Update the editor screen's selected entity to match the marker selection
-            var screen = FuseEditor.Instance?.Screen;
-            if (screen != null && marker.Node != null)
+            // Update the editor's entity selection to match the marker selection
+            var editor = FuseEditor.Instance;
+            if (editor?.EntitySelection != null && marker.Node != null)
             {
-                screen.SetSelectedEntity("Node", marker.Node.id);
+                editor.EntitySelection.SetSelectedEntity(FUSE.Runtime.API.TrackAPI.GetDefinition(marker.Node), marker.Node.id);
             }
         }
 
