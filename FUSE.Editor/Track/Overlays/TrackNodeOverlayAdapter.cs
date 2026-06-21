@@ -11,25 +11,29 @@ namespace FUSE.Editor.Track.Overlays
     /// </summary>
     public class TrackNodeOverlayAdapter : IOverlayRenderable
     {
-        private Mesh _sphereMesh;
-        private Material _material;
+        private static Mesh _chevronMesh;
+        private Material material_Normal;
+        private Material material_Selected;
 
-        Color normal = new Color(0.8f, 0.5f, 0, 0.65f);
-        Color selected = new Color(0.6f, 0.5f, 0.2f, 0.65f);
-
-        public TrackNodeOverlayAdapter(Material overrideMaterial)
+        public TrackNodeOverlayAdapter()
         {
-            _material = overrideMaterial;
+            if (material_Normal == null)
+            {
+                material_Normal = new(FuseOverlayManager.Instance.GetRenderer().WireframeMaterial);
+                material_Normal.color = Color.yellow;
+                material_Selected = new(FuseOverlayManager.Instance.GetRenderer().GhostMaterial);
+                material_Selected.color = Color.green;
+            }
         }
 
         public Mesh GetOverlayMesh(object Entity, object FuseData)
         {
-            // Create a simple sphere mesh if not cached
-            if (_sphereMesh == null)
+            // Get the static chevron mesh, creating it once on first access
+            if (_chevronMesh == null)
             {
-                _sphereMesh = CreateSphereMesh(0.6f, 16, 16);
+                _chevronMesh = CreateChevronMesh(0.5f);
             }
-            return _sphereMesh;
+            return _chevronMesh;
         }
 
         public Material GetOverlayMaterial(object Entity, object FuseData)
@@ -37,72 +41,92 @@ namespace FUSE.Editor.Track.Overlays
             // Allow override, otherwise return null to use default wireframe
             if (FuseEditor.Instance.EntitySelection.IsEntitySelected(FuseData, ((TrackNode)Entity).id))
             {
-                _material.color = selected;
+                return material_Selected;
             }
             else
             {
-                _material.color = normal;
+                return material_Normal;
             }
-            return _material;
         }
 
         public Bounds GetObjectBounds(object Entity, object FuseData)
         {
             FuseNode node = FuseData as FuseNode;
-            var bounds = new Bounds(node.Position, Vector3.one);
 
-            return bounds;
+            if (_chevronMesh == null)
+            {
+                _chevronMesh = CreateChevronMesh(0.5f);
+            }
+
+            return _chevronMesh.bounds;
         }
 
         /// <summary>
-        /// Creates a simple UV sphere mesh at runtime.
+        /// Creates a chevron shape (two arms forming a V) pointing forward along the Z-axis.
+        /// Tapers to a point at the front, opens wide at the back with a center notch.
         /// </summary>
-        private static Mesh CreateSphereMesh(float radius, int latitudeBands, int longitudeBands)
+        private static Mesh CreateChevronMesh(float size)
         {
             var mesh = new Mesh();
-            var vertices = new Vector3[(latitudeBands + 1) * (longitudeBands + 1)];
-            var triangles = new int[latitudeBands * longitudeBands * 6];
 
-            for (int lat = 0; lat <= latitudeBands; lat++)
+            // Chevron: two arms meeting at front tip, with a notch in the back middle
+            var vertices = new Vector3[]
             {
-                float latAngle = Mathf.PI * lat / latitudeBands;
-                float sinLat = Mathf.Sin(latAngle);
-                float cosLat = Mathf.Cos(latAngle);
+                // Shared front tip (vertical edge)
+                new Vector3(0f, 0.1f, 0.5f) * size,       // 0: front tip top
+                new Vector3(0f, -0.1f, 0.5f) * size,      // 1: front tip bottom
+                new Vector3(0f, 0.1f, 0.35f) * size,       // 2: back tip top
+                new Vector3(0f, -0.1f, 0.35f) * size,      // 3: back tip bottom
 
-                for (int lon = 0; lon <= longitudeBands; lon++)
-                {
-                    float lonAngle = 2 * Mathf.PI * lon / longitudeBands;
-                    float sinLon = Mathf.Sin(lonAngle);
-                    float cosLon = Mathf.Cos(lonAngle);
+                // Left arm back corners
+                new Vector3(-0.45f, 0.1f, -0.4f) * size,  // 4 (2): left back outer top
+                new Vector3(-0.45f, -0.1f, -0.4f) * size, // 5 (3): left back outer bottom
+                new Vector3(-0.35f, 0.1f, -0.4f) * size,  // 6 (4): left back inner top
+                new Vector3(-0.35f, -0.1f, -0.4f) * size, // 7 (5): left back inner bottom
 
-                    int idx = lat * (longitudeBands + 1) + lon;
-                    vertices[idx] = new Vector3(
-                        radius * sinLat * cosLon,
-                        radius * cosLat,
-                        radius * sinLat * sinLon
-                    );
-                }
-            }
+                // Right arm back corners
+                new Vector3(0.35f, 0.1f, -0.4f) * size,   // 8 (6): right back inner top
+                new Vector3(0.35f, -0.1f, -0.4f) * size,  // 9 (7): right back inner bottom
+                new Vector3(0.45f, 0.1f, -0.4f) * size,   // 10 (8): right back outer top
+                new Vector3(0.45f, -0.1f, -0.4f) * size,  // 11 (9): right back outer bottom
+            };
 
-            int triIdx = 0;
-            for (int lat = 0; lat < latitudeBands; lat++)
+            var triangles = new int[]
             {
-                for (int lon = 0; lon < longitudeBands; lon++)
-                {
-                    int a = lat * (longitudeBands + 1) + lon;
-                    int b = a + 1;
-                    int c = a + longitudeBands + 1;
-                    int d = c + 1;
+                // ===== LEFT ARM =====
+                // Top face (front tip -> back inner -> back outer)
+                0, 2, 6,
+                0, 6, 4,
+                // Bottom face
+                1, 7, 3,
+                1, 5, 7,
+                // Outer side face (front tip to back-outer)
+                0, 4, 1,
+                1, 4, 5,
+                // Inner side face (back tip to back-inner)
+                2, 3, 6,
+                6, 3, 7,
+                // Back face (rectangle)
+                4, 6, 7,
+                4, 7, 5,
 
-                    triangles[triIdx++] = a;
-                    triangles[triIdx++] = c;
-                    triangles[triIdx++] = b;
-
-                    triangles[triIdx++] = b;
-                    triangles[triIdx++] = c;
-                    triangles[triIdx++] = d;
-                }
-            }
+                // ===== RIGHT ARM =====
+                // Top face (front tip -> back inner -> back outer)
+                0, 8, 2,
+                0, 10, 8,
+                // Bottom face
+                1, 3, 9,
+                1, 9, 11,
+                // Outer side face (front tip to back-outer)
+                0, 1, 10,
+                1, 11, 10,
+                // Inner side face (back tip to back-inner)
+                2, 8, 3,
+                8, 9, 3,
+                // Back face (rectangle)
+                10, 9, 8,
+                10, 11, 9,
+            };
 
             mesh.vertices = vertices;
             mesh.triangles = triangles;

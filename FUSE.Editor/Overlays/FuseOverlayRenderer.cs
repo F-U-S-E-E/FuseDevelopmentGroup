@@ -116,7 +116,7 @@ namespace FUSE.Editor.Overlays
             }
 
             // Configure transparency (for URP shaders)
-            
+            /*
             if (_wireframeMaterial.HasProperty("_SrcBlend"))
             {
                 _wireframeMaterial.SetInt("_SrcBlend", 5); // SrcAlpha
@@ -125,6 +125,7 @@ namespace FUSE.Editor.Overlays
             {
                 _wireframeMaterial.SetInt("_DstBlend", 10); // OneMinusSrcAlpha
             }
+            
             if (_wireframeMaterial.HasProperty("_ZWrite"))
             {
                 _wireframeMaterial.SetInt("_ZWrite", 0);
@@ -141,7 +142,7 @@ namespace FUSE.Editor.Overlays
             {
                 _wireframeMaterial.SetFloat("_Cull", 0); // No culling
             }
-            
+            */
             // Set depth test to Always so overlay renders over everything
             /*
             if (_wireframeMaterial.HasProperty("_ZTest"))
@@ -171,7 +172,7 @@ namespace FUSE.Editor.Overlays
             {
                 _ghostMaterial.SetColor("_Color", new Color(1f, 1f, 1f, 0.3f));
             }
-            
+            /*
             if (_ghostMaterial.HasProperty("_SrcBlend"))
             {
                 _ghostMaterial.SetInt("_SrcBlend", 5); // SrcAlpha
@@ -517,7 +518,11 @@ namespace FUSE.Editor.Overlays
 
                 RenderParams rp = new RenderParams(material)
                 {
-                    matProps = mpb
+                    matProps = mpb,
+                    //shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off,
+                    //receiveShadows = false,
+                    //lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off,
+                    camera = Camera.main
                 };
                 Graphics.RenderMesh(rp, mesh, 0, matrix);
 

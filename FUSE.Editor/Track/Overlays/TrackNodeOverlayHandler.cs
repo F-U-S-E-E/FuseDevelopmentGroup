@@ -67,7 +67,7 @@ namespace FUSE.Editor.Track.Overlays
         {
             // Use the TrackNodeOverlayAdapter for custom rendering
             // This provides a sphere mesh representation of the track node
-            return new TrackNodeOverlayAdapter(new Material(FuseOverlayManager.Instance.GetRenderer().GhostMaterial));
+            return new TrackNodeOverlayAdapter();
         }
 
         public string GetObjectType(TrackNode entity) => "TrackNode";
