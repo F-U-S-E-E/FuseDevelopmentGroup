@@ -37,19 +37,12 @@ namespace FUSE.Editor.Track.Tools
 
         public void OnActivate()
         {
-            FuseNodeEditorController.ShowMarkersForActiveMod();
+            
         }
 
         public void OnDeactivate()
         {
-            FuseNodeEditorController.DeselectCurrent();
-            FuseNodeEditorController.ClearMarkers();
-        }
-
-        public void OnNodeSelected(FuseNodeMarker marker)
-        {
-            // Placement doesn't engage on selection — the user is
-            // placing new nodes, not editing existing ones.
+            
         }
 
         public void Tick()
@@ -92,11 +85,7 @@ namespace FUSE.Editor.Track.Tools
                 return;
             }
 
-            var id = GenerateNodeId();
-            if (!FuseNodeEditorController.TryCreateNodeAtCameraRaycast(id, out var error))
-            {
-                FuseLog.Info($"FUSE place tool: {error ?? "node creation failed"}");
-            }
+
         }
 
         private static string GenerateNodeId()

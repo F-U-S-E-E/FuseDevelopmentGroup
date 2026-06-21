@@ -166,6 +166,9 @@
       <Link>Icons\%(Filename)%(Extension)</Link>
     </Content>
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Overlays\Examples\" />
+  </ItemGroup>
 
   <Target Name="DeployFuseEditorToUnityModManagerFolder" AfterTargets="Build" Condition="'$(EnableModDeploy)' == 'true'">
     <MakeDir Directories="$(ModDeployDir)" />
@@ -188,6 +191,6 @@
       <FuseIconFiles Include="$(TargetDir)Icons\*.png" />
       <FuseIconFiles Include="$(TargetDir)Icons\README.md" />
     </ItemGroup>
-    <Copy SourceFiles="@(FuseIconFiles)" DestinationFolder="$(ModDeployDir)\Icons" SkipUnchangedFiles="true" Condition="@(FuseIconFiles->Count()) &gt; 0" />
+    <Copy SourceFiles="@(FuseIconFiles)" DestinationFolder="$(ModDeployDir)\Icons" SkipUnchangedFiles="true" Condition="@(FuseIconFiles-&gt;Count()) &gt; 0" />
   </Target>
 </Project>

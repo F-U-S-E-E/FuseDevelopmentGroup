@@ -23,7 +23,6 @@ namespace FUSE.Editor.Track.Tools
 
         public void OnActivate() { }
         public void OnDeactivate() { }
-        public void OnNodeSelected(FuseNodeMarker marker) { }
         public void Tick() { }
     }
 }

@@ -218,7 +218,6 @@ namespace FUSE.Tests.Editor
             public int ActivateCount { get; private set; }
             public int DeactivateCount { get; private set; }
             public int TickCount { get; private set; }
-            public List<FuseNodeMarker> SelectedNodes { get; } = new List<FuseNodeMarker>();
 
             public void OnActivate()
             {
@@ -230,7 +229,6 @@ namespace FUSE.Tests.Editor
             }
 
             public void OnDeactivate() => DeactivateCount++;
-            public void OnNodeSelected(FuseNodeMarker marker) => SelectedNodes.Add(marker);
             public void Tick() => TickCount++;
         }
     }

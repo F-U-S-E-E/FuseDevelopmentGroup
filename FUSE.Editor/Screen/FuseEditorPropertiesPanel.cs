@@ -620,7 +620,7 @@ namespace FUSE.Editor.Screen
                     if (property != null && _currentEntityObject != null)
                     {
                         property.SetValue(_currentEntityObject, newValue);
-                        FuseEditor.Instance.EntitySelection.EntityHandler.ApplyEntity(_pendingEntityId, _currentEntityObject);
+                        //FuseEditor.Instance.EntitySelection.EntityHandler.ApplyEntity(_pendingEntityId, _currentEntityObject);
                         FuseLog.Info($"Applied queued change to '{propName}': {newValue}. Entity ID: {_pendingEntityId}");
                     }
                 }

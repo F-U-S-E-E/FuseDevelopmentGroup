@@ -950,17 +950,6 @@ namespace FUSE.Editor.Screen
             {
                 FuseLog.Exception($"FUSE editor: failed to pan camera to node '{entityId}'.", ex);
             }
-
-            // Marker selection — only meaningful when Select/Move/Rotate/
-            // Place is active (those tools are what spawn markers). When
-            // no marker exists for this id, the panel still updates from
-            // the cached selection state above; the user just doesn't
-            // get a gizmo until they switch to a marker-active tool.
-            if (Track.FuseNodeEditorController.TryFindMarker(entityId, out var marker))
-            {
-                Track.FuseNodeEditorController.SelectMarker(marker);
-                FuseEditorToolRegistry.Active?.OnNodeSelected(marker);
-            }
         }
 
         private void ToggleExpanded(string key)
@@ -1149,7 +1138,6 @@ namespace FUSE.Editor.Screen
             // markers-refresh path clean it up.
             selection.ClearSelection();
             _lastBufferedEntityId = null;
-            Track.FuseNodeEditorController.DeselectCurrent();
         }
 
         private void DrawPropertyLabelRow(int row, float rowHeight, float labelWidth, float totalWidth,

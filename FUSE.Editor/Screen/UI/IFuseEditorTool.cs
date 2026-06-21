@@ -74,17 +74,6 @@ namespace FUSE.Editor.Screen.UI
         void OnDeactivate();
 
         /// <summary>
-        /// Optional hook fired by <see cref="Track.FuseNodeMarker"/> when
-        /// the user clicks a marker in the scene. Tools that want
-        /// click-to-engage behaviour (Move, Rotate) hook this to attach
-        /// their gizmo to the freshly-selected marker. Default
-        /// implementations should no-op.
-        /// </summary>
-        /// <param name="marker">The marker the user clicked; never null
-        /// when called by the marker itself.</param>
-        void OnNodeSelected(Track.FuseNodeMarker marker);
-
-        /// <summary>
         /// Per-frame tick fired by <see cref="FuseEditor"/> while this
         /// tool is active. Tools that respond to raw input (e.g. Place
         /// detects a viewport click) hook this; passive tools no-op.

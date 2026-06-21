@@ -19,19 +19,12 @@ namespace FUSE.Editor.Track.Tools
 
         public void OnActivate()
         {
-            FuseNodeEditorController.ShowMarkersForActiveMod();
+            
         }
 
         public void OnDeactivate()
         {
-            FuseNodeEditorController.DeselectCurrent();
-            FuseNodeEditorController.ClearMarkers();
-        }
-
-        public void OnNodeSelected(FuseNodeMarker marker)
-        {
-            // Pure inspection — selection state is already managed by
-            // FuseNodeEditorController.SelectMarker; nothing extra to do.
+            
         }
 
         public void Tick() { }

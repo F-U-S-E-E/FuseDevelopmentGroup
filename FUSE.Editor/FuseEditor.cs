@@ -16,6 +16,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UI.CarEditor;
 using UnityEngine;
+using FUSE.Editor.Overlays;
 
 namespace FUSE.Editor
 {
@@ -95,6 +96,7 @@ namespace FUSE.Editor
             DontDestroyOnLoad(go);
 
             _instance = go.AddComponent<FuseEditor>();
+            
 
             Messenger.Default.Register<MapDidLoadEvent>(_instance, _instance.OnMapLoad);
             Messenger.Default.Register<MapDidUnloadEvent>(_instance, _instance.OnMapUnload);
@@ -144,6 +146,14 @@ namespace FUSE.Editor
             catch (System.Exception ex)
             {
                 FuseLog.Exception("FUSE failed to set up RLD gizmo components.", ex);
+            }
+            try
+            {
+                gameObject.AddComponent<FuseOverlayManager>();
+            }
+            catch (System.Exception ex)
+            {
+                FuseLog.Exception("FUSE failed to spawn the overlay manager for the editor session.", ex);
             }
 
             // Avatar wrestling: the previous JumpToPoint-only approach
@@ -372,6 +382,11 @@ namespace FUSE.Editor
             // inline version skipped them and could leak a dirty
             // bookmark set across into the next mod's session.
             TeardownEditorSession();
+
+            if (FuseOverlayManager.Instance != null)
+            {
+                Destroy(FuseOverlayManager.Instance);
+            }
         }
 
         private void Update()
@@ -396,10 +411,6 @@ namespace FUSE.Editor
             // and stops re-applying once it hits zero, so steady-state
             // cost is a single int compare per frame.
             TickStrategyWatchdog();
-
-            // Update marker visibility based on camera distance
-            // (culls distant markers to improve performance)
-            Track.FuseNodeEditorController.UpdateMarkerVisibility();
         }
 
         private void TickStrategyWatchdog()

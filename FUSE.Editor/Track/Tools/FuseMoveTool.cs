@@ -20,21 +20,14 @@ namespace FUSE.Editor.Track.Tools
 
         public void OnActivate()
         {
-            FuseNodeEditorController.ShowMarkersForActiveMod();
-            FuseNodeEditorController.Selected?.BeginMove();
+            
         }
 
         public void OnDeactivate()
         {
             // Selected.Deselect() tears down whatever gizmo is attached
             // (move OR rotate), so we don't need to distinguish here.
-            FuseNodeEditorController.DeselectCurrent();
-            FuseNodeEditorController.ClearMarkers();
-        }
-
-        public void OnNodeSelected(FuseNodeMarker marker)
-        {
-            marker?.BeginMove();
+            
         }
 
         public void Tick() { }

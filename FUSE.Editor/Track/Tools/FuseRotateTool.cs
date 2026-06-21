@@ -18,19 +18,12 @@ namespace FUSE.Editor.Track.Tools
 
         public void OnActivate()
         {
-            FuseNodeEditorController.ShowMarkersForActiveMod();
-            FuseNodeEditorController.Selected?.BeginRotate();
+            
         }
 
         public void OnDeactivate()
         {
-            FuseNodeEditorController.DeselectCurrent();
-            FuseNodeEditorController.ClearMarkers();
-        }
-
-        public void OnNodeSelected(FuseNodeMarker marker)
-        {
-            marker?.BeginRotate();
+            
         }
 
         public void Tick() { }
