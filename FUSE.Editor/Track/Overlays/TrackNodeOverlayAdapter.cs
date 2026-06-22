@@ -39,7 +39,7 @@ namespace FUSE.Editor.Track.Overlays
         public Material GetOverlayMaterial(object Entity, object FuseData)
         {
             // Allow override, otherwise return null to use default wireframe
-            if (FuseEditor.Instance.EntitySelection.IsEntitySelected(FuseData, ((TrackNode)Entity).id))
+            if (FuseEditor.Instance.EntitySelection.SelectedIds.Contains(((TrackNode)Entity).id))
             {
                 return material_Selected;
             }
@@ -65,7 +65,7 @@ namespace FUSE.Editor.Track.Overlays
         /// Creates a chevron shape (two arms forming a V) pointing forward along the Z-axis.
         /// Tapers to a point at the front, opens wide at the back with a center notch.
         /// </summary>
-        private static Mesh CreateChevronMesh(float size)
+        public static Mesh CreateChevronMesh(float size)
         {
             var mesh = new Mesh();
 

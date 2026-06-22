@@ -52,6 +52,7 @@ namespace FUSE.Editor.Overlays
                 InitializeMaterials();
 
                 _handlerRegistry.RegisterHandler(new TrackNodeOverlayHandler());
+                _handlerRegistry.RegisterHandler(new TrackSegmentOverlayHandler());
             }
             catch (System.Exception ex)
             {

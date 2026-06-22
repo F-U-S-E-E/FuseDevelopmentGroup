@@ -27,7 +27,7 @@ namespace FUSE.Editor.Track.Overlays
         public string GetEntityId(TrackNode entity)
         {
             // Use the node's instance ID for uniqueness
-            return $"track_node_{entity.GetInstanceID()}";
+            return entity.id;
         }
 
         public GameObject GetTargetGameObject(TrackNode entity)
@@ -91,7 +91,7 @@ namespace FUSE.Editor.Track.Overlays
             {
                 AreaId = $"node_{entity.GetInstanceID()}",
                 PreviewId = GetEntityId(entity),
-                Bounds = new Bounds(Vector3.zero, Vector3.one * 2f), // 1m radius sphere
+                Bounds = new Bounds(Vector3.zero, Vector3.one * 1f), // 1m radius sphere
                 Transform = Matrix4x4.TRS(WorldTransformer.GameToWorld(previewPosition), previewRotation, previewScale),
                 IsSelectable = true,
                 SelectionData = entity

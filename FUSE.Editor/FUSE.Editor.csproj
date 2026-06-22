@@ -166,9 +166,6 @@
       <Link>Icons\%(Filename)%(Extension)</Link>
     </Content>
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Overlays\Examples\" />
-  </ItemGroup>
 
   <Target Name="DeployFuseEditorToUnityModManagerFolder" AfterTargets="Build" Condition="'$(EnableModDeploy)' == 'true'">
     <MakeDir Directories="$(ModDeployDir)" />

@@ -138,16 +138,6 @@ namespace FUSE.Editor.Overlays.Discovery
                     {
                         if (obj == null || string.IsNullOrEmpty(obj.ObjectId)) continue;
 
-                        // Calculate distance if focal point is set
-                        if (obj.Entity is GameObject go)
-                        {
-                            obj.Distance = Vector3.Distance(go.transform.position, _cullingConfig.FocalPoint);
-                        }
-                        else if (obj.Entity is Component comp)
-                        {
-                            obj.Distance = Vector3.Distance(comp.gameObject.transform.position, _cullingConfig.FocalPoint);
-                        }
-
                         obj.SourceStrategy = strategy.StrategyName;
                         _discoveredObjects[obj.ObjectId] = obj;
                     }
@@ -298,7 +288,7 @@ namespace FUSE.Editor.Overlays.Discovery
         {
             _discoveredObjects.Clear();
             _previewCreationTimes.Clear();
-            _lastDiscoveryTime = -999f;
+            _lastDiscoveryTime = 0f;
         }
 
         /// <summary>
@@ -324,10 +314,7 @@ namespace FUSE.Editor.Overlays.Discovery
             {
                 pos = go.transform.position;
             }
-            else if (obj.Entity is Component comp)
-            {
-                pos = comp.gameObject.transform.position;
-            }
+            else return true;
 
             // Simple plane distance check for each frustum plane
             foreach (Plane plane in GeometryUtility.CalculateFrustumPlanes(camera))

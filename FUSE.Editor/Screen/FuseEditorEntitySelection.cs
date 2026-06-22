@@ -696,7 +696,7 @@ namespace FUSE.Editor.Screen
             for (int i = 0; i < _selectedEntityIds.Count; i++)
             {
                 if (string.Equals(_selectedEntityIds[i], entityId, StringComparison.Ordinal) &&
-                    Equals(_selectedEntityObjects[i], entityObject))
+                    string.Equals(_selectedEntityObjects[i].GetType().FullName, entityObject.GetType().FullName, StringComparison.Ordinal))
                 {
                     return; // Already selected
                 }
@@ -740,7 +740,7 @@ namespace FUSE.Editor.Screen
             for (int i = 0; i < _selectedEntityIds.Count; i++)
             {
                 if (string.Equals(_selectedEntityIds[i], entityId, StringComparison.Ordinal) &&
-                    Equals(_selectedEntityObjects[i], entityObject))
+                    string.Equals(_selectedEntityObjects[i].GetType().FullName, entityObject.GetType().FullName, StringComparison.Ordinal))
                 {
                     _selectedEntityIds.RemoveAt(i);
                     _selectedEntityObjects.RemoveAt(i);
@@ -819,7 +819,7 @@ namespace FUSE.Editor.Screen
             for (int i = 0; i < _selectedEntityIds.Count; i++)
             {
                 if (string.Equals(_selectedEntityIds[i], entityId, StringComparison.Ordinal) &&
-                    Equals(_selectedEntityObjects[i], entityObject))
+                    string.Equals(_selectedEntityObjects[i].GetType().FullName, entityObject.GetType().FullName, StringComparison.Ordinal))
                 {
                     return true;
                 }

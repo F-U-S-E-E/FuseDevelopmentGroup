@@ -101,6 +101,7 @@ namespace FUSE.Editor.Overlays
                 _discoverySystem = new OverlayDiscoverySystem();
 
                 _discoverySystem.RegisterStrategy(new TrackNodeDiscoveryStrategy());
+                _discoverySystem.RegisterStrategy(new TrackSegmentDiscoveryStrategy());
 
                 _discoveryEnabled = true;
 
@@ -322,7 +323,7 @@ namespace FUSE.Editor.Overlays
         private void UpdateOverlayForDiscoveredObject(DiscoveredOverlayObject discovered)
         {
             // Check LOD status
-            bool shouldUseLOD = _discoverySystem.ShouldUseLOD(discovered);
+            discovered.DiscoveredAt = DateTime.Now;
 
             // For now, LOD is tracked via priority tinting
             // In future, could adjust mesh complexity or material
@@ -380,50 +381,6 @@ namespace FUSE.Editor.Overlays
             catch (Exception ex)
             {
                 FuseLog.Warning($"FuseOverlayManager: Handler-based overlay creation failed: {ex.Message}");
-                // Fallback to simple overlay
-                CreateSelectableOverlay(discovered);
-            }
-        }
-
-        /// <summary>
-        /// Creates a simple selectable overlay for objects without pending edits.
-        /// </summary>
-        private void CreateSelectableOverlay(DiscoveredOverlayObject discovered)
-        {
-            if (discovered.Entity == null)
-            {
-                return;
-            }
-
-            GameObject targetGo = null;
-            if (discovered.Entity is GameObject go)
-            {
-                targetGo = go;
-            }
-            else if (discovered.Entity is Component comp)
-            {
-                targetGo = comp.gameObject;
-            }
-
-            if (targetGo == null)
-            {
-                return;
-            }
-
-            // Register simple preview without pending edits
-            var previewData = _renderer.RegisterPreview(
-                discovered.ObjectId,
-                targetGo,
-                discovered.Entity,
-                null);
-
-            if (previewData != null)
-            {
-                // Set priority-based tinting to indicate LOD status
-                bool useLOD = _discoverySystem.ShouldUseLOD(discovered);
-                previewData.Tint = useLOD ? new Color(0.6f, 0.6f, 0.6f, 1f) : new Color(1f, 1f, 1f, 1f);
-
-                FuseLog.Info($"FuseOverlayManager: Created selectable overlay for '{discovered.ObjectId}' (LOD: {useLOD})");
             }
         }
 
