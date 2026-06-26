@@ -59,6 +59,8 @@ namespace FUSE.Editor.Screen
         private Vector2 _propertiesScroll;
         // Properties panel instance
         private FuseEditorPropertiesPanel _propertiesPanel;
+        // Button tool panel instance
+        private UI.FuseEditorButtonToolPanel _buttonToolPanel;
 
         private readonly HashSet<string> _expandedCategories = new HashSet<string>(StringComparer.Ordinal);
 
@@ -370,7 +372,16 @@ namespace FUSE.Editor.Screen
             // Authoring persistence service writes on every edit today;
             // this is a no-op "ack" that just refreshes the save tracker
             // for the bottom-bar timestamp.
-            FuseEditorSaveTracker.MarkSaved();
+            try
+            {
+                FuseEditorChangeHandler.Instance.SaveChanges();
+
+                FuseEditorSaveTracker.MarkSaved();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE editor: save failed.", ex);
+            }
         }
 
         private void OnPlayMenuClicked()
@@ -643,7 +654,18 @@ namespace FUSE.Editor.Screen
                     var rightRect = new Rect(screenRect.width - RightPanelWidth, ContentTop, RightPanelWidth,
                                              screenRect.height - ContentTop - BottomBarHeight);
                     GUI.Box(rightRect, GUIContent.none, FuseEditorTheme.Panel);
-                    _rightTabs.Draw(rightRect);
+
+                    // Split right panel: 2/3 properties, 1/3 button tools
+                    float propertiesHeight = rightRect.height * 2f / 3f;
+                    float buttonToolHeight = rightRect.height - propertiesHeight;
+
+                    // Properties panel section (upper 2/3)
+                    var propertiesRect = new Rect(rightRect.x, rightRect.y, rightRect.width, propertiesHeight);
+                    DrawRightPanelProperties(propertiesRect);
+
+                    // Button tool panel section (lower 1/3)
+                    var buttonToolRect = new Rect(rightRect.x, rightRect.y + propertiesHeight, rightRect.width, buttonToolHeight);
+                    DrawRightPanelButtonTools(buttonToolRect);
                 }
 
                 // Bottom bar — live coordinates on the left, Play CTA on
@@ -685,6 +707,9 @@ namespace FUSE.Editor.Screen
                 // panel. Reads GUI.tooltip captured by the most-recently-
                 // hovered GUIContent across the whole frame.
                 FuseEditorUiHelper.RenderHoverTooltip(FuseEditorTheme.TooltipBox, screenRect);
+
+                // Draw TrackNode selection window if open (sits on top of everything)
+                PropertyRenderers.TrackNodePropertyRenderer.DrawSelectionWindow();
             }
             finally
             {
@@ -887,7 +912,7 @@ namespace FUSE.Editor.Screen
                     {
                         var rowRect = new Rect(36f, y, viewRect.width - 36f, rowHeight);
                         var selection = FuseEditor.Instance?.EntitySelection;
-                        var isSelected = selection?.IsEntitySelected(bucket.Name, entityId) ?? false;
+                        var isSelected = false; //selection?.IsEntitySelected(bucket.Name, entityId) ?? false;
                         var style = isSelected ? FuseEditorTheme.TreeRowSelected : FuseEditorTheme.TreeRow;
 
                         if (GUI.Button(rowRect, "  " + entityId, style))
@@ -899,17 +924,17 @@ namespace FUSE.Editor.Screen
 
                             if (controlPressed)
                             {
-                                selection?.ToggleSelection(bucket.Name, entityId);
+                                //selection?.ToggleSelection(bucket.Name, entityId);
                             }
                             else if (shiftPressed && selection?.HasSelection == true)
                             {
                                 // Shift-click range select (simplified: just add to selection)
-                                selection?.AddToSelection(bucket.Name, entityId);
+                                //selection?.AddToSelection(bucket.Name, entityId);
                             }
                             else
                             {
                                 // Single click: set as sole selection
-                                selection?.SetSelectedEntity(bucket.Name, entityId);
+                                //selection?.SetSelectedEntity(bucket.Name, entityId);
                             }
 
                             // Also handle the navigation behavior
@@ -1066,7 +1091,7 @@ namespace FUSE.Editor.Screen
 
             var selection = FuseEditor.Instance?.EntitySelection;
 
-            _propertiesPanel.Draw(panelRect, selection?.SelectedObjects ?? new List<object>(), selection?.SelectedIds ?? new List<string>(),
+            _propertiesPanel.Draw(panelRect, selection.SelectedHandlers,
                                  _propertyLabelStyle, _propertyValueStyle, _toolButtonStyle);
 
             // Flush any pending property changes after drawing is complete to avoid
@@ -2105,6 +2130,24 @@ namespace FUSE.Editor.Screen
             };
 
             _stylesInitialized = true;
+        }
+
+        private void DrawRightPanelProperties(Rect propertiesRect)
+        {
+            // Draw properties panel content using the tabs or properties display
+            if (FuseEditor.Instance != null && FuseEditor.Instance.EntitySelection != null)
+            {
+                var selection = FuseEditor.Instance.EntitySelection;
+                _propertiesPanel ??= new FuseEditorPropertiesPanel();
+                _propertiesPanel.Draw(propertiesRect, selection.SelectedHandlers, _propertyLabelStyle, _propertyValueStyle, _toolButtonStyle);
+            }
+        }
+
+        private void DrawRightPanelButtonTools(Rect buttonToolRect)
+        {
+            // Draw button tool panel
+            _buttonToolPanel ??= new UI.FuseEditorButtonToolPanel();
+            _buttonToolPanel.Draw(buttonToolRect);
         }
 
         private static Texture2D SolidTexture(Color color)

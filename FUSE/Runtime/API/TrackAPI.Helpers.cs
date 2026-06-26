@@ -18,7 +18,7 @@ namespace FUSE.Runtime.API
     public static partial class TrackAPI
     {
 
-        private static FuseSpan CloneSpanDefinition(FuseSpan definition)
+        public static FuseSpan CloneSpanDefinition(FuseSpan definition)
         {
             if (definition == null)
             {
@@ -34,7 +34,7 @@ namespace FUSE.Runtime.API
             };
         }
 
-        private static FuseNode CloneNodeDefinition(FuseNode definition)
+        public static FuseNode CloneNodeDefinition(FuseNode definition)
         {
             if (definition == null)
             {
@@ -51,7 +51,7 @@ namespace FUSE.Runtime.API
             };
         }
 
-        private static FuseSegment CloneSegmentDefinition(FuseSegment definition)
+        public static FuseSegment CloneSegmentDefinition(FuseSegment definition)
         {
             if (definition == null)
             {
@@ -78,7 +78,7 @@ namespace FUSE.Runtime.API
             };
         }
 
-        private static FuseTrackLocation CloneTrackLocation(FuseTrackLocation location)
+        public static FuseTrackLocation CloneTrackLocation(FuseTrackLocation location)
         {
             if (location == null)
             {
@@ -95,7 +95,7 @@ namespace FUSE.Runtime.API
             };
         }
 
-        private static FuseTrackLocation ToDefinition(Location location)
+        public static FuseTrackLocation ToDefinition(Location location)
         {
             if (location.segment == null)
             {

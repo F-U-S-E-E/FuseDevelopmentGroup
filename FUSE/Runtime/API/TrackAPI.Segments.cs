@@ -67,9 +67,11 @@ namespace FUSE.Runtime.API
             return segment;
         }
 
-        public static void UpdateSegment(string id, TrackSegment.Style style, int speedLimit, TrackClass? trackClass = null, int? priority = null, string groupId = null)
+        public static void UpdateSegment(string id, TrackNode start, TrackNode end, TrackSegment.Style style, int speedLimit, TrackClass? trackClass = null, int? priority = null, string groupId = null)
         {
             var segment = RequireSegment(id);
+            segment.a = start;
+            segment.b = end;
             segment.style = style;
             segment.speedLimit = speedLimit;
             if (trackClass != null)
@@ -105,6 +107,8 @@ namespace FUSE.Runtime.API
 
             UpdateSegment(
                 id,
+                RequireNode(definition.StartNodeId),
+                RequireNode(definition.EndNodeId),
                 ParseSegmentStyle(definition.Style),
                 definition.SpeedLimit,
                 ParseTrackClass(definition.TrackClass),

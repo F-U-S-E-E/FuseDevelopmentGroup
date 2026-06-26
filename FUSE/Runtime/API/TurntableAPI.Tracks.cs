@@ -263,7 +263,7 @@ namespace FUSE.Runtime.API
                     }
                     else
                     {
-                        TrackAPI.UpdateSegment(roundhouseSegmentId, TrackSegment.Style.Yard, 10);
+                        TrackAPI.UpdateSegment(roundhouseSegmentId, segment.a, segment.b, TrackSegment.Style.Yard, 10);
                     }
                 }
             }

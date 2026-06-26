@@ -2,18 +2,20 @@ using FUSE.Infrastructure;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using EditorHandlerBase = FUSE.Editor.EditorHandler.EditorHandlerBase;
 
 namespace FUSE.Editor.Overlays
 {
     /// <summary>
-    /// Manages selection interactions with overlay previews.
+    /// Manages selection interactions with overlay previews using EditorHandler instances.
     /// Handles raycasting, hit detection, and selection callbacks.
     /// </summary>
     public class OverlaySelectionSystem
     {
-        private readonly Dictionary<string, OverlayPreviewData> _previews;
+        private readonly Dictionary<string, EditorHandlerBase> _previews;
         private Camera _editorCamera;
         private OverlaySelectionArea _currentHoveredArea;
+        private string _currentHoveredPreviewId;
 
         /// <summary>
         /// Called when a preview is selected via rendering.
@@ -32,7 +34,7 @@ namespace FUSE.Editor.Overlays
         /// </summary>
         public event Action OnPreviewUnhovered;
 
-        public OverlaySelectionSystem(Dictionary<string, OverlayPreviewData> previews)
+        public OverlaySelectionSystem(Dictionary<string, EditorHandlerBase> previews)
         {
             _previews = previews ?? throw new ArgumentNullException(nameof(previews));
         }
@@ -138,6 +140,7 @@ namespace FUSE.Editor.Overlays
                 if (_currentHoveredArea != area)
                 {
                     _currentHoveredArea = area;
+                    _currentHoveredPreviewId = previewId;
                     OnPreviewHovered?.Invoke(previewId, area);
                 }
             }
@@ -146,6 +149,7 @@ namespace FUSE.Editor.Overlays
                 if (_currentHoveredArea != null)
                 {
                     _currentHoveredArea = null;
+                    _currentHoveredPreviewId = null;
                     OnPreviewUnhovered?.Invoke();
                 }
             }
@@ -159,6 +163,7 @@ namespace FUSE.Editor.Overlays
             if (_currentHoveredArea != null)
             {
                 _currentHoveredArea = null;
+                _currentHoveredPreviewId = null;
                 OnPreviewUnhovered?.Invoke();
             }
         }
@@ -167,6 +172,18 @@ namespace FUSE.Editor.Overlays
         /// Get the currently hovered selection area.
         /// </summary>
         public OverlaySelectionArea GetHoveredArea() => _currentHoveredArea;
+
+        /// <summary>
+        /// Get the handler for the currently hovered preview.
+        /// </summary>
+        public EditorHandlerBase GetHoveredHandler()
+        {
+            if (string.IsNullOrEmpty(_currentHoveredPreviewId) || !_previews.TryGetValue(_currentHoveredPreviewId, out var handler))
+            {
+                return null;
+            }
+            return handler;
+        }
 
         /// <summary>
         /// Get all selection areas for a specific preview.

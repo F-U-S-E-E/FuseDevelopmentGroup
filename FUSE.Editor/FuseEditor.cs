@@ -96,7 +96,8 @@ namespace FUSE.Editor
             DontDestroyOnLoad(go);
 
             _instance = go.AddComponent<FuseEditor>();
-            
+            go.AddComponent<FuseEditorChangeHandler>();
+
 
             Messenger.Default.Register<MapDidLoadEvent>(_instance, _instance.OnMapLoad);
             Messenger.Default.Register<MapDidUnloadEvent>(_instance, _instance.OnMapUnload);

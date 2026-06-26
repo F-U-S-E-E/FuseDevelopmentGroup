@@ -1,3 +1,4 @@
+using FUSE.Editor.EditorHandler;
 using FUSE.Editor.Overlays.Discovery;
 using FUSE.Editor.Track.Overlays.Discovery;
 using FUSE.Infrastructure;
@@ -6,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using static Core.SpatialHashLinear;
 
 namespace FUSE.Editor.Overlays
 {
@@ -19,11 +21,12 @@ namespace FUSE.Editor.Overlays
     public class FuseOverlayManager : MonoBehaviour
     {
         private FuseOverlayRenderer _renderer;
-        private OverlayDiscoverySystem _discoverySystem;
-        private bool _initialized;
-        private bool _isEnabled = true;
-        private bool _discoveryEnabled = false;
-        private readonly HashSet<string> _trackedOverlayIds = new HashSet<string>();
+            private OverlayDiscoverySystem _discoverySystem;
+            private OverlayTooltipManager _tooltipManager;
+            private bool _initialized;
+            private bool _isEnabled = true;
+            private bool _discoveryEnabled = false;
+            private readonly HashSet<string> _trackedOverlayIds = new HashSet<string>();
 
         /// <summary>
         /// Singleton instance of the overlay manager.
@@ -103,6 +106,10 @@ namespace FUSE.Editor.Overlays
                 _discoverySystem.RegisterStrategy(new TrackNodeDiscoveryStrategy());
                 _discoverySystem.RegisterStrategy(new TrackSegmentDiscoveryStrategy());
 
+                // Initialize tooltip manager
+                _tooltipManager = gameObject.AddComponent<OverlayTooltipManager>();
+                _tooltipManager.Initialize(_renderer.SelectionSystem);
+
                 _discoveryEnabled = true;
 
                 _initialized = true;
@@ -121,12 +128,14 @@ namespace FUSE.Editor.Overlays
             {
                 ProcessDiscovery();
             }
+            Vector2 mousePos = Mouse.current.position.ReadValue();
+
+            SelectionSystem.UpdateHoverFromMouse(mousePos);
 
             // Cleanup stale previews
-            CleanupStalePreviews();
             if (Mouse.current.leftButton.wasPressedThisFrame)
             {
-                TrySelectPreviewAtMouse(Mouse.current.position.ReadValue());
+                TrySelectPreviewAtMouse(mousePos);
             }
 
             if (!_isEnabled || _renderer == null)
@@ -134,7 +143,11 @@ namespace FUSE.Editor.Overlays
                 return;
             }
 
-            _renderer.RenderPreviews();
+            var camera = Camera.main ?? GetComponent<Camera>();
+            if (camera != null)
+            {
+                _renderer.RenderPreviews(camera);
+            }
         }
 
         #region Discovery System API
@@ -309,7 +322,14 @@ namespace FUSE.Editor.Overlays
         {
             try
             {
-                    CreateHandlerBasedOverlay(discovered);
+                if (FuseEditorChangeHandler.Instance.TryGetQueuedChange(discovered.ObjectId, discovered.Entity.GetType(), out var handler))
+                {
+                    RegisterPreview(discovered.ObjectId, handler);
+                }
+                else
+                {
+                    RegisterPreview(discovered.ObjectId, EditorHandlerRegistry.CreateHandler(discovered.Entity));
+                }
             }
             catch (Exception ex)
             {
@@ -322,11 +342,7 @@ namespace FUSE.Editor.Overlays
         /// </summary>
         private void UpdateOverlayForDiscoveredObject(DiscoveredOverlayObject discovered)
         {
-            // Check LOD status
-            discovered.DiscoveredAt = DateTime.Now;
-
-            // For now, LOD is tracked via priority tinting
-            // In future, could adjust mesh complexity or material
+            
         }
 
         /// <summary>
@@ -341,86 +357,19 @@ namespace FUSE.Editor.Overlays
         }
 
         /// <summary>
-        /// Creates an overlay using the handler system for objects with preview data.
-        /// </summary>
-        private void CreateHandlerBasedOverlay(DiscoveredOverlayObject discovered)
-        {
-            if (discovered.Entity == null)
-            {
-                return;
-            }
-
-            var entityType = discovered.Entity.GetType();
-            var previewDataType = discovered.PreviewData.GetType();
-
-            // Use reflection to call the generic ApplyPreview method
-            try
-            {
-                var method = typeof(OverlayHandlerRegistry)
-                    .GetMethods()
-                    .FirstOrDefault(m =>
-                        m.Name == "ApplyPreview" &&
-                        m.IsGenericMethodDefinition &&
-                        m.GetGenericArguments().Length == 2 &&
-                        m.GetParameters().Length == 3);
-
-                if (method != null)
-                {
-                    var genericMethod = method.MakeGenericMethod(entityType, previewDataType);
-                    var result = genericMethod.Invoke(
-                        HandlerRegistry,
-                        new object[] { discovered.Entity, discovered.PreviewData, discovered.ObjectId });
-
-                    if (result is OverlayPreviewData previewData && previewData != null)
-                    {
-                        _renderer.RegisterPreview(previewData);
-                        FuseLog.Info($"FuseOverlayManager: Created handler-based overlay for '{discovered.ObjectId}'");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Warning($"FuseOverlayManager: Handler-based overlay creation failed: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Removes stale previews that haven't been discovered recently.
+        /// Cleans up stale previews that shouldn't be rendered anymore.
         /// </summary>
         private void CleanupStalePreviews()
         {
-            if (!_initialized || _discoverySystem == null)
-            {
-                return;
-            }
-
-            var stalePreviews = _discoverySystem.GetStalePreviews();
-            foreach (var previewId in stalePreviews)
-            {
-                if (_renderer != null && _renderer.HasPreview(previewId))
-                {
-                    _renderer.UnregisterPreview(previewId);
-                    _trackedOverlayIds.Remove(previewId);
-                    FuseLog.Info($"FuseOverlayManager: Removed stale preview '{previewId}'");
-                }
-            }
+            // This is called during Update to clean up old previews
+            // For now, this is handled by the discovery system
+            // Additional cleanup logic can be added here as needed
         }
 
-        #endregion        /// <summary>
-        /// Gets the handler registry for registering entity-specific overlay handlers.
-        /// Use this to register handlers for custom entity types.
-        /// </summary>
-        public OverlayHandlerRegistry HandlerRegistry
-        {
-            get
-            {
-                if (!_initialized)
-                {
-                    Initialize();
-                }
-                return _renderer.HandlerRegistry;
-            }
-        }
+        #endregion
+
+        // Handler registry has been removed - EditorHandler instances are now managed directly by FuseOverlayRenderer
+        // Use FuseOverlayRenderer.RegisterPreview() to add previews directly
 
         /// <summary>
         /// Gets the selection system for handling overlay selection interactions.
@@ -437,139 +386,70 @@ namespace FUSE.Editor.Overlays
             }
         }
 
-        /// <summary>
-        /// Applies a preview for an entity using its registered dual-type handler.
-        /// Generic API that works with any entity type that has a registered handler.
-        /// </summary>
-        /// <typeparam name="TEntity">The entity type (e.g., TrackNode, Building).</typeparam>
-        /// <typeparam name="TPreviewData">The preview data type.</typeparam>
-        /// <param name="entity">The entity to create a preview for.</param>
-        /// <param name="previewData">The preview/pending-edit data.</param>
-        /// <returns>The preview data, or null if failed.</returns>
-        public OverlayPreviewData ApplyPreview<TEntity, TPreviewData>(TEntity entity, TPreviewData previewData)
-        {
-            if (!_initialized)
-            {
-                Initialize();
-            }
-
-            return _renderer.ApplyPreview(entity, previewData);
-        }
-
-        /// <summary>
-        /// Applies a preview for an entity and returns its preview ID.
-        /// Convenience overload that returns the ID for further reference.
-        /// </summary>
-        /// <typeparam name="TEntity">The entity type.</typeparam>
-        /// <typeparam name="TPreviewData">The preview data type.</typeparam>
-        /// <param name="entity">The entity to create a preview for.</param>
-        /// <param name="previewData">The preview/pending-edit data.</param>
-        /// <param name="previewId">Output: the ID of the created preview.</param>
-        /// <returns>The preview data, or null if failed.</returns>
-        public OverlayPreviewData ApplyPreview<TEntity, TPreviewData>(TEntity entity, TPreviewData previewData, out string previewId)
-        {
-            if (!_initialized)
-            {
-                Initialize();
-            }
-
-            return _renderer.ApplyPreview(entity, previewData, out previewId);
-        }
-
-        /// <summary>
-        /// Updates an existing preview from entity and preview data using its handler.
-        /// </summary>
-        /// <typeparam name="TEntity">The entity type.</typeparam>
-        /// <typeparam name="TPreviewData">The preview data type.</typeparam>
-        /// <param name="objectId">The ID of the preview to update.</param>
-        /// <param name="entity">The entity with updated values.</param>
-        /// <param name="previewData">The updated preview/pending-edit data.</param>
-        public void UpdatePreviewFromEntity<TEntity, TPreviewData>(string objectId, TEntity entity, TPreviewData previewData)
-        {
-            if (!_initialized)
-            {
-                return;
-            }
-
-            _renderer.UpdatePreviewFromEntity(objectId, entity, previewData);
-        }
+        // Old generic ApplyPreview<TEntity, TPreviewData> methods have been replaced
+        // Use EditorHandler concrete implementations (TrackNodeEditorHandler, TrackSegmentEditorHandler, etc.)
+        // and call FuseOverlayRenderer.RegisterPreview() instead
+        //
+        // Example:
+        //   var handler = new TrackNodeEditorHandler(id, trackNode, fuseNode);
+        //   _renderer.RegisterPreview(id, handler);
 
         /// <summary>
         /// Registers a preview for an object with pending edits.
         /// </summary>
-        /// <param name="objectId">Unique identifier for the object.</param>
-        /// <param name="originalObject">The original game object (not modified by the overlay).</param>
-        /// <param name="fuseData">The preview/pending-edit data (e.g., FuseNode).</param>
-        /// <param name="renderable">Optional IOverlayRenderable for custom rendering.</param>
-        /// <returns>The preview data object.</returns>
-        public OverlayPreviewData RegisterPreview(
-            string objectId,
-            GameObject originalObject,
-            object fuseData,
-            IOverlayRenderable renderable = null)
+        /// <param name="handlerId">Unique identifier for the handler.</param>
+        /// <param name="handler">The EditorHandler instance managing the overlay rendering.</param>
+        public void RegisterPreview(string handlerId, EditorHandler.EditorHandlerBase handler)
         {
             if (!_initialized)
             {
                 Initialize();
             }
 
-            return _renderer.RegisterPreview(objectId, originalObject, fuseData, renderable);
+            _renderer.RegisterPreview(handlerId, handler);
+            _trackedOverlayIds.Add(handlerId);
+            OnPreviewAdded?.Invoke(handlerId);
         }
 
         /// <summary>
-        /// Updates an existing preview's transform.
+        /// Gets a registered preview handler by ID.
         /// </summary>
-        public void UpdatePreview(
-            string objectId,
-            Vector3 position,
-            Quaternion rotation,
-            Vector3 scale)
-        {
-            if (!_initialized)
-            {
-                return;
-            }
-
-            _renderer.UpdatePreview(objectId, position, rotation, scale);
-        }
-
-        /// <summary>
-        /// Gets a registered preview by ID.
-        /// </summary>
-        public OverlayPreviewData GetPreview(string objectId)
+        public EditorHandler.EditorHandlerBase GetPreview(string handlerId)
         {
             if (!_initialized)
             {
                 return null;
             }
 
-            return _renderer.GetPreview(objectId);
+            return _renderer.GetPreview(handlerId);
         }
 
         /// <summary>
         /// Checks whether a preview is registered.
         /// </summary>
-        public bool HasPreview(string objectId)
+        public bool HasPreview(string handlerId)
         {
             if (!_initialized)
             {
                 return false;
             }
 
-            return _renderer.HasPreview(objectId);
+            return _renderer.HasPreview(handlerId);
         }
 
         /// <summary>
         /// Unregisters and stops rendering a preview.
         /// </summary>
-        public void UnregisterPreview(string objectId)
+        public void UnregisterPreview(string handlerId)
         {
             if (!_initialized)
             {
                 return;
             }
 
-            _renderer.UnregisterPreview(objectId);
+            _renderer.UnregisterPreview(handlerId);
+            _trackedOverlayIds.Remove(handlerId);
+            OnPreviewRemoved?.Invoke(handlerId);
         }
 
         /// <summary>
@@ -651,46 +531,26 @@ namespace FUSE.Editor.Overlays
                 out var previewId,
                 out var selectionArea))
             {
-                var preview = _renderer.GetPreview(previewId);
-                if (preview != null && preview.Entity != null)
+                var handler = _renderer.GetPreview(previewId);
+
+                FuseLog.Info($"Preview selected: {handler.ID}");
+
+                FuseEditor.Instance.EntitySelection.OnSelected(handler);
+
+                /*
+                if (Keyboard.current.shiftKey.isPressed)
                 {
-                    // Directly invoke via dynamic dispatch on handler registry
-                    InvokeSelectionCallback(preview, selectionArea);
-                    return true;
+                    FuseEditor.Instance.EntitySelection.ToggleSelection(handler);
                 }
+                else
+                {
+                    FuseEditor.Instance.EntitySelection.ClearSelection();
+                    FuseEditor.Instance.EntitySelection.AddToSelection(handler);
+                }
+                */
             }
 
             return false;
-        }
-
-        /// <summary>
-        /// Invokes the handler's selection callback for a preview using generic dispatch.
-        /// </summary>
-        private void InvokeSelectionCallback(OverlayPreviewData preview, OverlaySelectionArea selectionArea)
-        {
-            if (preview?.Entity == null)
-            {
-                return;
-            }
-
-            // Get the entity type and preview data type
-            var entityType = preview.Entity.GetType();
-            var previewDataType = preview.FuseData?.GetType() ?? typeof(object);
-
-            try
-            {
-                // Use reflection to invoke the generic handler method
-                // InvokeSelectionCallback<TEntity, TPreviewData> requires both type parameters
-                var method = typeof(OverlayHandlerRegistry)
-                    .GetMethod(nameof(OverlayHandlerRegistry.InvokeSelectionCallback))
-                    .MakeGenericMethod(entityType, previewDataType);
-
-                method.Invoke(HandlerRegistry, new object[] { preview.Entity, preview.FuseData, selectionArea });
-            }
-            catch (System.Exception ex)
-            {
-                FuseLog.Exception($"FuseOverlayManager: Failed to invoke selection callback", ex);
-            }
         }
 
         private void OnDestroy()
