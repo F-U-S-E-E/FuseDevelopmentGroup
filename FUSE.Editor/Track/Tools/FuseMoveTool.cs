@@ -1,3 +1,4 @@
+using FUSE.Editor.Gizmos;
 using FUSE.Editor.Screen.UI;
 
 namespace FUSE.Editor.Track.Tools
@@ -10,6 +11,8 @@ namespace FUSE.Editor.Track.Tools
     /// </summary>
     internal sealed class FuseMoveTool : IFuseEditorTool
     {
+        FuseGizmoManager GizmoManager => FuseEditor.Instance.GizmoManager;
+
         public const string ToolId = "fuse.editor.tool.move";
 
         public string Id => ToolId;
@@ -20,16 +23,32 @@ namespace FUSE.Editor.Track.Tools
 
         public void OnActivate()
         {
-            
+            if (GizmoManager.HasActiveGizmo)
+            {
+                GizmoManager.EndCurrentGizmo();
+            }
+            if (FuseEditor.Instance.EntitySelection.SelectionCount == 1)
+            {
+                GizmoManager.BeginMove(FuseEditor.Instance.EntitySelection.PrimaryHandler);
+            }
+            else if (FuseEditor.Instance.EntitySelection.SelectionCount > 1)
+            {
+                GizmoManager.BeginMoveMultiple(FuseEditor.Instance.EntitySelection.SelectedHandlers);
+            }
+
+            FuseEditor.Instance.EntitySelection.BlockSelecting();
         }
 
         public void OnDeactivate()
         {
             // Selected.Deselect() tears down whatever gizmo is attached
             // (move OR rotate), so we don't need to distinguish here.
-            
+            GizmoManager.EndCurrentGizmo();
+            FuseEditor.Instance.EntitySelection.AllowSelecting();
         }
 
-        public void Tick() { }
+        public void Tick() {
+            
+        }
     }
 }

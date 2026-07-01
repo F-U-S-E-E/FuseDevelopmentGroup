@@ -77,7 +77,7 @@ namespace FUSE.Authoring.Serialization
         {
             return new JsonSerializerSettings
             {
-                ContractResolver = new CamelCasePropertyNamesContractResolver(),
+                ContractResolver = new CamelCasePreserveDictionaryKeysResolver(),
                 NullValueHandling = NullValueHandling.Ignore,
                 DefaultValueHandling = DefaultValueHandling.Include,
                 Formatting = Formatting.Indented,

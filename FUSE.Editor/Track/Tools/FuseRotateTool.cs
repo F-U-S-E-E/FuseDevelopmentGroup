@@ -1,3 +1,4 @@
+using FUSE.Editor.Gizmos;
 using FUSE.Editor.Screen.UI;
 
 namespace FUSE.Editor.Track.Tools
@@ -8,6 +9,8 @@ namespace FUSE.Editor.Track.Tools
     /// </summary>
     internal sealed class FuseRotateTool : IFuseEditorTool
     {
+        FuseGizmoManager GizmoManager => FuseEditor.Instance.GizmoManager;
+
         public const string ToolId = "fuse.editor.tool.rotate";
 
         public string Id => ToolId;
@@ -18,12 +21,26 @@ namespace FUSE.Editor.Track.Tools
 
         public void OnActivate()
         {
-            
+            if (GizmoManager.HasActiveGizmo)
+            {
+                GizmoManager.EndCurrentGizmo();
+            }
+            if (FuseEditor.Instance.EntitySelection.SelectionCount == 1)
+            {
+                GizmoManager.BeginRotate(FuseEditor.Instance.EntitySelection.PrimaryHandler);
+            }
+            else if (FuseEditor.Instance.EntitySelection.SelectionCount > 1)
+            {
+                GizmoManager.BeginRotateMultiple(FuseEditor.Instance.EntitySelection.SelectedHandlers);
+            }
+
+            FuseEditor.Instance.EntitySelection.BlockSelecting();
         }
 
         public void OnDeactivate()
         {
-            
+            GizmoManager.EndCurrentGizmo();
+            FuseEditor.Instance.EntitySelection.AllowSelecting();
         }
 
         public void Tick() { }

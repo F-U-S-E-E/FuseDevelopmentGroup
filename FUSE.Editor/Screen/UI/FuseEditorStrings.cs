@@ -95,6 +95,18 @@ namespace FUSE.Editor.Screen.UI
             ["fuse.editor.toolbar.grid.description"]            = "Toggle the placement grid overlay. (Coming soon.)",
             ["fuse.editor.toolbar.camera"]                      = "Camera",
             ["fuse.editor.toolbar.camera.description"]          = "Reset the camera to the default view.",
+            ["fuse.editor.toolbar.origin"]                      = "Origin",
+            ["fuse.editor.toolbar.origin.description"]          = "Whether the Gizmo is centered on the primary object or the average of the selected objects.",
+            ["fuse.editor.toolbar.origin.object"]               = "Object",
+            ["fuse.editor.toolbar.origin.object.description"]   = "Center the Gizmo on the primary object.",
+            ["fuse.editor.toolbar.origin.group"]                = "Group",
+            ["fuse.editor.toolbar.origin.group.description"]    = "Center the Gizmo on the average of the selected objects.",
+            ["fuse.editor.toolbar.transform"]                   = "Transform",
+            ["fuse.editor.toolbar.transform.description"]       = "Switch between Global and Local transform space for the Gizmo.",
+            ["fuse.editor.toolbar.transform.global"]            = "Global",
+            ["fuse.editor.toolbar.transform.global.description"] = "Gizmo axes align with the world coordinate system.",
+            ["fuse.editor.toolbar.transform.local"]             = "Local",
+            ["fuse.editor.toolbar.transform.local.description"] = "Gizmo axes align with the selected object's local coordinate system.",
 
             // Settings panel
             ["fuse.editor.settings.title"]                      = "FUSE Editor Settings",

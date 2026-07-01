@@ -1,4 +1,5 @@
 using FUSE.Infrastructure;
+using Helpers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -145,7 +146,7 @@ namespace FUSE.Editor.Overlays
             // Sort previews by distance from camera (closest first)
             var cameraPos = camera.transform.position;
             var sortedPreviews = _activePreviews.Values
-                .OrderBy(h => Vector3.Distance(h.GetPosition(), cameraPos))
+                .OrderBy(h => Vector3.Distance(WorldTransformer.GameToWorld(h.GetPosition()), cameraPos))
                 .ToList();
 
             // Render each preview

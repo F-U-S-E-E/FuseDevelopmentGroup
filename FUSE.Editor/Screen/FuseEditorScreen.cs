@@ -118,6 +118,8 @@ namespace FUSE.Editor.Screen
         // stays a thin orchestrator over composed components.
         private FuseEditorMenuBar _menuBar;
         private FuseEditorIconToolbar _toolbar;
+        private FuseEditorToolbarDropdown _toolOriginDropdown;
+        private FuseEditorToolbarDropdown _toolTransformDropdown;
         private FuseEditorTabStrip _leftTabs;
         private FuseEditorTabStrip _rightTabs;
         private string _assetSearchBuffer = string.Empty;
@@ -295,6 +297,28 @@ namespace FUSE.Editor.Screen
                     onClick: ResetCameraToDefaultSpawn));
 
             _toolbar = new FuseEditorIconToolbar(new[] { fileGroup, historyGroup, gizmoGroup, viewGroup });
+
+            // Initialize tool origin dropdown (Object or Group)
+            _toolOriginDropdown = new FuseEditorToolbarDropdown(
+                id: "tool_origin",
+                labelKey: "fuse.editor.toolbar.origin",
+                options: new[]
+                {
+                    new FuseEditorToolbarDropdown.Option("object", "fuse.editor.toolbar.origin.object", FuseEditor.Instance.GizmoManager.SetGizmoOriginToObject),
+                    new FuseEditorToolbarDropdown.Option("group", "fuse.editor.toolbar.origin.group", FuseEditor.Instance.GizmoManager.SetGizmoOriginToGroup)
+                },
+                initialSelectedId: "object");
+
+            // Initialize tool transform dropdown (Local or Global)
+            _toolTransformDropdown = new FuseEditorToolbarDropdown(
+                id: "tool_transform",
+                labelKey: "fuse.editor.toolbar.transform",
+                options: new[]
+                {
+                    new FuseEditorToolbarDropdown.Option("local", "fuse.editor.toolbar.transform.local", FuseEditor.Instance.GizmoManager.SetGizmoSpaceToLocal),
+                    new FuseEditorToolbarDropdown.Option("global", "fuse.editor.toolbar.transform.global", FuseEditor.Instance.GizmoManager.SetGizmoSpaceToGlobal)
+                },
+                initialSelectedId: "local");
         }
 
         private static FuseEditorIconToolbar.Button ToolButton(FuseEditorIconKind icon, string labelKey, string toolId)
@@ -308,6 +332,22 @@ namespace FUSE.Editor.Screen
                     if (tool != null) FuseEditorToolRegistry.SetActive(tool);
                 },
                 isActive: () => FuseEditorToolRegistry.Active?.Id == "fuse.editor.tool." + toolId.Substring(toolId.LastIndexOf('.') + 1));
+        }
+
+        private void DrawToolbarDropdowns(Rect rect)
+        {
+            const float dropdownHeight = 24f;
+            const float dropdownSpacing = 6f;
+            const float dropdownWidth = 100f;
+            const float yPadding = (ToolbarHeight - dropdownHeight) / 2f;
+
+            // Draw tool origin dropdown
+            var originRect = new Rect(rect.x, rect.y + yPadding, dropdownWidth, dropdownHeight);
+            _toolOriginDropdown.Draw(originRect);
+
+            // Draw tool transform dropdown
+            var transformRect = new Rect(originRect.xMax + dropdownSpacing, rect.y + yPadding, dropdownWidth, dropdownHeight);
+            _toolTransformDropdown.Draw(transformRect);
         }
 
         private void BuildLeftTabs()
@@ -632,7 +672,10 @@ namespace FUSE.Editor.Screen
                 _menuBar.DrawBar(menuRect);
 
                 var toolbarRect = new Rect(0f, MenuBarHeight, screenRect.width, ToolbarHeight);
-                _toolbar.Draw(toolbarRect);
+                float toolbarEndX = _toolbar.Draw(toolbarRect);
+
+                // Draw dropdowns in the toolbar on the right side
+                DrawToolbarDropdowns(new Rect(toolbarEndX + 12f, MenuBarHeight, screenRect.width - toolbarEndX - 12f, ToolbarHeight));
 
                 // Side panels + viewport render unconditionally now.
                 // ActiveMod = null no longer gates the surface — a
@@ -1096,7 +1139,6 @@ namespace FUSE.Editor.Screen
 
             // Flush any pending property changes after drawing is complete to avoid
             // ReaderWriterLockSlim lock promotion errors during the draw cycle
-            _propertiesPanel.FlushPendingChanges();
         }
 
         private void DrawPropertiesContent(Rect contentRect)

@@ -113,6 +113,9 @@ namespace FUSE.Editor.Screen.UI
         private static GUIStyle _playCta;
         private static GUIStyle _searchField;
         private static GUIStyle _tooltipBox;
+        private static GUIStyle _toolbarDropdownLabel;
+        private static GUIStyle _toolbarDropdownItem;
+        private static GUIStyle _toolbarDropdownItemActive;
 
         // Cache one solid texture per palette entry so repeated style
         // creation doesn't leak per-call textures.
@@ -140,6 +143,9 @@ namespace FUSE.Editor.Screen.UI
         public static GUIStyle PlayCta => Ensure(ref _playCta, CreatePlayCtaStyle);
         public static GUIStyle SearchField => Ensure(ref _searchField, CreateSearchFieldStyle);
         public static GUIStyle TooltipBox => Ensure(ref _tooltipBox, CreateTooltipBoxStyle);
+        public static GUIStyle ToolbarDropdownLabel => Ensure(ref _toolbarDropdownLabel, CreateToolbarDropdownLabelStyle);
+        public static GUIStyle ToolbarDropdownItem => Ensure(ref _toolbarDropdownItem, CreateToolbarDropdownItemStyle);
+        public static GUIStyle ToolbarDropdownItemActive => Ensure(ref _toolbarDropdownItemActive, CreateToolbarDropdownItemActiveStyle);
 
         /// <summary>
         /// Forces all styles to be built. Call once at editor screen
@@ -157,6 +163,7 @@ namespace FUSE.Editor.Screen.UI
             _ = PropertyLabel; _ = PropertyValue;
             _ = BottomBar; _ = BottomBarText; _ = PlayCta;
             _ = SearchField; _ = TooltipBox;
+            _ = ToolbarDropdownLabel; _ = ToolbarDropdownItem; _ = ToolbarDropdownItemActive;
             _initialized = true;
         }
 
@@ -175,6 +182,7 @@ namespace FUSE.Editor.Screen.UI
             _propertyLabel = null; _propertyValue = null;
             _bottomBar = null; _bottomBarText = null; _playCta = null;
             _searchField = null; _tooltipBox = null;
+            _toolbarDropdownLabel = null; _toolbarDropdownItem = null; _toolbarDropdownItemActive = null;
             foreach (var tex in SolidTextures.Values)
             {
                 if (tex != null) Object.DestroyImmediate(tex);
@@ -410,6 +418,32 @@ namespace FUSE.Editor.Screen.UI
             padding = new RectOffset(8, 8, 4, 4),
             wordWrap = true,
         };
+
+        public static GUIStyle CreateToolbarDropdownLabelStyle() => new GUIStyle
+        {
+            normal = { textColor = Palette.TextPrimary },
+            fontSize = 12,
+            alignment = TextAnchor.MiddleLeft,
+            padding = new RectOffset(4, 4, 2, 2),
+        };
+
+        public static GUIStyle CreateToolbarDropdownItemStyle() => new GUIStyle
+        {
+            normal = { textColor = Palette.TextPrimary },
+            hover = { background = SolidTexture(Palette.HighlightHover), textColor = Palette.TextPrimary },
+            fontSize = 12,
+            alignment = TextAnchor.MiddleLeft,
+            padding = new RectOffset(8, 8, 2, 2),
+        };
+
+        public static GUIStyle CreateToolbarDropdownItemActiveStyle()
+        {
+            var style = new GUIStyle(CreateToolbarDropdownItemStyle());
+            style.normal.background = SolidTexture(Palette.HighlightSelected);
+            style.normal.textColor = Palette.TextAccent;
+            style.fontStyle = FontStyle.Bold;
+            return style;
+        }
 
         // -----------------------------------------------------------------
         // Convenience drawing helpers

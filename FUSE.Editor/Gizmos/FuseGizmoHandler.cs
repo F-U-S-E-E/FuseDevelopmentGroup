@@ -1,4 +1,6 @@
+using FUSE.Editor.EditorHandler;
 using FUSE.Infrastructure;
+using Helpers;
 using RLD;
 using System;
 using UnityEngine;
@@ -8,6 +10,9 @@ namespace FUSE.Editor.Gizmos
     /// <summary>
     /// Base class for handling RLD gizmo interactions. Manages initialization,
     /// movement tracking, and provides callbacks when the gizmo operation completes.
+    /// 
+    /// Creates a proxy GameObject for gizmo manipulation to decouple the gizmo
+    /// from the actual game object (which may not exist for abstract handlers).
     /// </summary>
     public abstract class FuseGizmoHandler : IDisposable
     {
@@ -17,9 +22,16 @@ namespace FUSE.Editor.Gizmos
         protected ObjectTransformGizmo TransformGizmo { get; private set; }
 
         /// <summary>
-        /// The target GameObject the gizmo is manipulating.
+        /// The target EditorHandlerBase being manipulated by the gizmo.
         /// </summary>
-        protected GameObject Target { get; private set; }
+        protected EditorHandlerBase Handler { get; private set; }
+
+        /// <summary>
+        /// Temporary proxy GameObject that serves as the gizmo target.
+        /// Synced to the handler's transform at initialization and its changes
+        /// are applied back to the handler when the gizmo completes.
+        /// </summary>
+        protected GameObject GizmoTarget { get; private set; }
 
         /// <summary>
         /// Initial position of the target when the gizmo was activated.
@@ -41,37 +53,55 @@ namespace FUSE.Editor.Gizmos
         /// </summary>
         public bool IsActive { get; private set; }
 
+        public GizmoSpace TransformSpace { get; private set; } = GizmoSpace.Global;
+
+        public FuseGizmoManager.GizmoOrigin GizmoOrigin { get; private set; } = FuseGizmoManager.GizmoOrigin.Object;
+
         /// <summary>
-        /// Initializes the gizmo handler with a target GameObject.
+        /// Initializes the gizmo handler with a target EditorHandlerBase.
         /// </summary>
-        /// <param name="target">The GameObject to manipulate with the gizmo.</param>
+        /// <param name="handler">The EditorHandlerBase to manipulate with the gizmo.</param>
         /// <returns>True if initialization succeeded, false otherwise.</returns>
-        public virtual bool Initialize(GameObject target)
+        public virtual bool Initialize(EditorHandlerBase handler)
         {
-            if (target == null)
+            if (handler == null)
             {
-                FuseLog.Error("FUSE gizmo: Cannot initialize with null target.");
+                FuseLog.Error("FUSE gizmo: Cannot initialize with null handler.");
                 return false;
             }
 
-            Target = target;
-            InitialPosition = target.transform.position;
-            InitialRotation = target.transform.rotation;
-            InitialScale = target.transform.localScale;
+            Handler = handler;
+            InitialPosition = WorldTransformer.GameToWorld(handler.GetPosition());
+            InitialRotation = handler.GetRotation();
+            InitialScale = handler.GetScale();
+
+            // Create a proxy GameObject for the gizmo to manipulate
+            GizmoTarget = CreateGizmoTargetObject();
+            if (GizmoTarget == null)
+            {
+                FuseLog.Error("FUSE gizmo: Failed to create gizmo target object.");
+                return false;
+            }
+
+            // Set the proxy to match the handler's current transform
+            GizmoTarget.transform.position = InitialPosition;
+            GizmoTarget.transform.rotation = InitialRotation;
+            GizmoTarget.transform.localScale = InitialScale;
 
             // Create the appropriate gizmo type
             TransformGizmo = CreateGizmo();
             if (TransformGizmo == null)
             {
                 FuseLog.Error("FUSE gizmo: Failed to create gizmo instance.");
+                CleanupGizmoTarget();
                 return false;
             }
 
             // Configure the gizmo
             ConfigureGizmo();
 
-            // Set the target for manipulation
-            TransformGizmo.SetTargetObject(target);
+            // Set the proxy as the gizmo target
+            TransformGizmo.SetTargetObject(GizmoTarget);
             TransformGizmo.RefreshPositionAndRotation();
 
             // Register for gizmo events
@@ -79,6 +109,57 @@ namespace FUSE.Editor.Gizmos
 
             IsActive = true;
             return true;
+        }
+
+        public void SetTransformSpace(GizmoSpace space)
+        {
+            TransformSpace = space;
+            if (TransformGizmo != null)
+            {
+                TransformGizmo.SetTransformSpace(space);
+            }
+        }
+
+        public void SetGizmoOrigin(FuseGizmoManager.GizmoOrigin origin)
+        {
+            GizmoOrigin = origin;
+        }
+
+        /// <summary>
+        /// Creates a temporary proxy GameObject for the gizmo to manipulate.
+        /// </summary>
+        /// <returns>A new GameObject, or null if creation failed.</returns>
+        protected virtual GameObject CreateGizmoTargetObject()
+        {
+            var proxyObject = new GameObject("FUSE_GizmoTarget");
+            if (proxyObject == null)
+            {
+                FuseLog.Error("FUSE gizmo: Failed to instantiate gizmo target GameObject.");
+                return null;
+            }
+
+            // Ensure the proxy doesn't show up in the scene
+            proxyObject.hideFlags = HideFlags.HideInHierarchy | HideFlags.NotEditable;
+            return proxyObject;
+        }
+
+        /// <summary>
+        /// Cleans up the temporary gizmo target object.
+        /// </summary>
+        protected virtual void CleanupGizmoTarget()
+        {
+            if (GizmoTarget != null)
+            {
+                try
+                {
+                    UnityEngine.Object.DestroyImmediate(GizmoTarget);
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception("FUSE gizmo: Failed to clean up gizmo target object", ex);
+                }
+                GizmoTarget = null;
+            }
         }
 
         /// <summary>
@@ -96,7 +177,7 @@ namespace FUSE.Editor.Gizmos
             if (TransformGizmo == null) return;
 
             // Default to world space and center pivot
-            TransformGizmo.SetTransformSpace(GizmoSpace.Global);
+            TransformGizmo.SetTransformSpace(TransformSpace);
             TransformGizmo.SetTransformPivot(GizmoObjectTransformPivot.ObjectCenterPivot);
         }
 
@@ -145,15 +226,20 @@ namespace FUSE.Editor.Gizmos
         /// </summary>
         private void OnGizmoDragEnd(Gizmo gizmo, int handleId)
         {
-            if (Target == null)
+            if (Handler == null || GizmoTarget == null)
             {
                 return;
             }
 
-            // Capture final transform state
-            var finalPosition = Target.transform.position;
-            var finalRotation = Target.transform.rotation;
-            var finalScale = Target.transform.localScale;
+            // Capture final transform state from the gizmo target proxy
+            var finalPosition = GizmoTarget.transform.position;
+            var finalRotation = GizmoTarget.transform.rotation;
+            var finalScale = GizmoTarget.transform.localScale;
+
+            // Apply the changes through the handler
+            Handler.SetPosition(WorldTransformer.WorldToGame(finalPosition), createUndoRedo: true);
+            Handler.SetRotation(finalRotation, createUndoRedo: true);
+            Handler.SetScale(finalScale, createUndoRedo: true);
 
             // Invoke the appropriate completion callback
             OnGizmoCompleted(finalPosition, finalRotation, finalScale);
@@ -173,11 +259,11 @@ namespace FUSE.Editor.Gizmos
         /// </summary>
         public void Cancel()
         {
-            if (Target != null)
+            if (Handler != null)
             {
-                Target.transform.position = InitialPosition;
-                Target.transform.rotation = InitialRotation;
-                Target.transform.localScale = InitialScale;
+                Handler.SetPosition(WorldTransformer.WorldToGame(InitialPosition), createUndoRedo: false);
+                Handler.SetRotation(InitialRotation, createUndoRedo: false);
+                Handler.SetScale(InitialScale, createUndoRedo: false);
             }
 
             Deactivate();
@@ -227,7 +313,8 @@ namespace FUSE.Editor.Gizmos
                 TransformGizmo = null;
             }
 
-            Target = null;
+            CleanupGizmoTarget();
+            Handler = null;
         }
     }
 }

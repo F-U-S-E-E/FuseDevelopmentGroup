@@ -83,7 +83,10 @@ namespace FUSE.Editor
         public void QueueChange(EditorHandlerBase handler, object OldFuseData)
         {
             // Implement logic to queue changes for later application
-            undoStack.Add(new UndoEntry(handler, OldFuseData));
+            if (OldFuseData != null)
+            {
+                undoStack.Add(new UndoEntry(handler, OldFuseData));
+            }
 
             if (!queuedApplyHandlers.Contains(handler))
             {

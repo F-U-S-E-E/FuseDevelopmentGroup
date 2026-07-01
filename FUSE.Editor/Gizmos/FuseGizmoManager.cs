@@ -1,16 +1,30 @@
+using FUSE.Editor.EditorHandler;
 using FUSE.Infrastructure;
+using RLD;
 using System;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace FUSE.Editor.Gizmos
 {
     /// <summary>
     /// Manages active gizmo handlers and ensures only one gizmo is active at a time.
-    /// Provides a simplified API for starting move/rotate/scale operations.
+    /// Provides a simplified API for starting move/rotate/scale operations on single or multiple handlers.
     /// </summary>
     public class FuseGizmoManager : IDisposable
     {
+        public enum GizmoOrigin
+        {
+            Object,
+            Group
+        }
+
+        private GizmoOrigin origin = GizmoOrigin.Object;
+        private GizmoSpace space = GizmoSpace.Local;
+
         private FuseGizmoHandler _activeHandler;
+        private FuseMultiGizmoHandler _activeMultiHandler;
 
         /// <summary>
         /// The currently active gizmo handler, or null if no gizmo is active.
@@ -18,107 +32,302 @@ namespace FUSE.Editor.Gizmos
         public FuseGizmoHandler ActiveHandler => _activeHandler;
 
         /// <summary>
-        /// Whether a gizmo is currently active.
+        /// The currently active multi-handler gizmo, or null if no multi-gizmo is active.
         /// </summary>
-        public bool HasActiveGizmo => _activeHandler != null && _activeHandler.IsActive;
+        public FuseMultiGizmoHandler ActiveMultiHandler => _activeMultiHandler;
 
         /// <summary>
-        /// Starts a move operation on the target GameObject.
+        /// Whether a gizmo is currently active (single or multi).
         /// </summary>
-        /// <param name="target">The GameObject to move.</param>
+        public bool HasActiveGizmo => (_activeHandler != null && _activeHandler.IsActive) || (_activeMultiHandler != null && _activeMultiHandler.IsActive);
+
+        public GizmoOrigin GetGizmoOrigin()
+        {
+            return origin;
+        }
+
+        public void SetGizmoOrigin(GizmoOrigin newOrigin)
+        {
+            origin = newOrigin;
+
+            if (_activeHandler != null)
+            {
+                _activeHandler.SetGizmoOrigin(origin);
+            }
+            if (_activeMultiHandler != null)
+            {
+                _activeMultiHandler.SetGizmoOrigin(origin);
+            }
+        }
+
+        public void SetGizmoOriginToObject()
+        {
+            SetGizmoOrigin(GizmoOrigin.Object);
+        }
+
+        public void SetGizmoOriginToGroup()
+        {
+            SetGizmoOrigin(GizmoOrigin.Group);
+        }
+
+        public GizmoSpace GetGizmoSpace()
+        {
+            return space;
+        }
+
+        public void SetGizmoSpace(GizmoSpace newSpace)
+        {
+            space = newSpace;
+
+            if (_activeHandler != null)
+            {
+                _activeHandler.SetTransformSpace(space);
+            }
+            if (_activeMultiHandler != null)
+            {
+                _activeMultiHandler.SetTransformSpace(space);
+            }
+        }
+
+        public void SetGizmoSpaceToLocal()
+        {
+            SetGizmoSpace(GizmoSpace.Local);
+        }
+
+        public void SetGizmoSpaceToGlobal()
+        {
+            SetGizmoSpace(GizmoSpace.Global);
+        }
+
+        /// <summary>
+        /// Starts a move operation on the target EditorHandlerBase.
+        /// </summary>
+        /// <param name="handler">The EditorHandlerBase to move.</param>
         /// <param name="onCompleted">Callback invoked with the final position when the move completes.</param>
         /// <returns>The move gizmo handler, or null if initialization failed.</returns>
-        public FuseMoveGizmoHandler BeginMove(GameObject target, Action<Vector3> onCompleted = null)
+        public FuseMoveGizmoHandler BeginMove(EditorHandlerBase handler, Action<Vector3> onCompleted = null)
         {
-            if (target == null)
+            if (handler == null)
             {
-                FuseLog.Error("FUSE gizmo manager: Cannot begin move with null target.");
+                FuseLog.Error("FUSE gizmo manager: Cannot begin move with null handler.");
                 return null;
             }
 
             // Deactivate any existing gizmo
             EndCurrentGizmo();
 
-            var handler = new FuseMoveGizmoHandler();
+            var moveHandler = new FuseMoveGizmoHandler();
+
+            moveHandler.SetTransformSpace(space);
+            moveHandler.SetGizmoOrigin(origin);
+
             if (onCompleted != null)
             {
-                handler.OnMoveCompleted += onCompleted;
+                moveHandler.OnMoveCompleted += onCompleted;
             }
 
-            if (!handler.Initialize(target))
+            if (!moveHandler.Initialize(handler))
             {
-                handler.Dispose();
+                moveHandler.Dispose();
                 return null;
             }
 
-            _activeHandler = handler;
-            return handler;
+            _activeHandler = moveHandler;
+            return moveHandler;
         }
 
         /// <summary>
-        /// Starts a rotate operation on the target GameObject.
+        /// Starts a rotate operation on the target EditorHandlerBase.
         /// </summary>
-        /// <param name="target">The GameObject to rotate.</param>
+        /// <param name="handler">The EditorHandlerBase to rotate.</param>
         /// <param name="onCompleted">Callback invoked with the final rotation when the rotate completes.</param>
         /// <returns>The rotate gizmo handler, or null if initialization failed.</returns>
-        public FuseRotateGizmoHandler BeginRotate(GameObject target, Action<Quaternion> onCompleted = null)
+        public FuseRotateGizmoHandler BeginRotate(EditorHandlerBase handler, Action<Quaternion> onCompleted = null)
         {
-            if (target == null)
+            if (handler == null)
             {
-                FuseLog.Error("FUSE gizmo manager: Cannot begin rotate with null target.");
+                FuseLog.Error("FUSE gizmo manager: Cannot begin rotate with null handler.");
                 return null;
             }
 
             // Deactivate any existing gizmo
             EndCurrentGizmo();
 
-            var handler = new FuseRotateGizmoHandler();
+            var rotateHandler = new FuseRotateGizmoHandler();
+
+            rotateHandler.SetTransformSpace(space);
+            rotateHandler.SetGizmoOrigin(origin);
+
             if (onCompleted != null)
             {
-                handler.OnRotateCompleted += onCompleted;
+                rotateHandler.OnRotateCompleted += onCompleted;
             }
 
-            if (!handler.Initialize(target))
+            if (!rotateHandler.Initialize(handler))
             {
-                handler.Dispose();
+                rotateHandler.Dispose();
                 return null;
             }
 
-            _activeHandler = handler;
-            return handler;
+            _activeHandler = rotateHandler;
+            return rotateHandler;
         }
 
         /// <summary>
-        /// Starts a scale operation on the target GameObject.
+        /// Starts a scale operation on the target EditorHandlerBase.
         /// </summary>
-        /// <param name="target">The GameObject to scale.</param>
+        /// <param name="handler">The EditorHandlerBase to scale.</param>
         /// <param name="onCompleted">Callback invoked with the final scale when the scale completes.</param>
         /// <returns>The scale gizmo handler, or null if initialization failed.</returns>
-        public FuseScaleGizmoHandler BeginScale(GameObject target, Action<Vector3> onCompleted = null)
+        public FuseScaleGizmoHandler BeginScale(EditorHandlerBase handler, Action<Vector3> onCompleted = null)
         {
-            if (target == null)
+            if (handler == null)
             {
-                FuseLog.Error("FUSE gizmo manager: Cannot begin scale with null target.");
+                FuseLog.Error("FUSE gizmo manager: Cannot begin scale with null handler.");
                 return null;
             }
 
             // Deactivate any existing gizmo
             EndCurrentGizmo();
 
-            var handler = new FuseScaleGizmoHandler();
+            var scaleHandler = new FuseScaleGizmoHandler();
+
+            scaleHandler.SetTransformSpace(space);
+            scaleHandler.SetGizmoOrigin(origin);
+
             if (onCompleted != null)
             {
-                handler.OnScaleCompleted += onCompleted;
+                scaleHandler.OnScaleCompleted += onCompleted;
             }
 
-            if (!handler.Initialize(target))
+            if (!scaleHandler.Initialize(handler))
             {
-                handler.Dispose();
+                scaleHandler.Dispose();
                 return null;
             }
 
-            _activeHandler = handler;
-            return handler;
+            _activeHandler = scaleHandler;
+            return scaleHandler;
+        }
+
+        /// <summary>
+        /// Starts a move operation on multiple target EditorHandlerBase instances.
+        /// All handlers are moved together while maintaining their relative positions.
+        /// </summary>
+        /// <param name="handlers">The EditorHandlerBase instances to move.</param>
+        /// <param name="onCompleted">Callback invoked with the final position when the move completes.</param>
+        /// <returns>The multi-move gizmo handler, or null if initialization failed.</returns>
+        public FuseMultiMoveGizmoHandler BeginMoveMultiple(IEnumerable<EditorHandlerBase> handlers, Action<Vector3> onCompleted = null)
+        {
+            var handlerList = new List<EditorHandlerBase>(handlers);
+
+            if (handlerList.Count == 0)
+            {
+                FuseLog.Error("FUSE gizmo manager: Cannot begin multi-move with empty handler collection.");
+                return null;
+            }
+
+            // Deactivate any existing gizmo
+            EndCurrentGizmo();
+
+            var moveHandler = new FuseMultiMoveGizmoHandler();
+
+            moveHandler.SetTransformSpace(space);
+            moveHandler.SetGizmoOrigin(origin);
+
+            if (onCompleted != null)
+            {
+                moveHandler.OnMoveCompleted += onCompleted;
+            }
+
+            if (!moveHandler.Initialize(handlerList))
+            {
+                moveHandler.Dispose();
+                return null;
+            }
+
+            _activeMultiHandler = moveHandler;
+            return moveHandler;
+        }
+
+        /// <summary>
+        /// Starts a rotate operation on multiple target EditorHandlerBase instances.
+        /// All handlers are rotated together around the primary handler's position.
+        /// </summary>
+        /// <param name="handlers">The EditorHandlerBase instances to rotate.</param>
+        /// <param name="onCompleted">Callback invoked with the final rotation when the rotate completes.</param>
+        /// <returns>The multi-rotate gizmo handler, or null if initialization failed.</returns>
+        public FuseMultiRotateGizmoHandler BeginRotateMultiple(IEnumerable<EditorHandlerBase> handlers, Action<Quaternion> onCompleted = null)
+        {
+            var handlerList = new List<EditorHandlerBase>(handlers);
+
+            if (handlerList.Count == 0)
+            {
+                FuseLog.Error("FUSE gizmo manager: Cannot begin multi-rotate with empty handler collection.");
+                return null;
+            }
+
+            // Deactivate any existing gizmo
+            EndCurrentGizmo();
+
+            var rotateHandler = new FuseMultiRotateGizmoHandler();
+
+            rotateHandler.SetTransformSpace(space);
+            rotateHandler.SetGizmoOrigin(origin);
+
+            if (onCompleted != null)
+            {
+                rotateHandler.OnRotateCompleted += onCompleted;
+            }
+
+            if (!rotateHandler.Initialize(handlerList))
+            {
+                rotateHandler.Dispose();
+                return null;
+            }
+
+            _activeMultiHandler = rotateHandler;
+            return rotateHandler;
+        }
+
+        /// <summary>
+        /// Starts a scale operation on multiple target EditorHandlerBase instances.
+        /// All handlers are scaled together while maintaining their relative scales.
+        /// </summary>
+        /// <param name="handlers">The EditorHandlerBase instances to scale.</param>
+        /// <param name="onCompleted">Callback invoked with the final scale when the scale completes.</param>
+        /// <returns>The multi-scale gizmo handler, or null if initialization failed.</returns>
+        public FuseMultiScaleGizmoHandler BeginScaleMultiple(IEnumerable<EditorHandlerBase> handlers, Action<Vector3> onCompleted = null)
+        {
+            var handlerList = new List<EditorHandlerBase>(handlers);
+
+            if (handlerList.Count == 0)
+            {
+                FuseLog.Error("FUSE gizmo manager: Cannot begin multi-scale with empty handler collection.");
+                return null;
+            }
+
+            // Deactivate any existing gizmo
+            EndCurrentGizmo();
+
+            var scaleHandler = new FuseMultiScaleGizmoHandler();
+
+            scaleHandler.SetTransformSpace(space);
+            scaleHandler.SetGizmoOrigin(origin);
+
+            if (onCompleted != null)
+            {
+                scaleHandler.OnScaleCompleted += onCompleted;
+            }
+
+            if (!scaleHandler.Initialize(handlerList))
+            {
+                scaleHandler.Dispose();
+                return null;
+            }
+
+            _activeMultiHandler = scaleHandler;
+            return scaleHandler;
         }
 
         /// <summary>
@@ -132,6 +341,13 @@ namespace FUSE.Editor.Gizmos
                 _activeHandler.Dispose();
                 _activeHandler = null;
             }
+
+            if (_activeMultiHandler != null)
+            {
+                _activeMultiHandler.Cancel();
+                _activeMultiHandler.Dispose();
+                _activeMultiHandler = null;
+            }
         }
 
         /// <summary>
@@ -144,6 +360,13 @@ namespace FUSE.Editor.Gizmos
                 _activeHandler.Deactivate();
                 _activeHandler.Dispose();
                 _activeHandler = null;
+            }
+
+            if (_activeMultiHandler != null)
+            {
+                _activeMultiHandler.Deactivate();
+                _activeMultiHandler.Dispose();
+                _activeMultiHandler = null;
             }
         }
 

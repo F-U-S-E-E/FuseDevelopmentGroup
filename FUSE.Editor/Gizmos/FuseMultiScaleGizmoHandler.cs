@@ -1,4 +1,3 @@
-using FUSE.Editor.EditorHandler;
 using FUSE.Infrastructure;
 using RLD;
 using System;
@@ -7,10 +6,10 @@ using UnityEngine;
 namespace FUSE.Editor.Gizmos
 {
     /// <summary>
-    /// Handles scale gizmo interactions. Invokes a callback with the new scale
-    /// when the gizmo is released.
+    /// Handles scale gizmo interactions for multiple handlers simultaneously.
+    /// Scales all handlers together while maintaining their relative scales.
     /// </summary>
-    public class FuseScaleGizmoHandler : FuseGizmoHandler
+    public class FuseMultiScaleGizmoHandler : FuseMultiGizmoHandler
     {
         /// <summary>
         /// Called when the scale operation completes with the final scale.
@@ -22,7 +21,7 @@ namespace FUSE.Editor.Gizmos
             var engine = MonoSingleton<RTGizmosEngine>.Get;
             if (engine == null)
             {
-                FuseLog.Error("FUSE scale gizmo: RTGizmosEngine singleton not available.");
+                FuseLog.Error("FUSE multi-scale gizmo: RTGizmosEngine singleton not available.");
                 return null;
             }
 
@@ -42,7 +41,7 @@ namespace FUSE.Editor.Gizmos
         {
             // Note: The exact API for configuring uniform scaling depends on the RLD version
             // This is a placeholder for future implementation if needed
-            FuseLog.Info($"FUSE scale gizmo: Uniform scaling configuration not yet implemented (requested: {uniform})");
+            FuseLog.Info($"FUSE multi-scale gizmo: Uniform scaling configuration not yet implemented (requested: {uniform})");
         }
     }
 }

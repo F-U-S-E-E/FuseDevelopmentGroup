@@ -17,6 +17,7 @@ using System.Reflection;
 using UI.CarEditor;
 using UnityEngine;
 using FUSE.Editor.Overlays;
+using FUSE.Editor.Gizmos;
 
 namespace FUSE.Editor
 {
@@ -59,6 +60,7 @@ namespace FUSE.Editor
 
         FuseEditorScreen _screen;
         FuseEditorEntitySelection _entitySelection;
+        FuseGizmoManager _gizmoManager;
 
         [CanBeNull]
         public FuseLoadedMod ActiveMod { get; private set; } = null;
@@ -72,6 +74,8 @@ namespace FUSE.Editor
 
         [NotNull]
         internal FuseEditorEntitySelection EntitySelection => _entitySelection ??= new FuseEditorEntitySelection();
+
+        internal FuseGizmoManager GizmoManager => _gizmoManager ??= new FuseGizmoManager();
 
         public static FuseEditor Instance
         {

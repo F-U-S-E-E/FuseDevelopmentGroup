@@ -36,7 +36,7 @@ namespace FUSE.Editor.EditorHandler
         {
             Entity = entity;
             ID = TrackNode.id;
-            FuseData = FUSE.Runtime.API.TrackAPI.GetDefinition(TrackNode);
+            FuseData = FUSE.Runtime.API.TrackAPI.CloneNodeDefinition(FUSE.Runtime.API.TrackAPI.GetDefinition(TrackNode));
 
             InitializeRenderingResources();
         }
@@ -193,9 +193,33 @@ namespace FUSE.Editor.EditorHandler
 
         public override Vector3 GetScale() => Vector3.one;
 
-        public override void SetPosition(Vector3 position, bool createUndoRedo = true) => FuseNodeData.Position = position;
+        public override void SetPosition(Vector3 position, bool createUndoRedo = true)
+        {
+            FuseNode oldNode = FUSE.Runtime.API.TrackAPI.CloneNodeDefinition(FuseNodeData);
+            FuseNodeData.Position = position;
+            if (createUndoRedo)
+            {
+                FuseEditorChangeHandler.Instance.QueueChange(this, oldNode);
+            }
+            else
+            {
+                FuseEditorChangeHandler.Instance.QueueChange(this, null);
+            }
+        }
 
-        public override void SetRotation(Quaternion rotation, bool createUndoRedo = true) => FuseNodeData.Rotation = rotation.eulerAngles;
+        public override void SetRotation(Quaternion rotation, bool createUndoRedo = true)
+        {
+            FuseNode oldNode = FUSE.Runtime.API.TrackAPI.CloneNodeDefinition(FuseNodeData);
+            FuseNodeData.Rotation = rotation.eulerAngles;
+            if (createUndoRedo)
+            {
+                FuseEditorChangeHandler.Instance.QueueChange(this, oldNode);
+            }
+            else
+            {
+                FuseEditorChangeHandler.Instance.QueueChange(this, null);
+            }
+        }
 
         public override void SetScale(Vector3 scale, bool createUndoRedo = true)
         {
@@ -260,6 +284,10 @@ namespace FUSE.Editor.EditorHandler
             {
                 FuseEditorChangeHandler.Instance.QueueChange(this, oldNode);
             }
+            else
+            {
+                FuseEditorChangeHandler.Instance.QueueChange(this, null);
+            }
         }
 
         public override void UpdateProperty(string propertyName, object value, bool createUndoRedo = true)
@@ -283,6 +311,10 @@ namespace FUSE.Editor.EditorHandler
             if (createUndoRedo)
             {
                 FuseEditorChangeHandler.Instance.QueueChange(this, oldNode);
+            }
+            else
+            {
+                FuseEditorChangeHandler.Instance.QueueChange(this, null);
             }
         }
 

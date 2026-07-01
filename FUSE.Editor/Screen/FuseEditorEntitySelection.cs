@@ -86,6 +86,8 @@ namespace FUSE.Editor.Screen
 
         private EditorHandlerBase requestedSelection;
 
+        private bool canSelect = true;
+
         public void SetSelectedHandler(EditorHandlerBase handler)
         {
             ClearSelection();
@@ -259,6 +261,10 @@ namespace FUSE.Editor.Screen
 
         public void OnSelected(EditorHandlerBase handler)
         {
+            if (!canSelect)
+            {
+                return;
+            }
             if (SelectionRequestType != null && handler.Entity.GetType() == SelectionRequestType)
             {
                 requestedSelection = handler;
@@ -309,6 +315,16 @@ namespace FUSE.Editor.Screen
                 handler = null;
                 return false;
             }
+        }
+
+        public void BlockSelecting()
+        {
+            canSelect = false;
+        }
+
+        public void AllowSelecting()
+        {
+            canSelect = true;
         }
 
         /// <summary>

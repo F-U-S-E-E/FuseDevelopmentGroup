@@ -38,6 +38,8 @@ namespace FUSE.Editor.Screen
         private GUIStyle _propertyLabelStyle;
         private GUIStyle _propertyValueStyle;
 
+        private bool bufferedValuesChanged = false;
+
         public FuseEditorPropertiesPanel()
         {
         }
@@ -139,6 +141,11 @@ namespace FUSE.Editor.Screen
                 SeedBuffersFromHandler(handler);
                 _lastBufferedHandlerId = handler.ID;
             }
+            else
+            {
+                // Update buffers from handler in case properties changed externally
+                UpdatedBuffersFromHandler(handler);
+            }
 
             _currentHandler = handler;
 
@@ -215,7 +222,7 @@ namespace FUSE.Editor.Screen
                     try
                     {
                         // Get buffered value if available
-                        object currentValue = _propertyBuffers.TryGetValue(propName, out var buffered) ? buffered : propValue;
+                        object currentValue = propValue;
 
                         // Calculate height for this property (including dropdown if enum is open)
                         float propHeight = registry.GetPropertyHeight(propType);
@@ -231,10 +238,9 @@ namespace FUSE.Editor.Screen
                             propName, propType, currentValue, _propertyLabelStyle, _propertyValueStyle);
 
                         // Update buffer and apply changes
-                        if (changed)
+                        if (changed && !bufferedValuesChanged)
                         {
-                            _propertyBuffers[propName] = newValue;
-                            handler.UpdateProperty(propName, newValue);
+                            //handler.UpdateProperty(propName, newValue);
                         }
 
                         y += propHeight + Padding;
@@ -270,20 +276,34 @@ namespace FUSE.Editor.Screen
             }
         }
 
+        private void UpdatedBuffersFromHandler(EditorHandlerBase handler)
+        {
+            try
+            {
+                bufferedValuesChanged = false;
+                var properties = handler.GetProperties();
+                foreach (var kvp in properties)
+                {
+                    if (_propertyBuffers.ContainsKey(kvp.Key))
+                    {
+                        if (!_propertyBuffers[kvp.Key].Equals(kvp.Value.value))
+                        {
+                            _propertyBuffers[kvp.Key] = kvp.Value.value;
+                            bufferedValuesChanged = true;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FuseEditorPropertiesPanel: Error updating buffers from handler", ex);
+            }
+        }
+
         private void DrawPropertyLabelRow(float y, float labelWidth, float totalWidth, string label, string value)
         {
             GUI.Label(new Rect(0f, y, labelWidth, RowHeight), "  " + label, _propertyLabelStyle);
             GUI.Label(new Rect(labelWidth, y, totalWidth - labelWidth, RowHeight), value, _propertyLabelStyle);
-        }
-
-        /// <summary>
-        /// Flushes any pending property changes (for future async operations).
-        /// Currently a no-op as changes are applied immediately.
-        /// </summary>
-        public void FlushPendingChanges()
-        {
-            // Currently changes are applied immediately in the Draw method
-            // This method exists for future extensibility (e.g., batched updates)
         }
     }
 }
