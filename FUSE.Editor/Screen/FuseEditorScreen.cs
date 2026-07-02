@@ -751,6 +751,8 @@ namespace FUSE.Editor.Screen
                 // hovered GUIContent across the whole frame.
                 FuseEditorUiHelper.RenderHoverTooltip(FuseEditorTheme.TooltipBox, screenRect);
 
+                FuseEditorToolRegistry.DrawActive();
+
                 // Draw TrackNode selection window if open (sits on top of everything)
                 PropertyRenderers.TrackNodePropertyRenderer.DrawSelectionWindow();
             }

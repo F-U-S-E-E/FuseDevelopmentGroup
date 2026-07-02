@@ -197,5 +197,129 @@ namespace FUSE.Editor.Overlays
 
             return null;
         }
+
+        /// <summary>
+        /// Selects all previews whose bounds intersect with a rectangular area on the screen.
+        /// Returns a list of (previewId, handler) pairs for all previews that fall within the screen-space rectangle.
+        /// </summary>
+        /// <param name="screenRect">The rectangular selection area in screen space (x, y, width, height)</param>
+        /// <param name="selectedPreviews">Output list of (previewId, handler) tuples for all selected previews</param>
+        /// <returns>True if at least one preview was selected, false otherwise</returns>
+        public bool TrySelectPreviewsInRectangle(Rect screenRect, out List<(string previewId, EditorHandlerBase handler)> selectedPreviews)
+        {
+            selectedPreviews = new List<(string, EditorHandlerBase)>();
+
+            if (_editorCamera == null)
+            {
+                FuseLog.Warning("OverlaySelectionSystem: No editor camera set for raycasting.");
+                return false;
+            }
+
+            // Iterate through all previews and check if their bounds intersect with the screen rectangle
+            foreach (var kvp in _previews)
+            {
+                var previewId = kvp.Key;
+                var preview = kvp.Value;
+
+                if (!preview.IsVisible || preview.SelectionAreas == null || preview.SelectionAreas.Length == 0)
+                {
+                    continue;
+                }
+
+                // Check if any selection area of this preview intersects with the screen rectangle
+                bool previewIntersects = false;
+                foreach (var area in preview.SelectionAreas)
+                {
+                    if (!area.IsSelectable)
+                    {
+                        continue;
+                    }
+
+                    if (IsSelectionAreaInScreenRectangle(area, screenRect))
+                    {
+                        previewIntersects = true;
+                        break;
+                    }
+                }
+
+                if (previewIntersects)
+                {
+                    selectedPreviews.Add((previewId, preview));
+                }
+            }
+
+            return selectedPreviews.Count > 0;
+        }
+
+        /// <summary>
+        /// Checks if a selection area's bounds intersect with a screen-space rectangle.
+        /// Uses the camera to project world space bounds to screen space.
+        /// </summary>
+        private bool IsSelectionAreaInScreenRectangle(OverlaySelectionArea area, Rect screenRect)
+        {
+            if (area == null || _editorCamera == null)
+            {
+                return false;
+            }
+
+            // Get the world space bounds
+            var worldBounds = area.Bounds;
+            var boundsCenter = area.Transform.MultiplyPoint(worldBounds.center);
+            var boundsExtents = worldBounds.extents;
+
+            // Project the bounds center and extents to screen space
+            var screenCenter = _editorCamera.WorldToScreenPoint(boundsCenter);
+
+            // Project the eight corners of the bounding box to screen space
+            var corners = new Vector3[8];
+            var extents = boundsExtents;
+
+            corners[0] = area.Transform.MultiplyPoint(worldBounds.center + new Vector3(-extents.x, -extents.y, -extents.z));
+            corners[1] = area.Transform.MultiplyPoint(worldBounds.center + new Vector3(extents.x, -extents.y, -extents.z));
+            corners[2] = area.Transform.MultiplyPoint(worldBounds.center + new Vector3(-extents.x, extents.y, -extents.z));
+            corners[3] = area.Transform.MultiplyPoint(worldBounds.center + new Vector3(extents.x, extents.y, -extents.z));
+            corners[4] = area.Transform.MultiplyPoint(worldBounds.center + new Vector3(-extents.x, -extents.y, extents.z));
+            corners[5] = area.Transform.MultiplyPoint(worldBounds.center + new Vector3(extents.x, -extents.y, extents.z));
+            corners[6] = area.Transform.MultiplyPoint(worldBounds.center + new Vector3(-extents.x, extents.y, extents.z));
+            corners[7] = area.Transform.MultiplyPoint(worldBounds.center + new Vector3(extents.x, extents.y, extents.z));
+
+            // Check if any corner is within the screen rectangle
+            foreach (var corner in corners)
+            {
+                var screenCorner = _editorCamera.WorldToScreenPoint(corner);
+
+                // Check if the corner is within the screen rectangle
+                if (screenRect.Contains(screenCorner))
+                {
+                    return true;
+                }
+            }
+
+            // Also check if any corner of the screen rectangle is within the projected bounds
+            var screenMin = screenRect.min;
+            var screenMax = screenRect.max;
+
+            var corners2D = new Vector2[] 
+            {
+                new Vector2(screenMin.x, screenMin.y),
+                new Vector2(screenMax.x, screenMin.y),
+                new Vector2(screenMin.x, screenMax.y),
+                new Vector2(screenMax.x, screenMax.y)
+            };
+
+            foreach (var corner2D in corners2D)
+            {
+                var ray = _editorCamera.ScreenPointToRay(corner2D);
+                if (TrySelectFromRay(ray, out var _, out var selectedArea))
+                {
+                    if (selectedArea == area)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
     }
 }

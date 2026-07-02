@@ -22,6 +22,7 @@ namespace FUSE.Editor.Screen.UI
 
         // Gizmo / tools
         Select,
+        BoxSelect,
         Move,
         Rotate,
         Scale,
@@ -124,6 +125,7 @@ namespace FUSE.Editor.Screen.UI
                 [FuseEditorIconKind.Undo] = "↶",        // ↶
                 [FuseEditorIconKind.Redo] = "↷",        // ↷
                 [FuseEditorIconKind.Select] = "▲",      // ▲
+                [FuseEditorIconKind.BoxSelect] = "□",  // □
                 [FuseEditorIconKind.Move] = "✥",        // ✥ (4-pointed star approx)
                 [FuseEditorIconKind.Rotate] = "↻",      // ↻
                 [FuseEditorIconKind.Scale] = "⛶",       // ⛶

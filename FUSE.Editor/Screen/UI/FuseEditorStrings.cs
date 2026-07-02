@@ -198,15 +198,17 @@ namespace FUSE.Editor.Screen.UI
             // Title is the displayed letter (X / Y / Z); description
             // surfaces on hover via the standard tooltip pipeline.
             ["fuse.editor.gizmo.axis_x"]                 = "X",
-            ["fuse.editor.gizmo.axis_x.description"]    = "World X axis. The arm rotates with the camera so it always shows the current view orientation.",
+            ["fuse.editor.gizmo.axis_x.description"]     = "World X axis. The arm rotates with the camera so it always shows the current view orientation.",
             ["fuse.editor.gizmo.axis_y"]                 = "Y",
-            ["fuse.editor.gizmo.axis_y.description"]    = "World Y axis (altitude). The arm rotates with the camera so it always shows the current view orientation.",
+            ["fuse.editor.gizmo.axis_y.description"]     = "World Y axis (altitude). The arm rotates with the camera so it always shows the current view orientation.",
             ["fuse.editor.gizmo.axis_z"]                 = "Z",
-            ["fuse.editor.gizmo.axis_z.description"]    = "World Z axis. The arm rotates with the camera so it always shows the current view orientation.",
+            ["fuse.editor.gizmo.axis_z.description"]     = "World Z axis. The arm rotates with the camera so it always shows the current view orientation.",
 
             // Viewport tool strip
             ["fuse.editor.tool.select"]                  = "Select",
             ["fuse.editor.tool.select.description"]      = "Click an entity in the world to inspect it.",
+            ["fuse.editor.tool.boxselect"]               = "Box Select",
+            ["fuse.editor.tool.boxselect.description"]   = "Click and drag a rectangle to select all entities within it.",
             ["fuse.editor.tool.move"]                    = "Move",
             ["fuse.editor.tool.move.description"]        = "Translate the selected entity along the world axes.",
             ["fuse.editor.tool.rotate"]                  = "Rotate",

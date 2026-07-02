@@ -33,16 +33,15 @@ namespace FUSE.Editor.Track.Tools
             {
                 GizmoManager.BeginRotateMultiple(FuseEditor.Instance.EntitySelection.SelectedHandlers);
             }
-
-            FuseEditor.Instance.EntitySelection.BlockSelecting();
         }
 
         public void OnDeactivate()
         {
             GizmoManager.EndCurrentGizmo();
-            FuseEditor.Instance.EntitySelection.AllowSelecting();
         }
 
         public void Tick() { }
+
+        public void Draw() { }
     }
 }

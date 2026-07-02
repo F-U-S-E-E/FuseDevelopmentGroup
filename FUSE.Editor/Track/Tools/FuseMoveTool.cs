@@ -35,8 +35,6 @@ namespace FUSE.Editor.Track.Tools
             {
                 GizmoManager.BeginMoveMultiple(FuseEditor.Instance.EntitySelection.SelectedHandlers);
             }
-
-            FuseEditor.Instance.EntitySelection.BlockSelecting();
         }
 
         public void OnDeactivate()
@@ -44,11 +42,15 @@ namespace FUSE.Editor.Track.Tools
             // Selected.Deselect() tears down whatever gizmo is attached
             // (move OR rotate), so we don't need to distinguish here.
             GizmoManager.EndCurrentGizmo();
-            FuseEditor.Instance.EntitySelection.AllowSelecting();
         }
 
         public void Tick() {
             
+        }
+
+        public void Draw()
+        {
+
         }
     }
 }

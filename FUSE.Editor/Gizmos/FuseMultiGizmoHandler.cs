@@ -305,8 +305,33 @@ namespace FUSE.Editor.Gizmos
             var finalRotation = GizmoTarget.transform.rotation;
             var finalScale = GizmoTarget.transform.localScale;
 
+            var offsetPosition = finalPosition - InitialGizmoPosition;
+            var offsetRotation = Quaternion.Inverse(InitialGizmoRotation) * finalRotation;
+            var offsetScale = new Vector3(
+                finalScale.x / InitialGizmoScale.x,
+                finalScale.y / InitialGizmoScale.y,
+                finalScale.z / InitialGizmoScale.z);
+
             // Apply the changes to all handlers
-            ApplyTransformToAllHandlers(gizmo.TotalDragOffset, gizmo.TotalDragRotation, gizmo.TotalDragScale, true);
+            ApplyTransformToAllHandlers(offsetPosition, offsetRotation, offsetScale, true);
+
+            for (int i = 0; i < Handlers.Count; i++)
+            {
+                var handler = Handlers[i];
+                if (handler == null) continue;
+
+                // Update the initial state to the new state after applying the transform
+                InitialPositions[i] = WorldTransformer.GameToWorld(handler.GetPosition());
+                InitialRotations[i] = handler.GetRotation();
+                InitialScales[i] = handler.GetScale();
+            }
+
+
+            // Set the proxy to match the primary handler's current transform
+            InitialGizmoPosition = GizmoTarget.transform.position;
+            InitialGizmoRotation = GizmoTarget.transform.rotation;
+            InitialGizmoScale = GizmoTarget.transform.localScale;
+            
 
             // Invoke the appropriate completion callback
             OnGizmoCompleted(finalPosition, finalRotation, finalScale);
@@ -320,6 +345,11 @@ namespace FUSE.Editor.Gizmos
             if (PrimaryHandler == null || Handlers == null || InitialPositions == null)
             {
                 return;
+            }
+
+            if (totalRotation.Equals(new Quaternion(0f, 0f, 0f, 0f)))
+            {
+                totalRotation = Quaternion.identity;
             }
 
             // Apply the delta to all handlers

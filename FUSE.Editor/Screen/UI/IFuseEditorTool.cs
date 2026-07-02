@@ -79,5 +79,11 @@ namespace FUSE.Editor.Screen.UI
         /// detects a viewport click) hook this; passive tools no-op.
         /// </summary>
         void Tick();
+
+        /// <summary>
+        /// Called to draw any tool-specific overlays. Tools that do not
+        /// require custom drawing can no-op.
+        /// </summary>
+        void Draw();
     }
 }

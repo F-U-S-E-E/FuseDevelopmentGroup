@@ -230,6 +230,11 @@ namespace FUSE.Tests.Editor
 
             public void OnDeactivate() => DeactivateCount++;
             public void Tick() => TickCount++;
+
+            public void Draw()
+            {
+                // No-op for testing
+            }
         }
     }
 }

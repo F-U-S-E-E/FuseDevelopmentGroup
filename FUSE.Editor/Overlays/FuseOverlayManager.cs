@@ -128,6 +128,7 @@ namespace FUSE.Editor.Overlays
             {
                 ProcessDiscovery();
             }
+            /*
             Vector2 mousePos = Mouse.current.position.ReadValue();
 
             SelectionSystem.UpdateHoverFromMouse(mousePos);
@@ -137,7 +138,7 @@ namespace FUSE.Editor.Overlays
             {
                 TrySelectPreviewAtMouse(mousePos);
             }
-
+            */
             if (!_isEnabled || _renderer == null)
             {
                 return;
@@ -551,6 +552,65 @@ namespace FUSE.Editor.Overlays
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Attempts to select all overlay previews within a rectangular area on the screen.
+        /// Supports modifier keys for selection behavior:
+        /// - No modifier: Replace current selection with previews in rectangle
+        /// - Shift: Add previews in rectangle to current selection
+        /// - Ctrl: Toggle selection of previews in rectangle
+        /// </summary>
+        /// <param name="screenRect">The rectangular selection area in screen space (x, y, width, height)</param>
+        /// <returns>True if at least one preview was selected/modified, false otherwise</returns>
+        public bool TrySelectPreviewsInRectangle(Rect screenRect)
+        {
+            SelectionSystem.SetCamera(Camera.main);
+            if (!_initialized || SelectionSystem == null)
+            {
+                FuseLog.Warning("FuseOverlayManager: Not initialized or selection system is null.");
+                return false;
+            }
+
+            if (!SelectionSystem.TrySelectPreviewsInRectangle(screenRect, out var selectedPreviews))
+            {
+                FuseLog.Info("FuseOverlayManager: No previews found in rectangular selection area.");
+                return false;
+            }
+
+            // Convert to handlers list
+            var handlers = new List<EditorHandler.EditorHandlerBase>();
+            foreach (var (previewId, handler) in selectedPreviews)
+            {
+                handlers.Add(handler);
+                FuseLog.Info($"Preview in rectangle: {handler.ID}");
+            }
+
+            // Handle modifier keys for selection behavior
+            bool isShiftPressed = Keyboard.current.shiftKey.isPressed;
+            bool isCtrlPressed = Keyboard.current.ctrlKey.isPressed;
+
+            if (isCtrlPressed)
+            {
+                // Toggle selection of each preview in rectangle
+                foreach (var handler in handlers)
+                {
+                    FuseEditor.Instance.EntitySelection.ToggleSelection(handler);
+                }
+            }
+            else if (isShiftPressed)
+            {
+                // Add previews to current selection
+                FuseEditor.Instance.EntitySelection.AddToSelection(handlers);
+            }
+            else
+            {
+                // Replace selection with previews in rectangle
+                FuseEditor.Instance.EntitySelection.SetSelectedHandlers(handlers);
+            }
+
+            FuseLog.Info($"FuseOverlayManager: Selected {handlers.Count} preview(s) in rectangle.");
+            return true;
         }
 
         private void OnDestroy()

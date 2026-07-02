@@ -94,5 +94,10 @@ namespace FUSE.Editor.Track.Tools
             var slug = Guid.NewGuid().ToString("N").Substring(0, 4);
             return $"fuse-node-{stamp}-{slug}";
         }
+
+        public void Draw()
+        {
+            // No overlays for this tool, so no-op.
+        }
     }
 }

@@ -178,5 +178,21 @@ namespace FUSE.Editor.Screen.UI
                 FuseLog.Exception($"FUSE editor tool '{_active.Id}' Tick threw.", ex);
             }
         }
+
+        public static void DrawActive()
+        {
+            if (_active == null)
+            {
+                return;
+            }
+            try
+            {
+                _active.Draw();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FUSE editor tool '{_active.Id}' Draw threw.", ex);
+            }
+        }
     }
 }
