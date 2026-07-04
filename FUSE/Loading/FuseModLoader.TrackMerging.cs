@@ -992,7 +992,13 @@ namespace FUSE.Loading
                 TrackAPI.EndBatch(false);
             }
 
-            if (plan.HasStructuralChanges)
+            var trackAssemblySummary = ApplyMergedTrackAssemblyPackages(plan, reason);
+            var shouldRebuildBeforeFinalSpans =
+                plan.HasStructuralChanges
+                || trackAssemblySummary.NativeGraphMutationsApplied
+                || trackAssemblySummary.HasFailures;
+
+            if (shouldRebuildBeforeFinalSpans)
             {
                 var graphTransaction = new FuseApplyTransaction("__merged-graph-rebuild__", reason, false);
                 graphTransaction.RunPhase("merged-single-graph-rebuild", () => TrackAPI.RebuildGraph());
@@ -1021,7 +1027,7 @@ namespace FUSE.Loading
             {
                 FuseLog.Info(
                     "FUSE merged graph apply operation='merged-single-graph-rebuild' skipped: " +
-                    "no final structural track mutations in active definitions.");
+                    "no final structural track mutations in active definitions or TrackAssembly source packages.");
             }
 
             // Apply spans and the post-span cleanup inside one batch so the
@@ -1044,6 +1050,43 @@ namespace FUSE.Loading
             {
                 TrackAPI.EndBatch(true);
             }
+        }
+
+        private static FuseTrackAssemblyBridgeApplySummary ApplyMergedTrackAssemblyPackages(
+            FuseMergedTrackPlan plan,
+            string reason)
+        {
+            if (plan == null)
+            {
+                return FuseTrackAssemblyBridgeApplySummary.Empty;
+            }
+
+            var packageIds = plan.OrderedCandidates
+                .Where(item => item?.Transaction != null && !item.Transaction.Report.IsFatal)
+                .Select(item => item.Loaded?.Definition?.Id)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToArray();
+            var summary = FuseTrackAssemblyBridgeHost.ApplyLoadedPackages(packageIds, reason);
+            if (!summary.HasFailures)
+            {
+                return summary;
+            }
+
+            foreach (var failure in summary.Failures)
+            {
+                var candidate = plan.OrderedCandidates.FirstOrDefault(item =>
+                    item?.Transaction != null
+                    && !item.Transaction.Report.IsFatal
+                    && string.Equals(
+                        item.Loaded?.Definition?.Id,
+                        failure.Key,
+                        StringComparison.OrdinalIgnoreCase));
+                candidate?.Transaction.RunPhase(
+                    "staged-apply-trackassembly-source",
+                    () => candidate.Transaction.Fatal("trackAssembly source", failure.Key, failure.Value));
+            }
+
+            return summary;
         }
 
         private static string FormatMergedGraphRebuildFailure(FuseApplyReport report)
