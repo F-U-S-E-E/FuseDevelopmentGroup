@@ -36,6 +36,10 @@
          assembly name matches the asmdef name at
          FUSE.UnityTests/Assets/Tests/. -->
     <InternalsVisibleTo Include="FUSE.UnityTests.Tests" />
+    <!-- The optional TrackAssembly.Fuse adapter is built out-of-repo during
+         the geometry-engine rewrite, but it needs the same transient
+         track-group keep-alive hook that normal FUSE segment apply uses. -->
+    <InternalsVisibleTo Include="TrackAssembly.Fuse" />
   </ItemGroup>
 
   <ItemGroup>
