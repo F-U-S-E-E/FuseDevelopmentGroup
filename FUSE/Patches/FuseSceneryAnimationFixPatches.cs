@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Effects.Decals;
 using FUSE.Infrastructure;
 using Game.AccessControl;
 using Game.State;
@@ -81,7 +82,114 @@ namespace FUSE.Patches
                 SetupComponent(__instance, lifetime, modelRoot, component, setupContext, observeProperty);
             }
 
+            ScrubCarOnlyDecalMachinery(__instance, lifetime, modelRoot);
+
             return false;
+        }
+
+        // ---- Car-only decal machinery scrub -------------------------------
+        //
+        // This full-context setup builds EVERY declared component — including car
+        // lettering/number decal components that packs share between cars and
+        // scenery. Their drivers (the game's DecalProjectorHelper and, when the
+        // LegosLogosAndDeco mod is installed, its LegosDecalHelper) require a Car
+        // ancestor: on a car-less scenery host their enable path throws (now
+        // suppressed by the decal guard patches) and the DecalProjector they
+        // manage is left permanently enabled — rendering uncontrolled, never
+        // culled, re-created on every streaming reload. Vanilla scenery setup
+        // never activated these components (stub observers, no per-component
+        // isolation), so disabling them here restores that behavior while keeping
+        // the isolation for everything else. Scenery hosts never sit under a Car,
+        // so the scrub is unconditional on this path.
+        //
+        // Disable, never destroy: it is frame-immediate, idempotent across
+        // streaming reloads (unload destroys the children outright, so no
+        // teardown counterpart is needed), and a disabled helper receives no
+        // further OnEnable on later activation cycles. Disabling an enabled
+        // half-initialized DecalProjectorHelper fires its throwing OnDisable —
+        // FuseDecalProjectorHelperDisableGuardPatch suppresses that and forces
+        // the unregister, so no culling-registry residue is possible.
+
+        // URP is not a compile-time reference; resolve the projector type by name.
+        private static readonly Type DecalProjectorType =
+            Type.GetType("UnityEngine.Rendering.Universal.DecalProjector, Unity.RenderPipelines.Universal.Runtime");
+
+        // Optional third-party mod type; resolved lazily (mod load order vs. patch
+        // class init is not guaranteed) and tolerated absent.
+        private static Type _legosDecalHelperType;
+        private static bool _legosDecalHelperResolveAttempted;
+
+        private static long _scrubbedDecalComponents;
+
+        /// <summary>Car-only decal components disabled on scenery since startup (diagnostics).</summary>
+        internal static long ScrubbedDecalComponents => _scrubbedDecalComponents;
+
+        private static Type ResolveLegosDecalHelperType()
+        {
+            if (!_legosDecalHelperResolveAttempted)
+            {
+                // The first scenery setup runs during map load, after all mods loaded.
+                _legosDecalHelperResolveAttempted = true;
+                _legosDecalHelperType = AccessTools.TypeByName("LegosLogosAndDeco.LegosDecalHelper");
+            }
+
+            return _legosDecalHelperType;
+        }
+
+        private static void ScrubCarOnlyDecalMachinery(
+            SceneryAssetInstance instance, ComponentLifetime lifetime, Transform modelRoot)
+        {
+            // Mirror the loop's parent selection: Model-lifetime components live
+            // under the streamed model; Static ones under the instance itself.
+            var root = lifetime == ComponentLifetime.Model ? modelRoot : instance.transform;
+            if (root == null)
+            {
+                return; // no model was instantiated: nothing was created.
+            }
+
+            try
+            {
+                // Helpers first (their guard-suppressed OnDisable runs against
+                // untouched projector state), then the projectors themselves.
+                DisableCarOnlyComponents(root, typeof(DecalProjectorHelper), instance);
+                DisableCarOnlyComponents(root, ResolveLegosDecalHelperType(), instance);
+                DisableCarOnlyComponents(root, DecalProjectorType, instance);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception(
+                    $"FUSE scenery decal scrub failed on '{FormatSceneryName(instance)}'", ex);
+            }
+        }
+
+        private static void DisableCarOnlyComponents(Transform root, Type componentType, SceneryAssetInstance instance)
+        {
+            if (componentType == null)
+            {
+                return; // Legos absent or URP layout changed: fail open.
+            }
+
+            // includeInactive: a decal component whose build aborted mid-way is left
+            // on an inactive child, still carrying an enabled projector.
+            foreach (var component in root.GetComponentsInChildren(componentType, true))
+            {
+                var behaviour = component as Behaviour;
+                if (behaviour == null || !behaviour.enabled)
+                {
+                    continue; // idempotent across streaming reloads.
+                }
+
+                behaviour.enabled = false;
+                _scrubbedDecalComponents++;
+                if (FuseDecalGuardLog.ShouldLog(_scrubbedDecalComponents))
+                {
+                    FuseLog.Warning(
+                        $"FUSE disabled car-only decal component #{_scrubbedDecalComponents} " +
+                        $"({componentType.Name}) on scenery '{FormatSceneryName(instance)}' " +
+                        $"('{behaviour.transform.name}'); car decal machinery stays inert on " +
+                        "car-less scenery, matching vanilla setup which never activated it.");
+                }
+            }
         }
 
         private static void SetupComponent(
