@@ -34,6 +34,7 @@ namespace FUSE.Loading
         private const string SourceExtensionKey = "trackAssembly.source";
         private const string BridgeTypeName = "FUSE.Runtime.TrackAssembly.FuseTrackAssemblyPackageBridge";
         private const string ApplyLoadedPackageMethodName = "ApplyLoadedPackage";
+        private const string RetainLoadedPackageVisualsMethodName = "RetainLoadedPackageVisuals";
         private const string FaultStage = "trackAssembly bridge";
 
         public static FuseTrackAssemblyBridgeApplySummary ApplyLoadedPackages(
@@ -41,15 +42,15 @@ namespace FUSE.Loading
             string reason)
         {
             var sourcePackageIds = GetTrackAssemblySourcePackageIds(packageIds).ToArray();
-            if (sourcePackageIds.Length == 0)
-            {
-                return FuseTrackAssemblyBridgeApplySummary.Empty;
-            }
-
             var failures = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var bridgeType = FindBridgeType();
             if (bridgeType == null)
             {
+                if (sourcePackageIds.Length == 0)
+                {
+                    return FuseTrackAssemblyBridgeApplySummary.Empty;
+                }
+
                 var message =
                     $"TrackAssembly source extension '{SourceExtensionKey}' is present, but bridge type " +
                     $"'{BridgeTypeName}' is not loaded. Install/load TrackAssembly.Fuse before applying " +
@@ -63,7 +64,7 @@ namespace FUSE.Loading
             }
 
             var applyMethod = FindApplyLoadedPackageMethod(bridgeType);
-            if (applyMethod == null)
+            if (applyMethod == null && sourcePackageIds.Length > 0)
             {
                 var message =
                     $"TrackAssembly bridge type '{BridgeTypeName}' does not expose the expected " +
@@ -84,6 +85,14 @@ namespace FUSE.Loading
             catch (Exception ex)
             {
                 var message = $"TrackAssembly bridge type '{BridgeTypeName}' could not be constructed: {ex.Message}";
+                if (sourcePackageIds.Length == 0)
+                {
+                    FuseLog.Exception(
+                        "FUSE TrackAssembly bridge could not be constructed while clearing stale custom visuals",
+                        ex);
+                    return FuseTrackAssemblyBridgeApplySummary.Empty;
+                }
+
                 foreach (var packageId in sourcePackageIds)
                 {
                     RecordFailure(failures, packageId, message, ex);
@@ -93,60 +102,64 @@ namespace FUSE.Loading
             }
 
             var nativeGraphMutationsApplied = false;
-            TrackAPI.BeginBatch();
-            try
+            if (sourcePackageIds.Length > 0)
             {
-                foreach (var packageId in sourcePackageIds)
+                TrackAPI.BeginBatch();
+                try
                 {
-                    try
+                    foreach (var packageId in sourcePackageIds)
                     {
-                        var result = applyMethod.Invoke(bridge, new object[] { packageId, reason, null });
-                        if (result == null)
+                        try
                         {
-                            RecordFailure(
-                                failures,
-                                packageId,
-                                $"TrackAssembly bridge returned no result for package '{packageId}'.",
-                                null);
-                            continue;
-                        }
+                            var result = applyMethod.Invoke(bridge, new object[] { packageId, reason, null });
+                            if (result == null)
+                            {
+                                RecordFailure(
+                                    failures,
+                                    packageId,
+                                    $"TrackAssembly bridge returned no result for package '{packageId}'.",
+                                    null);
+                                continue;
+                            }
 
-                        var hasPackageData = ReadBoolProperty(result, "HasPackageData");
-                        if (!hasPackageData)
-                        {
+                            var hasPackageData = ReadBoolProperty(result, "HasPackageData");
+                            if (!hasPackageData)
+                            {
+                                FuseLog.Info(
+                                    "FUSE TrackAssembly bridge skipped package " +
+                                    $"'{packageId}' reason='{ReadStringProperty(result, "SkipReason")}'.");
+                                continue;
+                            }
+
+                            var applyResult = ReadProperty(result, "ApplyResult");
+                            var packageMutatedNativeGraph =
+                                ReadBoolProperty(applyResult, "NativeGraphMutationApplied");
+                            nativeGraphMutationsApplied |= packageMutatedNativeGraph;
                             FuseLog.Info(
-                                "FUSE TrackAssembly bridge skipped package " +
-                                $"'{packageId}' reason='{ReadStringProperty(result, "SkipReason")}'.");
-                            continue;
+                                "FUSE TrackAssembly bridge applied package " +
+                                $"'{packageId}' assemblies={ReadIntProperty(result, "AssemblyCount")} " +
+                                $"nativeObjects={ReadIntProperty(result, "NativeObjectCount")} " +
+                                $"descriptorDirectives={ReadIntProperty(result, "NativeDescriptorDirectiveCount")} " +
+                                $"nativeGraphMutationApplied={packageMutatedNativeGraph}.");
                         }
-
-                        var applyResult = ReadProperty(result, "ApplyResult");
-                        var packageMutatedNativeGraph =
-                            ReadBoolProperty(applyResult, "NativeGraphMutationApplied");
-                        nativeGraphMutationsApplied |= packageMutatedNativeGraph;
-                        FuseLog.Info(
-                            "FUSE TrackAssembly bridge applied package " +
-                            $"'{packageId}' assemblies={ReadIntProperty(result, "AssemblyCount")} " +
-                            $"nativeObjects={ReadIntProperty(result, "NativeObjectCount")} " +
-                            $"descriptorDirectives={ReadIntProperty(result, "NativeDescriptorDirectiveCount")} " +
-                            $"nativeGraphMutationApplied={packageMutatedNativeGraph}.");
-                    }
-                    catch (TargetInvocationException ex)
-                    {
-                        var inner = ex.InnerException ?? ex;
-                        RecordFailure(failures, packageId, inner.Message, inner);
-                    }
-                    catch (Exception ex)
-                    {
-                        RecordFailure(failures, packageId, ex.Message, ex);
+                        catch (TargetInvocationException ex)
+                        {
+                            var inner = ex.InnerException ?? ex;
+                            RecordFailure(failures, packageId, inner.Message, inner);
+                        }
+                        catch (Exception ex)
+                        {
+                            RecordFailure(failures, packageId, ex.Message, ex);
+                        }
                     }
                 }
-            }
-            finally
-            {
-                TrackAPI.EndBatch(false);
+                finally
+                {
+                    TrackAPI.EndBatch(false);
+                }
             }
 
+            RetainLoadedPackageVisuals(bridge, bridgeType, sourcePackageIds);
             return new FuseTrackAssemblyBridgeApplySummary(nativeGraphMutationsApplied, failures);
         }
 
@@ -216,6 +229,54 @@ namespace FUSE.Loading
                     return parameters.Length == 3
                            && parameters[0].ParameterType == typeof(string)
                            && parameters[1].ParameterType == typeof(string);
+                });
+        }
+
+        private static void RetainLoadedPackageVisuals(
+            object bridge,
+            Type bridgeType,
+            string[] sourcePackageIds)
+        {
+            var retainMethod = FindRetainLoadedPackageVisualsMethod(bridgeType);
+            if (retainMethod == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var result = retainMethod.Invoke(bridge, new object[] { sourcePackageIds });
+                if (result is int cleared && cleared > 0)
+                {
+                    FuseLog.Info(
+                        $"FUSE TrackAssembly bridge cleared {cleared} stale custom visual package root(s) " +
+                        $"after retaining {sourcePackageIds.Length} TrackAssembly source package(s).");
+                }
+            }
+            catch (TargetInvocationException ex)
+            {
+                var inner = ex.InnerException ?? ex;
+                FuseLog.Exception("FUSE TrackAssembly bridge failed while clearing stale custom visuals", inner);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE TrackAssembly bridge failed while clearing stale custom visuals", ex);
+            }
+        }
+
+        private static MethodInfo FindRetainLoadedPackageVisualsMethod(Type bridgeType)
+        {
+            return bridgeType
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .FirstOrDefault(method =>
+                {
+                    if (!string.Equals(method.Name, RetainLoadedPackageVisualsMethodName, StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    var parameters = method.GetParameters();
+                    return parameters.Length == 1;
                 });
         }
 
