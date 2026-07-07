@@ -11,6 +11,7 @@ using FUSE.Infrastructure;
 using FUSE.Runtime.Lifecycle;
 using FUSE.Loading;
 using FUSE.Authoring.Migrations;
+using FUSE.Patches;
 using FUSE.Runtime.Registry;
 using Model;
 using Model.Ops;
@@ -249,13 +250,12 @@ namespace FUSE.Interface
             AddWrappedField(
                 builder,
                 "How",
-                "Reproducible culling/streaming tests (issue #76). CORRIDOR teleports between Bryson and Sylva a few times, then drives the camera up and down the track between them at a set pace. SWEEP A/B is the quick local test (oscillates across the cull boundary at your current view). The DEBOUNCE A/B (Corridor/Sweep A/B) toggles culling hysteresis off vs on (churn). The THROTTLE A/B toggles the per-frame load cap off vs on (batch-load stall) — compare minFps and maxLoadMs. Be in the overview camera. Each run appends a summary to FUSE-scenery-benchmark.json and writes a per-frame CSV (FUSE-bench-*.csv: FPS, object counts, churn, defer/release, load latency, memory); live progress prints to FUSE.log.",
+                "Reproducible culling/streaming tests (issue #76). CORRIDOR teleports between Bryson and Sylva a few times, then drives the camera up and down the track between them at a set pace. SWEEP is the quick local test (oscillates across the cull boundary at your current view). The THROTTLE A/B toggles the per-frame load cap off vs on (batch-load stall) — compare minFps and maxLoadMs. Be in the overview camera. Each run appends a summary to FUSE-scenery-benchmark.json and writes a per-frame CSV (FUSE-bench-*.csv: FPS, object counts, churn, defer/release, load latency, memory); live progress prints to FUSE.log.",
                 150f);
             builder.HStack(row =>
             {
                 row.AddButtonCompact("Run Corridor", () => RunAction("run corridor benchmark", FuseSceneryBenchmark.RunCorridor));
-                row.AddButtonCompact("Corridor A/B", () => RunAction("run corridor debounce A/B benchmark", FuseSceneryBenchmark.RunCorridorAb));
-                row.AddButtonCompact("Sweep A/B", () => RunAction("run sweep debounce A/B benchmark", FuseSceneryBenchmark.RunSweepAb));
+                row.AddButtonCompact("Run Sweep", () => RunAction("run sweep benchmark", FuseSceneryBenchmark.RunSweep));
             }, 6f).Height(32f);
             builder.HStack(row =>
             {
@@ -265,6 +265,21 @@ namespace FUSE.Interface
             }, 6f).Height(32f);
             _lastBenchmarkStatus = FuseSceneryBenchmark.Status;
             AddWrappedLabel(builder, "Benchmark: " + _lastBenchmarkStatus, 48f);
+            builder.Spacer(4f);
+
+            builder.AddSection("Decal Guards");
+            AddWrappedField(
+                builder,
+                "Counters",
+                $"Culling registry: {FuseDecalCullingScrubPatch.ScrubbedEntries} destroyed decal(s) pruned, " +
+                $"{FuseDecalCullingScrubPatch.SuppressedExceptions} visibility-job exception(s) suppressed. " +
+                $"Helper guards: {FuseDecalProjectorHelperEnableGuardPatch.SuppressedExceptions} enable / " +
+                $"{FuseDecalProjectorHelperDisableGuardPatch.SuppressedExceptions} disable exception(s) suppressed. " +
+                $"Car-only decal components disabled on scenery: {FuseSceneryAnimationSetupComponentsPatch.ScrubbedDecalComponents}. " +
+                $"Failing scenery assets reported: {FuseSceneryLoadFailurePatch.RecordedFailures}. " +
+                "All zero means no broken decal or asset content was encountered this session; non-zero values " +
+                "identify content problems FUSE is containing (details in FUSE.log / Issues tab).",
+                92f);
             builder.Spacer(4f);
 
             builder.AddSection("Experimental");

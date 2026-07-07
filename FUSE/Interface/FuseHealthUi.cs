@@ -102,6 +102,10 @@ namespace FUSE.Interface
         {
             UpdatePerformanceCounters();
 
+            // Scenery load-failure faults are queued off the main thread; resolving
+            // their pack/owner names and toasting must happen here.
+            FUSE.Patches.FuseSceneryLoadFailurePatch.DrainPending();
+
             if (_button == null)
             {
                 TryInstallHudButton();

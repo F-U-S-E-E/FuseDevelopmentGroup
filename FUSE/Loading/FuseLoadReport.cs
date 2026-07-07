@@ -18,6 +18,8 @@ namespace FUSE.Loading
         private static readonly List<string> Notices = new List<string>();
         private static readonly List<string> GraphPostBindIssues = new List<string>();
         private static readonly List<string> ProgressionTransferSkips = new List<string>();
+        private static readonly Dictionary<string, SceneryLoadFailure> SceneryLoadFailures =
+            new Dictionary<string, SceneryLoadFailure>(StringComparer.OrdinalIgnoreCase);
 
         private static string _lastSummary = "FUSE load report has not been generated yet.";
         private static string _lastDetails = "FUSE load report has not been generated yet.";
@@ -72,6 +74,7 @@ namespace FUSE.Loading
                 Notices.Clear();
                 GraphPostBindIssues.Clear();
                 ProgressionTransferSkips.Clear();
+                SceneryLoadFailures.Clear();
                 _lastSummary = "FUSE load report is pending.";
                 _lastDetails = "FUSE load report is pending.";
                 _lastJson = "{ \"status\": \"FUSE load report is pending.\" }";
@@ -97,6 +100,34 @@ namespace FUSE.Loading
                     normalizedSceneryId,
                     assetIdentifier ?? string.Empty,
                     model ?? string.Empty);
+            }
+        }
+
+        /// <summary>
+        /// Records a scenery asset whose runtime load faulted (e.g. the asset is
+        /// listed in a pack's catalog but missing from its bundle — the game keeps
+        /// retrying such loads on every culling-band transition without ever telling
+        /// the user which pack is broken). Deduped per asset identifier; returns true
+        /// only for the first record so the caller can decide about an immediate
+        /// alert. Surfaces via the health report the next time it renders — the
+        /// report re-snapshots on demand, so post-load recording needs no republish.
+        /// </summary>
+        public static bool RecordSceneryLoadFailure(string assetIdentifier, string assetPackIdentifier, string ownerPackageId, string message)
+        {
+            var key = Normalize(assetIdentifier, "<unknown>");
+            lock (Sync)
+            {
+                if (SceneryLoadFailures.ContainsKey(key))
+                {
+                    return false;
+                }
+
+                SceneryLoadFailures[key] = new SceneryLoadFailure(
+                    key,
+                    Normalize(assetPackIdentifier, "<unknown>"),
+                    Normalize(ownerPackageId, "<unknown>"),
+                    Normalize(message, "asset load failed"));
+                return true;
             }
         }
 
@@ -326,6 +357,7 @@ namespace FUSE.Loading
             string[] notices;
             string[] graphPostBindIssues;
             string[] progressionTransferSkips;
+            SceneryLoadFailure[] sceneryLoadFailures;
             lock (Sync)
             {
                 unknownScenery = UnknownSceneryAssets.Values
@@ -335,7 +367,19 @@ namespace FUSE.Loading
                 notices = Notices.ToArray();
                 graphPostBindIssues = GraphPostBindIssues.ToArray();
                 progressionTransferSkips = ProgressionTransferSkips.ToArray();
+                sceneryLoadFailures = SceneryLoadFailures.Values
+                    .OrderBy(item => item.AssetPackIdentifier, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(item => item.AssetIdentifier, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
             }
+
+            // Catalog inspection failures live with the asset-pack mount state (built
+            // lazily once per mount, so a later map load in the same session would
+            // otherwise lose them when Notices is cleared) — fold them in per snapshot.
+            notices = notices
+                .Concat(FuseAssetPackRegistry.GetCatalogInspectionFailures())
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
 
             var sceneSuppressions = FuseWorldSuppressor.GetActiveScenePathSuppressions().ToArray();
             var trackGroupSuppressions = FuseWorldSuppressor.GetActiveTrackGroupSuppressions().ToArray();
@@ -370,6 +414,7 @@ namespace FUSE.Loading
                 GraphPostBindIssues = graphPostBindIssues,
                 ProgressionTransferSkips = progressionTransferSkips,
                 Notices = notices,
+                SceneryLoadFailures = sceneryLoadFailures,
                 OrphanedCars = orphanedCars
             };
         }
@@ -443,6 +488,17 @@ namespace FUSE.Loading
             AppendList(sb, "Progression transfer skips", snapshot.ProgressionTransferSkips);
             AppendList(sb, "Notices", snapshot.Notices);
 
+            if (snapshot.SceneryLoadFailureCount > 0)
+            {
+                sb.AppendLine("Scenery assets failing to load at runtime (pack bundle/catalog mismatch):");
+                foreach (var item in snapshot.SceneryLoadFailures)
+                {
+                    sb.AppendLine(
+                        $"  {item.AssetIdentifier}: pack='{item.AssetPackIdentifier}' " +
+                        $"package='{item.OwnerPackageId}' reason='{item.Message}'");
+                }
+            }
+
             if (snapshot.OrphanedCarCount > 0)
             {
                 sb.AppendLine($"Orphaned cars (save references prototype FUSE filtered or game cannot resolve): {snapshot.OrphanedCarCount}");
@@ -486,6 +542,7 @@ namespace FUSE.Loading
                     ["progressionTransferSkips"] = snapshot.ProgressionTransferSkips.Length,
                     ["suppressions"] = suppressionCount,
                     ["notices"] = snapshot.Notices.Length,
+                    ["sceneryLoadFailures"] = snapshot.SceneryLoadFailureCount,
                     ["orphanedCars"] = snapshot.OrphanedCarCount
                 },
                 ["packages"] = new JObject
@@ -527,6 +584,13 @@ namespace FUSE.Loading
                 ["graphPostBindIssues"] = ToArray(snapshot.GraphPostBindIssues),
                 ["progressionTransferSkips"] = ToArray(snapshot.ProgressionTransferSkips),
                 ["notices"] = ToArray(snapshot.Notices),
+                ["sceneryLoadFailures"] = new JArray((snapshot.SceneryLoadFailures ?? Array.Empty<SceneryLoadFailure>()).Select(item => new JObject
+                {
+                    ["assetIdentifier"] = item.AssetIdentifier ?? string.Empty,
+                    ["assetPackIdentifier"] = item.AssetPackIdentifier ?? string.Empty,
+                    ["ownerPackageId"] = item.OwnerPackageId ?? string.Empty,
+                    ["message"] = item.Message ?? string.Empty
+                })),
                 ["orphanedCars"] = new JArray((snapshot.OrphanedCars ?? Array.Empty<FuseSaveCarFault>()).Select(fault => new JObject
                 {
                     ["carId"] = fault.CarId ?? string.Empty,
@@ -609,6 +673,22 @@ namespace FUSE.Loading
             public string Model { get; }
         }
 
+        internal sealed class SceneryLoadFailure
+        {
+            public SceneryLoadFailure(string assetIdentifier, string assetPackIdentifier, string ownerPackageId, string message)
+            {
+                AssetIdentifier = assetIdentifier;
+                AssetPackIdentifier = assetPackIdentifier;
+                OwnerPackageId = ownerPackageId;
+                Message = message;
+            }
+
+            public string AssetIdentifier { get; }
+            public string AssetPackIdentifier { get; }
+            public string OwnerPackageId { get; }
+            public string Message { get; }
+        }
+
         internal sealed class ReportSnapshot
         {
             public string Reason { get; set; }
@@ -629,6 +709,7 @@ namespace FUSE.Loading
             public string[] GraphPostBindIssues { get; set; }
             public string[] ProgressionTransferSkips { get; set; }
             public string[] Notices { get; set; }
+            public SceneryLoadFailure[] SceneryLoadFailures { get; set; }
             public FuseSaveCarFault[] OrphanedCars { get; set; }
 
             public int FaultedPackageCount =>
@@ -638,6 +719,8 @@ namespace FUSE.Loading
 
             public int OrphanedCarCount => OrphanedCars?.Length ?? 0;
 
+            public int SceneryLoadFailureCount => SceneryLoadFailures?.Length ?? 0;
+
             public bool HasProblems =>
                 FaultedPackageCount > 0 ||
                 (Conflicts != null && Conflicts.Length > 0) ||
@@ -646,6 +729,7 @@ namespace FUSE.Loading
                 (ProgressionTransferSkips != null && ProgressionTransferSkips.Length > 0) ||
                 (SkippedPackages != null && SkippedPackages.Any(item => !FusePackageFaultRegistry.IsOptionalSkipReason(item.Value))) ||
                 (Notices != null && Notices.Length > 0) ||
+                SceneryLoadFailureCount > 0 ||
                 OrphanedCarCount > 0;
         }
 

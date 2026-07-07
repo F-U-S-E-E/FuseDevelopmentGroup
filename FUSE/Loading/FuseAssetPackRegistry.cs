@@ -66,6 +66,34 @@ namespace FUSE.Loading
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object LegacyAssetPackAliasLock = new object();
         private static Dictionary<string, string> LegacyAssetPackAliases;
+
+        // Catalog.json inspection failures, surfaced to the user as load-report
+        // notices. Kept beside the alias cache (not in FuseLoadReport's map-scoped
+        // registries) because the aliases are built lazily ONCE per mount: a later
+        // map load in the same session clears the report's notices without
+        // re-running the inspection, so the report re-reads this list on every
+        // snapshot instead.
+        private static readonly object CatalogInspectionFailureLock = new object();
+        private static readonly List<string> CatalogInspectionFailures = new List<string>();
+
+        internal static string[] GetCatalogInspectionFailures()
+        {
+            lock (CatalogInspectionFailureLock)
+            {
+                return CatalogInspectionFailures.ToArray();
+            }
+        }
+
+        private static void RecordCatalogInspectionFailure(string message)
+        {
+            lock (CatalogInspectionFailureLock)
+            {
+                if (!CatalogInspectionFailures.Contains(message))
+                {
+                    CatalogInspectionFailures.Add(message);
+                }
+            }
+        }
         private static readonly FieldInfo RuntimeStoreContainerField =
             AccessTools.Field(typeof(AssetPackRuntimeStore), "_container");
 
@@ -142,6 +170,11 @@ namespace FUSE.Loading
             lock (LegacyAssetPackAliasLock)
             {
                 LegacyAssetPackAliases = null;
+            }
+
+            lock (CatalogInspectionFailureLock)
+            {
+                CatalogInspectionFailures.Clear();
             }
             FuseLegacyContainerMixintoRegistry.Reset();
             FuseAssetCollisionRegistry.Reset();

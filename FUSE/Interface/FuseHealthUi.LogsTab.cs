@@ -44,6 +44,7 @@ namespace FUSE.Interface
             AddProblemSummary(builder, report, null, "graphPostBindIssues", "Graph Issues", true);
             AddProblemSummary(builder, report, null, "progressionTransferSkips", "Transfer Skips", true);
             AddProblemSummary(builder, report, null, "notices", "Notices", true);
+            AddProblemSummary(builder, report, null, "sceneryLoadFailures", "Asset Load Failures", true);
             builder.Spacer(4f);
 
             builder.AddSection("Export");

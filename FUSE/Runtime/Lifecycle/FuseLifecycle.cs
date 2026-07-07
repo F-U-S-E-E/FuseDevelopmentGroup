@@ -92,6 +92,11 @@ namespace FUSE.Runtime.Lifecycle
             var pipelineCompleted = false;
             var canMutateWorld = FuseMultiplayerGuard.CanApplyWorldMutations("map load");
             FuseLoadReport.ResetMapLoad();
+            // The scenery load-failure watcher's per-map dedupe state feeds the load
+            // report; clear it in lockstep with the report at map-load start. Driven
+            // from here (the map-load orchestrator) rather than from FuseLoadReport so
+            // the report/loading layer keeps no compile-time dependency on a patch.
+            FUSE.Patches.FuseSceneryLoadFailurePatch.ResetForNewMap();
 
             // Defer per-object map-mask refresh across the whole apply: the single
             // trailing terrain rebuild (below) re-evaluates every live mask at once,

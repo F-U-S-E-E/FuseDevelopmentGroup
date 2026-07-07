@@ -27,11 +27,12 @@ namespace FUSE.Runtime.Lifecycle
     /// Plain static/visual scenery and mask-bearing scenery are deferred (see
     /// <see cref="FuseSceneryDeferralClassifier"/>); only stateful scenery (KeyValue/
     /// animation) stays eager. Mask-bearing scenery defers so it activates against a
-    /// live camera — camera-less activation left masks stuck — and is then held
-    /// resident by FuseSceneryCullingDebouncePatch so it never unloads. Every failure
-    /// path falls back to inline (synchronous) activation, so a deferral problem can
-    /// never leave scenery invisible or wedge a load. Only the initial map-load wave
-    /// defers; reapply/live-reload stay synchronous.
+    /// live camera — camera-less activation left masks stuck — and streams like any
+    /// other scenery; its terrain contribution survives unloads because the mask is
+    /// decoupled onto a persistent object (MapAPI.DecoupleAttachedMapMasks). Every
+    /// failure path falls back to inline (synchronous) activation, so a deferral
+    /// problem can never leave scenery invisible or wedge a load. Only the initial
+    /// map-load wave defers; reapply/live-reload stay synchronous.
     ///
     /// FLAGGED — measured impact is modest (heavy 38-package install, 2026-06):
     /// loading screen ~110s -> ~96s (~13%); only ~14s of scenery activation moved

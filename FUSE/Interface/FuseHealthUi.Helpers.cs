@@ -182,7 +182,8 @@ namespace FUSE.Interface
                    CountArray(report["unknownSceneryAssets"]) > 0 ||
                    CountArray(report["graphPostBindIssues"]) > 0 ||
                    CountArray(report["progressionTransferSkips"]) > 0 ||
-                   CountArray(report["notices"]) > 0;
+                   CountArray(report["notices"]) > 0 ||
+                   CountArray(report["sceneryLoadFailures"]) > 0;
         }
 
         private static int CountArray(JToken token)

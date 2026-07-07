@@ -22,11 +22,10 @@ namespace FUSE.Runtime.API
     /// exists and registered the cull sphere camera-less, leaving masked objects stuck
     /// (never streaming in — confirmed on a lower-end PC where masked buildings never
     /// appeared). Masks now defer like plain scenery, so they activate against a live
-    /// camera and bake their terrain as each piece streams in. Once loaded they are held
-    /// resident (never unloaded) by FuseSceneryCullingDebouncePatch as a safety net, while
-    /// MapAPI.DecoupleAttachedMapMasks moves the terrain mask onto a persistent object — so
-    /// the building and its baked terrain mask survive the player moving or teleporting away
-    /// and back.
+    /// camera and bake their terrain as each piece streams in. The building then culls
+    /// like any other scenery; MapAPI.DecoupleAttachedMapMasks moves the terrain mask
+    /// onto a persistent object, so the baked terrain mask survives the player moving
+    /// or teleporting away and back even while the model itself is unloaded.
     ///
     /// Everything else — plain meshes, materials, colorizers, ambient VFX/audio —
     /// is safe to defer; the worst case is brief cosmetic pop-in, exactly how the
@@ -122,10 +121,10 @@ namespace FUSE.Runtime.API
 
         /// <summary>
         /// True when the scenery identified by <paramref name="assetIdentifier"/> declares a
-        /// map-mask component. Used to tag mask-bearing scenery at creation so the cull
-        /// debounce can hold it resident — masked scenery must never unload, because the game
-        /// fails to reload it after a teleport (and a missed reload also drops its baked
-        /// terrain mask). Fail-safe: false when the definition cannot be resolved/inspected.
+        /// map-mask component. Used to tag mask-bearing scenery at creation so the load
+        /// throttle never defers it — its first load is what decouples the welded terrain
+        /// masks onto persistent objects, so queueing it behind plain scenery leaves visibly
+        /// wrong ground. Fail-safe: false when the definition cannot be resolved/inspected.
         /// </summary>
         internal static bool HasMaskComponent(string assetIdentifier)
         {
@@ -233,9 +232,8 @@ namespace FUSE.Runtime.API
             // masked roundhouse pieces sat at band 3 while the unmasked office next to
             // them loaded). Masks now defer like plain scenery, so they activate against
             // a live camera and stream in correctly; each masked piece bakes its terrain
-            // as it loads, and FuseSceneryCullingDebouncePatch then holds it resident so
-            // it never unloads (and therefore never has to reload). Only stateful scenery
-            // stays eager.
+            // as it loads, and the decoupled standalone mask keeps that terrain applied
+            // across later unloads/reloads. Only stateful scenery stays eager.
             return ContainsAny(componentTypeFullName, StatefulTypeNameFragments);
         }
 
