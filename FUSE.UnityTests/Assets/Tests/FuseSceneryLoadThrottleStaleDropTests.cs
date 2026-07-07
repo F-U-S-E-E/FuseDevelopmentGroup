@@ -35,6 +35,15 @@ namespace FUSE.UnityTests
         }
 
         [Test]
+        public void ExactlyAtBoundary_IsDropped()
+        {
+            // The decision is >= threshold, so an object exactly at the threshold
+            // drops. Pinned explicitly so the boundary semantics can't silently flip.
+            Assert.IsTrue(
+                FuseSceneryLoadThrottlePatch.ShouldDropStale(Vector3.zero, new Vector3(0f, 0f, Threshold)));
+        }
+
+        [Test]
         public void JustOutsideBoundary_IsDropped()
         {
             Assert.IsTrue(

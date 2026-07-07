@@ -34,7 +34,8 @@ namespace FUSE.Patches
 
         // Identifiers already queued/recorded this map, so the game's endless
         // retries of the same broken asset don't grow the queue. Cleared by
-        // FuseLoadReport.ResetMapLoad alongside the report registry it feeds.
+        // FuseLifecycle at map-load start (see ResetForNewMap), in lockstep with
+        // the load report registry this feeds.
         private static readonly HashSet<string> SeenIdentifiers =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object SeenLock = new object();

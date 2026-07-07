@@ -68,9 +68,6 @@ namespace FUSE.Loading
 
         public static void ResetMapLoad()
         {
-            // The watcher's per-map dedupe state feeds this registry — reset them together.
-            Patches.FuseSceneryLoadFailurePatch.ResetForNewMap();
-
             lock (Sync)
             {
                 UnknownSceneryAssets.Clear();
