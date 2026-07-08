@@ -152,31 +152,39 @@ namespace FUSE.Runtime.API
                     "stop registry lookups, save state, and passenger pathing assume identifiers are unique"));
             }
 
-            // Shared spans: every span key bound by two or more distinct stops.
-            var stopsBySpan = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var stop in stops)
+            // Shared spans: every span key bound by two or more distinct stop
+            // INSTANCES. Ownership is tracked by stop index, not id: two stops
+            // sharing an identifier (or both missing one) are exactly the
+            // duplicate-content case this check exists to expose, and an
+            // id-based dedupe would collapse them into a single owner and hide
+            // the conflict. Each stop contributes each span key at most once
+            // (per-stop Distinct below), so the owner lists stay instance-unique.
+            var stopsBySpan = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+            for (var index = 0; index < stops.Count; index++)
             {
-                foreach (var spanKey in stop.SpanKeys.Distinct(StringComparer.OrdinalIgnoreCase))
+                foreach (var spanKey in stops[index].SpanKeys.Distinct(StringComparer.OrdinalIgnoreCase))
                 {
-                    if (!stopsBySpan.TryGetValue(spanKey, out var owners))
+                    if (!stopsBySpan.TryGetValue(spanKey, out var ownerIndexes))
                     {
-                        owners = new List<string>();
-                        stopsBySpan[spanKey] = owners;
+                        ownerIndexes = new List<int>();
+                        stopsBySpan[spanKey] = ownerIndexes;
                     }
 
-                    owners.Add(stop.Id);
+                    ownerIndexes.Add(index);
                 }
             }
 
             foreach (var entry in stopsBySpan.OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase))
             {
-                var owners = entry.Value.Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
-                if (owners.Length < 2)
+                if (entry.Value.Count < 2)
                 {
                     continue;
                 }
+
+                var owners = entry.Value
+                    .Select(index => string.IsNullOrWhiteSpace(stops[index].Id) ? "<unnamed>" : stops[index].Id)
+                    .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
 
                 issues.Add(new Issue(
                     string.Join("+", owners),

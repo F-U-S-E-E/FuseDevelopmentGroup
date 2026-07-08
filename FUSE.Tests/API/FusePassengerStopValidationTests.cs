@@ -137,6 +137,44 @@ namespace FUSE.Tests.API
         }
 
         [Fact]
+        public void Analyze_SameIdStopsSharingASpan_ReportBothDuplicateAndSpanIssues()
+        {
+            // Owner tracking is by stop instance, not id: an id-based dedupe
+            // would collapse the two owners into one and lose the span-conflict
+            // message that explains the marker-flip symptom.
+            var stops = new List<FusePassengerStopValidation.StopInfo>
+            {
+                Stop("ela", new[] { "shared" }),
+                Stop("ela", new[] { "shared" })
+            };
+
+            var issues = FusePassengerStopValidation.Analyze(stops);
+
+            Assert.Equal(2, issues.Count);
+            Assert.Single(issues, issue => issue.Reason.Contains("share identifier"));
+            var spanIssue = Assert.Single(issues, issue => issue.Reason.Contains("bind track span"));
+            Assert.Equal("ela+ela", spanIssue.ObjectId);
+        }
+
+        [Fact]
+        public void Analyze_UnnamedStopsSharingASpan_StillFlagged()
+        {
+            // Blank ids are excluded from the duplicate-id check, so the span
+            // check is the only detector left for this shape — it must not
+            // collapse the two unnamed owners into one.
+            var stops = new List<FusePassengerStopValidation.StopInfo>
+            {
+                Stop(string.Empty, new[] { "shared" }),
+                Stop(string.Empty, new[] { "shared" })
+            };
+
+            var issues = FusePassengerStopValidation.Analyze(stops);
+
+            var issue = Assert.Single(issues, candidate => candidate.Reason.Contains("bind track span"));
+            Assert.Equal("<unnamed>+<unnamed>", issue.ObjectId);
+        }
+
+        [Fact]
         public void Analyze_UnnamedSpanInstanceKeys_OnlyCollideOnTheSameInstance()
         {
             // CollectStopInfos keys unnamed spans as "instance:<id>", so two
