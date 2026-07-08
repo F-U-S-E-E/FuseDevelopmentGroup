@@ -29,14 +29,12 @@ namespace FUSE.Runtime.Lifecycle
     internal static class FuseFrameSpikeDiagnostic
     {
         private static GameObject _host;
-        private static long _spikeCount;
-        private static float _worstMs;
 
         /// <summary>Frames over threshold since startup (diagnostics).</summary>
-        internal static long SpikeCount => _spikeCount;
+        internal static long SpikeCount => FuseRuntimeGuardCounters.FrameSpikes;
 
         /// <summary>Worst frame observed over threshold, in milliseconds (diagnostics).</summary>
-        internal static float WorstMs => _worstMs;
+        internal static float WorstMs => FuseRuntimeGuardCounters.FrameSpikeWorstMs;
 
         internal static void EnsureStarted()
         {
@@ -104,17 +102,13 @@ namespace FUSE.Runtime.Lifecycle
                 var thresholdMs = Mathf.Max(20f, FuseSettings.FrameSpikeThresholdMs);
                 if (frameMs >= thresholdMs && frameMs < StallCutoffMs)
                 {
-                    _spikeCount++;
-                    if (frameMs > _worstMs)
-                    {
-                        _worstMs = frameMs;
-                    }
+                    var spikeCount = FuseRuntimeGuardCounters.RecordFrameSpike(frameMs);
 
-                    if (ShouldLog(_spikeCount))
+                    if (ShouldLog(spikeCount))
                     {
                         FuseLog.Warning(
-                            $"FUSE frame spike #{_spikeCount}: {frameMs:F0}ms " +
-                            $"(threshold {thresholdMs:F0}ms, worst {_worstMs:F0}ms) frame={Time.frameCount} " +
+                            $"FUSE frame spike #{spikeCount}: {frameMs:F0}ms " +
+                            $"(threshold {thresholdMs:F0}ms, worst {FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}ms) frame={Time.frameCount} " +
                             $"gcDelta0={gen0 - _gen0} gcDelta1={gen1 - _gen1} gcDelta2={gen2 - _gen2}. " +
                             "Correlate this timestamp with surrounding FUSE.log/Player.log activity to attribute the hitch; " +
                             "a positive gcDelta with no nearby activity points at allocation pressure.");

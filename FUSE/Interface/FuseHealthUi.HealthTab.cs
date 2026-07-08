@@ -67,6 +67,12 @@ namespace FUSE.Interface
             AddReadinessRow(builder, "Progression", transferSkipCount == 0, "0 transfer skips", transferSkipCount + " skip(s)");
             AddReadinessRow(builder, "Registry", conflictCount == 0, "0 conflicts", conflictCount + " conflict(s)");
             AddReadinessRow(builder, "Notices", noticeCount == 0, "0 notices", noticeCount + " notice(s)");
+            AddReadinessRow(
+                builder,
+                "Guards",
+                FuseRuntimeGuardCounters.AllIdle,
+                "idle",
+                FuseRuntimeGuardCounters.GuardTotal + " contained event(s)");
             builder.Spacer(6f);
 
             var multiplayer = FuseMultiplayerGuard.GetStatus();
@@ -82,6 +88,24 @@ namespace FUSE.Interface
             AddValueField(builder, "FUSE Map Load", FusePerformanceMetrics.FormatTiming("map load total"));
             AddValueField(builder, "Runtime Apply", FusePerformanceMetrics.FormatTiming("apply resident definitions"));
             AddWrappedField(builder, "Slowest", FriendlyTimingText(FusePerformanceMetrics.FormatSlowestApplyPackage()), 42f);
+            builder.Spacer(6f);
+
+            // Always visible (a handful of static reads): non-zero counters mean
+            // FUSE is containing broken content at runtime — exactly the numbers a
+            // remote report needs, so they must not hide behind Advanced Details.
+            builder.AddSection("Runtime Guards");
+            AddValueField(
+                builder,
+                "State",
+                FuseRuntimeGuardCounters.AllIdle
+                    ? "idle — no broken content needed containing this session"
+                    : FuseRuntimeGuardCounters.GuardTotal + " contained event(s) this session");
+            AddWrappedField(
+                builder,
+                "Counters",
+                FuseRuntimeGuardCounters.FormatSummary() +
+                " Non-zero counters are content problems FUSE is containing (offenders in FUSE.log / Issues tab).",
+                58f);
             builder.Spacer(6f);
 
             builder.AddSection("Actions");

@@ -45,10 +45,8 @@ namespace FUSE.Patches
         private static readonly HashSet<string> ToastedPacks =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        private static long _recorded;
-
         /// <summary>Distinct failing scenery assets recorded since startup (diagnostics).</summary>
-        internal static long RecordedFailures => _recorded;
+        internal static long RecordedFailures => FuseRuntimeGuardCounters.SceneryLoadFailures;
 
         internal static void ResetForNewMap()
         {
@@ -136,7 +134,7 @@ namespace FUSE.Patches
                 return;
             }
 
-            _recorded++;
+            FuseRuntimeGuardCounters.RecordSceneryLoadFailure();
             FuseLog.Error(
                 $"FUSE scenery asset '{failure.Identifier}' is failing to load and will keep failing on " +
                 $"every retry: pack='{pack}' package='{owner}' reason='{failure.Message}'. The pack's " +

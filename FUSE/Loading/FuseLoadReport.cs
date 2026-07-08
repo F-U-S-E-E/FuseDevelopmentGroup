@@ -472,6 +472,11 @@ namespace FUSE.Loading
 
             sb.AppendLine($"Conflicts recorded: {snapshot.Conflicts.Length} (details: /fuse.conflicts).");
 
+            // Live session counters, not part of the load snapshot: every guard FUSE
+            // keeps around broken content, so a pasted report answers "did the guards
+            // fire?" without the reporter having to open the Health window at all.
+            sb.AppendLine("Runtime guards (session): " + FuseRuntimeGuardCounters.FormatSummary() + ".");
+
             sb.AppendLine(
                 $"Suppressions active: scenePaths={snapshot.SceneSuppressions.Length}; " +
                 $"trackGroups={snapshot.TrackGroupSuppressions.Length}; areas={snapshot.AreaSuppressions.Length}.");
@@ -574,6 +579,22 @@ namespace FUSE.Loading
                     ["attemptedPackageId"] = conflict.AttemptedPackageId ?? string.Empty,
                     ["resolution"] = conflict.Resolution ?? string.Empty
                 })),
+                // Live session counters (see BuildDetails); intentionally outside
+                // "counts" so they do not read as load-snapshot state.
+                ["runtimeGuards"] = new JObject
+                {
+                    ["guardTotal"] = FuseRuntimeGuardCounters.GuardTotal,
+                    ["decalRegistryScrubbed"] = FuseRuntimeGuardCounters.DecalRegistryScrubbed,
+                    ["decalVisibilitySuppressed"] = FuseRuntimeGuardCounters.DecalVisibilitySuppressed,
+                    ["decalHelperEnableSuppressed"] = FuseRuntimeGuardCounters.DecalHelperEnableSuppressed,
+                    ["decalHelperDisableSuppressed"] = FuseRuntimeGuardCounters.DecalHelperDisableSuppressed,
+                    ["curveMeshSuppressed"] = FuseRuntimeGuardCounters.CurveMeshSuppressed,
+                    ["sceneryCarDecalsDisabled"] = FuseRuntimeGuardCounters.SceneryDecalComponentsDisabled,
+                    ["sceneryLoadFailures"] = FuseRuntimeGuardCounters.SceneryLoadFailures,
+                    ["flaresSuppressed"] = FuseRuntimeGuardCounters.FlareSuppressed,
+                    ["frameSpikes"] = FuseRuntimeGuardCounters.FrameSpikes,
+                    ["frameSpikeWorstMs"] = FuseRuntimeGuardCounters.FrameSpikeWorstMs
+                },
                 ["suppressions"] = new JObject
                 {
                     ["scenePaths"] = ToArray(snapshot.SceneSuppressions),

@@ -30,10 +30,8 @@ namespace FUSE.Patches
     [HarmonyPatch(typeof(CurveMeshBuilderBase), "CullingSphereStateChanged")]
     internal static class FuseCurveMeshCullingGuardPatch
     {
-        private static long _suppressed;
-
         /// <summary>Exceptions suppressed since startup (diagnostics).</summary>
-        internal static long SuppressedExceptions => _suppressed;
+        internal static long SuppressedExceptions => FuseRuntimeGuardCounters.CurveMeshSuppressed;
 
         private static Exception Finalizer(Exception __exception, CurveMeshBuilderBase __instance)
         {
@@ -42,10 +40,10 @@ namespace FUSE.Patches
                 return null;
             }
 
-            _suppressed++;
+            var suppressed = FuseRuntimeGuardCounters.RecordCurveMeshSuppressed();
             // First few individually (enough to identify the offender), then heartbeat only —
             // a permanently-broken builder re-throws on every culling event it receives.
-            if (_suppressed <= 5 || _suppressed % 100 == 0)
+            if (suppressed <= 5 || suppressed % 100 == 0)
             {
                 var name = "<destroyed>";
                 try
@@ -62,7 +60,7 @@ namespace FUSE.Patches
                 }
 
                 FuseLog.Warning(
-                    $"FUSE suppressed curve-mesh culling exception #{_suppressed} on '{name}': " +
+                    $"FUSE suppressed curve-mesh culling exception #{suppressed} on '{name}': " +
                     $"{__exception.GetBaseException().Message}. Without this guard the exception would " +
                     "abort the whole CullingGroup event batch and stop other scenery from streaming.");
             }

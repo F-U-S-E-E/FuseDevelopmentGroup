@@ -31,10 +31,8 @@ namespace FUSE.Patches
     [HarmonyPatch(typeof(FlareManager), "HandleAddUpdateFlare")]
     internal static class FuseFlareDeadTrackGuardPatch
     {
-        private static long _suppressed;
-
         /// <summary>Stale-flare exceptions suppressed since startup (diagnostics).</summary>
-        internal static long SuppressedExceptions => _suppressed;
+        internal static long SuppressedExceptions => FuseRuntimeGuardCounters.FlareSuppressed;
 
         private static Exception Finalizer(Exception __exception, string key)
         {
@@ -43,13 +41,13 @@ namespace FUSE.Patches
                 return null;
             }
 
-            _suppressed++;
+            var suppressed = FuseRuntimeGuardCounters.RecordFlareSuppressed();
             var flareKey = string.IsNullOrWhiteSpace(key) ? "<unknown>" : key;
             var reason = __exception.GetBaseException().Message;
-            if (ShouldLog(_suppressed))
+            if (ShouldLog(suppressed))
             {
                 FuseLog.Warning(
-                    $"FUSE suppressed stale-flare exception #{_suppressed} for flare '{flareKey}': {reason}. " +
+                    $"FUSE suppressed stale-flare exception #{suppressed} for flare '{flareKey}': {reason}. " +
                     "The flare's saved location references track that no longer exists (usually a track mod " +
                     "removed or replaced the segment it was standing on), so it cannot appear in the world.");
             }

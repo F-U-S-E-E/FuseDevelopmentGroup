@@ -119,10 +119,8 @@ namespace FUSE.Patches
         private static Type _legosDecalHelperType;
         private static bool _legosDecalHelperResolveAttempted;
 
-        private static long _scrubbedDecalComponents;
-
         /// <summary>Car-only decal components disabled on scenery since startup (diagnostics).</summary>
-        internal static long ScrubbedDecalComponents => _scrubbedDecalComponents;
+        internal static long ScrubbedDecalComponents => FuseRuntimeGuardCounters.SceneryDecalComponentsDisabled;
 
         private static Type ResolveLegosDecalHelperType()
         {
@@ -180,11 +178,11 @@ namespace FUSE.Patches
                 }
 
                 behaviour.enabled = false;
-                _scrubbedDecalComponents++;
-                if (FuseDecalGuardLog.ShouldLog(_scrubbedDecalComponents))
+                var scrubbed = FuseRuntimeGuardCounters.RecordSceneryDecalComponentDisabled();
+                if (FuseDecalGuardLog.ShouldLog(scrubbed))
                 {
                     FuseLog.Warning(
-                        $"FUSE disabled car-only decal component #{_scrubbedDecalComponents} " +
+                        $"FUSE disabled car-only decal component #{scrubbed} " +
                         $"({componentType.Name}) on scenery '{FormatSceneryName(instance)}' " +
                         $"('{behaviour.transform.name}'); car decal machinery stays inert on " +
                         "car-less scenery, matching vanilla setup which never activated it.");

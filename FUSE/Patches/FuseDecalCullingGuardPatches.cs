@@ -58,14 +58,12 @@ namespace FUSE.Patches
         private static readonly FieldInfo EntryProjectorField = BindEntryProjectorField();
 
         private static bool _scrubPending;
-        private static long _scrubbed;
-        private static long _suppressed;
 
         /// <summary>Destroyed registry entries pruned since startup (diagnostics).</summary>
-        internal static long ScrubbedEntries => _scrubbed;
+        internal static long ScrubbedEntries => FuseRuntimeGuardCounters.DecalRegistryScrubbed;
 
         /// <summary>Exceptions suppressed since startup (diagnostics).</summary>
-        internal static long SuppressedExceptions => _suppressed;
+        internal static long SuppressedExceptions => FuseRuntimeGuardCounters.DecalVisibilitySuppressed;
 
         private static FieldInfo BindEntryProjectorField()
         {
@@ -101,11 +99,11 @@ namespace FUSE.Patches
                     }
 
                     entries.RemoveAt(i);
-                    _scrubbed++;
-                    if (FuseDecalGuardLog.ShouldLog(_scrubbed))
+                    var scrubbed = FuseRuntimeGuardCounters.RecordDecalRegistryScrubbed();
+                    if (FuseDecalGuardLog.ShouldLog(scrubbed))
                     {
                         FuseLog.Warning(
-                            $"FUSE pruned destroyed decal #{_scrubbed} from the decal culling registry. " +
+                            $"FUSE pruned destroyed decal #{scrubbed} from the decal culling registry. " +
                             "Without this the visibility job would throw every frame and leak its temp " +
                             "job memory each time (usually a car-lettering decal orphaned by a mod " +
                             "destroying the car outside the normal disable path).");
@@ -126,11 +124,11 @@ namespace FUSE.Patches
             }
 
             _scrubPending = true;
-            _suppressed++;
-            if (FuseDecalGuardLog.ShouldLog(_suppressed))
+            var suppressed = FuseRuntimeGuardCounters.RecordDecalVisibilitySuppressed();
+            if (FuseDecalGuardLog.ShouldLog(suppressed))
             {
                 FuseLog.Warning(
-                    $"FUSE suppressed decal visibility job exception #{_suppressed}: " +
+                    $"FUSE suppressed decal visibility job exception #{suppressed}: " +
                     $"{__exception.GetBaseException().Message}. Suppressing lets the manager's own " +
                     "update timer reset, so it retries on its normal ~0.25s cadence instead of " +
                     "re-throwing (and leaking temp job memory) every frame; destroyed registry " +
@@ -155,10 +153,8 @@ namespace FUSE.Patches
     [HarmonyPatch(typeof(DecalProjectorHelper), "OnEnable")]
     internal static class FuseDecalProjectorHelperEnableGuardPatch
     {
-        private static long _suppressed;
-
         /// <summary>OnEnable exceptions suppressed since startup (diagnostics).</summary>
-        internal static long SuppressedExceptions => _suppressed;
+        internal static long SuppressedExceptions => FuseRuntimeGuardCounters.DecalHelperEnableSuppressed;
 
         private static Exception Finalizer(Exception __exception, DecalProjectorHelper __instance)
         {
@@ -167,13 +163,13 @@ namespace FUSE.Patches
                 return null;
             }
 
-            _suppressed++;
-            if (FuseDecalGuardLog.ShouldLog(_suppressed))
+            var suppressed = FuseRuntimeGuardCounters.RecordDecalHelperEnableSuppressed();
+            if (FuseDecalGuardLog.ShouldLog(suppressed))
             {
                 // Unity's overloaded null covers a destroyed instance, so .name is safe.
                 var name = __instance != null ? __instance.name : "<destroyed>";
                 FuseLog.Warning(
-                    $"FUSE suppressed car-decal helper enable exception #{_suppressed} on '{name}': " +
+                    $"FUSE suppressed car-decal helper enable exception #{suppressed} on '{name}': " +
                     $"{__exception.GetBaseException().Message}. The helper usually has no Car ancestor " +
                     "(car decal machinery mounted on scenery); it stays inert either way.");
             }
@@ -207,10 +203,8 @@ namespace FUSE.Patches
         private static readonly FieldInfo SharedManagerField =
             AccessTools.Field(typeof(DecalCullingManager), "_shared");
 
-        private static long _suppressed;
-
         /// <summary>OnDisable exceptions suppressed since startup (diagnostics).</summary>
-        internal static long SuppressedExceptions => _suppressed;
+        internal static long SuppressedExceptions => FuseRuntimeGuardCounters.DecalHelperDisableSuppressed;
 
         private static Exception Finalizer(Exception __exception, DecalProjectorHelper __instance)
         {
@@ -236,11 +230,11 @@ namespace FUSE.Patches
                 FuseLog.Exception("FUSE decal helper disable guard could not unregister", ex);
             }
 
-            _suppressed++;
-            if (FuseDecalGuardLog.ShouldLog(_suppressed))
+            var suppressed = FuseRuntimeGuardCounters.RecordDecalHelperDisableSuppressed();
+            if (FuseDecalGuardLog.ShouldLog(suppressed))
             {
                 FuseLog.Warning(
-                    $"FUSE suppressed car-decal helper disable exception #{_suppressed}: " +
+                    $"FUSE suppressed car-decal helper disable exception #{suppressed}: " +
                     $"{__exception.GetBaseException().Message}. The helper's decal registration was " +
                     "released where possible; the decal culling scrub covers anything left behind.");
             }

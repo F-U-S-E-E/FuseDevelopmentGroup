@@ -181,6 +181,7 @@ namespace FUSE.Interface
             builder.AppendLine("Graph Issues: " + ReadInt(counts["graphIssues"]));
             builder.AppendLine("Transfer Skips: " + ReadInt(counts["progressionTransferSkips"]));
             builder.AppendLine("Suppressions: " + ReadInt(counts["suppressions"]));
+            builder.AppendLine("Runtime Guards: " + FuseRuntimeGuardCounters.FormatSummary());
             builder.AppendLine("Map Load: " + FusePerformanceMetrics.FormatTiming("map load total"));
             builder.AppendLine("Runtime Apply: " + FusePerformanceMetrics.FormatTiming("apply resident definitions"));
             return builder.ToString().TrimEnd();
