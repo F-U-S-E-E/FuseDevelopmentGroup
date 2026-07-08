@@ -127,7 +127,12 @@ namespace FUSE.Runtime.API
         }
 
         /// <summary>
-        /// Pure analysis over collected stop shapes (unit-testable without Unity).
+        /// Pure analysis over collected stop shapes (unit-testable without
+        /// Unity). Coordinates one helper per rule; new rules slot in as new
+        /// Find* helpers. Issue order (duplicate ids, shared spans, isolated
+        /// stops — each alphabetical within its rule) is part of the tested
+        /// contract: the load report dedupes recorded lines by exact text and
+        /// tests assert deterministic output.
         /// </summary>
         internal static List<Issue> Analyze(IReadOnlyList<StopInfo> stops)
         {
@@ -137,28 +142,39 @@ namespace FUSE.Runtime.API
                 return issues;
             }
 
-            // Duplicate identifiers: the stop registry, save state, and pathing
-            // all key on the identifier, so two live instances sharing one id
-            // shadow each other unpredictably.
+            issues.AddRange(FindDuplicateIdentifierIssues(stops));
+            issues.AddRange(FindSharedSpanIssues(stops));
+            issues.AddRange(FindIsolatedStopIssues(stops));
+            return issues;
+        }
+
+        // Duplicate identifiers: the stop registry, save state, and pathing
+        // all key on the identifier, so two live instances sharing one id
+        // shadow each other unpredictably.
+        private static IEnumerable<Issue> FindDuplicateIdentifierIssues(IReadOnlyList<StopInfo> stops)
+        {
             foreach (var group in stops
                          .Where(stop => !string.IsNullOrWhiteSpace(stop.Id))
                          .GroupBy(stop => stop.Id, StringComparer.OrdinalIgnoreCase)
                          .Where(group => group.Count() > 1)
                          .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
             {
-                issues.Add(new Issue(
+                yield return new Issue(
                     group.Key,
                     $"{group.Count()} live passenger stop instances share identifier '{group.Key}' — " +
-                    "stop registry lookups, save state, and passenger pathing assume identifiers are unique"));
+                    "stop registry lookups, save state, and passenger pathing assume identifiers are unique");
             }
+        }
 
-            // Shared spans: every span key bound by two or more distinct stop
-            // INSTANCES. Ownership is tracked by stop index, not id: two stops
-            // sharing an identifier (or both missing one) are exactly the
-            // duplicate-content case this check exists to expose, and an
-            // id-based dedupe would collapse them into a single owner and hide
-            // the conflict. Each stop contributes each span key at most once
-            // (per-stop Distinct below), so the owner lists stay instance-unique.
+        // Shared spans: every span key bound by two or more distinct stop
+        // INSTANCES. Ownership is tracked by stop index, not id: two stops
+        // sharing an identifier (or both missing one) are exactly the
+        // duplicate-content case this check exists to expose, and an
+        // id-based dedupe would collapse them into a single owner and hide
+        // the conflict. Each stop contributes each span key at most once
+        // (per-stop Distinct below), so the owner lists stay instance-unique.
+        private static IEnumerable<Issue> FindSharedSpanIssues(IReadOnlyList<StopInfo> stops)
+        {
             var stopsBySpan = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
             for (var index = 0; index < stops.Count; index++)
             {
@@ -186,32 +202,35 @@ namespace FUSE.Runtime.API
                     .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
 
-                issues.Add(new Issue(
+                yield return new Issue(
                     string.Join("+", owners),
                     $"passenger stops {FormatIdList(owners)} all bind track span '{entry.Key}' — " +
                     "overlapping stops service the same parked passenger cars and flip their last-stop " +
                     "markers against each other every service tick; when the stops are not neighbors this " +
-                    "also logs a failed path search per flip"));
+                    "also logs a failed path search per flip");
             }
+        }
 
-            // Isolated stops: with no neighbors the game's stop-graph search can
-            // never reach the stop, so passenger transfers involving it fail.
-            // Meaningless on a world with a single stop.
-            if (stops.Count > 1)
+        // Isolated stops: with no neighbors the game's stop-graph search can
+        // never reach the stop, so passenger transfers involving it fail.
+        // Meaningless on a world with a single stop.
+        private static IEnumerable<Issue> FindIsolatedStopIssues(IReadOnlyList<StopInfo> stops)
+        {
+            if (stops.Count <= 1)
             {
-                foreach (var stop in stops
-                             .Where(candidate => candidate.NeighborCount == 0 && !string.IsNullOrWhiteSpace(candidate.Id))
-                             .OrderBy(candidate => candidate.Id, StringComparer.OrdinalIgnoreCase))
-                {
-                    issues.Add(new Issue(
-                        stop.Id,
-                        $"passenger stop '{stop.Id}' declares no neighbors — the game's stop-graph search cannot " +
-                        "reach it, so passenger transfers involving it fail (each attempt logs " +
-                        "'Path from … not found - PassengerStopEdgeMoved will not be fired')"));
-                }
+                yield break;
             }
 
-            return issues;
+            foreach (var stop in stops
+                         .Where(candidate => candidate.NeighborCount == 0 && !string.IsNullOrWhiteSpace(candidate.Id))
+                         .OrderBy(candidate => candidate.Id, StringComparer.OrdinalIgnoreCase))
+            {
+                yield return new Issue(
+                    stop.Id,
+                    $"passenger stop '{stop.Id}' declares no neighbors — the game's stop-graph search cannot " +
+                    "reach it, so passenger transfers involving it fail (each attempt logs " +
+                    "'Path from … not found - PassengerStopEdgeMoved will not be fired')");
+            }
         }
 
         private static string FormatIdList(IReadOnlyList<string> ids)
