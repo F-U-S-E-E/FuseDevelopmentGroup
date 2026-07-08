@@ -121,6 +121,9 @@ namespace FUSE.Patches
                 foreach (var entry in missing)
                 {
                     FuseSceneryLoadFailurePatch.ReportCatalogMismatch(entry.Key, store.Identifier, entry.Value);
+                    // Audit-confirmed missing = can never load; skip the runtime
+                    // failure threshold and stop the retry churn immediately.
+                    FuseSceneryLoadFailurePatch.RequestQuarantine(entry.Key);
                 }
             }
             catch (Exception ex)

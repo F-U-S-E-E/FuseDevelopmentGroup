@@ -53,6 +53,8 @@ namespace FUSE.Patches
             lock (SeenLock)
             {
                 SeenIdentifiers.Clear();
+                FailureCounts.Clear();
+                QuarantineRequested.Clear();
             }
 
             ToastedPacks.Clear();
@@ -60,9 +62,96 @@ namespace FUSE.Patches
             {
             }
 
+            while (PendingQuarantine.TryDequeue(out _))
+            {
+            }
+
             // The bundle audit shares this dedupe lifecycle: its findings land in
             // the same report bucket, so both repopulate together after a reload.
             FuseAssetPackBundleAuditPatch.ResetForNewMap();
+        }
+
+        // ---- Broken-scenery quarantine -------------------------------------
+        //
+        // A scenery asset that cannot load (bundle/catalog mismatch) is retried
+        // by the loader on every culling pass near its placements, forever — in
+        // the field one missing asset produced 180 retries in three minutes,
+        // each costing an exception, three log blocks, and periodic crash-report
+        // uploads. Retrying an asset that can NEVER load is pure waste, so once
+        // an asset is known-broken — immediately for bundle-audit-confirmed
+        // misses, after a few observed failures for everything else — its
+        // placements are disabled for the session. Disabling a scenery host is
+        // a vanilla-exercised path (progression gating does the same), and the
+        // quarantine re-arms per map load, so fixing the pack brings the
+        // placements back on the next load.
+
+        // Runtime failures before quarantine. The task watch and the log hook
+        // can each count the same retry, so this is a heuristic bound on real
+        // retry churn, not an exact retry count.
+        private const int RuntimeFailureQuarantineThreshold = 5;
+
+        private static readonly Dictionary<string, int> FailureCounts =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> QuarantineRequested =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly ConcurrentQueue<string> PendingQuarantine = new ConcurrentQueue<string>();
+
+        /// <summary>
+        /// Requests session-quarantine of every placement of an asset that is
+        /// known to be unloadable (bundle audit) or has failed repeatedly at
+        /// runtime. Thread-safe; execution happens on the main thread in
+        /// <see cref="DrainPending"/>. Idempotent per identifier per map.
+        /// </summary>
+        internal static void RequestQuarantine(string identifier)
+        {
+            if (string.IsNullOrWhiteSpace(identifier))
+            {
+                return;
+            }
+
+            lock (SeenLock)
+            {
+                if (!QuarantineRequested.Add(identifier))
+                {
+                    return;
+                }
+            }
+
+            PendingQuarantine.Enqueue(identifier);
+        }
+
+        /// <summary>Quarantine requests queued but not yet executed (test hook).</summary>
+        internal static int QuarantinePendingCountForTests => PendingQuarantine.Count;
+
+        private static void ExecuteQuarantine(string identifier)
+        {
+            var disabled = 0;
+            foreach (var instance in UnityEngine.Object.FindObjectsOfType<SceneryAssetInstance>())
+            {
+                if (instance == null ||
+                    !string.Equals(instance.identifier, identifier, StringComparison.OrdinalIgnoreCase) ||
+                    !instance.gameObject.activeSelf)
+                {
+                    continue;
+                }
+
+                instance.gameObject.SetActive(false);
+                disabled++;
+                FuseRuntimeGuardCounters.RecordSceneryPlacementQuarantined();
+            }
+
+            if (disabled == 0)
+            {
+                return;
+            }
+
+            FuseLog.Warning(
+                $"FUSE quarantined {disabled} scenery placement(s) of '{identifier}' for this session: the asset " +
+                "cannot load, and the loader would otherwise retry it on every culling pass near each placement. " +
+                "Fixing the pack restores the placements on the next map load.");
+            FuseLoadReport.RecordNotice(
+                $"{disabled} scenery placement(s) of '{identifier}' were disabled for this session because the " +
+                "asset cannot load (see the asset load failures section). Fixing the pack restores them.");
         }
 
         /// <summary>
@@ -124,15 +213,26 @@ namespace FUSE.Patches
         {
             try
             {
+                var quarantine = false;
                 lock (SeenLock)
                 {
-                    if (!SeenIdentifiers.Add(identifier))
+                    // Count every observed failure (pre-dedupe): repeated
+                    // failures of the same identifier are the retry churn the
+                    // quarantine exists to stop.
+                    FailureCounts.TryGetValue(identifier, out var count);
+                    FailureCounts[identifier] = ++count;
+                    quarantine = count == RuntimeFailureQuarantineThreshold;
+
+                    if (SeenIdentifiers.Add(identifier))
                     {
-                        return; // the game retries broken assets forever; report once.
+                        Pending.Enqueue(new PendingFailure(identifier, message, packIdentifier));
                     }
                 }
 
-                Pending.Enqueue(new PendingFailure(identifier, message, packIdentifier));
+                if (quarantine)
+                {
+                    RequestQuarantine(identifier);
+                }
             }
             catch (Exception ex)
             {
@@ -257,6 +357,19 @@ namespace FUSE.Patches
                 {
                     FuseLog.Exception(
                         $"FUSE could not record scenery load failure for '{failure.Identifier}'", ex);
+                }
+            }
+
+            while (PendingQuarantine.TryDequeue(out var identifier))
+            {
+                try
+                {
+                    ExecuteQuarantine(identifier);
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception(
+                        $"FUSE could not quarantine scenery placements of '{identifier}'", ex);
                 }
             }
         }

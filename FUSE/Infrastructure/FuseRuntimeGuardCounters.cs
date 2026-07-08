@@ -24,6 +24,7 @@ namespace FUSE.Infrastructure
         internal static long CurveMeshSuppressed { get; private set; }
         internal static long SceneryDecalComponentsDisabled { get; private set; }
         internal static long SceneryLoadFailures { get; private set; }
+        internal static long SceneryPlacementsQuarantined { get; private set; }
         internal static long FlareSuppressed { get; private set; }
 
         internal static long FrameSpikes { get; private set; }
@@ -49,6 +50,7 @@ namespace FUSE.Infrastructure
             CurveMeshSuppressed +
             SceneryDecalComponentsDisabled +
             SceneryLoadFailures +
+            SceneryPlacementsQuarantined +
             FlareSuppressed;
 
         internal static bool AllIdle => GuardTotal == 0;
@@ -66,6 +68,8 @@ namespace FUSE.Infrastructure
         internal static long RecordSceneryDecalComponentDisabled() => ++SceneryDecalComponentsDisabled;
 
         internal static long RecordSceneryLoadFailure() => ++SceneryLoadFailures;
+
+        internal static long RecordSceneryPlacementQuarantined() => ++SceneryPlacementsQuarantined;
 
         internal static long RecordFlareSuppressed() => ++FlareSuppressed;
 
@@ -95,7 +99,8 @@ namespace FUSE.Infrastructure
                 $"decalScrubbed={DecalRegistryScrubbed} decalVisibility={DecalVisibilitySuppressed} " +
                 $"decalHelperEnable={DecalHelperEnableSuppressed} decalHelperDisable={DecalHelperDisableSuppressed} " +
                 $"curveMesh={CurveMeshSuppressed} sceneryCarDecalsDisabled={SceneryDecalComponentsDisabled} " +
-                $"sceneryLoadFailures={SceneryLoadFailures} sceneryLoadWatch={SceneryLoadWatchAttached} " +
+                $"sceneryLoadFailures={SceneryLoadFailures} sceneryQuarantined={SceneryPlacementsQuarantined} " +
+                $"sceneryLoadWatch={SceneryLoadWatchAttached} " +
                 $"flares={FlareSuppressed} " +
                 spikes;
         }
@@ -110,6 +115,7 @@ namespace FUSE.Infrastructure
             CurveMeshSuppressed = 0;
             SceneryDecalComponentsDisabled = 0;
             SceneryLoadFailures = 0;
+            SceneryPlacementsQuarantined = 0;
             FlareSuppressed = 0;
             FrameSpikes = 0;
             FrameSpikeWorstMs = 0f;

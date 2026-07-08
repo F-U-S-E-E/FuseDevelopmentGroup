@@ -80,6 +80,54 @@ namespace FUSE.Tests.Patches
             Assert.Equal(0, FuseSceneryLoadFailurePatch.PendingCountForTests);
         }
 
+        [Fact]
+        public void RepeatedFailures_RequestQuarantineExactlyOnceAtThreshold()
+        {
+            // Five observed failures of one identifier queue one quarantine
+            // request; further failures do not queue another.
+            for (var attempt = 0; attempt < 7; attempt++)
+            {
+                var source = new TaskCompletionSource<object>();
+                FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", source.Task);
+                source.SetException(new Exception("Failed to load asset from asset bundle"));
+            }
+
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+            // Reporting stays deduped to one row regardless of retry count.
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
+        }
+
+        [Fact]
+        public void FewFailures_DoNotRequestQuarantine()
+        {
+            for (var attempt = 0; attempt < 4; attempt++)
+            {
+                var source = new TaskCompletionSource<object>();
+                FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", source.Task);
+                source.SetException(new Exception("Failed to load asset from asset bundle"));
+            }
+
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Fact]
+        public void RequestQuarantine_IsIdempotentPerIdentifier_AndResetsPerMap()
+        {
+            FuseSceneryLoadFailurePatch.RequestQuarantine("aspenbridgeclear");
+            FuseSceneryLoadFailurePatch.RequestQuarantine("aspenbridgeclear");
+            FuseSceneryLoadFailurePatch.RequestQuarantine("  ");
+
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+
+            FuseSceneryLoadFailurePatch.ResetForNewMap();
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+
+            // A fixed pack stays fixed, but a still-broken one re-quarantines
+            // on the next map: the request set must re-arm.
+            FuseSceneryLoadFailurePatch.RequestQuarantine("aspenbridgeclear");
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
         [Theory]
         [InlineData("Error loading scenery aspenbridgeclear", "aspenbridgeclear")]
         [InlineData("Error loading scenery some id with spaces ", "some id with spaces")]
