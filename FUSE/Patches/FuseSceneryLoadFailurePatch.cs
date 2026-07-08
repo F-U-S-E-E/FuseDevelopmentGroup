@@ -59,6 +59,33 @@ namespace FUSE.Patches
             while (Pending.TryDequeue(out _))
             {
             }
+
+            // The bundle audit shares this dedupe lifecycle: its findings land in
+            // the same report bucket, so both repopulate together after a reload.
+            FuseAssetPackBundleAuditPatch.ResetForNewMap();
+        }
+
+        /// <summary>
+        /// Entry point for the bundle audit: reports an asset a pack's
+        /// Catalog.json declares but its bundle does not contain. Same dedupe,
+        /// drain, report bucket, and per-pack toast as runtime load failures —
+        /// an asset caught by both the audit and a later load attempt is
+        /// recorded once. The pack is known at the call site, so no resolution
+        /// fallback is needed.
+        /// </summary>
+        internal static void ReportCatalogMismatch(string identifier, string packIdentifier, string filename)
+        {
+            if (string.IsNullOrWhiteSpace(identifier))
+            {
+                return;
+            }
+
+            var declaredAs = string.IsNullOrWhiteSpace(filename) ? identifier : filename;
+            EnqueueFailure(
+                identifier,
+                $"declared in the pack's Catalog.json (filename '{declaredAs}') but not present in its bundle — " +
+                "the pack needs its bundle rebuilt or the catalog entry (and content referencing it) removed",
+                string.IsNullOrWhiteSpace(packIdentifier) ? null : packIdentifier);
         }
 
         internal static void Postfix(string identifier, Task __result)
@@ -90,10 +117,10 @@ namespace FUSE.Patches
             var message = exception != null
                 ? exception.GetBaseException().Message
                 : "asset load failed";
-            EnqueueFailure(identifier, message);
+            EnqueueFailure(identifier, message, packIdentifier: null);
         }
 
-        private static void EnqueueFailure(string identifier, string message)
+        private static void EnqueueFailure(string identifier, string message, string packIdentifier)
         {
             try
             {
@@ -105,7 +132,7 @@ namespace FUSE.Patches
                     }
                 }
 
-                Pending.Enqueue(new PendingFailure(identifier, message));
+                Pending.Enqueue(new PendingFailure(identifier, message, packIdentifier));
             }
             catch (Exception ex)
             {
@@ -184,7 +211,8 @@ namespace FUSE.Patches
             EnqueueFailure(
                 identifier,
                 "the game logged 'Error loading scenery' for this asset (see Player.log for the exception; " +
-                "usually the pack's bundle does not contain an asset its catalog declares)");
+                "usually the pack's bundle does not contain an asset its catalog declares)",
+                packIdentifier: null);
         }
 
         /// <summary>
@@ -235,7 +263,8 @@ namespace FUSE.Patches
 
         private static void Record(PendingFailure failure)
         {
-            var pack = ResolvePackIdentifier(failure.Identifier);
+            // Audit-sourced failures carry their pack; runtime faults resolve it.
+            var pack = failure.PackIdentifier ?? ResolvePackIdentifier(failure.Identifier);
             var owner = ResolveOwnerPackage(failure.Identifier);
 
             if (!FuseLoadReport.RecordSceneryLoadFailure(failure.Identifier, pack, owner, failure.Message))
@@ -319,15 +348,19 @@ namespace FUSE.Patches
 
         private readonly struct PendingFailure
         {
-            internal PendingFailure(string identifier, string message)
+            internal PendingFailure(string identifier, string message, string packIdentifier)
             {
                 Identifier = identifier;
                 Message = message;
+                PackIdentifier = packIdentifier;
             }
 
             internal string Identifier { get; }
 
             internal string Message { get; }
+
+            /// <summary>Known owning pack, or null to resolve at record time.</summary>
+            internal string PackIdentifier { get; }
         }
     }
 }

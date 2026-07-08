@@ -436,6 +436,7 @@ namespace FUSE.Loading
             return
                 $"FUSE: {loadedCount} loaded | faults {snapshot.FaultedPackageCount} | " +
                 $"conflicts {snapshot.Conflicts.Length} | assets {snapshot.UnknownSceneryAssets.Length} | " +
+                $"brokenAssets {snapshot.SceneryLoadFailureCount} | " +
                 $"graph {snapshot.GraphPostBindIssues.Length} | transfers {snapshot.ProgressionTransferSkips.Length} | " +
                 $"suppressions {suppressionCount} | orphans {snapshot.OrphanedCarCount} | /fuse.report";
         }
