@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using NUnit.Framework;
@@ -739,7 +740,18 @@ namespace FUSE.UnityTests
             // saved flare stands on a segment a track mod has since removed. A
             // rename detaches the guard and stale flares go back to silent
             // observer-exception spam.
-            AssertMethod("Game.FlareManager", "HandleAddUpdateFlare", InstanceNonPublic);
+            var method = RequireType("Game.FlareManager").GetMethod("HandleAddUpdateFlare", InstanceNonPublic);
+            Assert.NotNull(method,
+                "Game.FlareManager.HandleAddUpdateFlare not found — the stale-flare guard cannot bind.");
+
+            // The guard's Finalizer takes a 'key' parameter that Harmony binds to
+            // the original's argument strictly by name; a parameter rename would
+            // otherwise surface as a patch-apply failure at runtime, not in CI.
+            var hasKeyParameter = method.GetParameters()
+                .Any(parameter => parameter.Name == "key" && parameter.ParameterType == typeof(string));
+            Assert.IsTrue(hasKeyParameter,
+                "Game.FlareManager.HandleAddUpdateFlare has no string parameter named 'key' — " +
+                "FuseFlareDeadTrackGuardPatch.Finalizer's 'key' injection would fail to bind at patch time.");
         }
 
         [Test]
