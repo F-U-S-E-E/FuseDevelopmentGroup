@@ -93,6 +93,20 @@ namespace FUSE.Runtime.Lifecycle
             private int _gen1;
             private int _gen2;
 
+            // Once-per-minute census while enabled: field sessions showed a
+            // session-long fps decay (27 -> 13 over ~15 min) with a silent GC —
+            // per-spike lines time-stamp the hitches but cannot say WHAT grew.
+            // Logging scene population against average fps once a minute turns
+            // the next log into a growth-attribution dataset: whichever counter
+            // climbs as fps falls names the accumulator. The object scans cost
+            // tens of ms on a heavy scene, so they run only while the
+            // diagnostic is enabled, once per interval, and are themselves
+            // excluded from the spike count via the census-frame flag.
+            private const float CensusIntervalSeconds = 60f;
+            private float _lastCensusAt;
+            private long _lastCensusFrame;
+            private bool _skipSpikeThisFrame;
+
             private void Update()
             {
                 if (!FuseSettings.EnableFrameSpikeDiagnostics || FuseLoadingScreen.IsShowing)
@@ -112,12 +126,20 @@ namespace FUSE.Runtime.Lifecycle
                     _gen0 = gen0;
                     _gen1 = gen1;
                     _gen2 = gen2;
+                    _lastCensusAt = Time.unscaledTime;
+                    _lastCensusFrame = Time.frameCount;
                     return;
                 }
 
                 var frameMs = Time.unscaledDeltaTime * 1000f;
                 var thresholdMs = Mathf.Max(20f, FuseSettings.FrameSpikeThresholdMs);
-                if (frameMs >= thresholdMs && frameMs < StallCutoffMs)
+                if (_skipSpikeThisFrame)
+                {
+                    // The previous frame ran the census scans; its cost is ours,
+                    // not the game's — do not count it as a spike.
+                    _skipSpikeThisFrame = false;
+                }
+                else if (frameMs >= thresholdMs && frameMs < StallCutoffMs)
                 {
                     var spikeCount = FuseRuntimeGuardCounters.RecordFrameSpike(frameMs);
 
@@ -135,6 +157,43 @@ namespace FUSE.Runtime.Lifecycle
                 _gen0 = gen0;
                 _gen1 = gen1;
                 _gen2 = gen2;
+
+                if (Time.unscaledTime - _lastCensusAt >= CensusIntervalSeconds)
+                {
+                    LogCensus();
+                }
+            }
+
+            private void LogCensus()
+            {
+                var now = Time.unscaledTime;
+                var frame = (long)Time.frameCount;
+                var windowSeconds = now - _lastCensusAt;
+                var windowFrames = frame - _lastCensusFrame;
+                _lastCensusAt = now;
+                _lastCensusFrame = frame;
+                _skipSpikeThisFrame = true;
+
+                try
+                {
+                    var averageFps = windowSeconds > 0f ? windowFrames / windowSeconds : 0f;
+                    var gameObjects = UnityEngine.Object.FindObjectsOfType<GameObject>().Length;
+                    var renderers = UnityEngine.Object.FindObjectsOfType<Renderer>().Length;
+                    var sceneryInstances = UnityEngine.Object.FindObjectsOfType<Helpers.SceneryAssetInstance>().Length;
+                    var cars = UnityEngine.Object.FindObjectsOfType<Model.Car>().Length;
+                    var managedMb = GC.GetTotalMemory(forceFullCollection: false) / (1024f * 1024f);
+
+                    FuseLog.Info(
+                        $"FUSE runtime census: avgFps={averageFps:F1} frame={frame} " +
+                        $"gameObjects={gameObjects} renderers={renderers} sceneryInstances={sceneryInstances} " +
+                        $"cars={cars} managedMB={managedMb:F0} spikes={FuseRuntimeGuardCounters.FrameSpikes} " +
+                        $"worstMs={FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}. " +
+                        "A counter that climbs while avgFps falls names the accumulator.");
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception("FUSE runtime census failed", ex);
+                }
             }
         }
     }
