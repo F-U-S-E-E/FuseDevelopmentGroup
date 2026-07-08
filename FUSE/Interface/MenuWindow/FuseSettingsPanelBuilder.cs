@@ -88,6 +88,25 @@ namespace FUSE.Interface.MenuWindow
                     builder.Rebuild();
                 }));
 
+            builder.AddSection("Performance Diagnostics");
+
+            // Duplicated from the Health window's Advanced page on purpose: this
+            // menu window is the "FUSE" surface most users actually open, and a
+            // stutter-report toggle nobody can find produces no stutter reports.
+            builder.AddField("Frame Spike Log", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableFrameSpikeDiagnostics,
+                () =>
+                {
+                    FuseSettings.SetEnableFrameSpikeDiagnostics(!FuseSettings.EnableFrameSpikeDiagnostics);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel(
+                FuseSettings.EnableFrameSpikeDiagnostics
+                    ? $"Logging frames over {FuseSettings.FrameSpikeThresholdMs:F0}ms to FUSE.log (spikes so far: {FuseRuntimeGuardCounters.FrameSpikes}, worst {FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}ms)."
+                    : "For stutter reports: logs each frame over the threshold to FUSE.log with GC deltas, so hitches can be matched against log activity. Takes effect immediately.");
+
             builder.AddSection("Debug Overlays");
 
             builder.AddField("Track Probe", control: BuildToggleBoxWithButton(
