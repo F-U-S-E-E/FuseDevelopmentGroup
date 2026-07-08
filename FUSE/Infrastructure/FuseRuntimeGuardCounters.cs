@@ -29,6 +29,13 @@ namespace FUSE.Infrastructure
         internal static long FrameSpikes { get; private set; }
         internal static float FrameSpikeWorstMs { get; private set; }
 
+        // Liveness proof, not a fault: how many scenery load tasks the
+        // load-failure watcher attached to. Zero in a session with scenery
+        // activity means the watch postfix is not seeing loads at all (e.g. a
+        // third-party loader bypassing the patched path) — the exact
+        // field-debugging question a pasted report should answer.
+        internal static long SceneryLoadWatchAttached { get; private set; }
+
         /// <summary>
         /// Contained guard events this session (frame spikes excluded — they
         /// are measurements, not contained faults). Zero means no broken
@@ -73,6 +80,8 @@ namespace FUSE.Infrastructure
             return FrameSpikes;
         }
 
+        internal static long RecordSceneryLoadWatchAttached() => ++SceneryLoadWatchAttached;
+
         /// <summary>
         /// One-line breakdown used by the load report and the Health tab.
         /// Session-cumulative; all-zero means the guards sat idle.
@@ -86,7 +95,8 @@ namespace FUSE.Infrastructure
                 $"decalScrubbed={DecalRegistryScrubbed} decalVisibility={DecalVisibilitySuppressed} " +
                 $"decalHelperEnable={DecalHelperEnableSuppressed} decalHelperDisable={DecalHelperDisableSuppressed} " +
                 $"curveMesh={CurveMeshSuppressed} sceneryCarDecalsDisabled={SceneryDecalComponentsDisabled} " +
-                $"sceneryLoadFailures={SceneryLoadFailures} flares={FlareSuppressed} " +
+                $"sceneryLoadFailures={SceneryLoadFailures} sceneryLoadWatch={SceneryLoadWatchAttached} " +
+                $"flares={FlareSuppressed} " +
                 spikes;
         }
 
@@ -103,6 +113,7 @@ namespace FUSE.Infrastructure
             FlareSuppressed = 0;
             FrameSpikes = 0;
             FrameSpikeWorstMs = 0f;
+            SceneryLoadWatchAttached = 0;
         }
     }
 }

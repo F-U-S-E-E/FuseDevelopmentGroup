@@ -61,7 +61,7 @@ namespace FUSE.Patches
             }
         }
 
-        private static void Postfix(string identifier, Task __result)
+        internal static void Postfix(string identifier, Task __result)
         {
             if (__result == null || string.IsNullOrWhiteSpace(identifier))
             {
@@ -73,6 +73,11 @@ namespace FUSE.Patches
                 __result.ContinueWith(
                     task => Enqueue(identifier, task.Exception),
                     TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+                // Liveness counter (guards line): proves from a pasted report
+                // whether this postfix is seeing scenery loads at all, since a
+                // third-party loader replacing the load path is otherwise
+                // indistinguishable from "no failures happened".
+                FuseRuntimeGuardCounters.RecordSceneryLoadWatchAttached();
             }
             catch (Exception ex)
             {
@@ -81,6 +86,14 @@ namespace FUSE.Patches
         }
 
         private static void Enqueue(string identifier, AggregateException exception)
+        {
+            var message = exception != null
+                ? exception.GetBaseException().Message
+                : "asset load failed";
+            EnqueueFailure(identifier, message);
+        }
+
+        private static void EnqueueFailure(string identifier, string message)
         {
             try
             {
@@ -92,9 +105,6 @@ namespace FUSE.Patches
                     }
                 }
 
-                var message = exception != null
-                    ? exception.GetBaseException().Message
-                    : "asset load failed";
                 Pending.Enqueue(new PendingFailure(identifier, message));
             }
             catch (Exception ex)
@@ -103,6 +113,105 @@ namespace FUSE.Patches
                 FuseLog.Exception("FUSE scenery load-failure watch could not queue a fault", ex);
             }
         }
+
+        // ---- Game-log fallback net ----------------------------------------
+        //
+        // Both the vanilla scenery loader and load-replacing mods (observed in
+        // the field with SceneryLoadRaceFix, whose SetLoaded replacement drives
+        // the loads and swallows the faulted task after logging) emit the same
+        // "Error loading scenery <identifier>" line when an asset load fails.
+        // Hooking the Unity log stream and matching that prefix reports the
+        // failure no matter which mod owns the load path or what it does with
+        // the task. Feeds the same per-map dedupe as the task watch, so an
+        // asset caught by both nets is still recorded once.
+
+        private const string GameLogErrorPrefix = "Error loading scenery ";
+
+        private static bool _logHookInstalled;
+
+        internal static void EnsureGameLogHook()
+        {
+            if (_logHookInstalled)
+            {
+                return;
+            }
+
+            try
+            {
+                // The threaded variant sees messages from every thread; our
+                // queue + dedupe are already thread-safe and the handler cost
+                // is one prefix check per log message.
+                UnityEngine.Application.logMessageReceivedThreaded += OnGameLogMessage;
+                _logHookInstalled = true;
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE scenery load-failure log hook could not install", ex);
+            }
+        }
+
+        internal static void Shutdown()
+        {
+            if (!_logHookInstalled)
+            {
+                return;
+            }
+
+            try
+            {
+                UnityEngine.Application.logMessageReceivedThreaded -= OnGameLogMessage;
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE scenery load-failure log hook could not uninstall", ex);
+            }
+
+            _logHookInstalled = false;
+        }
+
+        private static void OnGameLogMessage(string condition, string stackTrace, UnityEngine.LogType type)
+        {
+            if (type != UnityEngine.LogType.Error && type != UnityEngine.LogType.Exception)
+            {
+                return;
+            }
+
+            if (!TryParseSceneryLoadErrorLine(condition, out var identifier))
+            {
+                return;
+            }
+
+            EnqueueFailure(
+                identifier,
+                "the game logged 'Error loading scenery' for this asset (see Player.log for the exception; " +
+                "usually the pack's bundle does not contain an asset its catalog declares)");
+        }
+
+        /// <summary>
+        /// Matches the loader's "Error loading scenery &lt;identifier&gt;" line
+        /// (pure; unit-tested).
+        /// </summary>
+        internal static bool TryParseSceneryLoadErrorLine(string condition, out string identifier)
+        {
+            identifier = null;
+            if (condition == null ||
+                !condition.StartsWith(GameLogErrorPrefix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var value = condition.Substring(GameLogErrorPrefix.Length).Trim();
+            if (value.Length == 0)
+            {
+                return false;
+            }
+
+            identifier = value;
+            return true;
+        }
+
+        /// <summary>Queued-but-undrained failure count (test hook).</summary>
+        internal static int PendingCountForTests => Pending.Count;
 
         /// <summary>
         /// Resolves and records queued failures. Main thread only (touches Unity
