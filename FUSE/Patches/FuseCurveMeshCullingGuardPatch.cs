@@ -41,9 +41,9 @@ namespace FUSE.Patches
             }
 
             var suppressed = FuseRuntimeGuardCounters.RecordCurveMeshSuppressed();
-            // First few individually (enough to identify the offender), then heartbeat only —
-            // a permanently-broken builder re-throws on every culling event it receives.
-            if (suppressed <= 5 || suppressed % 100 == 0)
+            // Shared first-few-then-heartbeat gate — a permanently-broken builder
+            // re-throws on every culling event it receives.
+            if (FuseGuardLog.ShouldLog(suppressed))
             {
                 var name = "<destroyed>";
                 try

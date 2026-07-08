@@ -179,7 +179,7 @@ namespace FUSE.Patches
 
                 behaviour.enabled = false;
                 var scrubbed = FuseRuntimeGuardCounters.RecordSceneryDecalComponentDisabled();
-                if (FuseDecalGuardLog.ShouldLog(scrubbed))
+                if (FuseGuardLog.ShouldLog(scrubbed))
                 {
                     FuseLog.Warning(
                         $"FUSE disabled car-only decal component #{scrubbed} " +

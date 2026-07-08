@@ -100,7 +100,7 @@ namespace FUSE.Patches
 
                     entries.RemoveAt(i);
                     var scrubbed = FuseRuntimeGuardCounters.RecordDecalRegistryScrubbed();
-                    if (FuseDecalGuardLog.ShouldLog(scrubbed))
+                    if (FuseGuardLog.ShouldLog(scrubbed))
                     {
                         FuseLog.Warning(
                             $"FUSE pruned destroyed decal #{scrubbed} from the decal culling registry. " +
@@ -125,7 +125,7 @@ namespace FUSE.Patches
 
             _scrubPending = true;
             var suppressed = FuseRuntimeGuardCounters.RecordDecalVisibilitySuppressed();
-            if (FuseDecalGuardLog.ShouldLog(suppressed))
+            if (FuseGuardLog.ShouldLog(suppressed))
             {
                 FuseLog.Warning(
                     $"FUSE suppressed decal visibility job exception #{suppressed}: " +
@@ -164,7 +164,7 @@ namespace FUSE.Patches
             }
 
             var suppressed = FuseRuntimeGuardCounters.RecordDecalHelperEnableSuppressed();
-            if (FuseDecalGuardLog.ShouldLog(suppressed))
+            if (FuseGuardLog.ShouldLog(suppressed))
             {
                 // Unity's overloaded null covers a destroyed instance, so .name is safe.
                 var name = __instance != null ? __instance.name : "<destroyed>";
@@ -231,7 +231,7 @@ namespace FUSE.Patches
             }
 
             var suppressed = FuseRuntimeGuardCounters.RecordDecalHelperDisableSuppressed();
-            if (FuseDecalGuardLog.ShouldLog(suppressed))
+            if (FuseGuardLog.ShouldLog(suppressed))
             {
                 FuseLog.Warning(
                     $"FUSE suppressed car-decal helper disable exception #{suppressed}: " +
@@ -243,16 +243,4 @@ namespace FUSE.Patches
         }
     }
 
-    /// <summary>
-    /// Shared log gate for the decal guards: first few occurrences individually
-    /// (enough to identify the offender), then a heartbeat — a permanently-broken
-    /// decal re-triggers on every cycle it gets.
-    /// </summary>
-    internal static class FuseDecalGuardLog
-    {
-        internal static bool ShouldLog(long count)
-        {
-            return count <= 5 || count % 100 == 0;
-        }
-    }
 }

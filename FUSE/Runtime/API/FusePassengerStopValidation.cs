@@ -83,6 +83,10 @@ namespace FUSE.Runtime.API
             catch (Exception ex)
             {
                 FuseLog.Exception("FUSE passenger stop validation failed", ex);
+                // Stay dirty: this validation exists to stop /fuse.report from
+                // silently under-reporting, so a failed scan must retry on the
+                // next snapshot instead of skipping until an unrelated refresh.
+                _dirty = true;
             }
         }
 

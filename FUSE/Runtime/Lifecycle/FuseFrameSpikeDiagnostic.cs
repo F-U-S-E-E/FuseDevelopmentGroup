@@ -56,6 +56,23 @@ namespace FUSE.Runtime.Lifecycle
             }
         }
 
+        /// <summary>
+        /// Destroys the diagnostic host on mod unload so its Update loop stops
+        /// with the mod (counters stay: they are session diagnostics, not host
+        /// state). Paired with <see cref="EnsureStarted"/> from
+        /// <c>FusePlugin.Shutdown()</c> like every other Ensure-style host.
+        /// </summary>
+        internal static void Shutdown()
+        {
+            if (_host == null)
+            {
+                return;
+            }
+
+            UnityEngine.Object.Destroy(_host);
+            _host = null;
+        }
+
         // Ignore frames longer than this outright: scene loads, window drags, and
         // alt-tab GPU device stalls are not the gameplay hitches this exists to
         // attribute, and counting them would drown the useful spikes.

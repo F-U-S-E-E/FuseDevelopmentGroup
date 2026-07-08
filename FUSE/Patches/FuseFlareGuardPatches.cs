@@ -44,7 +44,9 @@ namespace FUSE.Patches
             var suppressed = FuseRuntimeGuardCounters.RecordFlareSuppressed();
             var flareKey = string.IsNullOrWhiteSpace(key) ? "<unknown>" : key;
             var reason = __exception.GetBaseException().Message;
-            if (ShouldLog(suppressed))
+            // Shared first-few-then-heartbeat gate: a stale flare re-triggers on
+            // every key-value replay of the same save entry.
+            if (FuseGuardLog.ShouldLog(suppressed))
             {
                 FuseLog.Warning(
                     $"FUSE suppressed stale-flare exception #{suppressed} for flare '{flareKey}': {reason}. " +
@@ -57,13 +59,6 @@ namespace FUSE.Patches
                 "It stays in the save and reappears if the removed track segment comes back.");
 
             return null;
-        }
-
-        // First few occurrences individually, then a heartbeat — a stale flare
-        // re-triggers on every key-value replay of the same save entry.
-        private static bool ShouldLog(long count)
-        {
-            return count <= 5 || count % 100 == 0;
         }
     }
 }

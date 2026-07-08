@@ -230,6 +230,7 @@ namespace FUSE
             FuseSceneryDebugOverlay.Shutdown();
             FuseWorldLabelsOverlay.Shutdown();
             FuseLoadingScreen.Shutdown();
+            FuseFrameSpikeDiagnostic.Shutdown();
 
             if (_isLoaded)
             {
