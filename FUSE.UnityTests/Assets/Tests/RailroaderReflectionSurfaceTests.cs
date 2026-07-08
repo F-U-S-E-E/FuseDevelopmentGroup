@@ -732,6 +732,17 @@ namespace FUSE.UnityTests
         }
 
         [Test]
+        public void FlareManager_HandleAddUpdateFlare_InstanceMethod()
+        {
+            // FuseFlareDeadTrackGuardPatch finalizes this to suppress (and surface
+            // via the load report) the Track.InvalidLocationException thrown when a
+            // saved flare stands on a segment a track mod has since removed. A
+            // rename detaches the guard and stale flares go back to silent
+            // observer-exception spam.
+            AssertMethod("Game.FlareManager", "HandleAddUpdateFlare", InstanceNonPublic);
+        }
+
+        [Test]
         public void UrpDecalProjector_TypeResolvesByAssemblyQualifiedName()
         {
             // The scenery decal scrub disables URP DecalProjector components by

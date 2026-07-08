@@ -17,6 +17,8 @@
     "ShowAdvancedHealthDetails": false,
     "ShowLegacyModsInUmm": true,
     "EnableEnhancedLoadingScreen": true,
-    "DecoupleVisualConditionLimits": false
+    "DecoupleVisualConditionLimits": false,
+    "EnableFrameSpikeDiagnostics": false,
+    "FrameSpikeThresholdMs": 100
   }
 }

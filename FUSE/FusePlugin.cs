@@ -84,6 +84,7 @@ namespace FUSE
                 FuseSceneryDebugOverlay.Ensure();
                 FuseWorldLabelsOverlay.Ensure();
                 FuseLoadingScreen.Ensure();
+                FuseFrameSpikeDiagnostic.EnsureStarted();
                 FuseUmmInjector.ScheduleInjection(modEntry.Path, ReadInfoJsonString(Path.Combine(modEntry.Path ?? string.Empty, "Info.json"), "Version"));
                 FuseLegacyAssemblyHost.EnsureStartupHost();
 

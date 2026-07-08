@@ -353,6 +353,12 @@ namespace FUSE.Loading
 
         private static ReportSnapshot CaptureSnapshot(string reason, int loadedFromDiskThisPass, int appliedToRuntimeThisPass)
         {
+            // Stops may have been refreshed since the last validation pass (graph
+            // rebuilds re-run every FUSE stop); revalidate before reading the
+            // post-bind issue registry so on-demand report renders stay current.
+            // No-ops unless a refresh marked the validator dirty.
+            FUSE.Runtime.API.FusePassengerStopValidation.RunIfDirty(reason ?? "report snapshot");
+
             UnknownSceneryAsset[] unknownScenery;
             string[] notices;
             string[] graphPostBindIssues;

@@ -244,6 +244,23 @@ namespace FUSE.Interface
                 "Usage",
                 "Toggle on, teleport into the heavy scene, then off. Each scenery load/unload flip is written to FUSE.log as 'scenery-cull' (fuse=true|false). Hot, repeating flips on the same object during the test point at culling churn (issue #76).",
                 58f);
+            AddSettingToggle(
+                builder,
+                "Frame Spike Log",
+                FuseSettings.EnableFrameSpikeDiagnostics
+                    ? $"logging frames over {FuseSettings.FrameSpikeThresholdMs:F0}ms (spikes: {FuseFrameSpikeDiagnostic.SpikeCount}, worst: {FuseFrameSpikeDiagnostic.WorstMs:F0}ms)"
+                    : "disabled",
+                FuseSettings.EnableFrameSpikeDiagnostics ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetEnableFrameSpikeDiagnostics(!FuseSettings.EnableFrameSpikeDiagnostics);
+                    RebuildWindow();
+                });
+            AddWrappedField(
+                builder,
+                "Usage",
+                "For stutter reports. Toggle on, play until the stutter shows, then read FUSE.log: each 'frame spike' line carries the frame time and how many GC collections landed on that frame. Match the timestamps against surrounding FUSE.log/Player.log activity to attribute the hitch; spikes with gcDelta>0 and no nearby activity point at allocation pressure. Loading-screen frames are excluded. Threshold via FrameSpikeThresholdMs in settings.json.",
+                92f);
             builder.Spacer(4f);
 
             builder.AddSection("Scenery Load Benchmark");
@@ -267,10 +284,10 @@ namespace FUSE.Interface
             AddWrappedLabel(builder, "Benchmark: " + _lastBenchmarkStatus, 48f);
             builder.Spacer(4f);
 
-            builder.AddSection("Decal Guards");
+            builder.AddSection("Runtime Guards");
             AddWrappedField(
                 builder,
-                "Counters",
+                "Decals",
                 $"Culling registry: {FuseDecalCullingScrubPatch.ScrubbedEntries} destroyed decal(s) pruned, " +
                 $"{FuseDecalCullingScrubPatch.SuppressedExceptions} visibility-job exception(s) suppressed. " +
                 $"Helper guards: {FuseDecalProjectorHelperEnableGuardPatch.SuppressedExceptions} enable / " +
@@ -280,6 +297,13 @@ namespace FUSE.Interface
                 "All zero means no broken decal or asset content was encountered this session; non-zero values " +
                 "identify content problems FUSE is containing (details in FUSE.log / Issues tab).",
                 92f);
+            AddWrappedField(
+                builder,
+                "Flares",
+                $"Stale-flare exceptions suppressed: {FuseFlareDeadTrackGuardPatch.SuppressedExceptions}. " +
+                "Non-zero means the save carries flares standing on track a mod has since removed; each is " +
+                "skipped and named in the load report notices.",
+                48f);
             builder.Spacer(4f);
 
             builder.AddSection("Experimental");
