@@ -7,11 +7,11 @@ namespace FUSE.Patches
 {
     /// <summary>
     /// One shared binding of <c>SceneryAssetInstance._wantsLoaded</c> — the game's
-    /// private "model load requested" flag — used by both the cull debounce and the
-    /// load throttle so the field name lives in exactly one place (the
-    /// reflection-surface canary test guards it). Fail-safe: when the binding is
-    /// missing, <see cref="IsLoadRequested"/> returns false and callers fall back to
-    /// their prior behavior by gating on <see cref="Available"/>.
+    /// private "model load requested" flag — used by the load throttle so the field
+    /// name lives in exactly one place (the reflection-surface canary test guards
+    /// it). Fail-safe: when the binding is missing, <see cref="IsLoadRequested"/>
+    /// returns false and callers fall back to their prior behavior by gating on
+    /// <see cref="Available"/>.
     /// </summary>
     internal static class FuseSceneryModelState
     {
@@ -41,7 +41,7 @@ namespace FUSE.Patches
             {
                 FuseLog.Exception(
                     "FUSE scenery could not bind SceneryAssetInstance._wantsLoaded; " +
-                    "debounce/throttle fall back to distance-only behavior", ex);
+                    "the load throttle falls back to vanilla (unthrottled) loading", ex);
                 return null;
             }
         }

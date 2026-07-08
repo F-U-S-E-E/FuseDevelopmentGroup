@@ -108,6 +108,7 @@ namespace FUSE.Interface
             problemRows += AddProblemSummary(builder, report, null, "graphPostBindIssues", "Graph Issues", false);
             problemRows += AddProblemSummary(builder, report, null, "progressionTransferSkips", "Transfer Skips", false);
             problemRows += AddProblemSummary(builder, report, null, "notices", "Notices", false);
+            problemRows += AddProblemSummary(builder, report, null, "sceneryLoadFailures", "Asset Load Failures", false);
             problemRows += AddSaveCarFaultSummaryRow(builder);
             if (problemRows == 0)
             {

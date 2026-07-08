@@ -10,17 +10,14 @@ namespace FUSE.Patches
 {
     /// <summary>
     /// Issue #76 follow-up: smooths the one-time asset-load stall when a large batch
-    /// of FUSE scenery loads at once (e.g. teleport-in), the bottleneck the culling
-    /// debounce (<see cref="FuseSceneryCullingDebouncePatch"/>) deliberately left out
-    /// of scope.
+    /// of FUSE scenery loads at once (e.g. teleport-in).
     ///
     /// The game loads a scenery model in <c>SceneryAssetInstance.SetLoaded(true)</c>:
     /// it awaits an async asset-bundle load and then, on the main thread, runs
     /// <c>Object.Instantiate</c> + component setup. When a whole region crosses into
-    /// the load band in the same settle (a teleport, or the debounce widening the
-    /// resident set to its 3&#160;km deadband), hundreds of those continuations resume
-    /// together and the per-frame Instantiate burst drops the frame rate to ~1&#160;fps
-    /// with multi-second per-object latency.
+    /// the load band in the same settle (a teleport), hundreds of those continuations
+    /// resume together and the per-frame Instantiate burst drops the frame rate to
+    /// ~1&#160;fps with multi-second per-object latency.
     ///
     /// This prefix throttles how many FUSE scenery loads may <em>start</em> per frame
     /// (<see cref="MaxLoadsPerFrame"/>). Over-budget loads are deferred into a queue
@@ -28,8 +25,7 @@ namespace FUSE.Patches
     /// (<see cref="FuseSceneryLoadThrottlePump"/>). Staggering the starts staggers the
     /// completions, so the Instantiate work spreads across frames instead of spiking.
     /// A pump is required because <c>CullingSphereStateChanged</c> is event/world-shift
-    /// driven (not per-frame), so a deferred object would otherwise never be revisited
-    /// — the same cadence constraint the debounce patch documents.
+    /// driven (not per-frame), so a deferred object would otherwise never be revisited.
     ///
     /// Scope and safety:
     ///  - FUSE-owned scenery only (<see cref="FUSE.Runtime.API.SceneryAPI.FuseSceneryMarker"/>);
@@ -37,14 +33,14 @@ namespace FUSE.Patches
     ///  - Only the <c>loaded == true</c> (load) path is gated; unloads run vanilla.
     ///  - Objects already loading/loaded (<c>_wantsLoaded</c>) pass straight through so
     ///    the original's own no-op guard handles them and no budget is wasted.
-    ///  - On release the pump drops anything that has left the debounce deadband
-    ///    (reusing <see cref="FuseSceneryCullingDebouncePatch.ShouldHoldResident"/>), so
-    ///    a backlog can't force-load scenery the camera has already moved away from.
+    ///  - On release the pump drops anything now far outside the load band
+    ///    (<see cref="StaleLoadDropDistance"/>), so a backlog can't force-load scenery
+    ///    the camera has already moved away from.
     ///  - Every failure path is fail-open: if reflection is unavailable or anything
     ///    throws, the original load runs normally (no stranded scenery).
     ///
-    /// Always on (no user setting), matching the debounce. The benchmark can force it
-    /// off for an A/B baseline via <see cref="BenchmarkThrottleOverride"/>.
+    /// Always on (no user setting). The benchmark can force it off for an A/B
+    /// baseline via <see cref="BenchmarkThrottleOverride"/>.
     /// </summary>
     [HarmonyPatch(typeof(SceneryAssetInstance), "SetLoaded", new[] { typeof(bool) })]
     internal static class FuseSceneryLoadThrottlePatch
@@ -56,6 +52,22 @@ namespace FUSE.Patches
         /// Instantiate cost stays within a ~30-60&#160;fps frame for typical prefabs.
         /// </summary>
         internal const int MaxLoadsPerFrame = 8;
+
+        // A deferred load whose object is now this far from the camera is dropped
+        // instead of released. MUST stay well beyond the game's outermost scenery
+        // band (~1500m): a dropped object beyond that band sits in band 3 and
+        // receives a fresh band-transition event when the camera returns, but one
+        // dropped while still inside band <= 2 never gets another CullingGroup event
+        // and would be stranded invisible until a teleport re-evaluates it. The 2x
+        // margin also covers band distances being measured against the object's
+        // culling SPHERE, not its center — a large-radius landmark can still be in
+        // band <= 2 with its center far past 1500m. The trade-off of the margin:
+        // a queued object released while 1500-3000m out loads into band 3 and stays
+        // resident until the camera next revisits and leaves its band — bounded to
+        // whatever was queued when the camera departed, and self-correcting, unlike
+        // a stranded drop.
+        internal const float StaleLoadDropDistance = 3000f;
+        private const float StaleLoadDropDistanceSqr = StaleLoadDropDistance * StaleLoadDropDistance;
 
         // Benchmark-only override (NOT a user setting): null = normal always-on
         // throttling; false = force OFF for an A/B baseline pass; true = force ON.
@@ -94,7 +106,7 @@ namespace FUSE.Patches
         /// <summary>Deferred loads released by the pump since the last reset.</summary>
         internal static long ReleasedLoads => _releasedLoads;
 
-        /// <summary>Queued loads dropped because they left the deadband before release.</summary>
+        /// <summary>Queued loads dropped because they moved beyond <see cref="StaleLoadDropDistance"/> before release.</summary>
         internal static long DroppedStaleLoads => _droppedStaleLoads;
 
         /// <summary>High-water mark of the deferred queue since the last reset.</summary>
@@ -123,6 +135,18 @@ namespace FUSE.Patches
         internal static bool ShouldStartLoadNow(int startedThisFrame, int maxLoadsPerFrame)
         {
             return startedThisFrame < maxLoadsPerFrame;
+        }
+
+        /// <summary>
+        /// Pure stale-drop decision, extracted for unit testing (see
+        /// FUSE.UnityTests): should a queued load be dropped because its object is
+        /// now beyond <see cref="StaleLoadDropDistance"/> from the camera? The
+        /// comparison direction and the constant both carry the stranding invariant
+        /// documented on <see cref="StaleLoadDropDistance"/>.
+        /// </summary>
+        internal static bool ShouldDropStale(Vector3 cameraPos, Vector3 objectPos)
+        {
+            return (cameraPos - objectPos).sqrMagnitude >= StaleLoadDropDistanceSqr;
         }
 
         private static bool Prefix(SceneryAssetInstance __instance, bool loaded)
@@ -157,9 +181,9 @@ namespace FUSE.Patches
                 }
 
                 // Already loading or loaded: the original SetLoaded(true) is a cheap
-                // no-op, so let it through rather than spend a budget slot on it. The
-                // debounce clamps band 3 -> 2 repeatedly for resident objects, which
-                // would otherwise hammer this path.
+                // no-op, so let it through rather than spend a budget slot on it —
+                // band 3 -> 2 re-entries for resident objects would otherwise burn
+                // budget on work the game ignores anyway.
                 if (FuseSceneryModelState.IsLoadRequested(__instance))
                 {
                     return true;
@@ -207,8 +231,8 @@ namespace FUSE.Patches
         /// <summary>
         /// Releases deferred loads up to the remaining per-frame budget. Driven every
         /// frame by <see cref="FuseSceneryLoadThrottlePump"/> so backlog drains even
-        /// when the culler is quiet. Null skips and deadband drops cost no budget, so a
-        /// stale backlog clears quickly without starving live loads.
+        /// when the culler is quiet. Null skips and stale-distance drops cost no
+        /// budget, so a stale backlog clears quickly without starving live loads.
         /// </summary>
         internal static void Pump()
         {
@@ -242,13 +266,12 @@ namespace FUSE.Patches
                         continue;
                     }
 
-                    // Left the resident deadband while queued: don't force-load scenery
-                    // the camera has moved away from (consistent with the debounce).
-                    // Uses a freshly-resolved camera so a stale reference can't drop a
-                    // load the player is actually next to.
+                    // Moved far outside the load band while queued: don't force-load
+                    // scenery the camera has moved away from. Uses a freshly-resolved
+                    // camera so a stale reference can't drop a load the player is
+                    // actually next to.
                     if (camera != null &&
-                        !FuseSceneryCullingDebouncePatch.ShouldHoldResident(
-                            camera.transform.position, instance.transform.position))
+                        ShouldDropStale(camera.transform.position, instance.transform.position))
                     {
                         _droppedStaleLoads++;
                         continue;

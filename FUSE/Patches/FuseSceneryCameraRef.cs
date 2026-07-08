@@ -4,11 +4,11 @@ namespace FUSE.Patches
 {
     /// <summary>
     /// One shared cache of the scenery culler's distance reference (Camera.main),
-    /// used by both the cull debounce and the load throttle so they always measure
+    /// used by the load throttle and the deferred activator so they always measure
     /// against the same camera. Refreshed when the cached camera is destroyed OR
     /// merely disabled — a camera-mode / scene transition leaves the old gameplay
     /// camera disabled but not destroyed, so a <c>== null</c> check alone would keep a
-    /// stale reference and let the hold / drop-stale decisions misjudge distance after
+    /// stale reference and let the drop-stale decisions misjudge distance after
     /// the player changes views or teleports.
     /// </summary>
     internal static class FuseSceneryCameraRef

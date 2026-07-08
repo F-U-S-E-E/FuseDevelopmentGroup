@@ -10,9 +10,9 @@ namespace FUSE.Tests.API
     /// <c>SceneryAssetManager</c> and is exercised in-game; these tests pin the
     /// decision logic that decides which component type names force eager activation
     /// (KeyValue/animation components, which register persistent state at activation;
-    /// masks no longer force eager — they defer and are held resident by the cull
-    /// debounce instead), and the fail-safe that treats an unknown/empty type name as
-    /// eager-only.
+    /// masks no longer force eager — they defer like plain scenery, and their terrain
+    /// contribution survives streaming via the decoupled standalone masks), and the
+    /// fail-safe that treats an unknown/empty type name as eager-only.
     /// </summary>
     public class FuseSceneryDeferralClassifierTests
     {
@@ -37,10 +37,11 @@ namespace FUSE.Tests.API
 
         [Theory]
         // Mask components are NO LONGER forced eager: they defer like plain scenery (so
-        // they activate against a live camera and stream correctly) and are kept resident
-        // by the cull debounce instead. Only stateful scenery stays eager. (Masks are still
-        // a mask-type-name — see IsMaskTypeName above — which is how they get tagged and
-        // held resident; they just no longer gate deferral.)
+        // they activate against a live camera and stream correctly); their terrain
+        // contribution survives unloads via the decoupled standalone masks. Only stateful
+        // scenery stays eager. (Masks are still a mask-type-name — see IsMaskTypeName
+        // above — which is how they get tagged so the load throttle never defers their
+        // first load; they just no longer gate deferral.)
         [InlineData("Model.Definition.Components.MapMasks.RectangleMapMaskComponent", false)]
         // Stateful components force eager activation (save-restore correctness):
         // KeyValue / animation register persistent property objects on activation.

@@ -659,6 +659,92 @@ namespace FUSE.UnityTests
         }
 
         // -----------------------------------------------------------------
+        // DecalCullingManager / DecalProjectorHelper — FuseDecalCullingGuardPatches
+        // prunes destroyed projectors from the private registry (a destroyed
+        // registered decal otherwise NREs the visibility job every frame and
+        // leaks its TempJob arrays each time), and guarantees unregistration
+        // when the helper's OnDisable throws.
+        // -----------------------------------------------------------------
+
+        [Test]
+        public void DecalCullingManager_decalProjectors_InstanceField()
+        {
+            AssertField("Effects.Decals.DecalCullingManager", "_decalProjectors", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalCullingManager_UpdateDecalVisibilityJob_InstanceMethod()
+        {
+            // Patch target for the scrub prefix + storm-breaker finalizer.
+            AssertMethod("Effects.Decals.DecalCullingManager", "UpdateDecalVisibilityJob", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalCullingManager_Entry_DecalProjector_Field()
+        {
+            // The registry is a List<Entry> of a private nested class; the scrub
+            // reads each entry's DecalProjector field to test for destroyed objects.
+            var entryType = AccessTools.Inner(RequireType("Effects.Decals.DecalCullingManager"), "Entry");
+            Assert.NotNull(entryType,
+                "DecalCullingManager.Entry nested type not found — the decal scrub cannot inspect registry entries.");
+            var field = AccessTools.Field(entryType, "DecalProjector");
+            Assert.NotNull(field,
+                "DecalCullingManager.Entry.DecalProjector not found — the decal scrub cannot detect destroyed projectors.");
+        }
+
+        [Test]
+        public void DecalProjectorHelper_OnEnable_InstanceMethod()
+        {
+            // Patch target: skipped cleanly when the helper has no Car ancestor.
+            AssertMethod("Effects.Decals.DecalProjectorHelper", "OnEnable", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalProjectorHelper_OnDisable_InstanceMethod()
+        {
+            // Patch target: finalizer unregisters the decal even when OnDisable throws.
+            AssertMethod("Effects.Decals.DecalProjectorHelper", "OnDisable", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalProjectorHelper_SetDecalRegistered_InstanceMethod()
+        {
+            // Invoked reflectively by the disable guard to force the unregister.
+            AssertMethod("Effects.Decals.DecalProjectorHelper", "SetDecalRegistered", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalCullingManager_shared_StaticField()
+        {
+            // The disable guard reads the private singleton backing field to test
+            // whether a manager exists WITHOUT touching the public Shared getter,
+            // which would lazily create a replacement GameObject mid scene-teardown.
+            AssertField("Effects.Decals.DecalCullingManager", "_shared", StaticNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetManager_LoadScenery_PublicInstanceMethod()
+        {
+            // FuseSceneryLoadFailurePatch postfixes this to watch for permanently
+            // failing scenery asset loads (pack bundle/catalog mismatch) and bubble
+            // them up to the health report.
+            AssertMethod("Helpers.SceneryAssetManager", "LoadScenery", InstancePublic);
+        }
+
+        [Test]
+        public void UrpDecalProjector_TypeResolvesByAssemblyQualifiedName()
+        {
+            // The scenery decal scrub disables URP DecalProjector components by
+            // resolving the type by name (URP is not a compile-time reference).
+            // A game/URP upgrade that renames the assembly must fail here, not
+            // silently leave scenery decals rendering uncontrolled.
+            Assert.NotNull(
+                Type.GetType("UnityEngine.Rendering.Universal.DecalProjector, Unity.RenderPipelines.Universal.Runtime"),
+                "UnityEngine.Rendering.Universal.DecalProjector no longer resolves by assembly-qualified name — " +
+                "the scenery decal scrub cannot disable projectors.");
+        }
+
+        // -----------------------------------------------------------------
         // Helpers
         // -----------------------------------------------------------------
 

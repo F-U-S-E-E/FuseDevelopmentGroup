@@ -17,18 +17,18 @@ namespace FUSE.Tests.Interface
         {
             // The exact shape of the misleading "corridor — single" run.
             Assert.False(FuseSceneryBenchmarkEngagement.Engaged(
-                fuseLoads: 0, suppressedUnloads: 0, deferredLoads: 0, peakQueueDepth: 0));
+                fuseLoads: 0, fuseUnloads: 0, deferredLoads: 0, peakQueueDepth: 0));
         }
 
         [Theory]
-        [InlineData(1, 0, 0, 0)] // FUSE load/unload churn alone
-        [InlineData(0, 1, 0, 0)] // debounce suppression alone
+        [InlineData(1, 0, 0, 0)] // FUSE load churn alone
+        [InlineData(0, 1, 0, 0)] // FUSE unload churn alone (outbound-only run)
         [InlineData(0, 0, 1, 0)] // throttle deferral alone
         [InlineData(0, 0, 0, 1)] // a non-empty throttle queue alone
-        public void AnySingleSignal_IsEngaged(long fuseLoads, long suppressedUnloads, long deferredLoads, int peakQueueDepth)
+        public void AnySingleSignal_IsEngaged(long fuseLoads, long fuseUnloads, long deferredLoads, int peakQueueDepth)
         {
             Assert.True(FuseSceneryBenchmarkEngagement.Engaged(
-                fuseLoads, suppressedUnloads, deferredLoads, peakQueueDepth));
+                fuseLoads, fuseUnloads, deferredLoads, peakQueueDepth));
         }
     }
 }

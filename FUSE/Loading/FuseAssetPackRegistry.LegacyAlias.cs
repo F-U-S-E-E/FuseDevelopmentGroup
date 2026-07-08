@@ -103,11 +103,13 @@ namespace FUSE.Loading
                 AddLegacyAssetPackAlias(aliases, $"{Path.GetFileName(packagePath)}/{relative}", resolved);
             }
 
-            RegisterCatalogAliases(aliases, assetPackFolder, resolved);
+            RegisterCatalogAliases(aliases, packagePath, packageId, assetPackFolder, resolved);
         }
 
         private static void RegisterCatalogAliases(
             IDictionary<string, string> aliases,
+            string packagePath,
+            string packageId,
             string assetPackFolder,
             string resolved)
         {
@@ -131,6 +133,17 @@ namespace FUSE.Loading
                 // the optional catalog-declared aliases are lost when the file is unreadable.
                 FuseLog.Warning(
                     $"FUSE could not inspect asset pack Catalog.json '{catalogPath}' for legacy aliases: {ex.Message}");
+
+                // Bubble up to the user via the load report: content referencing the
+                // catalog-declared aliases may silently fail to resolve, and the pack
+                // author needs the file name to fix it.
+                var package = !string.IsNullOrWhiteSpace(packageId)
+                    ? packageId
+                    : Path.GetFileName(packagePath);
+                RecordCatalogInspectionFailure(
+                    $"Asset pack Catalog.json could not be read: package='{package}' " +
+                    $"pack='{Path.GetFileName(assetPackFolder)}' reason='{ex.Message}' — " +
+                    "catalog-declared aliases were skipped; content referencing them may not resolve.");
             }
         }
 
