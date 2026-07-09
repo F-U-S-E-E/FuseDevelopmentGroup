@@ -182,11 +182,20 @@ namespace FUSE.Runtime.Lifecycle
                     var sceneryInstances = UnityEngine.Object.FindObjectsOfType<Helpers.SceneryAssetInstance>().Length;
                     var cars = UnityEngine.Object.FindObjectsOfType<Model.Car>().Length;
                     var managedMb = GC.GetTotalMemory(forceFullCollection: false) / (1024f * 1024f);
+                    // Native side: field data showed fps-per-renderer degrading
+                    // while managed stayed flat — if these climb instead, the
+                    // decay is native/VRAM pressure (texture/mesh churn), not
+                    // managed allocation.
+                    var unityAllocMb = UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / (1024f * 1024f);
+                    var unityReservedMb = UnityEngine.Profiling.Profiler.GetTotalReservedMemoryLong() / (1024f * 1024f);
+                    var gfxDriverMb = UnityEngine.Profiling.Profiler.GetAllocatedMemoryForGraphicsDriver() / (1024f * 1024f);
 
                     FuseLog.Info(
                         $"FUSE runtime census: avgFps={averageFps:F1} frame={frame} " +
                         $"gameObjects={gameObjects} renderers={renderers} sceneryInstances={sceneryInstances} " +
-                        $"cars={cars} managedMB={managedMb:F0} spikes={FuseRuntimeGuardCounters.FrameSpikes} " +
+                        $"cars={cars} managedMB={managedMb:F0} unityAllocMB={unityAllocMb:F0} " +
+                        $"unityReservedMB={unityReservedMb:F0} gfxDriverMB={gfxDriverMb:F0} " +
+                        $"spikes={FuseRuntimeGuardCounters.FrameSpikes} " +
                         $"worstMs={FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}. " +
                         "A counter that climbs while avgFps falls names the accumulator.");
                 }

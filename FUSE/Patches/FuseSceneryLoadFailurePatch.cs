@@ -342,8 +342,12 @@ namespace FUSE.Patches
         internal static int PendingCountForTests => Pending.Count;
 
         /// <summary>
-        /// Resolves and records queued failures. Main thread only (touches Unity
-        /// object queries and the toast UI); driven by FuseHealthUi.Update.
+        /// Resolves and records queued failures, then executes queued
+        /// quarantines. Main thread only (touches Unity object queries and the
+        /// toast UI); driven every frame by <see cref="FUSE.Runtime.Lifecycle.FuseRuntimePump"/>
+        /// — an always-on host, deliberately NOT an optional UI component (the
+        /// original FuseHealthUi.Update driver was never instantiated after the
+        /// menu-UI rewrite, silently starving this drain in the field).
         /// </summary>
         internal static void DrainPending()
         {
