@@ -57,15 +57,23 @@ namespace FUSE.Interface.MenuWindow
             AddReadinessRow(builder, "Progression", data.ProgressionTransferSkipCount == 0, "0 transfer skips", data.ProgressionTransferSkipCount + " skip(s)");
             AddReadinessRow(builder, "Registry", data.ConflictCount == 0, "0 conflicts", data.ConflictCount + " conflict(s)");
             AddReadinessRow(builder, "Notices", data.NoticesCount == 0, "0 notices", data.NoticesCount + " notice(s)");
-            // Live session counters, not snapshot state — same row the Health tab
-            // shows, so guard activity is on screen here too, not only in the
-            // Copy Readiness text.
+            // Live session counters, not snapshot state.
             AddReadinessRow(
                 builder,
                 "Guards",
                 FuseRuntimeGuardCounters.AllIdle,
                 "idle",
                 FuseRuntimeGuardCounters.GuardTotal + " contained event(s)");
+            builder.Spacer(6f);
+
+            // Full per-guard breakdown (this window is the only UI surface, so
+            // the counters must be readable here, not just in copied reports).
+            builder.AddSection("Runtime Guards");
+            builder.AddLabel(FuseRuntimeGuardCounters.FormatSummary());
+            builder.AddLabel(
+                FuseRuntimeGuardCounters.AllIdle
+                    ? "All idle — no broken content needed containing this session."
+                    : "Non-zero counters are content problems FUSE is containing; offenders are named in FUSE.log and the health report.");
             builder.Spacer(6f);
 
             builder.AddSection("Actions");

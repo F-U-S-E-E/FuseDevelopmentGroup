@@ -107,6 +107,41 @@ namespace FUSE.Interface.MenuWindow
                     ? $"Logging frames over {FuseSettings.FrameSpikeThresholdMs:F0}ms to FUSE.log (spikes so far: {FuseRuntimeGuardCounters.FrameSpikes}, worst {FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}ms)."
                     : "For stutter reports: logs each frame over the threshold to FUSE.log with GC deltas, so hitches can be matched against log activity. Takes effect immediately.");
 
+            builder.AddField("Scenery Cull Log", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableSceneryCullingDiagnostics,
+                () =>
+                {
+                    FuseSettings.SetEnableSceneryCullingDiagnostics(!FuseSettings.EnableSceneryCullingDiagnostics);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel("Logs every scenery load/unload flip to FUSE.log ('scenery-cull'). For culling-churn hunts; verbose while moving.");
+
+            builder.AddSection("Experimental");
+
+            builder.AddField("Targeted Terrain Rebuild", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableTargetedTerrainInvalidation,
+                () =>
+                {
+                    FuseSettings.SetEnableTargetedTerrainInvalidation(!FuseSettings.EnableTargetedTerrainInvalidation);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel("After applying packages, re-bake only the terrain tiles FUSE touched instead of a full rebuild. Falls back to the full rebuild when a mask can't be bounded. Takes effect on the next map load.");
+
+            builder.AddField("Early Scene-Path Suppression", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableExperimentalEarlyScenePathSuppression,
+                () =>
+                {
+                    FuseSettings.SetEnableExperimentalEarlyScenePathSuppression(!FuseSettings.EnableExperimentalEarlyScenePathSuppression);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel("Applies scene-path suppressions during the load itself instead of after. Takes effect on the next map load.");
+
             builder.AddSection("Debug Overlays");
 
             builder.AddField("Track Probe", control: BuildToggleBoxWithButton(
