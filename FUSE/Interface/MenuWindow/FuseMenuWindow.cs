@@ -76,6 +76,9 @@ namespace FUSE.Interface.MenuWindow
 
         protected void OnDestroy()
         {
+            // Give any open legacy plugin settings tab its ModTabDidClose before
+            // the window goes away so it can persist state.
+            ModsPanelBuilder.CloseAllLegacyModTabs("FUSE menu window destroyed");
             Shared = null;
         }
 
@@ -117,6 +120,17 @@ namespace FUSE.Interface.MenuWindow
             if (_button == null)
             {
                 TryInstallHudButton();
+            }
+
+            // The tab view only rebuilds the newly selected tab's content, so
+            // nothing rebuilds the Mods detail when the user navigates away from
+            // it or closes the window (including via the title-bar X). Sweep here
+            // so legacy plugin tabs get their one ModTabDidClose as soon as they
+            // stop being visible.
+            if (ModsPanelBuilder.HasOpenLegacyModTabs &&
+                (_window == null || !_window.IsShown || _selectedTabState.Value != TabIdMods))
+            {
+                ModsPanelBuilder.CloseAllLegacyModTabs("legacy settings tab no longer visible");
             }
         }
 
@@ -304,6 +318,7 @@ namespace FUSE.Interface.MenuWindow
 
             if (_window.IsShown)
             {
+                ModsPanelBuilder.CloseAllLegacyModTabs("FUSE menu window closed");
                 _window.CloseWindow();
                 return;
             }
