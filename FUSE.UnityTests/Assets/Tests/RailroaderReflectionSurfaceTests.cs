@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using NUnit.Framework;
@@ -675,8 +676,17 @@ namespace FUSE.UnityTests
         [Test]
         public void DecalCullingManager_UpdateDecalVisibilityJob_InstanceMethod()
         {
-            // Patch target for the scrub prefix + storm-breaker finalizer.
+            // Patch target for the scrub prefix, callback-containment transpiler,
+            // and storm-breaker finalizer.
             AssertMethod("Effects.Decals.DecalCullingManager", "UpdateDecalVisibilityJob", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalCullingManager_RegisterDecal_PublicInstanceMethod()
+        {
+            // Patch target: null/destroyed projectors are rejected before they can
+            // poison the registry that UpdateDecalVisibilityJob consumes.
+            AssertMethod("Effects.Decals.DecalCullingManager", "RegisterDecal", InstancePublic);
         }
 
         [Test]
@@ -702,7 +712,8 @@ namespace FUSE.UnityTests
         [Test]
         public void DecalProjectorHelper_OnDisable_InstanceMethod()
         {
-            // Patch target: finalizer unregisters the decal even when OnDisable throws.
+            // Patch target: prefix unregisters before vanilla touches _car; the
+            // finalizer remains as the exception-suppression fallback.
             AssertMethod("Effects.Decals.DecalProjectorHelper", "OnDisable", InstanceNonPublic);
         }
 
@@ -729,6 +740,28 @@ namespace FUSE.UnityTests
             // failing scenery asset loads (pack bundle/catalog mismatch) and bubble
             // them up to the health report.
             AssertMethod("Helpers.SceneryAssetManager", "LoadScenery", InstancePublic);
+        }
+
+        [Test]
+        public void FlareManager_HandleAddUpdateFlare_InstanceMethod()
+        {
+            // FuseFlareDeadTrackGuardPatch finalizes this to suppress (and surface
+            // via the load report) the Track.InvalidLocationException thrown when a
+            // saved flare stands on a segment a track mod has since removed. A
+            // rename detaches the guard and stale flares go back to silent
+            // observer-exception spam.
+            var method = RequireType("Game.FlareManager").GetMethod("HandleAddUpdateFlare", InstanceNonPublic);
+            Assert.NotNull(method,
+                "Game.FlareManager.HandleAddUpdateFlare not found — the stale-flare guard cannot bind.");
+
+            // The guard's Finalizer takes a 'key' parameter that Harmony binds to
+            // the original's argument strictly by name; a parameter rename would
+            // otherwise surface as a patch-apply failure at runtime, not in CI.
+            var hasKeyParameter = method.GetParameters()
+                .Any(parameter => parameter.Name == "key" && parameter.ParameterType == typeof(string));
+            Assert.IsTrue(hasKeyParameter,
+                "Game.FlareManager.HandleAddUpdateFlare has no string parameter named 'key' — " +
+                "FuseFlareDeadTrackGuardPatch.Finalizer's 'key' injection would fail to bind at patch time.");
         }
 
         [Test]

@@ -279,6 +279,10 @@ namespace FUSE.Runtime.Lifecycle
             // published inline here the toast would say "orphans 0"
             // even when broken legacy car instances are about to be
             // recorded a few seconds later.
+            // Stops were refreshed during the apply above; validate the resulting
+            // stop graph (shared spans, isolated stops) before the report goes out
+            // so the toast's "graph" count reflects this load.
+            FusePassengerStopValidation.Run(pipelineCompleted ? "map load" : "map load failed");
             FuseLoadReport.ScheduleMapLoadReport(
                 pipelineCompleted ? "map load" : "map load failed",
                 loadedCount,

@@ -149,8 +149,21 @@ namespace FUSE.Patches
             return (cameraPos - objectPos).sqrMagnitude >= StaleLoadDropDistanceSqr;
         }
 
+        [HarmonyPriority(Priority.First)]
         private static bool Prefix(SceneryAssetInstance __instance, bool loaded)
         {
+            // This MUST precede the pump bypass and every fail-open branch. A
+            // deferred placement may be quarantined while queued, and the pump's
+            // reflective SetLoaded(true) re-drive must not resurrect it. 'loaded'
+            // is checked FIRST: unloads must never pay the IsQuarantined
+            // lock+probe, which otherwise runs for every SetLoaded call on every
+            // scenery instance (vanilla included) during teleport/streaming storms.
+            if (loaded && __instance != null &&
+                FuseSceneryLoadFailurePatch.IsQuarantined(__instance.identifier))
+            {
+                return false;
+            }
+
             // Unloads, pump re-drives, the forced-off baseline, and the case where
             // reflection didn't bind all run the vanilla load path unchanged.
             if (!loaded || _pumping || __instance == null ||
@@ -258,6 +271,11 @@ namespace FUSE.Patches
                     if (instance == null)
                     {
                         continue; // destroyed while queued.
+                    }
+
+                    if (FuseSceneryLoadFailurePatch.IsQuarantined(instance.identifier))
+                    {
+                        continue; // quarantined after it entered the throttle queue.
                     }
 
                     // Loaded via another path since it was queued: nothing to do.

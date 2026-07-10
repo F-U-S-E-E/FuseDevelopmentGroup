@@ -200,6 +200,7 @@ namespace FUSE.Runtime.API
             PassengerStopMarkersField?.SetValue(passengerStop, RebuildPassengerStopMarkers(passengerStop.transform, boundSpans));
             var cacheCount = RefreshPassengerStopCache();
             var reboundAgents = StationAPI.RebindStationAgentsForPassengerStop(passengerStop);
+            FusePassengerStopValidation.MarkDirty();
             FuseLog.Info(
                 $"FUSE passenger stop refreshed id='{stopIdentifier}' " +
                 $"component='{Identifier}' spanCount={boundSpans.Length} " +

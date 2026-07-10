@@ -20,7 +20,7 @@ namespace FUSE.Interface
     /// MonoBehaviour host, and a static <c>ShowIfNeeded</c> is wired
     /// to the save-load completion hook so the window pops up
     /// automatically once the registry has entries to surface. No
-    /// interaction with the FUSE Health window is required; this
+    /// interaction with the FUSE menu window is required; this
     /// window stands alone and closes itself when every orphan has
     /// been replaced or the user dismisses it.
     /// </summary>
@@ -42,7 +42,7 @@ namespace FUSE.Interface
         private static Window.Position DefaultPosition => Window.Position.Center;
 
         /// <summary>
-        /// Idempotent host creation. Mirrors the FUSE Health UI
+        /// Idempotent host creation. Mirrors the FUSE menu window
         /// pattern so we live for the full session and can be
         /// re-shown across multiple save loads without re-creating
         /// the GameObject. Called once from FUSE startup.
