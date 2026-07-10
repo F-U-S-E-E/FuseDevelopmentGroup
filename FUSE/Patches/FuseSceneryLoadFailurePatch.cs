@@ -6,7 +6,6 @@ using FUSE.Infrastructure;
 using FUSE.Loading;
 using HarmonyLib;
 using Helpers;
-using UI.Common;
 
 namespace FUSE.Patches
 {
@@ -42,11 +41,6 @@ namespace FUSE.Patches
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object SeenLock = new object();
 
-        // One toast per asset pack, not per asset: a broken pack usually breaks
-        // many assets at once and the report carries the full list.
-        private static readonly HashSet<string> ToastedPacks =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
         /// <summary>Distinct failing scenery assets recorded since startup (diagnostics).</summary>
         internal static long RecordedFailures => FuseRuntimeGuardCounters.SceneryLoadFailures;
 
@@ -70,8 +64,6 @@ namespace FUSE.Patches
                 {
                 }
             }
-
-            ToastedPacks.Clear();
 
             // The bundle audit shares this dedupe lifecycle: its findings land in
             // the same report bucket, so both repopulate together after a reload.
@@ -576,25 +568,14 @@ namespace FUSE.Patches
             }
 
             FuseRuntimeGuardCounters.RecordSceneryLoadFailure();
+            // No popup here by design: broken-asset findings surface through the
+            // health report (Issues rows, the brokenAssets summary count, and the
+            // menu Status page) — the report's own single map-load toast already
+            // signals "Needs Attention" when this bucket is non-empty.
             FuseLog.Error(
                 $"FUSE scenery asset '{failure.Identifier}' is failing to load and will keep failing on " +
                 $"every retry: pack='{pack}' package='{owner}' reason='{failure.Message}'. The pack's " +
                 "bundle likely does not contain an asset its catalog declares.");
-
-            if (ToastedPacks.Add(pack))
-            {
-                try
-                {
-                    Toast.Present(
-                        $"FUSE: assets in pack '{pack}' are failing to load - first: '{failure.Identifier}'. " +
-                        "See the FUSE menu Status page or /fuse.report.",
-                        ToastPosition.Middle);
-                }
-                catch (Exception ex)
-                {
-                    FuseLog.Exception("FUSE could not display scenery load-failure toast", ex);
-                }
-            }
         }
 
         private static bool IsConfirmedScenery(
