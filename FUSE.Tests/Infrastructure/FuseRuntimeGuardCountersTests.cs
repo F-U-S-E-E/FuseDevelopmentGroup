@@ -27,6 +27,7 @@ namespace FUSE.Tests.Infrastructure
             Assert.Equal(0, FuseRuntimeGuardCounters.GuardTotal);
             Assert.Equal(
                 "decalScrubbed=0 decalVisibility=0 decalHelperEnable=0 decalHelperDisable=0 " +
+                "decalRegistrationsRejected=0 " +
                 "curveMesh=0 sceneryCarDecalsDisabled=0 sceneryLoadFailures=0 sceneryQuarantined=0 " +
                 "sceneryLoadWatch=0 " +
                 "flares=0 frameSpikes=0",

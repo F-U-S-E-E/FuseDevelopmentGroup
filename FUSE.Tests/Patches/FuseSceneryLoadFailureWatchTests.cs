@@ -172,41 +172,6 @@ namespace FUSE.Tests.Patches
         }
 
         [Theory]
-        [InlineData(-1, 8, 0)]
-        [InlineData(0, 8, 0)]
-        [InlineData(3, 8, 3)]
-        [InlineData(8, 8, 8)]
-        [InlineData(80, 8, 8)]
-        [InlineData(80, 32, 32)]
-        [InlineData(80, 0, 0)]
-        public void CalculateDrainCount_EnforcesPerCallCap(int pending, int maximum, int expected)
-        {
-            Assert.Equal(expected, FuseSceneryLoadFailurePatch.CalculateDrainCount(pending, maximum));
-        }
-
-        [Fact]
-        public void DrainCaps_AreEightReportsAndThirtyTwoQuarantines()
-        {
-            Assert.Equal(8, FuseSceneryLoadFailurePatch.MaxFailureReportsPerDrain);
-            Assert.Equal(32, FuseSceneryLoadFailurePatch.MaxQuarantinesPerDrain);
-        }
-
-        [Theory]
-        [InlineData(true, true, true)]
-        [InlineData(true, false, false)]
-        [InlineData(false, true, false)]
-        [InlineData(false, false, false)]
-        public void QuarantineSuppression_AppliesOnlyToLoadRequests(
-            bool loaded,
-            bool quarantined,
-            bool expected)
-        {
-            Assert.Equal(
-                expected,
-                FuseSceneryLoadThrottlePatch.ShouldSuppressQuarantinedLoad(loaded, quarantined));
-        }
-
-        [Theory]
         [InlineData("Error loading scenery aspenbridgeclear", "aspenbridgeclear")]
         [InlineData("Error loading scenery some id with spaces ", "some id with spaces")]
         public void TryParseSceneryLoadErrorLine_MatchingLines_ExtractIdentifier(string line, string expected)

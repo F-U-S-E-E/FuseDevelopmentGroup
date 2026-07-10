@@ -30,9 +30,6 @@ namespace FUSE.Patches
     [HarmonyPatch(typeof(SceneryAssetManager), nameof(SceneryAssetManager.LoadScenery))]
     internal static class FuseSceneryLoadFailurePatch
     {
-        internal const int MaxFailureReportsPerDrain = 8;
-        internal const int MaxQuarantinesPerDrain = 32;
-
         private static readonly ConcurrentQueue<PendingFailure> Pending = new ConcurrentQueue<PendingFailure>();
 
         // Identifiers already queued/recorded this map, so the game's endless
@@ -272,7 +269,9 @@ namespace FUSE.Patches
                     // quarantine exists to stop.
                     FailureCounts.TryGetValue(identifier, out var count);
                     FailureCounts[identifier] = ++count;
-                    if (count == RuntimeFailureQuarantineThreshold)
+                    // >= (not ==): QueueQuarantineUnderLock dedupes, so this is
+                    // free hardening against any future multi-step increment.
+                    if (count >= RuntimeFailureQuarantineThreshold)
                     {
                         // Keep threshold state, persistent suppression, and the
                         // main-thread work item atomic with map reset.
@@ -392,17 +391,6 @@ namespace FUSE.Patches
         /// <summary>Queued-but-undrained failure count (test hook).</summary>
         internal static int PendingCountForTests => Pending.Count;
 
-        /// <summary>Pure queue-cap calculation shared by the drain and tests.</summary>
-        internal static int CalculateDrainCount(int pendingCount, int maximumPerDrain)
-        {
-            if (pendingCount <= 0 || maximumPerDrain <= 0)
-            {
-                return 0;
-            }
-
-            return Math.Min(pendingCount, maximumPerDrain);
-        }
-
         /// <summary>
         /// Resolves and records queued failures, then executes queued
         /// quarantines. Main thread only (touches Unity object queries and the
@@ -414,7 +402,7 @@ namespace FUSE.Patches
         internal static void DrainPending()
         {
             // The runtime pump calls this every frame. Avoid allocating the two
-            // bounded batch lists during the overwhelmingly common idle path;
+            // batch lists during the overwhelmingly common idle path;
             // ConcurrentQueue.IsEmpty is a lock-free snapshot, and the existing
             // post-dequeue check below still handles races safely.
             if (Pending.IsEmpty && PendingQuarantine.IsEmpty)
@@ -422,17 +410,20 @@ namespace FUSE.Patches
                 return;
             }
 
-            var failures = new List<PendingFailure>(
-                CalculateDrainCount(Pending.Count, MaxFailureReportsPerDrain));
-            while (failures.Count < MaxFailureReportsPerDrain && Pending.TryDequeue(out var failure))
+            // Drain BOTH queues fully into one batch: the expensive step below is
+            // the single scene snapshot, not the per-item report strings or
+            // SetActive calls, and both queues are bounded by the per-map dedupe
+            // sets. Capping the batch would multiply the snapshot cost across
+            // consecutive frames — a 100-mismatch burst under an 8-per-frame cap
+            // meant 13 full include-inactive scene scans where one serves.
+            var failures = new List<PendingFailure>();
+            while (Pending.TryDequeue(out var failure))
             {
                 failures.Add(failure);
             }
 
-            var quarantineIdentifiers = new List<string>(
-                CalculateDrainCount(PendingQuarantine.Count, MaxQuarantinesPerDrain));
-            while (quarantineIdentifiers.Count < MaxQuarantinesPerDrain &&
-                   PendingQuarantine.TryDequeue(out var identifier))
+            var quarantineIdentifiers = new List<string>();
+            while (PendingQuarantine.TryDequeue(out var identifier))
             {
                 quarantineIdentifiers.Add(identifier);
             }

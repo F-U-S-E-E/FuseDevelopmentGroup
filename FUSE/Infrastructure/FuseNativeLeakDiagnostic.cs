@@ -19,11 +19,38 @@ namespace FUSE.Infrastructure
             {
                 try
                 {
-                    return NativeLeakDetection.Mode.ToString();
+                    var mode = NativeLeakDetection.Mode.ToString();
+                    return LeakTrackingAvailable ? mode : mode + " (inert: retail build)";
                 }
                 catch
                 {
                     return "Unavailable";
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether this player build actually compiles in Unity's native leak
+        /// tracking. The <c>NativeLeakDetection.Mode</c> property stores and
+        /// returns whatever is set in EVERY build, but the allocation tracking
+        /// and stack capture behind it exist only when collections checks are
+        /// compiled in — editor and development builds. In a retail player the
+        /// mode is a stored value with no effect: no stacks, no leak reports,
+        /// and essentially none of the warned-about overhead either.
+        /// </summary>
+        internal static bool LeakTrackingAvailable
+        {
+            get
+            {
+                try
+                {
+                    return UnityEngine.Debug.isDebugBuild;
+                }
+                catch
+                {
+                    // Outside a Unity player (tests) the probe itself is
+                    // unavailable; report the pessimistic answer.
+                    return false;
                 }
             }
         }
@@ -81,10 +108,21 @@ namespace FUSE.Infrastructure
 
                 _lastAppliedMode = targetMode;
                 _ownsMode = true;
-                FuseLog.Warning(
-                    "FUSE enabled Unity native-allocation leak stack traces process-wide. " +
-                    "This has substantial CPU and memory overhead; reproduce briefly, then disable it. " +
-                    "A game restart before capture gives the cleanest allocation history.");
+                if (LeakTrackingAvailable)
+                {
+                    FuseLog.Warning(
+                        "FUSE enabled Unity native-allocation leak stack traces process-wide. " +
+                        "This has substantial CPU and memory overhead; reproduce briefly, then disable it. " +
+                        "A game restart before capture gives the cleanest allocation history.");
+                }
+                else
+                {
+                    FuseLog.Warning(
+                        "FUSE set Unity's native leak mode to EnabledWithStackTrace, but this is a retail " +
+                        "(non-development) player build: Unity compiles native allocation tracking out of " +
+                        "retail players, so NO allocation stacks or leak reports will be produced. The " +
+                        "toggle is inert here — use the frame-spike census memory columns for leak hunts.");
+                }
             }
             catch (Exception ex)
             {

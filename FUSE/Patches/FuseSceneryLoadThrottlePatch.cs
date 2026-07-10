@@ -138,15 +138,6 @@ namespace FUSE.Patches
         }
 
         /// <summary>
-        /// Pure decision used at the very start of the Harmony prefix: quarantined
-        /// scenery suppresses load requests, but unloads always run normally.
-        /// </summary>
-        internal static bool ShouldSuppressQuarantinedLoad(bool loaded, bool isQuarantined)
-        {
-            return loaded && isQuarantined;
-        }
-
-        /// <summary>
         /// Pure stale-drop decision, extracted for unit testing (see
         /// FUSE.UnityTests): should a queued load be dropped because its object is
         /// now beyond <see cref="StaleLoadDropDistance"/> from the camera? The
@@ -163,10 +154,12 @@ namespace FUSE.Patches
         {
             // This MUST precede the pump bypass and every fail-open branch. A
             // deferred placement may be quarantined while queued, and the pump's
-            // reflective SetLoaded(true) re-drive must not resurrect it.
-            if (ShouldSuppressQuarantinedLoad(
-                    loaded,
-                    __instance != null && FuseSceneryLoadFailurePatch.IsQuarantined(__instance.identifier)))
+            // reflective SetLoaded(true) re-drive must not resurrect it. 'loaded'
+            // is checked FIRST: unloads must never pay the IsQuarantined
+            // lock+probe, which otherwise runs for every SetLoaded call on every
+            // scenery instance (vanilla included) during teleport/streaming storms.
+            if (loaded && __instance != null &&
+                FuseSceneryLoadFailurePatch.IsQuarantined(__instance.identifier))
             {
                 return false;
             }

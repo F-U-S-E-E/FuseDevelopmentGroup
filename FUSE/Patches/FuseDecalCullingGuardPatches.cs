@@ -370,14 +370,18 @@ namespace FUSE.Patches
     [HarmonyPatch(typeof(DecalCullingManager), nameof(DecalCullingManager.RegisterDecal))]
     internal static class FuseDecalCullingRegisterGuardPatch
     {
-        private static long _rejectedRegistrations;
+        /// <summary>Registrations rejected since startup (diagnostics).</summary>
+        internal static long RejectedRegistrations => FuseRuntimeGuardCounters.DecalRegistrationsRejected;
 
         private static bool Prefix(object __0)
         {
             var shouldRegister = ShouldRegister(__0);
             if (!shouldRegister)
             {
-                var rejected = ++_rejectedRegistrations;
+                // Shared registry, like every sibling guard: rejections must show
+                // in GuardTotal / the guards line, or an active rejection storm
+                // reads as "guards idle" in every report surface.
+                var rejected = FuseRuntimeGuardCounters.RecordDecalRegistrationRejected();
                 if (FuseGuardLog.ShouldLog(rejected))
                 {
                     FuseLog.Warning(

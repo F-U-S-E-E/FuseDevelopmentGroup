@@ -21,6 +21,7 @@ namespace FUSE.Infrastructure
         internal static long DecalVisibilitySuppressed { get; private set; }
         internal static long DecalHelperEnableSuppressed { get; private set; }
         internal static long DecalHelperDisableSuppressed { get; private set; }
+        internal static long DecalRegistrationsRejected { get; private set; }
         internal static long CurveMeshSuppressed { get; private set; }
         internal static long SceneryDecalComponentsDisabled { get; private set; }
         internal static long SceneryLoadFailures { get; private set; }
@@ -47,6 +48,7 @@ namespace FUSE.Infrastructure
             DecalVisibilitySuppressed +
             DecalHelperEnableSuppressed +
             DecalHelperDisableSuppressed +
+            DecalRegistrationsRejected +
             CurveMeshSuppressed +
             SceneryDecalComponentsDisabled +
             SceneryLoadFailures +
@@ -62,6 +64,8 @@ namespace FUSE.Infrastructure
         internal static long RecordDecalHelperEnableSuppressed() => ++DecalHelperEnableSuppressed;
 
         internal static long RecordDecalHelperDisableSuppressed() => ++DecalHelperDisableSuppressed;
+
+        internal static long RecordDecalRegistrationRejected() => ++DecalRegistrationsRejected;
 
         internal static long RecordCurveMeshSuppressed() => ++CurveMeshSuppressed;
 
@@ -98,6 +102,7 @@ namespace FUSE.Infrastructure
             return
                 $"decalScrubbed={DecalRegistryScrubbed} decalVisibility={DecalVisibilitySuppressed} " +
                 $"decalHelperEnable={DecalHelperEnableSuppressed} decalHelperDisable={DecalHelperDisableSuppressed} " +
+                $"decalRegistrationsRejected={DecalRegistrationsRejected} " +
                 $"curveMesh={CurveMeshSuppressed} sceneryCarDecalsDisabled={SceneryDecalComponentsDisabled} " +
                 $"sceneryLoadFailures={SceneryLoadFailures} sceneryQuarantined={SceneryPlacementsQuarantined} " +
                 $"sceneryLoadWatch={SceneryLoadWatchAttached} " +
@@ -112,6 +117,7 @@ namespace FUSE.Infrastructure
             DecalVisibilitySuppressed = 0;
             DecalHelperEnableSuppressed = 0;
             DecalHelperDisableSuppressed = 0;
+            DecalRegistrationsRejected = 0;
             CurveMeshSuppressed = 0;
             SceneryDecalComponentsDisabled = 0;
             SceneryLoadFailures = 0;
