@@ -205,15 +205,6 @@ namespace FUSE.Interface.MenuWindow
                     builder.Rebuild();
                 }));
 
-            builder.AddField("Track Span Paths", control: BuildToggleBoxWithButton(
-                builder,
-                FuseSettings.ShowTrackDebugSpanPaths,
-                () =>
-                {
-                    FuseSettings.SetShowTrackDebugSpanPaths(!FuseSettings.ShowTrackDebugSpanPaths);
-                    builder.Rebuild();
-                }));
-
             builder.AddSection("World Labels");
 
             builder.AddLabel("Color-coded labels on every visible entity.");
@@ -250,7 +241,7 @@ namespace FUSE.Interface.MenuWindow
 
             builder.AddField("", $"<color={FuseWorldLabelsOverlay.SceneCloneColor.HexString()}>Scene Clone");
 
-            builder.AddField("Scenery Labels", control: BuildToggleBoxWithButton(
+            builder.AddField("Industry Labels", control: BuildToggleBoxWithButton(
                 builder,
                 FuseSettings.WorldLabelsShowIndustries,
                 () =>
@@ -282,17 +273,6 @@ namespace FUSE.Interface.MenuWindow
                 }));
 
             builder.AddField("", $"<color={FuseWorldLabelsOverlay.TrackSegmentColor.HexString()}>Track Segments");
-
-            builder.AddSection("Experimental");
-
-            builder.AddField("Early Suppression", control: BuildToggleBoxWithButton(
-                builder,
-                FuseSettings.EnableExperimentalEarlyScenePathSuppression,
-                () =>
-                {
-                    FuseSettings.SetEnableExperimentalEarlyScenePathSuppression(!FuseSettings.EnableExperimentalEarlyScenePathSuppression);
-                    builder.Rebuild();
-                }));
 
             builder.Spacer(32f);
         }
