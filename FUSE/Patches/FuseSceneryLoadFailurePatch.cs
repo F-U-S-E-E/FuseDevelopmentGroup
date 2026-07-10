@@ -20,7 +20,7 @@ namespace FUSE.Patches
     ///
     /// This postfix watches every scenery load task and, on the first fault per
     /// asset identifier, records a <see cref="FuseLoadReport"/> entry (visible in
-    /// FUSE Health → Issues, the main-menu status panel, and /fuse.report) and
+    /// the FUSE menu Status page, the main-menu status panel, and /fuse.report) and
     /// raises one toast per asset pack. Resolution of pack/owner names uses Unity
     /// APIs, so faults are queued from the task continuation (which may complete
     /// off the main thread) and drained on the main thread by
@@ -396,8 +396,9 @@ namespace FUSE.Patches
         /// quarantines. Main thread only (touches Unity object queries and the
         /// toast UI); driven every frame by <see cref="FUSE.Runtime.Lifecycle.FuseRuntimePump"/>
         /// — an always-on host, deliberately NOT an optional UI component (the
-        /// original FuseHealthUi.Update driver was never instantiated after the
-        /// menu-UI rewrite, silently starving this drain in the field).
+        /// original driver, the since-deleted Health window's Update, was never
+        /// instantiated after the menu-UI rewrite, silently starving this drain
+        /// in the field).
         /// </summary>
         internal static void DrainPending()
         {
@@ -586,7 +587,7 @@ namespace FUSE.Patches
                 {
                     Toast.Present(
                         $"FUSE: assets in pack '{pack}' are failing to load - first: '{failure.Identifier}'. " +
-                        "See FUSE Health > Issues.",
+                        "See the FUSE menu Status page or /fuse.report.",
                         ToastPosition.Middle);
                 }
                 catch (Exception ex)

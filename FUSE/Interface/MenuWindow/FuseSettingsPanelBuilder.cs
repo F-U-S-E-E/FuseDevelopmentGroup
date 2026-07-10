@@ -88,9 +88,20 @@ namespace FUSE.Interface.MenuWindow
                     builder.Rebuild();
                 }));
 
+            builder.AddField("Advanced Details", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.ShowAdvancedHealthDetails,
+                () =>
+                {
+                    FuseSettings.SetShowAdvancedHealthDetails(!FuseSettings.ShowAdvancedHealthDetails);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel("Shows deeper diagnostics across FUSE pages: advanced mod settings, dependency-graph and asset internals. Combined with Verbose Reporting it also logs per-object progression diagnostics to FUSE.log.");
+
             builder.AddSection("Performance Diagnostics");
 
-            // Duplicated from the Health window's Advanced page on purpose: this
+            // Migrated from the retired Health window's Advanced page: this
             // menu window is the "FUSE" surface most users actually open, and a
             // stutter-report toggle nobody can find produces no stutter reports.
             builder.AddField("Frame Spike Log", control: BuildToggleBoxWithButton(
@@ -194,15 +205,6 @@ namespace FUSE.Interface.MenuWindow
                     builder.Rebuild();
                 }));
 
-            builder.AddField("Track Span Paths", control: BuildToggleBoxWithButton(
-                builder,
-                FuseSettings.ShowTrackDebugSpanPaths,
-                () =>
-                {
-                    FuseSettings.SetShowTrackDebugSpanPaths(!FuseSettings.ShowTrackDebugSpanPaths);
-                    builder.Rebuild();
-                }));
-
             builder.AddSection("World Labels");
 
             builder.AddLabel("Color-coded labels on every visible entity.");
@@ -239,7 +241,7 @@ namespace FUSE.Interface.MenuWindow
 
             builder.AddField("", $"<color={FuseWorldLabelsOverlay.SceneCloneColor.HexString()}>Scene Clone");
 
-            builder.AddField("Scenery Labels", control: BuildToggleBoxWithButton(
+            builder.AddField("Industry Labels", control: BuildToggleBoxWithButton(
                 builder,
                 FuseSettings.WorldLabelsShowIndustries,
                 () =>
@@ -271,17 +273,6 @@ namespace FUSE.Interface.MenuWindow
                 }));
 
             builder.AddField("", $"<color={FuseWorldLabelsOverlay.TrackSegmentColor.HexString()}>Track Segments");
-
-            builder.AddSection("Experimental");
-
-            builder.AddField("Early Suppression", control: BuildToggleBoxWithButton(
-                builder,
-                FuseSettings.EnableExperimentalEarlyScenePathSuppression,
-                () =>
-                {
-                    FuseSettings.SetEnableExperimentalEarlyScenePathSuppression(!FuseSettings.EnableExperimentalEarlyScenePathSuppression);
-                    builder.Rebuild();
-                }));
 
             builder.Spacer(32f);
         }

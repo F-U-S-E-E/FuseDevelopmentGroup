@@ -8,9 +8,9 @@ namespace FUSE.Runtime.Lifecycle
     /// Always-on per-frame pump for FUSE work that must drain on the main
     /// thread regardless of which optional UI hosts exist.
     ///
-    /// The scenery load-failure drain originally rode
-    /// <c>FuseHealthUi.Update</c> — but the menu-UI rewrite retired the call
-    /// that created that host, so the component never existed and the drain
+    /// The scenery load-failure drain originally rode the Health window
+    /// component's Update (since deleted) — but the menu-UI rewrite retired
+    /// the call that created that host, so the component never existed and the drain
     /// NEVER ran in the field: both failure nets enqueued faults into a queue
     /// nobody emptied (observed as sessions with dozens of load failures and
     /// zero records, toasts, or quarantines, while the enqueue-side counters
