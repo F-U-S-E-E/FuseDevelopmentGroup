@@ -88,6 +88,17 @@ namespace FUSE.Interface.MenuWindow
                     builder.Rebuild();
                 }));
 
+            builder.AddField("Advanced Details", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.ShowAdvancedHealthDetails,
+                () =>
+                {
+                    FuseSettings.SetShowAdvancedHealthDetails(!FuseSettings.ShowAdvancedHealthDetails);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel("Shows deeper diagnostics across FUSE pages: advanced mod settings, dependency-graph and asset internals. Combined with Verbose Reporting it also logs per-object progression diagnostics to FUSE.log.");
+
             builder.AddSection("Performance Diagnostics");
 
             // Duplicated from the Health window's Advanced page on purpose: this
