@@ -408,8 +408,9 @@ namespace FUSE.Patches
         /// quarantines. Main thread only (touches Unity object queries and the
         /// toast UI); driven every frame by <see cref="FUSE.Runtime.Lifecycle.FuseRuntimePump"/>
         /// — an always-on host, deliberately NOT an optional UI component (the
-        /// original FuseHealthUi.Update driver was never instantiated after the
-        /// menu-UI rewrite, silently starving this drain in the field).
+        /// original driver, the since-deleted Health window's Update, was never
+        /// instantiated after the menu-UI rewrite, silently starving this drain
+        /// in the field).
         /// </summary>
         internal static void DrainPending()
         {

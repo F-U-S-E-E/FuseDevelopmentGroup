@@ -101,7 +101,7 @@ namespace FUSE.Interface.MenuWindow
 
             builder.AddSection("Performance Diagnostics");
 
-            // Duplicated from the Health window's Advanced page on purpose: this
+            // Migrated from the retired Health window's Advanced page: this
             // menu window is the "FUSE" surface most users actually open, and a
             // stutter-report toggle nobody can find produces no stutter reports.
             builder.AddField("Frame Spike Log", control: BuildToggleBoxWithButton(
