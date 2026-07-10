@@ -10,6 +10,7 @@ using Helpers;
 using KeyValue.Runtime;
 using Model;
 using Model.Definition;
+using Model.Definition.Components;
 using Model.Definition.Data;
 using RollingStock.Controls;
 using UnityEngine;
@@ -79,6 +80,21 @@ namespace FUSE.Patches
 
             foreach (var component in definition.EnabledComponentsForLifetime(lifetime))
             {
+                if (ShouldSkipSceneryComponent(component))
+                {
+                    var blocked = FuseRuntimeGuardCounters.RecordSceneryDecalComponentDisabled();
+                    if (FuseGuardLog.ShouldLog(blocked))
+                    {
+                        FuseLog.Warning(
+                            $"FUSE skipped car-only decal definition #{blocked} " +
+                            $"('{component?.Name ?? "<unnamed>"}') on scenery " +
+                            $"'{FormatSceneryName(__instance)}' before ComponentSetup created its " +
+                            "car-dependent helper and projector.");
+                    }
+
+                    continue;
+                }
+
                 SetupComponent(__instance, lifetime, modelRoot, component, setupContext, observeProperty);
             }
 
@@ -87,20 +103,21 @@ namespace FUSE.Patches
             return false;
         }
 
+        internal static bool ShouldSkipSceneryComponent(DefinitionComponent component)
+        {
+            // Railroader's builder unconditionally dereferences a parent Car after
+            // creating the projector/helper pair. A DecalComponent is therefore a
+            // car-only definition, not a valid scenery component.
+            return component is DecalComponent;
+        }
+
         // ---- Car-only decal machinery scrub -------------------------------
         //
-        // This full-context setup builds EVERY declared component — including car
-        // lettering/number decal components that packs share between cars and
-        // scenery. Their drivers (the game's DecalProjectorHelper and, when the
-        // LegosLogosAndDeco mod is installed, its LegosDecalHelper) require a Car
-        // ancestor: on a car-less scenery host their enable path throws (now
-        // suppressed by the decal guard patches) and the DecalProjector they
-        // manage is left permanently enabled — rendering uncontrolled, never
-        // culled, re-created on every streaming reload. Vanilla scenery setup
-        // never activated these components (stub observers, no per-component
-        // isolation), so disabling them here restores that behavior while keeping
-        // the isolation for everything else. Scenery hosts never sit under a Car,
-        // so the scrub is unconditional on this path.
+        // Declared DecalComponent instances are rejected BEFORE ComponentSetup,
+        // above. This post-setup pass is only a backstop for car-only helper
+        // components embedded directly in a third-party prefab. It disables each
+        // helper and only the paired projector on that same GameObject; unrelated
+        // plain scenery DecalProjectors remain untouched.
         //
         // Disable, never destroy: it is frame-immediate, idempotent across
         // streaming reloads (unload destroys the children outright, so no
@@ -119,7 +136,7 @@ namespace FUSE.Patches
         private static Type _legosDecalHelperType;
         private static bool _legosDecalHelperResolveAttempted;
 
-        /// <summary>Car-only decal components disabled on scenery since startup (diagnostics).</summary>
+        /// <summary>Car-only decal definitions/helpers blocked on scenery since startup (diagnostics).</summary>
         internal static long ScrubbedDecalComponents => FuseRuntimeGuardCounters.SceneryDecalComponentsDisabled;
 
         private static Type ResolveLegosDecalHelperType()
@@ -134,7 +151,7 @@ namespace FUSE.Patches
             return _legosDecalHelperType;
         }
 
-        private static void ScrubCarOnlyDecalMachinery(
+        internal static void ScrubCarOnlyDecalMachinery(
             SceneryAssetInstance instance, ComponentLifetime lifetime, Transform modelRoot)
         {
             // Mirror the loop's parent selection: Model-lifetime components live
@@ -147,11 +164,8 @@ namespace FUSE.Patches
 
             try
             {
-                // Helpers first (their guard-suppressed OnDisable runs against
-                // untouched projector state), then the projectors themselves.
-                DisableCarOnlyComponents(root, typeof(DecalProjectorHelper), instance);
-                DisableCarOnlyComponents(root, ResolveLegosDecalHelperType(), instance);
-                DisableCarOnlyComponents(root, DecalProjectorType, instance);
+                DisableCarOnlyHelpers(root, typeof(DecalProjectorHelper), instance);
+                DisableCarOnlyHelpers(root, ResolveLegosDecalHelperType(), instance);
             }
             catch (Exception ex)
             {
@@ -160,33 +174,54 @@ namespace FUSE.Patches
             }
         }
 
-        private static void DisableCarOnlyComponents(Transform root, Type componentType, SceneryAssetInstance instance)
+        private static void DisableCarOnlyHelpers(Transform root, Type helperType, SceneryAssetInstance instance)
         {
-            if (componentType == null)
+            if (helperType == null)
             {
-                return; // Legos absent or URP layout changed: fail open.
+                return; // Optional third-party helper absent: fail open.
             }
 
-            // includeInactive: a decal component whose build aborted mid-way is left
-            // on an inactive child, still carrying an enabled projector.
-            foreach (var component in root.GetComponentsInChildren(componentType, true))
+            // includeInactive: prefab-embedded helpers can live on children whose
+            // active state changes later with scenery progression.
+            foreach (var component in root.GetComponentsInChildren(helperType, true))
             {
                 var behaviour = component as Behaviour;
-                if (behaviour == null || !behaviour.enabled)
+                if (behaviour == null || behaviour.GetComponentInParent<Car>() != null)
                 {
-                    continue; // idempotent across streaming reloads.
+                    continue; // Preserve legitimate helpers attached to an actual car.
                 }
 
-                behaviour.enabled = false;
-                var scrubbed = FuseRuntimeGuardCounters.RecordSceneryDecalComponentDisabled();
-                if (FuseGuardLog.ShouldLog(scrubbed))
+                if (behaviour.enabled)
                 {
-                    FuseLog.Warning(
-                        $"FUSE disabled car-only decal component #{scrubbed} " +
-                        $"({componentType.Name}) on scenery '{FormatSceneryName(instance)}' " +
-                        $"('{behaviour.transform.name}'); car decal machinery stays inert on " +
-                        "car-less scenery, matching vanilla setup which never activated it.");
+                    behaviour.enabled = false;
+                    RecordEmbeddedDecalComponentDisabled(behaviour, helperType.Name, instance);
                 }
+
+                // A DecalProjector is legitimate scenery content on its own. Only
+                // disable the projector paired with this known car-only helper.
+                var projector = DecalProjectorType != null
+                    ? behaviour.GetComponent(DecalProjectorType) as Behaviour
+                    : null;
+                if (projector != null && projector.enabled)
+                {
+                    projector.enabled = false;
+                    RecordEmbeddedDecalComponentDisabled(projector, DecalProjectorType.Name, instance);
+                }
+            }
+        }
+
+        private static void RecordEmbeddedDecalComponentDisabled(
+            Behaviour behaviour,
+            string componentTypeName,
+            SceneryAssetInstance instance)
+        {
+            var scrubbed = FuseRuntimeGuardCounters.RecordSceneryDecalComponentDisabled();
+            if (FuseGuardLog.ShouldLog(scrubbed))
+            {
+                FuseLog.Warning(
+                    $"FUSE disabled prefab-embedded car-only decal component #{scrubbed} " +
+                    $"({componentTypeName}) on scenery '{FormatSceneryName(instance)}' " +
+                    $"('{behaviour.transform.name}').");
             }
         }
 

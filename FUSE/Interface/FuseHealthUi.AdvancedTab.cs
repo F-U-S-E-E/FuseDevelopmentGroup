@@ -248,7 +248,7 @@ namespace FUSE.Interface
                 builder,
                 "Frame Spike Log",
                 FuseSettings.EnableFrameSpikeDiagnostics
-                    ? $"logging frames over {FuseSettings.FrameSpikeThresholdMs:F0}ms (spikes: {FuseFrameSpikeDiagnostic.SpikeCount}, worst: {FuseFrameSpikeDiagnostic.WorstMs:F0}ms)"
+                    ? $"logging adaptive hitches above a {FuseSettings.FrameSpikeThresholdMs:F0}ms floor (spikes: {FuseFrameSpikeDiagnostic.SpikeCount}, worst: {FuseFrameSpikeDiagnostic.WorstMs:F0}ms)"
                     : "disabled",
                 FuseSettings.EnableFrameSpikeDiagnostics ? "Disable" : "Enable",
                 () =>
@@ -259,7 +259,24 @@ namespace FUSE.Interface
             AddWrappedField(
                 builder,
                 "Usage",
-                "For stutter reports. Toggle on, play until the stutter shows, then read FUSE.log: each 'frame spike' line carries the frame time and how many GC collections landed on that frame. Match the timestamps against surrounding FUSE.log/Player.log activity to attribute the hitch; spikes with gcDelta>0 and no nearby activity point at allocation pressure. Loading-screen frames are excluded. Threshold via FrameSpikeThresholdMs in settings.json.",
+                "For stutter reports. Toggle on, play until the stutter shows, then read FUSE.log: each 'frame spike' line carries frame time, the adaptive baseline, memory, queues, and GC context. Match timestamps against surrounding FUSE.log/Player.log activity. Loading-screen frames are excluded; FrameSpikeThresholdMs is the absolute floor.",
+                92f);
+            AddSettingToggle(
+                builder,
+                "Native Allocation Stacks",
+                FuseSettings.EnableNativeLeakStackTraces
+                    ? $"enabled process-wide (Unity mode: {FuseNativeLeakDiagnostic.ModeLabel})"
+                    : $"disabled by FUSE (Unity mode: {FuseNativeLeakDiagnostic.ModeLabel})",
+                FuseSettings.EnableNativeLeakStackTraces ? "Disable" : "Enable",
+                () =>
+                {
+                    FuseSettings.SetEnableNativeLeakStackTraces(!FuseSettings.EnableNativeLeakStackTraces);
+                    RebuildWindow();
+                });
+            AddWrappedField(
+                builder,
+                "Usage",
+                "Leak-hunt mode only. Unity records stack traces for native allocations across the entire process, with substantial CPU and memory overhead. Enable shortly before a focused reproduction, then disable it; restart before capture for the cleanest allocation history. Takes effect immediately and is restored when FUSE unloads.",
                 92f);
             builder.Spacer(4f);
 

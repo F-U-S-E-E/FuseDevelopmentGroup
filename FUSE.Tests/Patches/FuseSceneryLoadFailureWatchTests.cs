@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using FUSE.Infrastructure;
 using FUSE.Patches;
+using FUSE.Tests.Infrastructure;
 using Xunit;
 
 namespace FUSE.Tests.Patches
@@ -16,6 +17,7 @@ namespace FUSE.Tests.Patches
     /// itself is covered by FusePatchTargetingTests; the Unity-touching
     /// drain/record side stays out of xUnit per the repo test policy.
     /// </summary>
+    [Collection(FuseRuntimeGuardCountersTestCollection.Name)]
     public class FuseSceneryLoadFailureWatchTests
     {
         public FuseSceneryLoadFailureWatchTests()
@@ -114,18 +116,94 @@ namespace FUSE.Tests.Patches
         public void RequestQuarantine_IsIdempotentPerIdentifier_AndResetsPerMap()
         {
             FuseSceneryLoadFailurePatch.RequestQuarantine("aspenbridgeclear");
-            FuseSceneryLoadFailurePatch.RequestQuarantine("aspenbridgeclear");
+            FuseSceneryLoadFailurePatch.RequestQuarantine("ASPENBRIDGECLEAR");
             FuseSceneryLoadFailurePatch.RequestQuarantine("  ");
 
             Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+            Assert.True(FuseSceneryLoadFailurePatch.IsQuarantined("AspenBridgeClear"));
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("other"));
 
             FuseSceneryLoadFailurePatch.ResetForNewMap();
             Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("aspenbridgeclear"));
 
             // A fixed pack stays fixed, but a still-broken one re-quarantines
             // on the next map: the request set must re-arm.
             FuseSceneryLoadFailurePatch.RequestQuarantine("aspenbridgeclear");
             Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Fact]
+        public void CatalogMismatch_ReportsButDoesNotQuarantineOrCountTowardRuntimeThreshold()
+        {
+            var entry = new FuseAssetPackBundleAuditPatch.CatalogAssetEntry(
+                "aspenbridgeclear",
+                "Aspen Bridge Clear",
+                "prefab",
+                "aspenbridgeclear.prefab");
+            FuseSceneryLoadFailurePatch.ReportCatalogMismatch(entry, "aspensassets");
+            FuseSceneryLoadFailurePatch.ReportCatalogMismatch(
+                new FuseAssetPackBundleAuditPatch.CatalogAssetEntry(
+                    "ASPENBRIDGECLEAR",
+                    "Aspen Bridge Clear",
+                    "PREFAB",
+                    "aspenbridgeclear.prefab"),
+                "ASPENSASSETS");
+
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("aspenbridgeclear"));
+
+            for (var attempt = 0; attempt < 4; attempt++)
+            {
+                var source = new TaskCompletionSource<object>();
+                FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", source.Task);
+                source.SetException(new Exception("Failed to load asset from asset bundle"));
+            }
+
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("aspenbridgeclear"));
+
+            var threshold = new TaskCompletionSource<object>();
+            FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", threshold.Task);
+            threshold.SetException(new Exception("Failed to load asset from asset bundle"));
+
+            Assert.True(FuseSceneryLoadFailurePatch.IsQuarantined("ASPENBRIDGECLEAR"));
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Theory]
+        [InlineData(-1, 8, 0)]
+        [InlineData(0, 8, 0)]
+        [InlineData(3, 8, 3)]
+        [InlineData(8, 8, 8)]
+        [InlineData(80, 8, 8)]
+        [InlineData(80, 32, 32)]
+        [InlineData(80, 0, 0)]
+        public void CalculateDrainCount_EnforcesPerCallCap(int pending, int maximum, int expected)
+        {
+            Assert.Equal(expected, FuseSceneryLoadFailurePatch.CalculateDrainCount(pending, maximum));
+        }
+
+        [Fact]
+        public void DrainCaps_AreEightReportsAndThirtyTwoQuarantines()
+        {
+            Assert.Equal(8, FuseSceneryLoadFailurePatch.MaxFailureReportsPerDrain);
+            Assert.Equal(32, FuseSceneryLoadFailurePatch.MaxQuarantinesPerDrain);
+        }
+
+        [Theory]
+        [InlineData(true, true, true)]
+        [InlineData(true, false, false)]
+        [InlineData(false, true, false)]
+        [InlineData(false, false, false)]
+        public void QuarantineSuppression_AppliesOnlyToLoadRequests(
+            bool loaded,
+            bool quarantined,
+            bool expected)
+        {
+            Assert.Equal(
+                expected,
+                FuseSceneryLoadThrottlePatch.ShouldSuppressQuarantinedLoad(loaded, quarantined));
         }
 
         [Theory]

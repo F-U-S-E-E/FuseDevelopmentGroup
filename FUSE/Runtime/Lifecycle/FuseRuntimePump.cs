@@ -16,7 +16,7 @@ namespace FUSE.Runtime.Lifecycle
     /// zero records, toasts, or quarantines, while the enqueue-side counters
     /// kept climbing). Queue-consuming work now lives here, on a host created
     /// unconditionally at plugin load, so a UI refactor can never silently
-    /// starve it again. Cost when idle: two empty TryDequeue calls per frame.
+    /// starve it again. Cost when idle: two lock-free queue-empty snapshots.
     /// </summary>
     internal static class FuseRuntimePump
     {

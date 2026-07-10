@@ -12,6 +12,7 @@ namespace FUSE.Tests.Infrastructure
     /// every test resets first and the collection is serialized by xUnit's
     /// same-class default, so tests cannot interleave.
     /// </summary>
+    [Collection(FuseRuntimeGuardCountersTestCollection.Name)]
     public class FuseRuntimeGuardCountersTests
     {
         public FuseRuntimeGuardCountersTests()

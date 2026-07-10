@@ -30,6 +30,9 @@ namespace FUSE.Patches
     [HarmonyPatch(typeof(SceneryAssetManager), nameof(SceneryAssetManager.LoadScenery))]
     internal static class FuseSceneryLoadFailurePatch
     {
+        internal const int MaxFailureReportsPerDrain = 8;
+        internal const int MaxQuarantinesPerDrain = 32;
+
         private static readonly ConcurrentQueue<PendingFailure> Pending = new ConcurrentQueue<PendingFailure>();
 
         // Identifiers already queued/recorded this map, so the game's endless
@@ -37,6 +40,8 @@ namespace FUSE.Patches
         // FuseLifecycle at map-load start (see ResetForNewMap), in lockstep with
         // the load report registry this feeds.
         private static readonly HashSet<string> SeenIdentifiers =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> SeenCatalogMismatches =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object SeenLock = new object();
 
@@ -53,18 +58,23 @@ namespace FUSE.Patches
             lock (SeenLock)
             {
                 SeenIdentifiers.Clear();
+                SeenCatalogMismatches.Clear();
                 FailureCounts.Clear();
-                QuarantineRequested.Clear();
+                QuarantinedIdentifiers.Clear();
+
+                // Producers update their dedupe/quarantine set and enqueue while
+                // holding this same lock. Drain inside it so a map reset cannot
+                // split those paired state transitions across maps.
+                while (Pending.TryDequeue(out _))
+                {
+                }
+
+                while (PendingQuarantine.TryDequeue(out _))
+                {
+                }
             }
 
             ToastedPacks.Clear();
-            while (Pending.TryDequeue(out _))
-            {
-            }
-
-            while (PendingQuarantine.TryDequeue(out _))
-            {
-            }
 
             // The bundle audit shares this dedupe lifecycle: its findings land in
             // the same report bucket, so both repopulate together after a reload.
@@ -78,12 +88,12 @@ namespace FUSE.Patches
         // the field one missing asset produced 180 retries in three minutes,
         // each costing an exception, three log blocks, and periodic crash-report
         // uploads. Retrying an asset that can NEVER load is pure waste, so once
-        // an asset is known-broken — immediately for bundle-audit-confirmed
-        // misses, after a few observed failures for everything else — its
-        // placements are disabled for the session. Disabling a scenery host is
-        // a vanilla-exercised path (progression gating does the same), and the
-        // quarantine re-arms per map load, so fixing the pack brings the
-        // placements back on the next load.
+        // an asset has failed repeatedly at runtime its placements are disabled
+        // for the session. A bundle audit alone never quarantines: catalog prefab
+        // entries also represent cars, trucks, and audio definitions. Disabling
+        // a scenery host is a vanilla-exercised path (progression gating does the
+        // same), and the quarantine re-arms per map load, so fixing the pack
+        // brings the placements back on the next load.
 
         // Runtime failures before quarantine. The task watch and the log hook
         // can each count the same retry, so this is a heuristic bound on real
@@ -92,15 +102,15 @@ namespace FUSE.Patches
 
         private static readonly Dictionary<string, int> FailureCounts =
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        private static readonly HashSet<string> QuarantineRequested =
+        private static readonly HashSet<string> QuarantinedIdentifiers =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly ConcurrentQueue<string> PendingQuarantine = new ConcurrentQueue<string>();
 
         /// <summary>
-        /// Requests session-quarantine of every placement of an asset that is
-        /// known to be unloadable (bundle audit) or has failed repeatedly at
-        /// runtime. Thread-safe; execution happens on the main thread in
-        /// <see cref="DrainPending"/>. Idempotent per identifier per map.
+        /// Requests session-quarantine of every placement of an asset that has
+        /// failed repeatedly at runtime. The identifier is marked immediately so
+        /// load requests are suppressed even before the main-thread placement
+        /// scan runs. Idempotent per identifier per map.
         /// </summary>
         internal static void RequestQuarantine(string identifier)
         {
@@ -111,70 +121,112 @@ namespace FUSE.Patches
 
             lock (SeenLock)
             {
-                if (!QuarantineRequested.Add(identifier))
-                {
-                    return;
-                }
+                QueueQuarantineUnderLock(identifier);
             }
+        }
 
-            PendingQuarantine.Enqueue(identifier);
+        private static void QueueQuarantineUnderLock(string identifier)
+        {
+            if (QuarantinedIdentifiers.Add(identifier))
+            {
+                PendingQuarantine.Enqueue(identifier);
+            }
         }
 
         /// <summary>Quarantine requests queued but not yet executed (test hook).</summary>
         internal static int QuarantinePendingCountForTests => PendingQuarantine.Count;
 
-        private static void ExecuteQuarantine(string identifier)
+        /// <summary>
+        /// True after runtime failures have quarantined an identifier for this map.
+        /// The set intentionally outlives the placement scan: inactive/deferred
+        /// scenery can become active later and must still have SetLoaded(true)
+        /// suppressed.
+        /// </summary>
+        internal static bool IsQuarantined(string identifier)
         {
-            var disabled = 0;
-            foreach (var instance in UnityEngine.Object.FindObjectsOfType<SceneryAssetInstance>())
+            if (string.IsNullOrWhiteSpace(identifier))
             {
-                if (instance == null ||
-                    !string.Equals(instance.identifier, identifier, StringComparison.OrdinalIgnoreCase) ||
-                    !instance.gameObject.activeSelf)
+                return false;
+            }
+
+            lock (SeenLock)
+            {
+                return QuarantinedIdentifiers.Contains(identifier);
+            }
+        }
+
+        private static void ExecuteQuarantines(
+            IReadOnlyList<string> identifiers,
+            SceneScenerySnapshot snapshot)
+        {
+            var requested = new HashSet<string>(identifiers, StringComparer.OrdinalIgnoreCase);
+            var disabledByIdentifier = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var instance in snapshot.Instances)
+            {
+                if (instance == null || string.IsNullOrWhiteSpace(instance.identifier) ||
+                    !requested.Contains(instance.identifier) || !instance.gameObject.activeSelf)
                 {
                     continue;
                 }
 
                 instance.gameObject.SetActive(false);
-                disabled++;
+                disabledByIdentifier.TryGetValue(instance.identifier, out var disabled);
+                disabledByIdentifier[instance.identifier] = disabled + 1;
                 FuseRuntimeGuardCounters.RecordSceneryPlacementQuarantined();
             }
 
-            if (disabled == 0)
+            foreach (var identifier in identifiers)
             {
-                return;
-            }
+                if (!disabledByIdentifier.TryGetValue(identifier, out var disabled) || disabled == 0)
+                {
+                    continue;
+                }
 
-            FuseLog.Warning(
-                $"FUSE quarantined {disabled} scenery placement(s) of '{identifier}' for this session: the asset " +
-                "cannot load, and the loader would otherwise retry it on every culling pass near each placement. " +
-                "Fixing the pack restores the placements on the next map load.");
-            FuseLoadReport.RecordNotice(
-                $"{disabled} scenery placement(s) of '{identifier}' were disabled for this session because the " +
-                "asset cannot load (see the asset load failures section). Fixing the pack restores them.");
+                FuseLog.Warning(
+                    $"FUSE quarantined {disabled} scenery placement(s) of '{identifier}' for this session: the asset " +
+                    "cannot load, and the loader would otherwise retry it on every culling pass near each placement. " +
+                    "Fixing the pack restores the placements on the next map load.");
+                FuseLoadReport.RecordNotice(
+                    $"{disabled} scenery placement(s) of '{identifier}' were disabled for this session because the " +
+                    "asset cannot load (see the asset load failures section). Fixing the pack restores them.");
+            }
         }
 
         /// <summary>
         /// Entry point for the bundle audit: reports an asset a pack's
-        /// Catalog.json declares but its bundle does not contain. Same dedupe,
-        /// drain, report bucket, and per-pack toast as runtime load failures —
-        /// an asset caught by both the audit and a later load attempt is
-        /// recorded once. The pack is known at the call site, so no resolution
-        /// fallback is needed.
+        /// Catalog.json declares but its bundle does not contain. Catalog audit
+        /// findings use their own dedupe and do not contribute to the runtime
+        /// quarantine threshold. The main-thread drain promotes only confirmed
+        /// scenery to the scenery-failure channel; everything else becomes a
+        /// generic load-report notice.
         /// </summary>
-        internal static void ReportCatalogMismatch(string identifier, string packIdentifier, string filename)
+        internal static void ReportCatalogMismatch(
+            FuseAssetPackBundleAuditPatch.CatalogAssetEntry entry,
+            string packIdentifier)
         {
-            if (string.IsNullOrWhiteSpace(identifier))
+            if (string.IsNullOrWhiteSpace(entry.Identifier))
             {
                 return;
             }
 
-            var declaredAs = string.IsNullOrWhiteSpace(filename) ? identifier : filename;
-            EnqueueFailure(
-                identifier,
-                $"declared in the pack's Catalog.json (filename '{declaredAs}') but not present in its bundle — " +
-                "the pack needs its bundle rebuilt or the catalog entry (and content referencing it) removed",
-                string.IsNullOrWhiteSpace(packIdentifier) ? null : packIdentifier);
+            try
+            {
+                var pack = string.IsNullOrWhiteSpace(packIdentifier) ? "<unknown>" : packIdentifier;
+                lock (SeenLock)
+                {
+                    var key = pack + "\0" + entry.Identifier;
+                    if (!SeenCatalogMismatches.Add(key))
+                    {
+                        return;
+                    }
+
+                    Pending.Enqueue(PendingFailure.ForCatalogMismatch(entry, pack));
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE asset pack bundle audit could not queue a mismatch", ex);
+            }
         }
 
         internal static void Postfix(string identifier, Task __result)
@@ -213,7 +265,6 @@ namespace FUSE.Patches
         {
             try
             {
-                var quarantine = false;
                 lock (SeenLock)
                 {
                     // Count every observed failure (pre-dedupe): repeated
@@ -221,17 +272,17 @@ namespace FUSE.Patches
                     // quarantine exists to stop.
                     FailureCounts.TryGetValue(identifier, out var count);
                     FailureCounts[identifier] = ++count;
-                    quarantine = count == RuntimeFailureQuarantineThreshold;
+                    if (count == RuntimeFailureQuarantineThreshold)
+                    {
+                        // Keep threshold state, persistent suppression, and the
+                        // main-thread work item atomic with map reset.
+                        QueueQuarantineUnderLock(identifier);
+                    }
 
                     if (SeenIdentifiers.Add(identifier))
                     {
                         Pending.Enqueue(new PendingFailure(identifier, message, packIdentifier));
                     }
-                }
-
-                if (quarantine)
-                {
-                    RequestQuarantine(identifier);
                 }
             }
             catch (Exception ex)
@@ -341,6 +392,17 @@ namespace FUSE.Patches
         /// <summary>Queued-but-undrained failure count (test hook).</summary>
         internal static int PendingCountForTests => Pending.Count;
 
+        /// <summary>Pure queue-cap calculation shared by the drain and tests.</summary>
+        internal static int CalculateDrainCount(int pendingCount, int maximumPerDrain)
+        {
+            if (pendingCount <= 0 || maximumPerDrain <= 0)
+            {
+                return 0;
+            }
+
+            return Math.Min(pendingCount, maximumPerDrain);
+        }
+
         /// <summary>
         /// Resolves and records queued failures, then executes queued
         /// quarantines. Main thread only (touches Unity object queries and the
@@ -351,38 +413,170 @@ namespace FUSE.Patches
         /// </summary>
         internal static void DrainPending()
         {
-            while (Pending.TryDequeue(out var failure))
+            // The runtime pump calls this every frame. Avoid allocating the two
+            // bounded batch lists during the overwhelmingly common idle path;
+            // ConcurrentQueue.IsEmpty is a lock-free snapshot, and the existing
+            // post-dequeue check below still handles races safely.
+            if (Pending.IsEmpty && PendingQuarantine.IsEmpty)
+            {
+                return;
+            }
+
+            var failures = new List<PendingFailure>(
+                CalculateDrainCount(Pending.Count, MaxFailureReportsPerDrain));
+            while (failures.Count < MaxFailureReportsPerDrain && Pending.TryDequeue(out var failure))
+            {
+                failures.Add(failure);
+            }
+
+            var quarantineIdentifiers = new List<string>(
+                CalculateDrainCount(PendingQuarantine.Count, MaxQuarantinesPerDrain));
+            while (quarantineIdentifiers.Count < MaxQuarantinesPerDrain &&
+                   PendingQuarantine.TryDequeue(out var identifier))
+            {
+                quarantineIdentifiers.Add(identifier);
+            }
+
+            if (failures.Count == 0 && quarantineIdentifiers.Count == 0)
+            {
+                return;
+            }
+
+            var snapshot = CaptureSceneSnapshot(failures, quarantineIdentifiers);
+
+            foreach (var queuedFailure in failures)
             {
                 try
                 {
-                    Record(failure);
+                    Record(queuedFailure, snapshot);
                 }
                 catch (Exception ex)
                 {
                     FuseLog.Exception(
-                        $"FUSE could not record scenery load failure for '{failure.Identifier}'", ex);
+                        $"FUSE could not record asset load failure for '{queuedFailure.Identifier}'", ex);
                 }
             }
 
-            while (PendingQuarantine.TryDequeue(out var identifier))
+            if (quarantineIdentifiers.Count == 0)
             {
-                try
-                {
-                    ExecuteQuarantine(identifier);
-                }
-                catch (Exception ex)
-                {
-                    FuseLog.Exception(
-                        $"FUSE could not quarantine scenery placements of '{identifier}'", ex);
-                }
+                return;
+            }
+
+            try
+            {
+                ExecuteQuarantines(quarantineIdentifiers, snapshot);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE could not quarantine scenery placements", ex);
             }
         }
 
-        private static void Record(PendingFailure failure)
+        private static SceneScenerySnapshot CaptureSceneSnapshot(
+            IReadOnlyList<PendingFailure> failures,
+            IReadOnlyList<string> quarantineIdentifiers)
         {
+            var requestedIdentifiers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var ownerIdentifiers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var failure in failures)
+            {
+                if (!failure.IsCatalogMismatch)
+                {
+                    requestedIdentifiers.Add(failure.Identifier);
+                    ownerIdentifiers.Add(failure.Identifier);
+                    continue;
+                }
+
+                var classification = FuseAssetPackBundleAuditPatch.ClassifyCatalogAssetType(
+                    failure.CatalogEntry.Type);
+                if (classification == FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.NonScenery)
+                {
+                    continue;
+                }
+
+                requestedIdentifiers.Add(failure.CatalogEntry.Identifier);
+                if (!string.IsNullOrWhiteSpace(failure.CatalogEntry.Name))
+                {
+                    requestedIdentifiers.Add(failure.CatalogEntry.Name);
+                    ownerIdentifiers.Add(failure.CatalogEntry.Name);
+                }
+                ownerIdentifiers.Add(failure.CatalogEntry.Identifier);
+            }
+
+            foreach (var identifier in quarantineIdentifiers)
+            {
+                if (!string.IsNullOrWhiteSpace(identifier))
+                {
+                    requestedIdentifiers.Add(identifier);
+                }
+            }
+
+            if (requestedIdentifiers.Count == 0)
+            {
+                return SceneScenerySnapshot.Empty;
+            }
+
+            try
+            {
+                // One include-inactive global scan serves the whole report batch
+                // and up to 32 quarantines. Never scan once per asset.
+                var instances = UnityEngine.Object.FindObjectsByType<SceneryAssetInstance>(
+                    UnityEngine.FindObjectsInactive.Include,
+                    UnityEngine.FindObjectsSortMode.None);
+                var presentIdentifiers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var owners = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var instance in instances)
+                {
+                    if (instance == null || string.IsNullOrWhiteSpace(instance.identifier) ||
+                        !requestedIdentifiers.Contains(instance.identifier))
+                    {
+                        continue;
+                    }
+
+                    presentIdentifiers.Add(instance.identifier);
+                    if (!ownerIdentifiers.Contains(instance.identifier) || owners.ContainsKey(instance.identifier))
+                    {
+                        continue;
+                    }
+
+                    var marker = instance.GetComponent<FUSE.Runtime.API.SceneryAPI.FuseSceneryMarker>();
+                    if (marker == null)
+                    {
+                        continue;
+                    }
+
+                    var owner = FUSE.Runtime.Registry.FuseRegistry.GetExclusiveOwner(
+                        FUSE.Runtime.Registry.FuseClaimKind.Scenery, marker.Id);
+                    if (!string.IsNullOrWhiteSpace(owner))
+                    {
+                        owners[instance.identifier] = owner;
+                    }
+                }
+
+                return new SceneScenerySnapshot(instances, presentIdentifiers, owners);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE could not build the batched scenery failure index", ex);
+                return SceneScenerySnapshot.Empty;
+            }
+        }
+
+        private static void Record(PendingFailure failure, SceneScenerySnapshot snapshot)
+        {
+            if (failure.IsCatalogMismatch && !IsConfirmedScenery(failure.CatalogEntry, snapshot))
+            {
+                RecordGenericCatalogMismatch(failure);
+                return;
+            }
+
             // Audit-sourced failures carry their pack; runtime faults resolve it.
             var pack = failure.PackIdentifier ?? ResolvePackIdentifier(failure.Identifier);
-            var owner = ResolveOwnerPackage(failure.Identifier);
+            var owner = snapshot.ResolveOwner(
+                failure.Identifier,
+                failure.IsCatalogMismatch ? failure.CatalogEntry.Name : null);
 
             if (!FuseLoadReport.RecordSceneryLoadFailure(failure.Identifier, pack, owner, failure.Message))
             {
@@ -411,6 +605,36 @@ namespace FUSE.Patches
             }
         }
 
+        private static bool IsConfirmedScenery(
+            FuseAssetPackBundleAuditPatch.CatalogAssetEntry entry,
+            SceneScenerySnapshot snapshot)
+        {
+            var classification = FuseAssetPackBundleAuditPatch.ClassifyCatalogAssetType(entry.Type);
+            if (classification == FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.Scenery)
+            {
+                return true;
+            }
+
+            if (classification == FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.NonScenery)
+            {
+                return false;
+            }
+
+            return snapshot.Contains(entry.Identifier) || snapshot.Contains(entry.Name);
+        }
+
+        private static void RecordGenericCatalogMismatch(PendingFailure failure)
+        {
+            var entry = failure.CatalogEntry;
+            var type = string.IsNullOrWhiteSpace(entry.Type) ? "<unknown>" : entry.Type;
+            var name = string.IsNullOrWhiteSpace(entry.Name) ? entry.Identifier : entry.Name;
+            var filename = string.IsNullOrWhiteSpace(entry.Filename) ? "<blank>" : entry.Filename;
+            FuseLoadReport.RecordNotice(
+                $"Asset pack catalog/bundle mismatch: pack='{failure.PackIdentifier ?? "<unknown>"}' " +
+                $"identifier='{entry.Identifier}' name='{name}' type='{type}' filename='{filename}'. " +
+                "The bundle must be rebuilt or the catalog entry removed.");
+        }
+
         private static string ResolvePackIdentifier(string identifier)
         {
             try
@@ -425,51 +649,88 @@ namespace FUSE.Patches
             }
         }
 
-        private static string ResolveOwnerPackage(string identifier)
+        private sealed class SceneScenerySnapshot
         {
-            try
+            internal static readonly SceneScenerySnapshot Empty = new SceneScenerySnapshot(
+                Array.Empty<SceneryAssetInstance>(),
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+            internal SceneScenerySnapshot(
+                SceneryAssetInstance[] instances,
+                HashSet<string> presentIdentifiers,
+                Dictionary<string, string> owners)
             {
-                // Only FUSE-created scenery carries a marker; vanilla/asset-pack
-                // scenery legitimately resolves to no owner.
-                foreach (var marker in UnityEngine.Object.FindObjectsOfType<FUSE.Runtime.API.SceneryAPI.FuseSceneryMarker>(true))
+                Instances = instances ?? Array.Empty<SceneryAssetInstance>();
+                _presentIdentifiers = presentIdentifiers;
+                _owners = owners;
+            }
+
+            private readonly HashSet<string> _presentIdentifiers;
+            private readonly Dictionary<string, string> _owners;
+
+            internal SceneryAssetInstance[] Instances { get; }
+
+            internal bool Contains(string identifier)
+            {
+                return !string.IsNullOrWhiteSpace(identifier) && _presentIdentifiers.Contains(identifier);
+            }
+
+            internal string ResolveOwner(string identifier, string alternateIdentifier = null)
+            {
+                if (!string.IsNullOrWhiteSpace(identifier) && _owners.TryGetValue(identifier, out var owner))
                 {
-                    if (marker == null)
-                    {
-                        continue;
-                    }
-
-                    var scenery = marker.GetComponent<SceneryAssetInstance>();
-                    if (scenery == null ||
-                        !string.Equals(scenery.identifier, identifier, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    var owner = FUSE.Runtime.Registry.FuseRegistry.GetExclusiveOwner(
-                        FUSE.Runtime.Registry.FuseClaimKind.Scenery, marker.Id);
-                    if (!string.IsNullOrWhiteSpace(owner))
-                    {
-                        return owner;
-                    }
+                    return owner;
                 }
-            }
-            catch (Exception ex)
-            {
-                // Attribution is best-effort; the asset identifier alone is actionable.
-                FuseLog.Exception(
-                    $"FUSE could not attribute failing scenery asset '{identifier}' to a package", ex);
-            }
 
-            return "<unknown>";
+                return !string.IsNullOrWhiteSpace(alternateIdentifier) &&
+                       _owners.TryGetValue(alternateIdentifier, out owner)
+                    ? owner
+                    : "<unknown>";
+            }
         }
 
         private readonly struct PendingFailure
         {
             internal PendingFailure(string identifier, string message, string packIdentifier)
+                : this(
+                    identifier,
+                    message,
+                    packIdentifier,
+                    isCatalogMismatch: false,
+                    catalogEntry: default)
+            {
+            }
+
+            private PendingFailure(
+                string identifier,
+                string message,
+                string packIdentifier,
+                bool isCatalogMismatch,
+                FuseAssetPackBundleAuditPatch.CatalogAssetEntry catalogEntry)
             {
                 Identifier = identifier;
                 Message = message;
                 PackIdentifier = packIdentifier;
+                IsCatalogMismatch = isCatalogMismatch;
+                CatalogEntry = catalogEntry;
+            }
+
+            internal static PendingFailure ForCatalogMismatch(
+                FuseAssetPackBundleAuditPatch.CatalogAssetEntry entry,
+                string packIdentifier)
+            {
+                var declaredAs = string.IsNullOrWhiteSpace(entry.Filename)
+                    ? entry.Identifier
+                    : entry.Filename;
+                return new PendingFailure(
+                    entry.Identifier,
+                    $"declared in the pack's Catalog.json (name '{entry.Name}', type '{entry.Type}', " +
+                    $"filename '{declaredAs}') but not present in its bundle — the pack needs its bundle " +
+                    "rebuilt or the catalog entry (and content referencing it) removed",
+                    packIdentifier,
+                    isCatalogMismatch: true,
+                    catalogEntry: entry);
             }
 
             internal string Identifier { get; }
@@ -478,6 +739,10 @@ namespace FUSE.Patches
 
             /// <summary>Known owning pack, or null to resolve at record time.</summary>
             internal string PackIdentifier { get; }
+
+            internal bool IsCatalogMismatch { get; }
+
+            internal FuseAssetPackBundleAuditPatch.CatalogAssetEntry CatalogEntry { get; }
         }
     }
 }

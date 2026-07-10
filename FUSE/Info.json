@@ -19,6 +19,7 @@
     "EnableEnhancedLoadingScreen": true,
     "DecoupleVisualConditionLimits": false,
     "EnableFrameSpikeDiagnostics": false,
-    "FrameSpikeThresholdMs": 100
+    "FrameSpikeThresholdMs": 100,
+    "EnableNativeLeakStackTraces": false
   }
 }

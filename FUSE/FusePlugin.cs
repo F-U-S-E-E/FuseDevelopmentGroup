@@ -64,6 +64,7 @@ namespace FUSE
                 WarnIfLegacyRailloaderInstallPresent();
                 LogStartupVersions(modEntry);
                 FuseSettings.Load(modEntry);
+                FuseNativeLeakDiagnostic.Initialize(FuseSettings.EnableNativeLeakStackTraces);
                 FuseAssetPackRegistry.MountAllAvailableAssetPacks();
 
                 _harmony = new Harmony(HarmonyId);
@@ -235,6 +236,7 @@ namespace FUSE
             FuseLoadingScreen.Shutdown();
             FuseFrameSpikeDiagnostic.Shutdown();
             FuseRuntimePump.Shutdown();
+            FuseNativeLeakDiagnostic.Shutdown();
 
             if (_isLoaded)
             {

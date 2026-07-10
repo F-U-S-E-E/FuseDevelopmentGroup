@@ -70,6 +70,9 @@ namespace FUSE.Interface.MenuWindow
             // the counters must be readable here, not just in copied reports).
             builder.AddSection("Runtime Guards");
             builder.AddLabel(FuseRuntimeGuardCounters.FormatSummary());
+            builder.AddField(
+                "Native leak stacks",
+                $"{FuseNativeLeakDiagnostic.ModeLabel} (FUSE setting: {(FuseSettings.EnableNativeLeakStackTraces ? "enabled" : "disabled")})");
             builder.AddLabel(
                 FuseRuntimeGuardCounters.AllIdle
                     ? "All idle — no broken content needed containing this session."
@@ -214,6 +217,9 @@ namespace FUSE.Interface.MenuWindow
             builder.AppendLine("Transfer Skips: " + ReadInt(counts["progressionTransferSkips"]));
             builder.AppendLine("Suppressions: " + ReadInt(counts["suppressions"]));
             builder.AppendLine("Runtime Guards: " + FuseRuntimeGuardCounters.FormatSummary());
+            builder.AppendLine(
+                "Native Leak Detection: " + FuseNativeLeakDiagnostic.ModeLabel +
+                " (FUSE stack setting " + (FuseSettings.EnableNativeLeakStackTraces ? "enabled" : "disabled") + ")");
             builder.AppendLine("Map Load: " + FusePerformanceMetrics.FormatTiming("map load total"));
             builder.AppendLine("Runtime Apply: " + FusePerformanceMetrics.FormatTiming("apply resident definitions"));
             return builder.ToString().TrimEnd();

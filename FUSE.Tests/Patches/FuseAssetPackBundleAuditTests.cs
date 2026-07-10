@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using FUSE.Patches;
@@ -14,9 +15,17 @@ namespace FUSE.Tests.Patches
     /// </summary>
     public class FuseAssetPackBundleAuditTests
     {
-        private static KeyValuePair<string, string> Declared(string identifier, string filename)
+        private static FuseAssetPackBundleAuditPatch.CatalogAssetEntry Declared(
+            string identifier,
+            string filename,
+            string name = null,
+            string type = "prefab")
         {
-            return new KeyValuePair<string, string>(identifier, filename);
+            return new FuseAssetPackBundleAuditPatch.CatalogAssetEntry(
+                identifier,
+                name ?? identifier,
+                type,
+                filename);
         }
 
         [Fact]
@@ -28,8 +37,8 @@ namespace FUSE.Tests.Patches
             var missing = FuseAssetPackBundleAuditPatch.FindMissingDeclaredAssets(declared, bundle);
 
             var entry = Assert.Single(missing);
-            Assert.Equal("aspenbridgeclear", entry.Key);
-            Assert.Equal("aspenbridgeclear.prefab", entry.Value);
+            Assert.Equal("aspenbridgeclear", entry.Identifier);
+            Assert.Equal("aspenbridgeclear.prefab", entry.Filename);
         }
 
         [Fact]
@@ -66,7 +75,7 @@ namespace FUSE.Tests.Patches
         public void BlankIdentifiers_AreSkipped()
         {
             var declared = new[] { Declared("", "orphan.prefab"), Declared("   ", "other.prefab") };
-            var bundle = new string[0];
+            var bundle = Array.Empty<string>();
 
             Assert.Empty(FuseAssetPackBundleAuditPatch.FindMissingDeclaredAssets(declared, bundle));
         }
@@ -80,14 +89,14 @@ namespace FUSE.Tests.Patches
             var missing = FuseAssetPackBundleAuditPatch.FindMissingDeclaredAssets(declared, bundle);
 
             var entry = Assert.Single(missing);
-            Assert.Equal("gone", entry.Key);
+            Assert.Equal("gone", entry.Identifier);
         }
 
         [Fact]
         public void EmptyOrNullInputs_ReportNothing()
         {
             Assert.Empty(FuseAssetPackBundleAuditPatch.FindMissingDeclaredAssets(
-                new List<KeyValuePair<string, string>>(), new[] { "assets/a.prefab" }));
+                new List<FuseAssetPackBundleAuditPatch.CatalogAssetEntry>(), new[] { "assets/a.prefab" }));
             Assert.Empty(FuseAssetPackBundleAuditPatch.FindMissingDeclaredAssets(null, new[] { "assets/a.prefab" }));
             var declared = new[] { Declared("a", "a.prefab") };
             Assert.Single(FuseAssetPackBundleAuditPatch.FindMissingDeclaredAssets(declared, null));
@@ -111,7 +120,49 @@ namespace FUSE.Tests.Patches
 
             var missing = FuseAssetPackBundleAuditPatch.FindMissingDeclaredAssets(declared, bundle);
 
-            Assert.Equal(new[] { "gone-one", "gone-two" }, missing.Select(entry => entry.Key).ToArray());
+            Assert.Equal(new[] { "gone-one", "gone-two" }, missing.Select(entry => entry.Identifier).ToArray());
+        }
+
+        [Fact]
+        public void MissingEntry_PreservesNameTypeAndFilename()
+        {
+            var declared = new[]
+            {
+                Declared(
+                    "wh-5-drg-st",
+                    "wh-5-drg-st.wav",
+                    name: "Five Chime",
+                    type: "audio")
+            };
+
+            var entry = Assert.Single(
+                FuseAssetPackBundleAuditPatch.FindMissingDeclaredAssets(declared, Array.Empty<string>()));
+
+            Assert.Equal("wh-5-drg-st", entry.Identifier);
+            Assert.Equal("Five Chime", entry.Name);
+            Assert.Equal("audio", entry.Type);
+            Assert.Equal("wh-5-drg-st.wav", entry.Filename);
+        }
+
+        [Theory]
+        [InlineData(null, (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.Unknown)]
+        [InlineData("", (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.Unknown)]
+        [InlineData("custom", (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.Unknown)]
+        [InlineData("prefab", (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.Prefab)]
+        [InlineData(" PREFAB ", (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.Prefab)]
+        [InlineData("audio", (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.NonScenery)]
+        [InlineData("AudioClip", (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.NonScenery)]
+        [InlineData("texture", (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.NonScenery)]
+        [InlineData("material", (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.NonScenery)]
+        [InlineData("scenery", (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.Scenery)]
+        [InlineData("SceneryPrefab", (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.Scenery)]
+        public void CatalogAssetType_IsClassifiedWithoutTreatingAllPrefabsAsScenery(
+            string type,
+            int expected)
+        {
+            Assert.Equal(
+                (FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification)expected,
+                FuseAssetPackBundleAuditPatch.ClassifyCatalogAssetType(type));
         }
     }
 }

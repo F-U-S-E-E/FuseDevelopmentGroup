@@ -15,7 +15,7 @@ namespace FUSE.Interface.MenuWindow
             General,
         }
 
-        private class Page(PageId id)
+        private sealed class Page(PageId id)
         {
             public PageId Id { get; } = id;
         }
@@ -104,8 +104,22 @@ namespace FUSE.Interface.MenuWindow
 
             builder.AddLabel(
                 FuseSettings.EnableFrameSpikeDiagnostics
-                    ? $"Logging frames over {FuseSettings.FrameSpikeThresholdMs:F0}ms to FUSE.log (spikes so far: {FuseRuntimeGuardCounters.FrameSpikes}, worst {FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}ms)."
-                    : "For stutter reports: logs each frame over the threshold to FUSE.log with GC deltas, so hitches can be matched against log activity. Takes effect immediately.");
+                    ? $"Logging adaptive hitches to FUSE.log (absolute floor {FuseSettings.FrameSpikeThresholdMs:F0}ms; spikes so far: {FuseRuntimeGuardCounters.FrameSpikes}, worst {FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}ms)."
+                    : "For stutter reports: logs frames that exceed both the configured floor and the rolling frame-time baseline, with memory and queue context. Takes effect immediately.");
+
+            builder.AddField("Native Allocation Stacks", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableNativeLeakStackTraces,
+                () =>
+                {
+                    FuseSettings.SetEnableNativeLeakStackTraces(!FuseSettings.EnableNativeLeakStackTraces);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel(
+                FuseSettings.EnableNativeLeakStackTraces
+                    ? $"Unity mode: {FuseNativeLeakDiagnostic.ModeLabel}. Process-wide and expensive; reproduce briefly, then disable. Restart before capture for the cleanest history."
+                    : $"Unity mode: {FuseNativeLeakDiagnostic.ModeLabel}. Enables process-wide native-allocation stack traces for leak hunts; substantial CPU and memory overhead.");
 
             builder.AddField("Scenery Cull Log", control: BuildToggleBoxWithButton(
                 builder,

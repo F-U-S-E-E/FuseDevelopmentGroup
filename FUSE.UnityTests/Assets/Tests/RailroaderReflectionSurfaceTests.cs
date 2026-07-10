@@ -676,8 +676,17 @@ namespace FUSE.UnityTests
         [Test]
         public void DecalCullingManager_UpdateDecalVisibilityJob_InstanceMethod()
         {
-            // Patch target for the scrub prefix + storm-breaker finalizer.
+            // Patch target for the scrub prefix, callback-containment transpiler,
+            // and storm-breaker finalizer.
             AssertMethod("Effects.Decals.DecalCullingManager", "UpdateDecalVisibilityJob", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalCullingManager_RegisterDecal_PublicInstanceMethod()
+        {
+            // Patch target: null/destroyed projectors are rejected before they can
+            // poison the registry that UpdateDecalVisibilityJob consumes.
+            AssertMethod("Effects.Decals.DecalCullingManager", "RegisterDecal", InstancePublic);
         }
 
         [Test]
@@ -703,7 +712,8 @@ namespace FUSE.UnityTests
         [Test]
         public void DecalProjectorHelper_OnDisable_InstanceMethod()
         {
-            // Patch target: finalizer unregisters the decal even when OnDisable throws.
+            // Patch target: prefix unregisters before vanilla touches _car; the
+            // finalizer remains as the exception-suppression fallback.
             AssertMethod("Effects.Decals.DecalProjectorHelper", "OnDisable", InstanceNonPublic);
         }
 

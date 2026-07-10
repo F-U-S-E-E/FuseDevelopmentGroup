@@ -26,12 +26,15 @@ namespace FUSE.Patches
     /// The game only opens a pack's bundle on demand, so this audits at exactly
     /// that moment: a postfix on the store's bundle-load accessor diffs the
     /// bundle's real contents against the pack's Catalog.json once per store per
-    /// map, and reports every declared-but-missing asset through the scenery
-    /// load-failure channel (health report + Issues rows + one toast per pack)
-    /// BEFORE the asset is ever requested. Cost is one GetAllAssetNames + a set
-    /// diff on a bundle the game just loaded anyway. Fail-open everywhere: an
-    /// unreadable catalog (already surfaced as a load-report notice elsewhere)
-    /// or a faulted bundle load simply skips the audit.
+    /// map, and reports every declared-but-missing asset before it is requested.
+    /// Catalog metadata is preserved so non-scenery assets (audio, textures, and
+    /// materials) stay in the generic report instead of being misreported or
+    /// quarantined as scenery. A prefab is only promoted to the scenery channel
+    /// when a live <see cref="SceneryAssetInstance"/> confirms that use. Cost is
+    /// one GetAllAssetNames + a set diff on a bundle the game just loaded anyway.
+    /// Fail-open everywhere: an unreadable catalog (already surfaced as a
+    /// load-report notice elsewhere) or a faulted bundle load simply skips the
+    /// audit.
     /// </summary>
     [HarmonyPatch]
     internal static class FuseAssetPackBundleAuditPatch
@@ -43,7 +46,7 @@ namespace FUSE.Patches
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object AuditLock = new object();
 
-        private static System.Reflection.MethodBase TargetMethod()
+        private static System.Reflection.MethodInfo TargetMethod()
         {
             return AccessTools.Method(typeof(AssetPackRuntimeStore), "LoadedBundle");
         }
@@ -115,15 +118,17 @@ namespace FUSE.Patches
 
                 FuseLog.Warning(
                     $"FUSE asset pack '{store.Identifier}' declares {missing.Count} asset(s) in its Catalog.json " +
-                    $"that its bundle does not contain (first: '{missing[0].Key}'). Each will fail on every load " +
-                    "attempt; the pack needs its bundle rebuilt or the catalog entries removed.");
+                    $"that its bundle does not contain (first: '{missing[0].Identifier}', " +
+                    $"type='{missing[0].Type}'). Each will fail if requested; the pack needs its bundle " +
+                    "rebuilt or the catalog entries removed.");
 
                 foreach (var entry in missing)
                 {
-                    FuseSceneryLoadFailurePatch.ReportCatalogMismatch(entry.Key, store.Identifier, entry.Value);
-                    // Audit-confirmed missing = can never load; skip the runtime
-                    // failure threshold and stop the retry churn immediately.
-                    FuseSceneryLoadFailurePatch.RequestQuarantine(entry.Key);
+                    // An audit proves a catalog/bundle mismatch, not how the asset
+                    // is used. Keep the finding generic until the main-thread drain
+                    // can confirm a scenery placement. In particular, prefab is not
+                    // a scenery type: car parts and whistle definitions use it too.
+                    FuseSceneryLoadFailurePatch.ReportCatalogMismatch(entry, store.Identifier);
                 }
             }
             catch (Exception ex)
@@ -138,9 +143,9 @@ namespace FUSE.Patches
         // on the malformed catalogs some packs ship, and pulling the parsed
         // struct in would add an AssetPack.Common compile-time reference for two
         // string fields.
-        private static List<KeyValuePair<string, string>> ReadDeclaredAssets(AssetPackRuntimeStore store)
+        private static List<CatalogAssetEntry> ReadDeclaredAssets(AssetPackRuntimeStore store)
         {
-            var declared = new List<KeyValuePair<string, string>>();
+            var declared = new List<CatalogAssetEntry>();
             var basePath = FuseAssetPackPatchHelpers.ResolveBasePath(store);
             if (string.IsNullOrWhiteSpace(basePath))
             {
@@ -163,8 +168,10 @@ namespace FUSE.Patches
 
                 foreach (var property in assets.Properties())
                 {
+                    var name = property.Value?["name"]?.ToString() ?? property.Name;
+                    var type = property.Value?["type"]?.ToString() ?? string.Empty;
                     var filename = property.Value?["filename"]?.ToString() ?? string.Empty;
-                    declared.Add(new KeyValuePair<string, string>(property.Name, filename));
+                    declared.Add(new CatalogAssetEntry(property.Name, name, type, filename));
                 }
             }
             catch (Exception ex)
@@ -181,7 +188,7 @@ namespace FUSE.Patches
         }
 
         /// <summary>
-        /// Pure diff (unit-tested): declared (identifier, filename) pairs that
+        /// Pure diff (unit-tested): declared catalog entries that
         /// match no bundle asset. Bundle asset names are lowercase full paths
         /// ("assets/.../name.prefab"); a declared entry counts as present when
         /// its filename matches a bundle entry's file name OR its identifier
@@ -189,11 +196,11 @@ namespace FUSE.Patches
         /// that the loader requests assets by identifier, which the engine
         /// matches by path-less name.
         /// </summary>
-        internal static List<KeyValuePair<string, string>> FindMissingDeclaredAssets(
-            IReadOnlyList<KeyValuePair<string, string>> declared,
+        internal static List<CatalogAssetEntry> FindMissingDeclaredAssets(
+            IReadOnlyList<CatalogAssetEntry> declared,
             IEnumerable<string> bundleAssetNames)
         {
-            var missing = new List<KeyValuePair<string, string>>();
+            var missing = new List<CatalogAssetEntry>();
             if (declared == null || declared.Count == 0)
             {
                 return missing;
@@ -214,8 +221,8 @@ namespace FUSE.Patches
 
             foreach (var entry in declared)
             {
-                var identifier = entry.Key;
-                var filename = entry.Value;
+                var identifier = entry.Identifier;
+                var filename = entry.Filename;
                 if (string.IsNullOrWhiteSpace(identifier))
                 {
                     continue;
@@ -231,6 +238,68 @@ namespace FUSE.Patches
             }
 
             return missing;
+        }
+
+        /// <summary>
+        /// Immutable catalog metadata carried from parsing through diffing and
+        /// reporting. The catalog key is the loader identifier; <see cref="Name"/>
+        /// is retained separately because hand-authored packs do not always make
+        /// the two values identical.
+        /// </summary>
+        internal readonly struct CatalogAssetEntry
+        {
+            internal CatalogAssetEntry(string identifier, string name, string type, string filename)
+            {
+                Identifier = identifier ?? string.Empty;
+                Name = name ?? string.Empty;
+                Type = type ?? string.Empty;
+                Filename = filename ?? string.Empty;
+            }
+
+            internal string Identifier { get; }
+
+            internal string Name { get; }
+
+            internal string Type { get; }
+
+            internal string Filename { get; }
+        }
+
+        /// <summary>
+        /// Catalog type classification used by the main-thread report drain.
+        /// A prefab is deliberately distinct from scenery: Railroader catalogs
+        /// also use prefab entries for cars, trucks, and audio definitions.
+        /// </summary>
+        internal enum CatalogAssetTypeClassification
+        {
+            Unknown,
+            Prefab,
+            NonScenery,
+            Scenery
+        }
+
+        internal static CatalogAssetTypeClassification ClassifyCatalogAssetType(string type)
+        {
+            if (string.IsNullOrWhiteSpace(type))
+            {
+                return CatalogAssetTypeClassification.Unknown;
+            }
+
+            switch (type.Trim().ToLowerInvariant())
+            {
+                case "prefab":
+                    return CatalogAssetTypeClassification.Prefab;
+                case "audio":
+                case "audioclip":
+                case "material":
+                case "texture":
+                    return CatalogAssetTypeClassification.NonScenery;
+                case "scenery":
+                case "sceneryprefab":
+                    return CatalogAssetTypeClassification.Scenery;
+                default:
+                    return CatalogAssetTypeClassification.Unknown;
+            }
         }
     }
 }
