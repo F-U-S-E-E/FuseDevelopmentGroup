@@ -13,8 +13,8 @@ namespace FUSE.Patches
     /// snapshot load so the registry reflects only the cars that
     /// failed THIS load. Without this prefix the registry would
     /// retain faults from prior loads (a different save or a
-    /// previous attempt at the same save) and the FUSE Health UI
-    /// would mis-report counts.
+    /// previous attempt at the same save) and the orphaned-car
+    /// window and load report would mis-report counts.
     /// </summary>
     [HarmonyPatch(typeof(TrainController), "HandleSnapshotCars")]
     internal static class FuseTrainControllerSnapshotCarsResetPatch
