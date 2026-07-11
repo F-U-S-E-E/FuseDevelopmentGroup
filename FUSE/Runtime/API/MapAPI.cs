@@ -1026,7 +1026,7 @@ namespace FUSE.Runtime.API
         /// <summary>
         /// Pure visibility decision for a mask-bearing scenery, mirroring the renderer-presence
         /// audit (<c>FusePrefabSanitizer.ValidateRendererPresence</c> /
-        /// <c>FuseHealthUi.AuditsTab</c>): a renderer "would draw" when it is
+        /// <c>AuditsToolPage</c>): a renderer "would draw" when it is
         /// <c>enabled &amp;&amp; activeInHierarchy</c>.
         ///
         /// Crucially this separates an INTENTIONAL hide from the game culler streaming the model

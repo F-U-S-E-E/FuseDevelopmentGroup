@@ -64,6 +64,7 @@ namespace FUSE
                 WarnIfLegacyRailloaderInstallPresent();
                 LogStartupVersions(modEntry);
                 FuseSettings.Load(modEntry);
+                FuseNativeLeakDiagnostic.Initialize(FuseSettings.EnableNativeLeakStackTraces);
                 FuseAssetPackRegistry.MountAllAvailableAssetPacks();
 
                 _harmony = new Harmony(HarmonyId);
@@ -84,6 +85,7 @@ namespace FUSE
                 FuseSceneryDebugOverlay.Ensure();
                 FuseWorldLabelsOverlay.Ensure();
                 FuseLoadingScreen.Ensure();
+                FuseFrameSpikeDiagnostic.EnsureStarted();
                 FuseRuntimePump.EnsureStarted();
                 FuseSceneryLoadFailurePatch.EnsureGameLogHook();
                 FuseUmmInjector.ScheduleInjection(modEntry.Path, ReadInfoJsonString(Path.Combine(modEntry.Path ?? string.Empty, "Info.json"), "Version"));
@@ -224,7 +226,6 @@ namespace FUSE
 
             FuseSceneryLoadThrottlePatch.Shutdown();
             FuseSceneryLoadFailurePatch.Shutdown();
-            FuseRuntimePump.Shutdown();
             FuseLegacyAssemblyHost.Shutdown();
             FuseLegacySupportAssemblyShim.Shutdown();
             FuseRuntimeRebindService.Shutdown();
@@ -233,6 +234,9 @@ namespace FUSE
             FuseSceneryDebugOverlay.Shutdown();
             FuseWorldLabelsOverlay.Shutdown();
             FuseLoadingScreen.Shutdown();
+            FuseFrameSpikeDiagnostic.Shutdown();
+            FuseRuntimePump.Shutdown();
+            FuseNativeLeakDiagnostic.Shutdown();
 
             if (_isLoaded)
             {

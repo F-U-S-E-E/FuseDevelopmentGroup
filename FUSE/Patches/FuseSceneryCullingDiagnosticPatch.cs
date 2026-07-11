@@ -33,8 +33,8 @@ namespace FUSE.Patches
     /// Gated behind <see cref="FuseSettings.EnableSceneryCullingDiagnostics"/>
     /// (default off) because the culler fires constantly during play. When the
     /// flag is off the postfix returns on the first line, so it costs nothing in
-    /// normal sessions; toggle it on from the FUSE Health → Advanced page right
-    /// before a stress test and off afterwards.
+    /// normal sessions; toggle it on from FUSE Settings → Performance
+    /// Diagnostics right before a stress test and off afterwards.
     /// </summary>
     [HarmonyPatch(typeof(SceneryAssetInstance), "CullingSphereStateChanged")]
     internal static class FuseSceneryCullingDiagnosticPatch

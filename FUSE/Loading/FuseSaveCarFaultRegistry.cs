@@ -13,7 +13,8 @@ namespace FUSE.Loading
     /// records across reloads) and populated as the game's
     /// <c>TrainController.AddCarInternal</c> raises
     /// <c>PrefabStore.UnknownIdentifierException</c> per car.
-    /// Surfaced through the FUSE Health UI for the user to inspect
+    /// Surfaced through the FUSE orphaned-car window and the load
+    /// report for the user to inspect
     /// and (in a follow-up flow) replace the broken cars with
     /// compatible working types so the save's interchange / waybill
     /// / consist references stay coherent.

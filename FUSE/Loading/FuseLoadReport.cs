@@ -353,6 +353,12 @@ namespace FUSE.Loading
 
         private static ReportSnapshot CaptureSnapshot(string reason, int loadedFromDiskThisPass, int appliedToRuntimeThisPass)
         {
+            // Stops may have been refreshed since the last validation pass (graph
+            // rebuilds re-run every FUSE stop); revalidate before reading the
+            // post-bind issue registry so on-demand report renders stay current.
+            // No-ops unless a refresh marked the validator dirty.
+            FUSE.Runtime.API.FusePassengerStopValidation.RunIfDirty(reason ?? "report snapshot");
+
             UnknownSceneryAsset[] unknownScenery;
             string[] notices;
             string[] graphPostBindIssues;
@@ -430,6 +436,7 @@ namespace FUSE.Loading
             return
                 $"FUSE: {loadedCount} loaded | faults {snapshot.FaultedPackageCount} | " +
                 $"conflicts {snapshot.Conflicts.Length} | assets {snapshot.UnknownSceneryAssets.Length} | " +
+                $"brokenAssets {snapshot.SceneryLoadFailureCount} | " +
                 $"graph {snapshot.GraphPostBindIssues.Length} | transfers {snapshot.ProgressionTransferSkips.Length} | " +
                 $"suppressions {suppressionCount} | orphans {snapshot.OrphanedCarCount} | /fuse.report";
         }
@@ -465,6 +472,11 @@ namespace FUSE.Loading
             }
 
             sb.AppendLine($"Conflicts recorded: {snapshot.Conflicts.Length} (details: /fuse.conflicts).");
+
+            // Live session counters, not part of the load snapshot: every guard FUSE
+            // keeps around broken content, so a pasted report answers "did the guards
+            // fire?" without the reporter having to open the Health window at all.
+            sb.AppendLine("Runtime guards (session): " + FuseRuntimeGuardCounters.FormatSummary() + ".");
 
             sb.AppendLine(
                 $"Suppressions active: scenePaths={snapshot.SceneSuppressions.Length}; " +
@@ -568,6 +580,22 @@ namespace FUSE.Loading
                     ["attemptedPackageId"] = conflict.AttemptedPackageId ?? string.Empty,
                     ["resolution"] = conflict.Resolution ?? string.Empty
                 })),
+                // Live session counters (see BuildDetails); intentionally outside
+                // "counts" so they do not read as load-snapshot state.
+                ["runtimeGuards"] = new JObject
+                {
+                    ["guardTotal"] = FuseRuntimeGuardCounters.GuardTotal,
+                    ["decalRegistryScrubbed"] = FuseRuntimeGuardCounters.DecalRegistryScrubbed,
+                    ["decalVisibilitySuppressed"] = FuseRuntimeGuardCounters.DecalVisibilitySuppressed,
+                    ["decalHelperEnableSuppressed"] = FuseRuntimeGuardCounters.DecalHelperEnableSuppressed,
+                    ["decalHelperDisableSuppressed"] = FuseRuntimeGuardCounters.DecalHelperDisableSuppressed,
+                    ["curveMeshSuppressed"] = FuseRuntimeGuardCounters.CurveMeshSuppressed,
+                    ["sceneryCarDecalsDisabled"] = FuseRuntimeGuardCounters.SceneryDecalComponentsDisabled,
+                    ["sceneryLoadFailures"] = FuseRuntimeGuardCounters.SceneryLoadFailures,
+                    ["flaresSuppressed"] = FuseRuntimeGuardCounters.FlareSuppressed,
+                    ["frameSpikes"] = FuseRuntimeGuardCounters.FrameSpikes,
+                    ["frameSpikeWorstMs"] = FuseRuntimeGuardCounters.FrameSpikeWorstMs
+                },
                 ["suppressions"] = new JObject
                 {
                     ["scenePaths"] = ToArray(snapshot.SceneSuppressions),

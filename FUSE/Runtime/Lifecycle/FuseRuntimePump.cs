@@ -5,9 +5,18 @@ using UnityEngine;
 namespace FUSE.Runtime.Lifecycle
 {
     /// <summary>
-    /// Always-on main-thread host for queue consumers that must not depend on
-    /// an optional UI component existing. Idle work is limited to lock-free
-    /// queue-empty checks in the consumers.
+    /// Always-on per-frame pump for FUSE work that must drain on the main
+    /// thread regardless of which optional UI hosts exist.
+    ///
+    /// The scenery load-failure drain originally rode the Health window
+    /// component's Update (since deleted) — but the menu-UI rewrite retired
+    /// the call that created that host, so the component never existed and the drain
+    /// NEVER ran in the field: both failure nets enqueued faults into a queue
+    /// nobody emptied (observed as sessions with dozens of load failures and
+    /// zero records, toasts, or quarantines, while the enqueue-side counters
+    /// kept climbing). Queue-consuming work now lives here, on a host created
+    /// unconditionally at plugin load, so a UI refactor can never silently
+    /// starve it again. Cost when idle: two lock-free queue-empty snapshots.
     /// </summary>
     internal static class FuseRuntimePump
     {
@@ -70,6 +79,9 @@ namespace FUSE.Runtime.Lifecycle
                 Justification = "Unity invokes Update() as an instance message; a static method is never called.")]
             private void Update()
             {
+                // Scenery load-failure records + broken-scenery quarantines:
+                // queued from task continuations / the log hook / the bundle
+                // audit (any thread), resolved and applied here.
                 FUSE.Patches.FuseSceneryLoadFailurePatch.DrainPending();
             }
         }

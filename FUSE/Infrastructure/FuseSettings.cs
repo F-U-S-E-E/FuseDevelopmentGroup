@@ -50,6 +50,15 @@ namespace FUSE.Infrastructure
         public const bool DefaultRandomizeVisualConditionOnSpawn = false;
         public const float DefaultRandomVisualConditionMin = 0.6f;
         public const float DefaultRandomVisualConditionMax = 1f;
+        // Frame-spike diagnostic (stutter attribution): off by default — it is a
+        // measurement tool, not a fix. The threshold marks the frame duration at
+        // which a frame is logged as a spike; 100 ms ≈ a clearly felt hitch at
+        // any refresh rate without flagging ordinary frame-time noise.
+        public const bool DefaultEnableFrameSpikeDiagnostics = false;
+        public const float DefaultFrameSpikeThresholdMs = 100f;
+        // Unity's native-allocation leak stacks are process-wide and expensive.
+        // Keep them opt-in and restore the host's prior mode when FUSE unloads.
+        public const bool DefaultEnableNativeLeakStackTraces = false;
         public const float ExperimentalEarlyScenePathSuppressionTimeoutSeconds = 8f;
 
         public static bool EnableExperimentalEarlyScenePathSuppression { get; private set; } =
@@ -107,6 +116,12 @@ namespace FUSE.Infrastructure
 
         public static float RandomVisualConditionMax { get; private set; } = DefaultRandomVisualConditionMax;
 
+        public static bool EnableFrameSpikeDiagnostics { get; private set; } = DefaultEnableFrameSpikeDiagnostics;
+
+        public static float FrameSpikeThresholdMs { get; private set; } = DefaultFrameSpikeThresholdMs;
+
+        public static bool EnableNativeLeakStackTraces { get; private set; } = DefaultEnableNativeLeakStackTraces;
+
         public static void Load(UnityModManager.ModEntry modEntry)
         {
             EnableExperimentalEarlyScenePathSuppression = DefaultEnableExperimentalEarlyScenePathSuppression;
@@ -133,6 +148,9 @@ namespace FUSE.Infrastructure
             RandomizeVisualConditionOnSpawn = DefaultRandomizeVisualConditionOnSpawn;
             RandomVisualConditionMin = DefaultRandomVisualConditionMin;
             RandomVisualConditionMax = DefaultRandomVisualConditionMax;
+            EnableFrameSpikeDiagnostics = DefaultEnableFrameSpikeDiagnostics;
+            FrameSpikeThresholdMs = DefaultFrameSpikeThresholdMs;
+            EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
             var infoPath = Path.Combine(modEntry?.Path ?? string.Empty, "Info.json");
@@ -194,6 +212,12 @@ namespace FUSE.Infrastructure
                     ReadFloat(settings, "RandomVisualConditionMin", DefaultRandomVisualConditionMin));
                 RandomVisualConditionMax = Mathf.Clamp01(
                     ReadFloat(settings, "RandomVisualConditionMax", DefaultRandomVisualConditionMax));
+                EnableFrameSpikeDiagnostics =
+                    ReadBool(settings, "EnableFrameSpikeDiagnostics", DefaultEnableFrameSpikeDiagnostics);
+                FrameSpikeThresholdMs = Mathf.Max(20f,
+                    ReadFloat(settings, "FrameSpikeThresholdMs", DefaultFrameSpikeThresholdMs));
+                EnableNativeLeakStackTraces =
+                    ReadBool(settings, "EnableNativeLeakStackTraces", DefaultEnableNativeLeakStackTraces);
                 ApplyUserOverrides();
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -223,6 +247,9 @@ namespace FUSE.Infrastructure
                     $"RandomizeVisualConditionOnSpawn={RandomizeVisualConditionOnSpawn} " +
                     $"RandomVisualConditionMin={RandomVisualConditionMin} " +
                     $"RandomVisualConditionMax={RandomVisualConditionMax} " +
+                    $"EnableFrameSpikeDiagnostics={EnableFrameSpikeDiagnostics} " +
+                    $"FrameSpikeThresholdMs={FrameSpikeThresholdMs} " +
+                    $"EnableNativeLeakStackTraces={EnableNativeLeakStackTraces} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
             catch (Exception ex)
@@ -251,6 +278,9 @@ namespace FUSE.Infrastructure
                 RandomizeVisualConditionOnSpawn = DefaultRandomizeVisualConditionOnSpawn;
                 RandomVisualConditionMin = DefaultRandomVisualConditionMin;
                 RandomVisualConditionMax = DefaultRandomVisualConditionMax;
+                EnableFrameSpikeDiagnostics = DefaultEnableFrameSpikeDiagnostics;
+                FrameSpikeThresholdMs = DefaultFrameSpikeThresholdMs;
+                EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Exception($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled", ex);
             }
@@ -417,6 +447,22 @@ namespace FUSE.Infrastructure
             FuseLog.Info($"FUSE setting changed: {nameof(RandomVisualConditionMax)}={RandomVisualConditionMax}.");
         }
 
+        public static void SetEnableFrameSpikeDiagnostics(bool enabled)
+        {
+            EnableFrameSpikeDiagnostics = enabled;
+            SaveUserOverride(nameof(EnableFrameSpikeDiagnostics), enabled);
+            FuseLog.Info(
+                $"FUSE setting changed: {nameof(EnableFrameSpikeDiagnostics)}={enabled} " +
+                $"(threshold {FrameSpikeThresholdMs:F0}ms). Takes effect immediately.");
+        }
+
+        public static void SetEnableNativeLeakStackTraces(bool enabled)
+        {
+            EnableNativeLeakStackTraces = enabled;
+            SaveUserOverride(nameof(EnableNativeLeakStackTraces), enabled);
+            FuseNativeLeakDiagnostic.Apply(enabled);
+        }
+
         public static string GetUserSettingsPath()
         {
             return Path.Combine(Application.persistentDataPath, "FUSE", "settings.json");
@@ -543,6 +589,12 @@ namespace FUSE.Infrastructure
                     ReadFloat(settings, nameof(RandomVisualConditionMin), RandomVisualConditionMin));
                 RandomVisualConditionMax = Mathf.Clamp01(
                     ReadFloat(settings, nameof(RandomVisualConditionMax), RandomVisualConditionMax));
+                EnableFrameSpikeDiagnostics =
+                    ReadBool(settings, nameof(EnableFrameSpikeDiagnostics), EnableFrameSpikeDiagnostics);
+                FrameSpikeThresholdMs = Mathf.Max(20f,
+                    ReadFloat(settings, nameof(FrameSpikeThresholdMs), FrameSpikeThresholdMs));
+                EnableNativeLeakStackTraces =
+                    ReadBool(settings, nameof(EnableNativeLeakStackTraces), EnableNativeLeakStackTraces);
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
             }
             catch (Exception ex)

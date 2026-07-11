@@ -138,15 +138,6 @@ namespace FUSE.Patches
         }
 
         /// <summary>
-        /// Pure decision shared by the prefix and unit tests: quarantine blocks
-        /// load requests, while unload requests must continue normally.
-        /// </summary>
-        internal static bool ShouldSuppressQuarantinedLoad(bool loaded, bool isQuarantined)
-        {
-            return loaded && isQuarantined;
-        }
-
-        /// <summary>
         /// Pure stale-drop decision, extracted for unit testing (see
         /// FUSE.UnityTests): should a queued load be dropped because its object is
         /// now beyond <see cref="StaleLoadDropDistance"/> from the camera? The
@@ -161,10 +152,12 @@ namespace FUSE.Patches
         [HarmonyPriority(Priority.First)]
         private static bool Prefix(SceneryAssetInstance __instance, bool loaded)
         {
-            // This must precede the pump bypass and every fail-open branch: an
-            // instance can be quarantined while it waits in the deferred queue,
-            // and its reflective SetLoaded(true) re-drive must not resurrect it.
-            // Check loaded first so unload storms never pay the lock/probe cost.
+            // This MUST precede the pump bypass and every fail-open branch. A
+            // deferred placement may be quarantined while queued, and the pump's
+            // reflective SetLoaded(true) re-drive must not resurrect it. 'loaded'
+            // is checked FIRST: unloads must never pay the IsQuarantined
+            // lock+probe, which otherwise runs for every SetLoaded call on every
+            // scenery instance (vanilla included) during teleport/streaming storms.
             if (loaded && __instance != null &&
                 FuseSceneryLoadFailurePatch.IsQuarantined(__instance.identifier))
             {

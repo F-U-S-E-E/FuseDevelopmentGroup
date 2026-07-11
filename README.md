@@ -81,7 +81,7 @@ Support priority goes to issues reproducible with a minimal converted package or
 
 ## Runtime Diagnostics
 
-The top-bar FUSE icon opens the FUSE Health page. It shows the latest load report and exposes runtime `Reload Track` and `Reload Terrain` buttons for testing and recovery. Check `FUSE.log` after using either reload button.
+The top-bar FUSE icon opens the FUSE menu. The Status tab shows the latest load report; the Tools tab carries the Object Inspector, dependency/asset/diagnostics reports, scenery benchmarks, and Runtime Actions (`Reload Track/Data`, `Reload Terrain`, `Rebuild Caches`) for testing and recovery. Check `FUSE.log` after using a reload action.
 
 Useful console commands:
 

@@ -63,6 +63,11 @@ namespace FUSE.Interface
             "You can turn this screen off in the FUSE settings to fall back to the stock one.",
         };
 
+        // Whether the FUSE loading screen is currently owning the visuals. Read by
+        // the frame-spike diagnostic to exclude load-phase frames, whose synchronous
+        // main-thread stalls are by design and would drown gameplay spikes.
+        internal static bool IsShowing => _instance != null && _instance._state.Active;
+
         public static void Ensure()
         {
             if (_host != null)

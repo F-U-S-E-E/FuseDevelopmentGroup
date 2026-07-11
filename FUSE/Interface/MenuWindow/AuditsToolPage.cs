@@ -365,7 +365,7 @@ namespace FUSE.Interface.MenuWindow
                         .Count(renderer => renderer != null && renderer.enabled && !renderer.forceRenderingOff);
                     if (target.activeInHierarchy && visibleRenderers > 0)
                     {
-                        AddFinding(findings, "Medium", "Suppressed scene object still visible", path, $"activeInHierarchy=true visibleRenderers={visibleRenderers}", "Run Advanced > Reload Track/Data or inspect the object; suppression may be missing a child renderer/culler path.");
+                        AddFinding(findings, "Medium", "Suppressed scene object still visible", path, $"activeInHierarchy=true visibleRenderers={visibleRenderers}", "Run Tools > Runtime Actions > Reload Track/Data or inspect the object; suppression may be missing a child renderer/culler path.");
                     }
                 }
             }

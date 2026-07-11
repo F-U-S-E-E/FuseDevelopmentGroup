@@ -1,17 +1,87 @@
 using System;
 using System.Threading.Tasks;
+using FUSE.Infrastructure;
 using FUSE.Patches;
+using FUSE.Tests.Infrastructure;
 using Xunit;
 
 namespace FUSE.Tests.Patches
 {
+    /// <summary>
+    /// Tests for the managed core of the scenery load-failure watch (visible
+    /// via InternalsVisibleTo): the postfix's continuation shape and the
+    /// game-log line parser. Motivated by a field session where 81 bundle
+    /// load failures produced zero records — these pin that the pieces FUSE
+    /// controls behave, so a silent field miss localizes to the load path
+    /// (e.g. a third-party loader) rather than this code. The Harmony apply
+    /// itself is covered by FusePatchTargetingTests; the Unity-touching
+    /// drain/record side stays out of xUnit per the repo test policy.
+    /// </summary>
+    [Collection(FuseRuntimeGuardCountersTestCollection.Name)]
     public sealed class FuseSceneryLoadFailureWatchTests
     {
         private long _timestamp;
 
         public FuseSceneryLoadFailureWatchTests()
         {
+            // Static per-map state; make each test independent.
             FuseSceneryLoadFailurePatch.ResetForNewMap();
+            FuseRuntimeGuardCounters.ResetForTests();
+        }
+
+        [Fact]
+        public void Postfix_FaultedTask_QueuesExactlyOneFailurePerIdentifier()
+        {
+            var source = new TaskCompletionSource<object>();
+            FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", source.Task);
+            Assert.Equal(1, FuseRuntimeGuardCounters.SceneryLoadWatchAttached);
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.PendingCountForTests);
+
+            source.SetException(new Exception("Failed to load asset from asset bundle"));
+            // OnlyOnFaulted + ExecuteSynchronously: the continuation runs on
+            // the completing thread; give the already-faulted path no excuse.
+            Assert.True(source.Task.IsFaulted);
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
+
+            // The game retries broken assets forever — later loads of the same
+            // identifier must not grow the queue.
+            var retry = new TaskCompletionSource<object>();
+            FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", retry.Task);
+            retry.SetException(new Exception("Failed to load asset from asset bundle"));
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(2, FuseRuntimeGuardCounters.SceneryLoadWatchAttached);
+        }
+
+        [Fact]
+        public void Postfix_AlreadyFaultedTask_StillQueues()
+        {
+            var source = new TaskCompletionSource<object>();
+            source.SetException(new Exception("Failed to load asset from asset bundle"));
+
+            FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", source.Task);
+
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
+        }
+
+        [Fact]
+        public void Postfix_SuccessfulTask_QueuesNothing()
+        {
+            var source = new TaskCompletionSource<object>();
+            FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", source.Task);
+            source.SetResult(new object());
+
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(1, FuseRuntimeGuardCounters.SceneryLoadWatchAttached);
+        }
+
+        [Fact]
+        public void Postfix_NullTaskOrBlankIdentifier_NoAttach()
+        {
+            FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", null);
+            FuseSceneryLoadFailurePatch.Postfix("   ", new TaskCompletionSource<object>().Task);
+
+            Assert.Equal(0, FuseRuntimeGuardCounters.SceneryLoadWatchAttached);
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.PendingCountForTests);
         }
 
         [Fact]
@@ -19,13 +89,13 @@ namespace FUSE.Tests.Patches
         {
             for (var attempt = 0; attempt < 7; attempt++)
             {
-                ObserveTaskFailure("bridge-style-a");
+                ObserveTaskFailure("aspenbridgeclear");
                 AdvancePastEpisodeWindow();
             }
 
-            Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
             Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
-            Assert.True(FuseSceneryLoadFailurePatch.IsQuarantined("BRIDGE-STYLE-A"));
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.True(FuseSceneryLoadFailurePatch.IsQuarantined("ASPENBRIDGECLEAR"));
         }
 
         [Fact]
@@ -40,6 +110,62 @@ namespace FUSE.Tests.Patches
             Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
             Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
             Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("occasionally-transient-asset"));
+        }
+
+        [Fact]
+        public void RequestQuarantine_IsIdempotentPerIdentifier_AndResetsPerMap()
+        {
+            FuseSceneryLoadFailurePatch.RequestQuarantine("aspenbridgeclear");
+            FuseSceneryLoadFailurePatch.RequestQuarantine("ASPENBRIDGECLEAR");
+            FuseSceneryLoadFailurePatch.RequestQuarantine("  ");
+
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+            Assert.True(FuseSceneryLoadFailurePatch.IsQuarantined("AspenBridgeClear"));
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("other"));
+
+            FuseSceneryLoadFailurePatch.ResetForNewMap();
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("aspenbridgeclear"));
+
+            // A fixed pack stays fixed, but a still-broken one re-quarantines
+            // on the next map: the request set must re-arm.
+            FuseSceneryLoadFailurePatch.RequestQuarantine("aspenbridgeclear");
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Fact]
+        public void CatalogMismatch_ReportsButDoesNotQuarantineOrCountTowardRuntimeThreshold()
+        {
+            var entry = new FuseAssetPackBundleAuditPatch.CatalogAssetEntry(
+                "aspenbridgeclear",
+                "Aspen Bridge Clear",
+                "prefab",
+                "aspenbridgeclear.prefab");
+            FuseSceneryLoadFailurePatch.ReportCatalogMismatch(entry, "aspensassets");
+            FuseSceneryLoadFailurePatch.ReportCatalogMismatch(
+                new FuseAssetPackBundleAuditPatch.CatalogAssetEntry(
+                    "ASPENBRIDGECLEAR",
+                    "Aspen Bridge Clear",
+                    "PREFAB",
+                    "aspenbridgeclear.prefab"),
+                "ASPENSASSETS");
+
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("aspenbridgeclear"));
+
+            for (var attempt = 0; attempt < 4; attempt++)
+            {
+                ObserveTaskFailure("aspenbridgeclear");
+                AdvancePastEpisodeWindow();
+            }
+
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("aspenbridgeclear"));
+
+            ObserveTaskFailure("aspenbridgeclear");
+
+            Assert.True(FuseSceneryLoadFailurePatch.IsQuarantined("ASPENBRIDGECLEAR"));
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
         }
 
         [Fact]
@@ -80,7 +206,7 @@ namespace FUSE.Tests.Patches
             var window = FuseSceneryLoadFailurePatch.FailureEpisodeCoalesceWindowTicksForTests;
             ObserveTaskFailure("continuous-storm");
 
-            // This coalesced observation must not slide the episode boundary.
+            // A coalesced observation must not slide the episode boundary.
             _timestamp = window - 1;
             ObserveTaskFailure("continuous-storm");
 
@@ -147,8 +273,6 @@ namespace FUSE.Tests.Patches
             var oldMapSource = new TaskCompletionSource<object>();
             FuseSceneryLoadFailurePatch.Postfix("old-map-asset", oldMapSource.Task);
 
-            // FuseLifecycle calls this at the start of MapWillLoad, before any
-            // current-map LoadScenery task can be observed.
             FuseSceneryLoadFailurePatch.ResetForNewMap();
             var currentMapSource = new TaskCompletionSource<object>();
             FuseSceneryLoadFailurePatch.Postfix("current-map-asset", currentMapSource.Task);
@@ -162,19 +286,19 @@ namespace FUSE.Tests.Patches
             Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
         }
 
-        [Theory]
-        [InlineData(true, true, true)]
-        [InlineData(true, false, false)]
-        [InlineData(false, true, false)]
-        [InlineData(false, false, false)]
-        public void QuarantineSuppression_AppliesOnlyToLoadRequests(
-            bool loaded,
-            bool quarantined,
-            bool expected)
+        [Fact]
+        public void Shutdown_ClearsStateAndInvalidatesOutstandingTask()
         {
-            Assert.Equal(
-                expected,
-                FuseSceneryLoadThrottlePatch.ShouldSuppressQuarantinedLoad(loaded, quarantined));
+            FuseSceneryLoadFailurePatch.RequestQuarantine("quarantined-asset");
+            var source = new TaskCompletionSource<object>();
+            FuseSceneryLoadFailurePatch.Postfix("late-asset", source.Task);
+
+            FuseSceneryLoadFailurePatch.Shutdown();
+            source.SetException(new Exception("completed after shutdown"));
+
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("quarantined-asset"));
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
         }
 
         [Fact]
@@ -191,9 +315,9 @@ namespace FUSE.Tests.Patches
         }
 
         [Theory]
-        [InlineData("Error loading scenery bridge-style-a", "bridge-style-a")]
-        [InlineData("Error loading scenery asset with spaces ", "asset with spaces")]
-        public void TryParseSceneryLoadErrorLine_ExtractsIdentifier(string line, string expected)
+        [InlineData("Error loading scenery aspenbridgeclear", "aspenbridgeclear")]
+        [InlineData("Error loading scenery some id with spaces ", "some id with spaces")]
+        public void TryParseSceneryLoadErrorLine_MatchingLines_ExtractIdentifier(string line, string expected)
         {
             Assert.True(FuseSceneryLoadFailurePatch.TryParseSceneryLoadErrorLine(line, out var identifier));
             Assert.Equal(expected, identifier);
@@ -203,9 +327,11 @@ namespace FUSE.Tests.Patches
         [InlineData(null)]
         [InlineData("")]
         [InlineData("Error loading scenery ")]
-        [InlineData("error loading scenery bridge-style-a")]
-        [InlineData("Error preparing loaded scenery bridge-style-a")]
-        public void TryParseSceneryLoadErrorLine_RejectsOtherLines(string line)
+        [InlineData("Error loading scenery")]
+        [InlineData("error loading scenery aspenbridgeclear")]
+        [InlineData("Exception awaiting load of asset aspenbridgeclear:")]
+        [InlineData("Error preparing loaded scenery aspenbridgeclear")]
+        public void TryParseSceneryLoadErrorLine_NonMatchingLines_ReturnFalse(string line)
         {
             Assert.False(FuseSceneryLoadFailurePatch.TryParseSceneryLoadErrorLine(line, out var identifier));
             Assert.Null(identifier);
