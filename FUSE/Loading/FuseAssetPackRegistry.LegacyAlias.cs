@@ -83,7 +83,12 @@ namespace FUSE.Loading
                 return;
             }
 
-            var resolved = ToDirectStoreIdentifier(assetPackFolder);
+            var directIdentifier = ToDirectStoreIdentifier(assetPackFolder);
+            var resolved = ResolveStoreIdentifierForAssetPackFolder(assetPackFolder);
+            // Preserve FUSE's URI as an alias even when AssetLoader already
+            // owns this folder. Existing converted content may contain that URI,
+            // but the lookup target must be the reused store's real identifier.
+            AddLegacyAssetPackAlias(aliases, directIdentifier, resolved);
             AddLegacyAssetPackAlias(aliases, resolved, resolved);
             AddLegacyAssetPackAlias(aliases, Path.GetFileName(assetPackFolder), resolved);
 

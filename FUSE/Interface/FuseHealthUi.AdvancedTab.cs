@@ -232,7 +232,7 @@ namespace FUSE.Interface
             AddSettingToggle(
                 builder,
                 "Scenery Cull Log",
-                FuseSettings.EnableSceneryCullingDiagnostics ? "logging all scenery (FUSE + vanilla) load/unload to FUSE.log" : "disabled",
+                FuseSettings.EnableSceneryCullingDiagnostics ? "logging this session (resets on restart)" : "disabled (session-only)",
                 FuseSettings.EnableSceneryCullingDiagnostics ? "Disable" : "Enable",
                 () =>
                 {
@@ -242,7 +242,7 @@ namespace FUSE.Interface
             AddWrappedField(
                 builder,
                 "Usage",
-                "Toggle on, teleport into the heavy scene, then off. Each scenery load/unload flip is written to FUSE.log as 'scenery-cull' (fuse=true|false). Hot, repeating flips on the same object during the test point at culling churn (issue #76).",
+                "Toggle on, teleport into the heavy scene, then off. Each scenery load/unload flip is written to FUSE.log as 'scenery-cull' (fuse=true|false). It never persists across restarts, so a forgotten diagnostic cannot contaminate later FPS tests. Hot, repeating flips on the same object during the test point at culling churn (issue #76).",
                 58f);
             builder.Spacer(4f);
 

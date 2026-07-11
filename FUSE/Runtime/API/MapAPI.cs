@@ -34,8 +34,19 @@ namespace FUSE.Runtime.API
             new Dictionary<string, FuseTelegraphPoleMovement[]>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<int, Vector3> TelegraphPoleOriginalPositions = new Dictionary<int, Vector3>();
 
+        // Direct ownership index for the standalone masks created by
+        // DecoupleAttachedMapMasks. Visibility watchers run continuously, so walking every child
+        // under "FUSE Map Masks" for every scenery turns the 2 Hz poll into O(watchers * masks).
+        // The index makes the steady-state lookup proportional only to the number of masks owned
+        // by the scenery (normally one). It is rebuilt once when the map's mask root changes and
+        // kept lifecycle-safe by each marker unregistering itself on destroy.
+        private static readonly Dictionary<string, List<FuseDecoupledMaskMarker>> DecoupledMasksByOwner =
+            new Dictionary<string, List<FuseDecoupledMaskMarker>>(StringComparer.Ordinal);
+
         private static Transform _fallbackMapMaskRoot;
         private static Transform _fallbackTelegraphRoot;
+        private static Transform _worldRoot;
+        private static Transform _indexedDecoupledMaskRoot;
         private static Sprite _speedLimitCircleSprite;
 
         public static MapLabel AddMapLabel(string id, FuseMapLabel definition)
@@ -651,6 +662,7 @@ namespace FUSE.Runtime.API
             // and its parent root already rides rebases — a move registration would
             // double-shift it on every world move.
             go.SetActive(true);
+            RegisterDecoupledMask(maskRoot, owner);
 
             // Decisive probe (gated on the existing scenery diagnostics flag): the type + game
             // position + runtime world position + scale of each decoupled mask is exactly what's
@@ -748,6 +760,11 @@ namespace FUSE.Runtime.API
         {
             public string OwnerSceneryId;
             public int SourceIndex;
+
+            private void OnDestroy()
+            {
+                UnregisterDecoupledMask(this);
+            }
         }
 
         /// <summary>
@@ -757,24 +774,123 @@ namespace FUSE.Runtime.API
         /// </summary>
         private static GameObject FindDecoupledMask(Transform maskRoot, string sceneryId, int sourceIndex)
         {
-            if (maskRoot == null)
+            if (maskRoot == null || string.IsNullOrEmpty(sceneryId))
             {
                 return null;
             }
 
+            EnsureDecoupledMaskIndex(maskRoot);
+            if (!DecoupledMasksByOwner.TryGetValue(sceneryId, out var masks))
+            {
+                return null;
+            }
+
+            for (var i = masks.Count - 1; i >= 0; i--)
+            {
+                var marker = masks[i];
+                if (marker == null)
+                {
+                    masks.RemoveAt(i);
+                    continue;
+                }
+
+                if (marker.SourceIndex == sourceIndex)
+                {
+                    return marker.gameObject;
+                }
+            }
+
+            if (masks.Count == 0)
+            {
+                DecoupledMasksByOwner.Remove(sceneryId);
+            }
+
+            return null;
+        }
+
+        private static void EnsureDecoupledMaskIndex(Transform maskRoot)
+        {
+            // Keep the Transform itself rather than only its instance id: Unity can recycle ids
+            // after destruction, while its object equality cleanly distinguishes the next root.
+            if (maskRoot != null && _indexedDecoupledMaskRoot == maskRoot)
+            {
+                return;
+            }
+
+            DecoupledMasksByOwner.Clear();
+            _indexedDecoupledMaskRoot = maskRoot;
+            if (maskRoot == null)
+            {
+                return;
+            }
+
+            // This is the only full-root scan. It runs once per mask-root lifetime so an index can
+            // recover after a Unity domain/map lifecycle transition without assuming static state
+            // survived in lockstep with scene objects.
             for (var i = 0; i < maskRoot.childCount; i++)
             {
                 var child = maskRoot.GetChild(i);
                 var marker = child != null ? child.GetComponent<FuseDecoupledMaskMarker>() : null;
-                if (marker != null
-                    && marker.SourceIndex == sourceIndex
-                    && string.Equals(marker.OwnerSceneryId, sceneryId, StringComparison.Ordinal))
+                RegisterDecoupledMaskCore(marker);
+            }
+        }
+
+        private static void RegisterDecoupledMask(Transform maskRoot, FuseDecoupledMaskMarker marker)
+        {
+            EnsureDecoupledMaskIndex(maskRoot);
+            RegisterDecoupledMaskCore(marker);
+        }
+
+        private static void RegisterDecoupledMaskCore(FuseDecoupledMaskMarker marker)
+        {
+            if (marker == null || string.IsNullOrEmpty(marker.OwnerSceneryId))
+            {
+                return;
+            }
+
+            if (!DecoupledMasksByOwner.TryGetValue(marker.OwnerSceneryId, out var masks))
+            {
+                masks = new List<FuseDecoupledMaskMarker>(1);
+                DecoupledMasksByOwner.Add(marker.OwnerSceneryId, masks);
+            }
+
+            for (var i = 0; i < masks.Count; i++)
+            {
+                if (masks[i] == marker)
                 {
-                    return child.gameObject;
+                    return;
                 }
             }
 
-            return null;
+            masks.Add(marker);
+        }
+
+        private static void UnregisterDecoupledMask(FuseDecoupledMaskMarker marker)
+        {
+            // OnDestroy runs while Unity is invalidating the object, so read the plain owner field
+            // and remove by reference without relying on Unity's overloaded null equality.
+            if (ReferenceEquals(marker, null) || string.IsNullOrEmpty(marker.OwnerSceneryId))
+            {
+                return;
+            }
+
+            if (!DecoupledMasksByOwner.TryGetValue(marker.OwnerSceneryId, out var masks))
+            {
+                return;
+            }
+
+            for (var i = masks.Count - 1; i >= 0; i--)
+            {
+                if (ReferenceEquals(masks[i], marker) || masks[i] == null)
+                {
+                    masks.RemoveAt(i);
+                }
+            }
+
+            if (masks.Count == 0)
+            {
+                DecoupledMasksByOwner.Remove(marker.OwnerSceneryId);
+            }
         }
 
         /// <summary>
@@ -798,18 +914,26 @@ namespace FUSE.Runtime.API
                 return 0;
             }
 
-            // Collect before destroying: Destroy reindexes the parent's children. Match by
-            // ownership marker (not name) so a user-authored mask is never destroyed.
-            var doomed = new List<GameObject>();
-            for (var i = 0; i < root.childCount; i++)
+            EnsureDecoupledMaskIndex(root);
+            if (!DecoupledMasksByOwner.TryGetValue(sceneryId, out var ownedMasks))
             {
-                var child = root.GetChild(i);
-                var marker = child != null ? child.GetComponent<FuseDecoupledMaskMarker>() : null;
-                if (marker != null && string.Equals(marker.OwnerSceneryId, sceneryId, StringComparison.Ordinal))
+                return 0;
+            }
+
+            // Collect before destroying because Destroy is deferred until the end of the frame.
+            // Drop the owner index now so a same-frame re-decouple cannot reuse a destroy-pending
+            // clone. Match by ownership marker (not name) so user-authored masks remain untouched.
+            var doomed = new List<GameObject>();
+            for (var i = 0; i < ownedMasks.Count; i++)
+            {
+                var marker = ownedMasks[i];
+                if (marker != null)
                 {
-                    doomed.Add(child.gameObject);
+                    doomed.Add(marker.gameObject);
                 }
             }
+
+            DecoupledMasksByOwner.Remove(sceneryId);
 
             foreach (var go in doomed)
             {
@@ -999,17 +1123,23 @@ namespace FUSE.Runtime.API
                 return 0;
             }
 
-            var changed = 0;
-            for (var i = 0; i < root.childCount; i++)
+            EnsureDecoupledMaskIndex(root);
+            if (!DecoupledMasksByOwner.TryGetValue(sceneryId, out var masks))
             {
-                var child = root.GetChild(i);
-                var marker = child != null ? child.GetComponent<FuseDecoupledMaskMarker>() : null;
-                if (marker == null || !string.Equals(marker.OwnerSceneryId, sceneryId, StringComparison.Ordinal))
+                return 0;
+            }
+
+            var changed = 0;
+            for (var i = masks.Count - 1; i >= 0; i--)
+            {
+                var marker = masks[i];
+                if (marker == null)
                 {
+                    masks.RemoveAt(i);
                     continue;
                 }
 
-                var go = child.gameObject;
+                var go = marker.gameObject;
                 if (go.activeSelf == active)
                 {
                     continue;
@@ -1017,6 +1147,11 @@ namespace FUSE.Runtime.API
 
                 go.SetActive(active);
                 changed++;
+            }
+
+            if (masks.Count == 0)
+            {
+                DecoupledMasksByOwner.Remove(sceneryId);
             }
 
             if (changed > 0)
@@ -1911,18 +2046,33 @@ namespace FUSE.Runtime.API
 
         private static Transform GetOrCreateWorldRoot(string name, ref Transform fallbackRoot)
         {
-            var world = GameObject.Find("World");
-            if (world != null)
+            // GameObject.Find("World") is a scene-wide search. Cache the Transform for the map
+            // lifetime; Unity's destroyed-object null semantics automatically invalidate it on
+            // unload so the next map can be discovered safely.
+            if (_worldRoot == null)
             {
-                var existing = world.transform.Find(name);
+                var worldObject = GameObject.Find("World");
+                _worldRoot = worldObject != null ? worldObject.transform : null;
+            }
+
+            if (_worldRoot != null)
+            {
+                if (fallbackRoot != null && fallbackRoot.parent == _worldRoot)
+                {
+                    return fallbackRoot;
+                }
+
+                var existing = _worldRoot.Find(name);
                 if (existing != null)
                 {
+                    fallbackRoot = existing;
                     return existing;
                 }
 
                 var root = new GameObject(name);
-                root.transform.SetParent(world.transform, false);
-                return root.transform;
+                root.transform.SetParent(_worldRoot, false);
+                fallbackRoot = root.transform;
+                return fallbackRoot;
             }
 
             if (fallbackRoot == null)

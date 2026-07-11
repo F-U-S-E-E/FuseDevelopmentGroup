@@ -15,7 +15,7 @@
     "EnableSceneryCullingDiagnostics": false,
     "BlockNonHostMultiplayerClientWorldApply": false,
     "ShowAdvancedHealthDetails": false,
-    "ShowLegacyModsInUmm": true,
+    "ShowLegacyModsInUmm": false,
     "EnableEnhancedLoadingScreen": true,
     "DecoupleVisualConditionLimits": false
   }

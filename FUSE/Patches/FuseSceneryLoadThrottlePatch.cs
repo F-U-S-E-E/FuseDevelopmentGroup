@@ -138,6 +138,15 @@ namespace FUSE.Patches
         }
 
         /// <summary>
+        /// Pure decision shared by the prefix and unit tests: quarantine blocks
+        /// load requests, while unload requests must continue normally.
+        /// </summary>
+        internal static bool ShouldSuppressQuarantinedLoad(bool loaded, bool isQuarantined)
+        {
+            return loaded && isQuarantined;
+        }
+
+        /// <summary>
         /// Pure stale-drop decision, extracted for unit testing (see
         /// FUSE.UnityTests): should a queued load be dropped because its object is
         /// now beyond <see cref="StaleLoadDropDistance"/> from the camera? The
@@ -149,8 +158,19 @@ namespace FUSE.Patches
             return (cameraPos - objectPos).sqrMagnitude >= StaleLoadDropDistanceSqr;
         }
 
+        [HarmonyPriority(Priority.First)]
         private static bool Prefix(SceneryAssetInstance __instance, bool loaded)
         {
+            // This must precede the pump bypass and every fail-open branch: an
+            // instance can be quarantined while it waits in the deferred queue,
+            // and its reflective SetLoaded(true) re-drive must not resurrect it.
+            // Check loaded first so unload storms never pay the lock/probe cost.
+            if (loaded && __instance != null &&
+                FuseSceneryLoadFailurePatch.IsQuarantined(__instance.identifier))
+            {
+                return false;
+            }
+
             // Unloads, pump re-drives, the forced-off baseline, and the case where
             // reflection didn't bind all run the vanilla load path unchanged.
             if (!loaded || _pumping || __instance == null ||
@@ -258,6 +278,11 @@ namespace FUSE.Patches
                     if (instance == null)
                     {
                         continue; // destroyed while queued.
+                    }
+
+                    if (FuseSceneryLoadFailurePatch.IsQuarantined(instance.identifier))
+                    {
+                        continue; // quarantined after it entered the throttle queue.
                     }
 
                     // Loaded via another path since it was queued: nothing to do.

@@ -66,6 +66,12 @@ namespace FUSE.Loading
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object LegacyAssetPackAliasLock = new object();
         private static Dictionary<string, string> LegacyAssetPackAliases;
+        // Physical pack folder -> identifier of the store PrefabStore will
+        // actually use. AssetLoader may have registered that folder before
+        // FUSE runs; aliases must target its identifier rather than inventing a
+        // second fuseasset:// store for the same files.
+        private static readonly Dictionary<string, string> StoreIdentifiersByPhysicalPath =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         // Catalog.json inspection failures, surfaced to the user as load-report
         // notices. Kept beside the alias cache (not in FuseLoadReport's map-scoped
@@ -159,16 +165,16 @@ namespace FUSE.Loading
 
         public static void Reset()
         {
-            if (!_mountComplete)
-            {
-                return;
-            }
-
+            var hadState = _mountComplete ||
+                           MountedAssetPackSourcesById.Count > 0 ||
+                           DirectAssetPackStoreIdentifiers.Count > 0;
             _mountComplete = false;
             MountedAssetPackSourcesById.Clear();
             DirectAssetPackStoreIdentifiers.Clear();
             lock (LegacyAssetPackAliasLock)
             {
+                hadState |= StoreIdentifiersByPhysicalPath.Count > 0 || LegacyAssetPackAliases != null;
+                StoreIdentifiersByPhysicalPath.Clear();
                 LegacyAssetPackAliases = null;
             }
 
@@ -179,7 +185,10 @@ namespace FUSE.Loading
             FuseLegacyContainerMixintoRegistry.Reset();
             FuseAssetCollisionRegistry.Reset();
             FUSE.Runtime.API.SceneryAPI.InvalidateKnownSceneryIdentifierIndex();
-            FuseLog.Info("FUSE asset pack mount state reset.");
+            if (hadState)
+            {
+                FuseLog.Info("FUSE asset pack mount state reset.");
+            }
         }
 
         internal static FuseAssetPackDiagnostics GetDiagnostics()
