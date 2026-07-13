@@ -331,12 +331,34 @@ namespace FUSE.Runtime.API
             // Harmony postfix on Game.Progression.Progression.Configure).
             var sandboxAtEntry = StateManager.IsSandbox;
             var gameModeAtEntry = StateManager.Shared?.GameMode.ToString() ?? "<null>";
-            var profile = ProgressionRefreshProfiles.Determine(
-                _gameProgressionConfigured,
-                _gameProgressionSettledWithoutProgression);
+            var effectiveReason = string.IsNullOrWhiteSpace(reason) ? "unspecified" : reason;
+            ProgressionRefreshProfile profile;
+            bool configuredAtEntry;
+            bool settledWithoutProgressionAtEntry;
+            lock (_pendingRefreshLock)
+            {
+                configuredAtEntry = _gameProgressionConfigured;
+                settledWithoutProgressionAtEntry = _gameProgressionSettledWithoutProgression;
+                profile = ProgressionRefreshProfiles.Determine(
+                    configuredAtEntry,
+                    settledWithoutProgressionAtEntry);
+
+                if (profile == ProgressionRefreshProfile.Deferred)
+                {
+                    // Publish the pending request under the same lock that the
+                    // Configure / no-progression notifications use to publish
+                    // their settle state. Otherwise a notification could land
+                    // after Determine returned Deferred but before this write,
+                    // observe no pending request, and leave the refresh parked
+                    // forever. Normalize the reason so null cannot masquerade
+                    // as "no pending refresh" in those notification paths.
+                    _pendingRefreshReason = effectiveReason;
+                }
+            }
             FuseLog.Info(
-                $"FUSE progression refresh entry reason='{reason ?? "unspecified"}' " +
-                $"IsSandbox={sandboxAtEntry} GameMode={gameModeAtEntry} configured={_gameProgressionConfigured} profile={profile}.");
+                $"FUSE progression refresh entry reason='{effectiveReason}' " +
+                $"IsSandbox={sandboxAtEntry} GameMode={gameModeAtEntry} configured={configuredAtEntry} " +
+                $"settledWithoutProgression={settledWithoutProgressionAtEntry} profile={profile}.");
 
             if (profile == ProgressionRefreshProfile.Deferred)
             {
@@ -356,13 +378,9 @@ namespace FUSE.Runtime.API
                 // loads that never configure a progression, the
                 // no-progression settle postfix — re-fire it once GameMode is
                 // reliable.
-                lock (_pendingRefreshLock)
-                {
-                    _pendingRefreshReason = reason;
-                }
                 FuseLog.Info(
                     $"FUSE progression refresh deferred until Progression.Configure or the no-progression settle point " +
-                    $"(reason='{reason ?? "unspecified"}', stale IsSandbox would corrupt graph state).");
+                    $"(reason='{effectiveReason}', stale IsSandbox would corrupt graph state).");
                 return;
             }
 
