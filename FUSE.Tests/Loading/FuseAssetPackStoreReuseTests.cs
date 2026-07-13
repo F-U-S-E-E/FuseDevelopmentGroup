@@ -180,16 +180,11 @@ namespace FUSE.Tests.Loading
         }
 
         [Fact]
-        public void RegistrationPlan_AddsToSecondPrefabStoreEvenWhenIdentifierWasHistoricallyTracked()
+        public void RegistrationPlan_AddsDirectlyWhenCurrentPrefabStoreIndexIsEmpty()
         {
             var folder = TestPath("SecondPrefabStore");
-            var directIdentifier = "fuseasset://historically-tracked";
-            var historicallyTracked = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                directIdentifier
-            };
+            var directIdentifier = "fuseasset://fresh-store";
 
-            Assert.Contains(directIdentifier, historicallyTracked);
             var plan = FuseAssetPackRegistry.PlanStoreRegistration(
                 folder,
                 new FuseAssetPackRegistry.AssetPackStoreRegistrationIndex(),

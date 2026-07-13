@@ -8,6 +8,8 @@ namespace FUSE.Infrastructure
 {
     public static class FuseSettings
     {
+        private static readonly object UserSettingsCommitGate = new object();
+
         public const bool DefaultEnableExperimentalEarlyScenePathSuppression = false;
         public const bool DefaultMirrorInfoToPlayerLog = false;
         public const bool DefaultMirrorAssetPacksToLocalLow = false;
@@ -535,8 +537,48 @@ namespace FUSE.Infrastructure
 
         private static void WriteUserSettingsJson(string path, JObject root)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path) ?? string.Empty);
-            File.WriteAllText(path, root.ToString(Newtonsoft.Json.Formatting.Indented));
+            var directory = Path.GetDirectoryName(path) ?? string.Empty;
+            Directory.CreateDirectory(directory);
+            var temporaryPath = Path.Combine(
+                directory,
+                "." + Path.GetFileName(path) + "." + Guid.NewGuid().ToString("N") + ".tmp");
+
+            try
+            {
+                // Write beside the destination, then publish the complete JSON
+                // atomically. Readers therefore never observe a truncated live
+                // settings file if serialization or I/O is interrupted.
+                File.WriteAllText(
+                    temporaryPath,
+                    root.ToString(Newtonsoft.Json.Formatting.Indented));
+                lock (UserSettingsCommitGate)
+                {
+                    if (File.Exists(path))
+                    {
+                        File.Replace(temporaryPath, path, null);
+                    }
+                    else
+                    {
+                        File.Move(temporaryPath, path);
+                    }
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(temporaryPath))
+                    {
+                        File.Delete(temporaryPath);
+                    }
+                }
+                catch (Exception cleanupException)
+                {
+                    FuseLog.Warning(
+                        $"FUSE could not clean up temporary user settings file '{temporaryPath}': " +
+                        cleanupException.GetBaseException().Message);
+                }
+            }
         }
 
         private static void ApplyUserOverrides()
@@ -559,10 +601,22 @@ namespace FUSE.Infrastructure
                 // later FPS comparison until somebody noticed the growing log.
                 if (settings.Remove(nameof(EnableSceneryCullingDiagnostics)))
                 {
-                    WriteUserSettingsJson(path, settings);
-                    FuseLog.Info(
-                        "FUSE removed the legacy persisted scenery-culling diagnostic override; " +
-                        "enable it explicitly for each diagnostic session.");
+                    try
+                    {
+                        WriteUserSettingsJson(path, settings);
+                        FuseLog.Info(
+                            "FUSE removed the legacy persisted scenery-culling diagnostic override; " +
+                            "enable it explicitly for each diagnostic session.");
+                    }
+                    catch (Exception cleanupException)
+                    {
+                        // Cleanup is best-effort. Continue applying the already-loaded
+                        // overrides so one unwritable legacy key cannot discard every
+                        // valid setting that follows it.
+                        FuseLog.Warning(
+                            "FUSE could not remove the legacy persisted scenery-culling diagnostic override; " +
+                            $"continuing with the remaining user settings: {cleanupException.GetBaseException().Message}");
+                    }
                 }
                 EnableTargetedTerrainInvalidation =
                     ReadBool(settings, nameof(EnableTargetedTerrainInvalidation), EnableTargetedTerrainInvalidation);
