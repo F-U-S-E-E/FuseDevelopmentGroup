@@ -31,7 +31,10 @@ namespace FUSE.Infrastructure
         public const bool DefaultWorldLabelsShowIndustries = true;
         public const bool DefaultWorldLabelsShowTrackNodes = false;
         public const bool DefaultWorldLabelsShowTrackSegments = false;
-        public const bool DefaultShowLegacyModsInUmm = true;
+        // Synthetic UMM rows add every legacy data package to UMM's global mod list.
+        // UMM walks that list from several per-frame callbacks, so keep the rows opt-in;
+        // FUSE's own Mods page remains the primary place to inspect legacy packages.
+        public const bool DefaultShowLegacyModsInUmm = false;
         // FUSE-owned enhanced loading screen (issue #83): replaces the bare stock
         // "Loading…" screen with staged progress + a current-step label that stays
         // up until FUSE's own post-load pipeline finishes. On by default; one switch
@@ -293,8 +296,10 @@ namespace FUSE.Infrastructure
         public static void SetEnableSceneryCullingDiagnostics(bool enabled)
         {
             EnableSceneryCullingDiagnostics = enabled;
-            SaveUserOverride(nameof(EnableSceneryCullingDiagnostics), enabled);
-            FuseLog.Info($"FUSE setting changed: {nameof(EnableSceneryCullingDiagnostics)}={enabled}.");
+            RemoveUserOverride(nameof(EnableSceneryCullingDiagnostics));
+            FuseLog.Info(
+                $"FUSE session diagnostic changed: {nameof(EnableSceneryCullingDiagnostics)}={enabled}. " +
+                "This diagnostic resets when the game restarts.");
         }
 
         // Transient (non-persisting) toggle used by FuseSceneryBenchmark to capture
@@ -513,6 +518,14 @@ namespace FUSE.Infrastructure
                 : defaultValue;
         }
 
+        internal static bool IsSessionOnlyUserSetting(string key)
+        {
+            return string.Equals(
+                key,
+                nameof(EnableSceneryCullingDiagnostics),
+                StringComparison.Ordinal);
+        }
+
         private static void ApplyUserOverrides()
         {
             var path = GetUserSettingsPath();
@@ -528,8 +541,16 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(EnableExperimentalEarlyScenePathSuppression), EnableExperimentalEarlyScenePathSuppression);
                 VerboseApplyReportDetails =
                     ReadBool(settings, nameof(VerboseApplyReportDetails), VerboseApplyReportDetails);
-                EnableSceneryCullingDiagnostics =
-                    ReadBool(settings, nameof(EnableSceneryCullingDiagnostics), EnableSceneryCullingDiagnostics);
+                // High-volume culling diagnostics are deliberately session-only. Older
+                // builds persisted this flag, which could silently contaminate every
+                // later FPS comparison until somebody noticed the growing log.
+                if (settings[nameof(EnableSceneryCullingDiagnostics)] != null)
+                {
+                    RemoveUserOverride(nameof(EnableSceneryCullingDiagnostics));
+                    FuseLog.Info(
+                        "FUSE removed the legacy persisted scenery-culling diagnostic override; " +
+                        "enable it explicitly for each diagnostic session.");
+                }
                 EnableTargetedTerrainInvalidation =
                     ReadBool(settings, nameof(EnableTargetedTerrainInvalidation), EnableTargetedTerrainInvalidation);
                 BlockNonHostMultiplayerClientWorldApply =
@@ -594,6 +615,12 @@ namespace FUSE.Infrastructure
 
         private static void SaveUserOverride(string key, JValue value)
         {
+            if (IsSessionOnlyUserSetting(key))
+            {
+                RemoveUserOverride(key);
+                return;
+            }
+
             try
             {
                 var path = GetUserSettingsPath();
@@ -607,6 +634,30 @@ namespace FUSE.Infrastructure
             catch (Exception ex)
             {
                 FuseLog.Warning($"FUSE could not save user setting override '{key}': {ex.GetBaseException().Message}");
+            }
+        }
+
+        private static void RemoveUserOverride(string key)
+        {
+            try
+            {
+                var path = GetUserSettingsPath();
+                if (!File.Exists(path))
+                {
+                    return;
+                }
+
+                var root = JObject.Parse(File.ReadAllText(path));
+                if (!root.Remove(key))
+                {
+                    return;
+                }
+
+                File.WriteAllText(path, root.ToString(Newtonsoft.Json.Formatting.Indented));
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not remove user setting override '{key}': {ex.GetBaseException().Message}");
             }
         }
     }

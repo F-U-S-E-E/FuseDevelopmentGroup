@@ -52,6 +52,12 @@ namespace FUSE.Runtime.Lifecycle
         // enhanced loading screen so it owns the visuals for the whole load.
         private void OnMapWillLoad(MapWillLoadEvent message)
         {
+            // Advance the generation before any work for this map can start.
+            // Resetting in MapDidLoad erased failures observed during scene load
+            // and also made current-load tasks look like late previous-map work.
+            FUSE.Patches.FuseSceneryLoadFailurePatch.ResetForNewMap();
+            FuseLoadReport.ResetMapLoad();
+
             try
             {
                 FuseLoadingScreen.BeginLoad("map load");
@@ -92,12 +98,6 @@ namespace FUSE.Runtime.Lifecycle
             var appliedCount = 0;
             var pipelineCompleted = false;
             var canMutateWorld = FuseMultiplayerGuard.CanApplyWorldMutations("map load");
-            FuseLoadReport.ResetMapLoad();
-            // The scenery load-failure watcher's per-map dedupe state feeds the load
-            // report; clear it in lockstep with the report at map-load start. Driven
-            // from here (the map-load orchestrator) rather than from FuseLoadReport so
-            // the report/loading layer keeps no compile-time dependency on a patch.
-            FUSE.Patches.FuseSceneryLoadFailurePatch.ResetForNewMap();
 
             // Defer per-object map-mask refresh across the whole apply: the single
             // trailing terrain rebuild (below) re-evaluates every live mask at once,

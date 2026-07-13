@@ -115,38 +115,6 @@ namespace FUSE.Patches
         }
     }
 
-    [HarmonyPatch(typeof(OpsController), "get_Areas")]
-    internal static class OpsControllerAreasOrderingPatches
-    {
-        private static void Postfix(ref IEnumerable<Area> __result)
-        {
-            if (__result == null)
-            {
-                return;
-            }
-
-            try
-            {
-                __result = __result
-                    .Where(area => area != null)
-                    .Select((area, index) => new
-                    {
-                        Area = area,
-                        OriginalIndex = index,
-                        SortOrder = TrackAPI.GetAreaSortOrder(area, index)
-                    })
-                    .OrderBy(entry => entry.SortOrder)
-                    .ThenBy(entry => entry.OriginalIndex)
-                    .Select(entry => entry.Area)
-                    .ToArray();
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception("FUSE failed to sort OpsController.Areas for the company Locations list.", ex);
-            }
-        }
-    }
-
     [HarmonyPatch(typeof(IndustryTrackDisplayableExtensions), nameof(IndustryTrackDisplayableExtensions.ShortName))]
     internal static class IndustryTrackDisplayableShortNamePatches
     {
