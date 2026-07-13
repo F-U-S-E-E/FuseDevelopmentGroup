@@ -22,6 +22,7 @@ namespace FUSE.Runtime.Lifecycle
                 Messenger.Default.Register<MapDidLoadEvent>(this, OnMapDidLoad);
                 Messenger.Default.Register<GraphDidRebuildCollections>(this, OnGraphDidRebuildCollections);
                 Messenger.Default.Register<MapWillUnloadEvent>(this, OnMapWillUnload);
+                Messenger.Default.Register<GameModeDidChange>(this, OnGameModeDidChange);
                 FuseEarlyLoader.Initialize();
                 FuseLog.Info("FUSE lifecycle registered.");
             }
@@ -312,6 +313,34 @@ namespace FUSE.Runtime.Lifecycle
             }
         }
 
+        // A mid-session game-mode change (the host-only '/mode' console
+        // command) does not reload progression: the game keeps the session
+        // exactly as it loaded — a progression-less session stays
+        // progression-less, feature gating and track-group state stay put —
+        // until the save is reloaded. FUSE deliberately matches that. No
+        // correct target state is even computable here (after a
+        // sandbox→company flip there is no Progression object to derive
+        // section state from), and re-gating mod content alone would
+        // desynchronize it from the vanilla content beside it. Surface the
+        // situation instead of mutating world state.
+        private void OnGameModeDidChange(GameModeDidChange message)
+        {
+            try
+            {
+                var mode = Game.State.StateManager.Shared?.GameMode.ToString() ?? "<unknown>";
+                var text =
+                    $"Game mode changed mid-session (now {mode}). Progression and track gating keep their " +
+                    "as-loaded state until the save is reloaded — this matches the game's own behavior. " +
+                    $"Save and reload to apply {mode}-mode gating.";
+                FuseLog.Warning("FUSE observed a mid-session game-mode change: " + text);
+                FuseLoadReport.RecordNotice(text);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE game-mode-change handling failed", ex);
+            }
+        }
+
         private void OnMapWillUnload(MapWillUnloadEvent message)
         {
             try
@@ -334,6 +363,12 @@ namespace FUSE.Runtime.Lifecycle
                 FuseMapTileRegistry.ClearAll();
                 TrackAPI.ClearBaseGraphSnapshot();
                 ProgressionAPI.ClearRememberedReferenceIds();
+                // Unconditional settle-state reset: sandbox sessions never
+                // configure a Progression, so the Unconfigure postfix never
+                // fires for them — without this, a sandbox session's settled
+                // flag would leak into the next load and let its staged
+                // refresh run inside the stale-IsSandbox window.
+                ProgressionAPI.NotifyMapUnloading();
                 FuseCacheRegistry.ClearAll();
                 FuseRuntimeRebindService.ResetUnknownKindLog();
                 FuseSplineyPluginHost.Reset();
