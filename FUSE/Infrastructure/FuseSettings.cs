@@ -526,17 +526,30 @@ namespace FUSE.Infrastructure
                 StringComparison.Ordinal);
         }
 
+        private static JObject LoadUserSettingsJson(string path)
+        {
+            return File.Exists(path)
+                ? JObject.Parse(File.ReadAllText(path))
+                : null;
+        }
+
+        private static void WriteUserSettingsJson(string path, JObject root)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path) ?? string.Empty);
+            File.WriteAllText(path, root.ToString(Newtonsoft.Json.Formatting.Indented));
+        }
+
         private static void ApplyUserOverrides()
         {
             var path = GetUserSettingsPath();
-            if (!File.Exists(path))
-            {
-                return;
-            }
-
             try
             {
-                var settings = JObject.Parse(File.ReadAllText(path));
+                var settings = LoadUserSettingsJson(path);
+                if (settings == null)
+                {
+                    return;
+                }
+
                 EnableExperimentalEarlyScenePathSuppression =
                     ReadBool(settings, nameof(EnableExperimentalEarlyScenePathSuppression), EnableExperimentalEarlyScenePathSuppression);
                 VerboseApplyReportDetails =
@@ -544,9 +557,9 @@ namespace FUSE.Infrastructure
                 // High-volume culling diagnostics are deliberately session-only. Older
                 // builds persisted this flag, which could silently contaminate every
                 // later FPS comparison until somebody noticed the growing log.
-                if (settings[nameof(EnableSceneryCullingDiagnostics)] != null)
+                if (settings.Remove(nameof(EnableSceneryCullingDiagnostics)))
                 {
-                    RemoveUserOverride(nameof(EnableSceneryCullingDiagnostics));
+                    WriteUserSettingsJson(path, settings);
                     FuseLog.Info(
                         "FUSE removed the legacy persisted scenery-culling diagnostic override; " +
                         "enable it explicitly for each diagnostic session.");
@@ -624,12 +637,9 @@ namespace FUSE.Infrastructure
             try
             {
                 var path = GetUserSettingsPath();
-                Directory.CreateDirectory(Path.GetDirectoryName(path) ?? string.Empty);
-                var root = File.Exists(path)
-                    ? JObject.Parse(File.ReadAllText(path))
-                    : new JObject();
+                var root = LoadUserSettingsJson(path) ?? new JObject();
                 root[key] = value;
-                File.WriteAllText(path, root.ToString(Newtonsoft.Json.Formatting.Indented));
+                WriteUserSettingsJson(path, root);
             }
             catch (Exception ex)
             {
@@ -642,18 +652,18 @@ namespace FUSE.Infrastructure
             try
             {
                 var path = GetUserSettingsPath();
-                if (!File.Exists(path))
+                var root = LoadUserSettingsJson(path);
+                if (root == null)
                 {
                     return;
                 }
 
-                var root = JObject.Parse(File.ReadAllText(path));
                 if (!root.Remove(key))
                 {
                     return;
                 }
 
-                File.WriteAllText(path, root.ToString(Newtonsoft.Json.Formatting.Indented));
+                WriteUserSettingsJson(path, root);
             }
             catch (Exception ex)
             {

@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using FUSE.Infrastructure;
 using FUSE.Patches;
@@ -25,6 +26,7 @@ namespace FUSE.Tests.Patches
         public FuseSceneryLoadFailureWatchTests()
         {
             // Static per-map state; make each test independent.
+            FuseSceneryLoadFailurePatch.SetGameLogAcceptanceForTests(false);
             FuseSceneryLoadFailurePatch.ResetForNewMap();
             FuseRuntimeGuardCounters.ResetForTests();
         }
@@ -297,6 +299,48 @@ namespace FUSE.Tests.Patches
             source.SetException(new Exception("completed after shutdown"));
 
             Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("quarantined-asset"));
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task LifecycleInvalidation_IgnoresThreadedLogCallbackAlreadyInFlight(bool shutdown)
+        {
+            FuseSceneryLoadFailurePatch.SetGameLogAcceptanceForTests(true);
+            var generationCaptured = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (var resumeObservation = new ManualResetEventSlim(false))
+            {
+                var observation = Task.Run(() =>
+                    FuseSceneryLoadFailurePatch.ObserveGameLogMessageForTests(
+                        "Error loading scenery stale-log-asset",
+                        () =>
+                        {
+                            generationCaptured.TrySetResult(null);
+                            resumeObservation.Wait();
+                        }));
+
+                await generationCaptured.Task;
+                try
+                {
+                    if (shutdown)
+                    {
+                        FuseSceneryLoadFailurePatch.Shutdown();
+                    }
+                    else
+                    {
+                        FuseSceneryLoadFailurePatch.ResetForNewMap();
+                    }
+                }
+                finally
+                {
+                    resumeObservation.Set();
+                }
+
+                await observation;
+            }
+
             Assert.Equal(0, FuseSceneryLoadFailurePatch.PendingCountForTests);
             Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
         }

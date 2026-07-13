@@ -47,34 +47,55 @@ namespace FUSE.Patches
 
         internal static void ResetForNewMap()
         {
-            lock (SeenLock)
+            var resumeGameLogMessages = Volatile.Read(ref _acceptGameLogMessages) != 0;
+            ResetForNewMap(resumeGameLogMessages);
+        }
+
+        private static void ResetForNewMap(bool resumeGameLogMessages)
+        {
+            // Close the producer gate before invalidating the generation. A
+            // callback already past the gate still carries the old generation
+            // and is rejected under SeenLock; callbacks entering during reset
+            // return without observing half-cleared state.
+            Volatile.Write(ref _acceptGameLogMessages, 0);
+            try
             {
-                unchecked
+                lock (SeenLock)
                 {
-                    _mapGeneration++;
+                    unchecked
+                    {
+                        _mapGeneration++;
+                    }
+
+                    SeenIdentifiers.Clear();
+                    SeenCatalogMismatches.Clear();
+                    FailureCounts.Clear();
+                    QuarantinedIdentifiers.Clear();
+                    Volatile.Write(ref _hasQuarantinedIdentifiers, 0);
+
+                    // Producers update their dedupe/quarantine set and enqueue while
+                    // holding this same lock. Drain inside it so a map reset cannot
+                    // split those paired state transitions across maps.
+                    while (Pending.TryDequeue(out _))
+                    {
+                    }
+
+                    while (PendingQuarantine.TryDequeue(out _))
+                    {
+                    }
                 }
 
-                SeenIdentifiers.Clear();
-                SeenCatalogMismatches.Clear();
-                FailureCounts.Clear();
-                QuarantinedIdentifiers.Clear();
-                Volatile.Write(ref _hasQuarantinedIdentifiers, 0);
-
-                // Producers update their dedupe/quarantine set and enqueue while
-                // holding this same lock. Drain inside it so a map reset cannot
-                // split those paired state transitions across maps.
-                while (Pending.TryDequeue(out _))
+                // The bundle audit shares this dedupe lifecycle: its findings land in
+                // the same report bucket, so both repopulate together after a reload.
+                FuseAssetPackBundleAuditPatch.ResetForNewMap();
+            }
+            finally
+            {
+                if (resumeGameLogMessages)
                 {
-                }
-
-                while (PendingQuarantine.TryDequeue(out _))
-                {
+                    Volatile.Write(ref _acceptGameLogMessages, 1);
                 }
             }
-
-            // The bundle audit shares this dedupe lifecycle: its findings land in
-            // the same report bucket, so both repopulate together after a reload.
-            FuseAssetPackBundleAuditPatch.ResetForNewMap();
         }
 
         // ---- Broken-scenery quarantine -------------------------------------
@@ -345,6 +366,7 @@ namespace FUSE.Patches
         private const string GameLogErrorPrefix = "Error loading scenery ";
 
         private static bool _logHookInstalled;
+        private static int _acceptGameLogMessages;
 
         internal static long FailureEpisodeCoalesceWindowTicksForTests =>
             FailureEpisodeCoalesceWindowTicks;
@@ -367,6 +389,7 @@ namespace FUSE.Patches
         {
             if (_logHookInstalled)
             {
+                Volatile.Write(ref _acceptGameLogMessages, 1);
                 return;
             }
 
@@ -377,35 +400,53 @@ namespace FUSE.Patches
                 // is one prefix check per log message.
                 UnityEngine.Application.logMessageReceivedThreaded += OnGameLogMessage;
                 _logHookInstalled = true;
+                Volatile.Write(ref _acceptGameLogMessages, 1);
             }
             catch (Exception ex)
             {
+                Volatile.Write(ref _acceptGameLogMessages, 0);
                 FuseLog.Exception("FUSE scenery load-failure log hook could not install", ex);
             }
         }
 
         internal static void Shutdown()
         {
+            Volatile.Write(ref _acceptGameLogMessages, 0);
             if (_logHookInstalled)
             {
                 try
                 {
                     UnityEngine.Application.logMessageReceivedThreaded -= OnGameLogMessage;
+                    _logHookInstalled = false;
                 }
                 catch (Exception ex)
                 {
                     FuseLog.Exception("FUSE scenery load-failure log hook could not uninstall", ex);
                 }
-
-                _logHookInstalled = false;
             }
 
-            ResetForNewMap();
+            ResetForNewMap(resumeGameLogMessages: false);
         }
 
         private static void OnGameLogMessage(string condition, string stackTrace, UnityEngine.LogType type)
         {
-            if (type != UnityEngine.LogType.Error && type != UnityEngine.LogType.Exception)
+            ObserveGameLogMessage(
+                condition,
+                type == UnityEngine.LogType.Error || type == UnityEngine.LogType.Exception,
+                afterGenerationCaptured: null);
+        }
+
+        private static void ObserveGameLogMessage(
+            string condition,
+            bool isFailureType,
+            Action afterGenerationCaptured)
+        {
+            // Capture before parsing: a lifecycle reset that begins while this
+            // callback is in flight advances the generation and makes the final
+            // enqueue reject the stale observation.
+            var generation = Volatile.Read(ref _mapGeneration);
+            afterGenerationCaptured?.Invoke();
+            if (Volatile.Read(ref _acceptGameLogMessages) == 0 || !isFailureType)
             {
                 return;
             }
@@ -420,9 +461,26 @@ namespace FUSE.Patches
                 "the game logged 'Error loading scenery' for this asset (see Player.log for the exception; " +
                 "usually the pack's bundle does not contain an asset its catalog declares)",
                 null,
-                Volatile.Read(ref _mapGeneration),
+                generation,
                 FailureObservationSource.GameLog,
                 Stopwatch.GetTimestamp());
+        }
+
+        /// <summary>Drives the threaded-log core without loading Unity in xUnit.</summary>
+        internal static void ObserveGameLogMessageForTests(
+            string condition,
+            Action afterGenerationCaptured)
+        {
+            ObserveGameLogMessage(
+                condition,
+                isFailureType: true,
+                afterGenerationCaptured: afterGenerationCaptured);
+        }
+
+        /// <summary>Controls the log producer gate without installing Unity's event hook.</summary>
+        internal static void SetGameLogAcceptanceForTests(bool accept)
+        {
+            Volatile.Write(ref _acceptGameLogMessages, accept ? 1 : 0);
         }
 
         /// <summary>

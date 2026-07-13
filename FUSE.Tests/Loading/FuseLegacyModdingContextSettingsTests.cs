@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Reflection;
+using System.Threading.Tasks;
 using FUSE.Loading;
 using Xunit;
 
@@ -82,6 +83,36 @@ namespace FUSE.Tests.Loading
             Assert.Equal(2, loaded.Distance);
 
             var settingsDirectory = Path.GetDirectoryName(context.GetSettingsFilePath("Author.Mod"));
+            Assert.Empty(Directory.GetFiles(settingsDirectory, "*.tmp"));
+        }
+
+        [Fact]
+        public async Task Concurrent_first_saves_complete_and_leave_one_valid_settings_file()
+        {
+            const int WriterCount = 16;
+            var context = new FuseLegacyModdingContext(_modsRoot);
+            var writers = new Task[WriterCount];
+            var start = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+            for (var index = 0; index < writers.Length; index++)
+            {
+                var distance = index;
+                writers[index] = Task.Run(async () =>
+                {
+                    await start.Task.ConfigureAwait(false);
+                    context.SaveSettingsData(
+                        "Concurrent.Mod",
+                        new LegacySettings { Distance = distance });
+                });
+            }
+
+            start.SetResult(null);
+            await Task.WhenAll(writers);
+
+            var loaded = context.LoadSettingsData<LegacySettings>("Concurrent.Mod");
+            Assert.NotNull(loaded);
+            Assert.InRange(loaded.Distance, 0, WriterCount - 1);
+
+            var settingsDirectory = Path.GetDirectoryName(context.GetSettingsFilePath("Concurrent.Mod"));
             Assert.Empty(Directory.GetFiles(settingsDirectory, "*.tmp"));
         }
 

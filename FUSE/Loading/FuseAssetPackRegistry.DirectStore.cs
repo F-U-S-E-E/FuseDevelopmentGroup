@@ -96,13 +96,22 @@ namespace FUSE.Loading
                 var normalizedPath = NormalizeAssetPackPhysicalPath(sourcePath);
                 var plan = PlanStoreRegistration(
                     sourcePath,
-                    existingStoreIndex.ReusableIdentifiersByNormalizedPath,
+                    existingStoreIndex,
                     identifier);
 
                 if (plan.Action == AssetPackStoreRegistrationAction.ReuseExisting)
                 {
                     selectedIdentifiersByPath[normalizedPath] = plan.SelectedIdentifier;
                     reusedExistingPhysicalStore++;
+                    continue;
+                }
+
+                if (plan.Action == AssetPackStoreRegistrationAction.IdentifierConflict)
+                {
+                    failedToAdd++;
+                    FuseLog.Warning(
+                        $"FUSE skipped direct asset pack store '{sourcePath}' because identifier " +
+                        $"'{plan.SelectedIdentifier}' is already owned by another PrefabStore entry.");
                     continue;
                 }
 
@@ -284,17 +293,28 @@ namespace FUSE.Loading
 
         internal static AssetPackStoreRegistrationPlan PlanStoreRegistration(
             string sourcePath,
-            IReadOnlyDictionary<string, string> reusableIdentifiersByNormalizedPath,
+            AssetPackStoreRegistrationIndex registrationIndex,
             string directIdentifier)
         {
             if (TrySelectExistingStoreIdentifier(
                     sourcePath,
-                    reusableIdentifiersByNormalizedPath,
+                    registrationIndex?.ReusableIdentifiersByNormalizedPath,
                     out var existingIdentifier))
             {
                 return new AssetPackStoreRegistrationPlan(
                     AssetPackStoreRegistrationAction.ReuseExisting,
                     existingIdentifier);
+            }
+
+            // PrefabStore resolves identifiers by first registration. Adding the
+            // same exact identifier for a different (or unresolved) path would
+            // create a shadowed store that can never be selected, while making
+            // the registry report a successful mount. Treat that as a conflict.
+            if (registrationIndex?.ContainsIdentifier(directIdentifier) == true)
+            {
+                return new AssetPackStoreRegistrationPlan(
+                    AssetPackStoreRegistrationAction.IdentifierConflict,
+                    directIdentifier);
             }
 
             // Historical entries in DirectAssetPackStoreIdentifiers are
@@ -308,7 +328,8 @@ namespace FUSE.Loading
         internal enum AssetPackStoreRegistrationAction
         {
             ReuseExisting,
-            AddDirect
+            AddDirect,
+            IdentifierConflict
         }
 
         internal readonly struct AssetPackStoreRegistrationPlan
@@ -337,6 +358,12 @@ namespace FUSE.Loading
 
             internal IReadOnlyDictionary<string, string> ReusableIdentifiersByNormalizedPath =>
                 _reusableIdentifiersByNormalizedPath;
+
+            internal bool ContainsIdentifier(string identifier)
+            {
+                return !string.IsNullOrWhiteSpace(identifier) &&
+                       _firstNormalizedPathByIdentifier.ContainsKey(identifier);
+            }
 
             internal bool Observe(string identifier, string resolvedBasePath)
             {

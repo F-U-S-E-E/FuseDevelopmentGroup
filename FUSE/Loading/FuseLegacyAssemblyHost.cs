@@ -1236,6 +1236,7 @@ namespace FUSE.Loading
         };
 
         private static readonly HashSet<char> InvalidSettingsFileNameChars = CreateInvalidSettingsFileNameChars();
+        private static readonly object LegacySettingsCommitGate = new object();
 
         public FuseLegacyModdingContext(string modsBaseDirectory)
         {
@@ -1312,13 +1313,20 @@ namespace FUSE.Loading
                 // operations. Readers therefore see either complete old JSON or
                 // complete new JSON, never a truncated settings file.
                 File.WriteAllText(temporaryPath, json);
-                if (File.Exists(path))
+                // The API is synchronous and multiple legacy plugins can save
+                // during the same lifecycle transition. Serialize only the
+                // existence check and atomic commit so concurrent first saves
+                // cannot both select File.Move for the same destination.
+                lock (LegacySettingsCommitGate)
                 {
-                    File.Replace(temporaryPath, path, null);
-                }
-                else
-                {
-                    File.Move(temporaryPath, path);
+                    if (File.Exists(path))
+                    {
+                        File.Replace(temporaryPath, path, null);
+                    }
+                    else
+                    {
+                        File.Move(temporaryPath, path);
+                    }
                 }
             }
             finally

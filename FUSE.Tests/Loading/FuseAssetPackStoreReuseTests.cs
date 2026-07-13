@@ -61,7 +61,7 @@ namespace FUSE.Tests.Loading
 
             var plan = FuseAssetPackRegistry.PlanStoreRegistration(
                 later,
-                index.ReusableIdentifiersByNormalizedPath,
+                index,
                 "fuseasset://later");
             Assert.Equal(FuseAssetPackRegistry.AssetPackStoreRegistrationAction.AddDirect, plan.Action);
             Assert.Equal("fuseasset://later", plan.SelectedIdentifier);
@@ -78,7 +78,7 @@ namespace FUSE.Tests.Loading
 
             var plan = FuseAssetPackRegistry.PlanStoreRegistration(
                 later,
-                index.ReusableIdentifiersByNormalizedPath,
+                index,
                 "fuseasset://later");
             Assert.Equal(FuseAssetPackRegistry.AssetPackStoreRegistrationAction.AddDirect, plan.Action);
         }
@@ -94,7 +94,7 @@ namespace FUSE.Tests.Loading
 
             var plan = FuseAssetPackRegistry.PlanStoreRegistration(
                 folder,
-                index.ReusableIdentifiersByNormalizedPath,
+                index,
                 "fuseasset://fallback");
             Assert.Equal(FuseAssetPackRegistry.AssetPackStoreRegistrationAction.ReuseExisting, plan.Action);
             Assert.Equal("Owner/Child", plan.SelectedIdentifier);
@@ -113,10 +113,30 @@ namespace FUSE.Tests.Loading
 
             var plan = FuseAssetPackRegistry.PlanStoreRegistration(
                 later,
-                index.ReusableIdentifiersByNormalizedPath,
+                index,
                 "fuseasset://fallback");
             Assert.Equal(FuseAssetPackRegistry.AssetPackStoreRegistrationAction.ReuseExisting, plan.Action);
             Assert.Equal("Unique/Id", plan.SelectedIdentifier);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void RegistrationPlan_RejectsDirectIdentifierOwnedByAnotherStore(bool unresolvedOwnerPath)
+        {
+            var directIdentifier = "fuseasset://occupied";
+            var index = new FuseAssetPackRegistry.AssetPackStoreRegistrationIndex();
+            index.Observe(
+                directIdentifier,
+                unresolvedOwnerPath ? null : TestPath("ExistingDirectStore"));
+
+            var plan = FuseAssetPackRegistry.PlanStoreRegistration(
+                TestPath("CandidateDirectStore"),
+                index,
+                directIdentifier);
+
+            Assert.Equal(FuseAssetPackRegistry.AssetPackStoreRegistrationAction.IdentifierConflict, plan.Action);
+            Assert.Equal(directIdentifier, plan.SelectedIdentifier);
         }
 
         [Fact]
@@ -172,7 +192,7 @@ namespace FUSE.Tests.Loading
             Assert.Contains(directIdentifier, historicallyTracked);
             var plan = FuseAssetPackRegistry.PlanStoreRegistration(
                 folder,
-                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                new FuseAssetPackRegistry.AssetPackStoreRegistrationIndex(),
                 directIdentifier);
 
             Assert.Equal(FuseAssetPackRegistry.AssetPackStoreRegistrationAction.AddDirect, plan.Action);
@@ -188,7 +208,7 @@ namespace FUSE.Tests.Loading
 
             var plan = FuseAssetPackRegistry.PlanStoreRegistration(
                 folder + Path.DirectorySeparatorChar,
-                index.ReusableIdentifiersByNormalizedPath,
+                index,
                 "fuseasset://fallback");
 
             Assert.Equal(FuseAssetPackRegistry.AssetPackStoreRegistrationAction.ReuseExisting, plan.Action);
@@ -202,7 +222,7 @@ namespace FUSE.Tests.Loading
 
             var plan = FuseAssetPackRegistry.PlanStoreRegistration(
                 nestedFolder,
-                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                new FuseAssetPackRegistry.AssetPackStoreRegistrationIndex(),
                 "fuseasset://nested-pack");
 
             Assert.Equal(FuseAssetPackRegistry.AssetPackStoreRegistrationAction.AddDirect, plan.Action);
