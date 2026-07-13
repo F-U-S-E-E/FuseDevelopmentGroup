@@ -535,7 +535,9 @@ namespace FUSE.Infrastructure
                 : null;
         }
 
-        private static void WriteUserSettingsJson(string path, JObject root)
+        // Caller holds UserSettingsCommitGate across the complete
+        // load -> mutate -> write transaction.
+        private static void WriteUserSettingsJsonUnderLock(string path, JObject root)
         {
             var directory = Path.GetDirectoryName(path) ?? string.Empty;
             Directory.CreateDirectory(directory);
@@ -551,16 +553,13 @@ namespace FUSE.Infrastructure
                 File.WriteAllText(
                     temporaryPath,
                     root.ToString(Newtonsoft.Json.Formatting.Indented));
-                lock (UserSettingsCommitGate)
+                if (File.Exists(path))
                 {
-                    if (File.Exists(path))
-                    {
-                        File.Replace(temporaryPath, path, null);
-                    }
-                    else
-                    {
-                        File.Move(temporaryPath, path);
-                    }
+                    File.Replace(temporaryPath, path, null);
+                }
+                else
+                {
+                    File.Move(temporaryPath, path);
                 }
             }
             finally
@@ -586,38 +585,57 @@ namespace FUSE.Infrastructure
             var path = GetUserSettingsPath();
             try
             {
-                var settings = LoadUserSettingsJson(path);
-                if (settings == null)
+                JObject settings;
+                var removedLegacyOverride = false;
+                string legacyCleanupError = null;
+                lock (UserSettingsCommitGate)
                 {
-                    return;
+                    settings = LoadUserSettingsJson(path);
+                    if (settings == null)
+                    {
+                        return;
+                    }
+
+                    // High-volume culling diagnostics are deliberately session-only.
+                    // Remove an older persisted value in the same transaction that
+                    // loaded it, so a concurrent UI save cannot be overwritten.
+                    removedLegacyOverride = settings.Remove(nameof(EnableSceneryCullingDiagnostics));
+                    if (removedLegacyOverride)
+                    {
+                        try
+                        {
+                            WriteUserSettingsJsonUnderLock(path, settings);
+                        }
+                        catch (Exception cleanupException)
+                        {
+                            // Cleanup is best-effort. Continue applying the already-loaded
+                            // overrides so one unwritable legacy key cannot discard every
+                            // valid setting that follows it.
+                            legacyCleanupError = cleanupException.GetBaseException().Message;
+                        }
+                    }
+                }
+
+                if (removedLegacyOverride)
+                {
+                    if (legacyCleanupError == null)
+                    {
+                        FuseLog.Info(
+                            "FUSE removed the legacy persisted scenery-culling diagnostic override; " +
+                            "enable it explicitly for each diagnostic session.");
+                    }
+                    else
+                    {
+                        FuseLog.Warning(
+                            "FUSE could not remove the legacy persisted scenery-culling diagnostic override; " +
+                            $"continuing with the remaining user settings: {legacyCleanupError}");
+                    }
                 }
 
                 EnableExperimentalEarlyScenePathSuppression =
                     ReadBool(settings, nameof(EnableExperimentalEarlyScenePathSuppression), EnableExperimentalEarlyScenePathSuppression);
                 VerboseApplyReportDetails =
                     ReadBool(settings, nameof(VerboseApplyReportDetails), VerboseApplyReportDetails);
-                // High-volume culling diagnostics are deliberately session-only. Older
-                // builds persisted this flag, which could silently contaminate every
-                // later FPS comparison until somebody noticed the growing log.
-                if (settings.Remove(nameof(EnableSceneryCullingDiagnostics)))
-                {
-                    try
-                    {
-                        WriteUserSettingsJson(path, settings);
-                        FuseLog.Info(
-                            "FUSE removed the legacy persisted scenery-culling diagnostic override; " +
-                            "enable it explicitly for each diagnostic session.");
-                    }
-                    catch (Exception cleanupException)
-                    {
-                        // Cleanup is best-effort. Continue applying the already-loaded
-                        // overrides so one unwritable legacy key cannot discard every
-                        // valid setting that follows it.
-                        FuseLog.Warning(
-                            "FUSE could not remove the legacy persisted scenery-culling diagnostic override; " +
-                            $"continuing with the remaining user settings: {cleanupException.GetBaseException().Message}");
-                    }
-                }
                 EnableTargetedTerrainInvalidation =
                     ReadBool(settings, nameof(EnableTargetedTerrainInvalidation), EnableTargetedTerrainInvalidation);
                 BlockNonHostMultiplayerClientWorldApply =
@@ -691,9 +709,12 @@ namespace FUSE.Infrastructure
             try
             {
                 var path = GetUserSettingsPath();
-                var root = LoadUserSettingsJson(path) ?? new JObject();
-                root[key] = value;
-                WriteUserSettingsJson(path, root);
+                lock (UserSettingsCommitGate)
+                {
+                    var root = LoadUserSettingsJson(path) ?? new JObject();
+                    root[key] = value;
+                    WriteUserSettingsJsonUnderLock(path, root);
+                }
             }
             catch (Exception ex)
             {
@@ -706,18 +727,21 @@ namespace FUSE.Infrastructure
             try
             {
                 var path = GetUserSettingsPath();
-                var root = LoadUserSettingsJson(path);
-                if (root == null)
+                lock (UserSettingsCommitGate)
                 {
-                    return;
-                }
+                    var root = LoadUserSettingsJson(path);
+                    if (root == null)
+                    {
+                        return;
+                    }
 
-                if (!root.Remove(key))
-                {
-                    return;
-                }
+                    if (!root.Remove(key))
+                    {
+                        return;
+                    }
 
-                WriteUserSettingsJson(path, root);
+                    WriteUserSettingsJsonUnderLock(path, root);
+                }
             }
             catch (Exception ex)
             {
