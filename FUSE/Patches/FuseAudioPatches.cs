@@ -43,12 +43,13 @@ namespace FUSE.Patches
         // patched IL still corrupts the return value of every other T
         // (~2k scenery skips across 20+ packages in the regression run).
         //
-        // For now we accept that FUSE-converted legacy whistles play
-        // their custom audio but render the loco's vanilla 3D whistle
-        // model. Restoring the FUSE whistle model needs a non-generic
-        // patch surface or an in-FUSE async asset-load that writes
-        // <c>WhistleController._whistleModel</c> by reflection without
-        // ever calling <c>DefinitionForIdentifier</c>.
+        // The 3D whistle model is handled inside FUSE:
+        // <see cref="FuseAudioAPI.TryConfigureWhistle"/> loads and attaches
+        // it by CALLING the generic PrefabStore load (calling is safe; only
+        // PATCHING a closed generic is hazardous). Picker visibility is
+        // likewise patch-free: FuseWhistleDefinitionStore publishes the
+        // registered whistles as a generated direct asset-pack store that
+        // vanilla's AllDefinitionInfosOfType enumeration lists natively.
         public static bool Prefix(WhistleController __instance, WhistleCustomizationSettings settings)
         {
             try
