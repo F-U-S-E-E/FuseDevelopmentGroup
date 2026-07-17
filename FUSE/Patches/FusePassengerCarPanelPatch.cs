@@ -79,7 +79,7 @@ namespace FUSE.Patches
             {
                 try
                 {
-                    var passed = allStopsRaw.Count(s => !s.ProgressionDisabled);
+                    var passed = allStopsRaw.Count(s => !s.ProgressionDisabled && !IsParentIndustryProgressionDisabled(s));
                     var filtered = allStopsRaw.Length - passed;
                     FuseLog.Info(
                         $"FUSE diag passenger panel populate car='{car?.id ?? "<null>"}' " +
@@ -87,11 +87,12 @@ namespace FUSE.Patches
                     foreach (var s in allStopsRaw.OrderBy(x => x.identifier, StringComparer.OrdinalIgnoreCase))
                     {
                         var industry = s.GetComponentInParent<Model.Ops.Industry>(true);
+                        var industryDisabled = industry != null && industry.ProgressionDisabled;
                         FuseLog.Info(
                             $"  panel diag id='{s.identifier}' progressionDisabled={s.ProgressionDisabled} " +
                             $"industry='{(industry != null ? industry.identifier : "<none>")}' " +
-                            $"industryProgDisabled={(industry != null && industry.ProgressionDisabled)} " +
-                            $"willShow={!s.ProgressionDisabled}.");
+                            $"industryProgDisabled={industryDisabled} " +
+                            $"willShow={!s.ProgressionDisabled && !industryDisabled}.");
                     }
                 }
                 catch (Exception ex)
@@ -101,7 +102,7 @@ namespace FUSE.Patches
             }
 
             var allStops = allStopsRaw
-                .Where(stop => !stop.ProgressionDisabled)
+                .Where(stop => !stop.ProgressionDisabled && !IsParentIndustryProgressionDisabled(stop))
                 .ToArray();
 
             var stopsById = allStops
@@ -198,6 +199,25 @@ namespace FUSE.Patches
 
             var count = marker.Value.CountPassengersForStop(stop.identifier);
             return count != 0 ? $"{stop.name} ({count})" : stop.name;
+        }
+
+        // A stop inside a progression-disabled industry cannot be served no
+        // matter what its own flag says — the game's feature pass only reaches
+        // stops through intact area wiring, and FUSE's orphan pass may disable
+        // the industry when track replacement severs that wiring. Filtering on
+        // the parent keeps the picker honest for the whole failure class
+        // instead of only the writes FUSE itself performs.
+        private static bool IsParentIndustryProgressionDisabled(PassengerStop stop)
+        {
+            try
+            {
+                var industry = stop != null ? stop.GetComponentInParent<Model.Ops.Industry>(true) : null;
+                return industry != null && industry.ProgressionDisabled;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static int GetPassengerStopAreaOrder(PassengerStop stop)
