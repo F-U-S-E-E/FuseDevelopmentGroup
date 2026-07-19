@@ -21,6 +21,73 @@ namespace FUSE.Loading
         private static readonly FieldInfo PrefabStoreStoresField =
             AccessTools.Field(typeof(PrefabStore), "_stores");
 
+        /// <summary>
+        /// Mounts a FUSE-generated definitions folder (e.g. the whistle
+        /// picker store) as a fuseasset:// direct store on the supplied
+        /// PrefabStore, or refreshes it when already mounted. Unlike the
+        /// discovery-driven <see cref="AddDirectAssetPackStores"/> path this
+        /// targets a single known folder, so it skips the collision scan:
+        /// the folder is FUSE-owned and its identifier can belong to nothing
+        /// else. With <paramref name="invalidateContainer"/> the mounted
+        /// store's cached container is dropped so the next <c>Container()</c>
+        /// call re-reads a rewritten Definitions.json.
+        /// </summary>
+        internal static bool EnsureGeneratedDirectStore(
+            PrefabStore prefabStore,
+            string sourcePath,
+            bool invalidateContainer)
+        {
+            if (prefabStore == null || string.IsNullOrWhiteSpace(sourcePath))
+            {
+                return false;
+            }
+
+            var identifier = ToDirectStoreIdentifier(sourcePath);
+            try
+            {
+                if (PrefabStoreStoresField?.GetValue(prefabStore) is System.Collections.IEnumerable stores)
+                {
+                    foreach (var item in stores)
+                    {
+                        if (item is AssetPackRuntimeStore store &&
+                            string.Equals(store.Identifier, identifier, StringComparison.Ordinal))
+                        {
+                            if (invalidateContainer)
+                            {
+                                RuntimeStoreContainerField?.SetValue(store, null);
+                            }
+
+                            return true;
+                        }
+                    }
+                }
+
+                var addStore = AccessTools.Method(
+                    prefabStore.GetType(),
+                    "AddStore",
+                    new[] { typeof(string), typeof(AssetPackRuntimeStore.StoreLocation) });
+                if (addStore == null)
+                {
+                    FuseLog.Warning(
+                        $"FUSE could not locate PrefabStore.AddStore to mount generated store '{sourcePath}'.");
+                    return false;
+                }
+
+                addStore.Invoke(prefabStore, new object[]
+                {
+                    identifier,
+                    AssetPackRuntimeStore.StoreLocation.External
+                });
+                DirectAssetPackStoreIdentifiers.Add(identifier);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FUSE could not mount generated direct store '{sourcePath}'", ex);
+                return false;
+            }
+        }
+
         internal static void AddDirectAssetPackStores(PrefabStore prefabStore)
         {
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -172,6 +239,24 @@ namespace FUSE.Loading
                 {
                     FuseLog.Exception($"FUSE verbose asset-pack resolution diagnostics failed softly", ex);
                 }
+            }
+
+            // Warm-mount the generated whistle picker store left by the last
+            // audio registration. A brand-new PrefabStore only knows the
+            // discovery-driven mod folders above; without this, FUSE whistles
+            // would stay invisible until the next RegisterDefinition re-syncs
+            // (which also refreshes the file if the whistle set changed).
+            try
+            {
+                var generatedWhistleFolder = FUSE.Runtime.API.FuseWhistleDefinitionStore.StoreFolderPath;
+                if (Directory.Exists(generatedWhistleFolder))
+                {
+                    EnsureGeneratedDirectStore(prefabStore, generatedWhistleFolder, invalidateContainer: false);
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE could not warm-mount the generated whistle store", ex);
             }
 
             FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
