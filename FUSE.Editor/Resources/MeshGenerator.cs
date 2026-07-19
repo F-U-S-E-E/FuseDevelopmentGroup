@@ -81,6 +81,106 @@ namespace FUSE.Editor.Resources
             return mesh;
         }
 
+        public static Mesh CreateCubicMeshAlongPath(Vector3[] points, Vector3 offset)
+        {
+            if (points == null || points.Length < 2)
+            {
+                return null;
+            }
+
+            var mesh = new Mesh();
+            List<Vector3> vertices = new List<Vector3>();
+            List<int> triangles = new List<int>();
+            float cubeSize = 0.075f; // Half-width of the cube cross-section
+
+            // For each segment between consecutive points
+            for (int i = 0; i < points.Length - 1; i++)
+            {
+                Vector3 p1 = points[i] - offset;
+                Vector3 p2 = points[i + 1] - offset;
+                Vector3 direction = (p2 - p1).normalized;
+
+                // Calculate perpendicular vectors for the cube cross-section
+                Vector3 right = Vector3.Cross(direction, Vector3.up).normalized;
+                if (right.magnitude < 0.01f)
+                {
+                    right = Vector3.Cross(direction, Vector3.right).normalized;
+                }
+                Vector3 up = Vector3.Cross(right, direction).normalized;
+
+                // Create 8 vertices for the cube at this segment
+                int baseVertexIndex = vertices.Count;
+
+                // Front face
+                vertices.Add(p1 - right * cubeSize - up * cubeSize);
+                vertices.Add(p1 + right * cubeSize - up * cubeSize);
+                vertices.Add(p1 + right * cubeSize + up * cubeSize);
+                vertices.Add(p1 - right * cubeSize + up * cubeSize);
+
+                // Back face
+                vertices.Add(p2 - right * cubeSize - up * cubeSize);
+                vertices.Add(p2 + right * cubeSize - up * cubeSize);
+                vertices.Add(p2 + right * cubeSize + up * cubeSize);
+                vertices.Add(p2 - right * cubeSize + up * cubeSize);
+
+                // Create triangles for the 6 faces of the cube segment
+                // Front face
+                triangles.Add(baseVertexIndex + 0);
+                triangles.Add(baseVertexIndex + 1);
+                triangles.Add(baseVertexIndex + 2);
+                triangles.Add(baseVertexIndex + 0);
+                triangles.Add(baseVertexIndex + 2);
+                triangles.Add(baseVertexIndex + 3);
+
+                // Back face
+                triangles.Add(baseVertexIndex + 6);
+                triangles.Add(baseVertexIndex + 5);
+                triangles.Add(baseVertexIndex + 4);
+                triangles.Add(baseVertexIndex + 7);
+                triangles.Add(baseVertexIndex + 6);
+                triangles.Add(baseVertexIndex + 4);
+
+                // Top face
+                triangles.Add(baseVertexIndex + 3);
+                triangles.Add(baseVertexIndex + 2);
+                triangles.Add(baseVertexIndex + 6);
+                triangles.Add(baseVertexIndex + 3);
+                triangles.Add(baseVertexIndex + 6);
+                triangles.Add(baseVertexIndex + 7);
+
+                // Bottom face
+                triangles.Add(baseVertexIndex + 4);
+                triangles.Add(baseVertexIndex + 5);
+                triangles.Add(baseVertexIndex + 1);
+                triangles.Add(baseVertexIndex + 4);
+                triangles.Add(baseVertexIndex + 1);
+                triangles.Add(baseVertexIndex + 0);
+
+                // Left face
+                triangles.Add(baseVertexIndex + 4);
+                triangles.Add(baseVertexIndex + 0);
+                triangles.Add(baseVertexIndex + 3);
+                triangles.Add(baseVertexIndex + 4);
+                triangles.Add(baseVertexIndex + 3);
+                triangles.Add(baseVertexIndex + 7);
+
+                // Right face
+                triangles.Add(baseVertexIndex + 1);
+                triangles.Add(baseVertexIndex + 5);
+                triangles.Add(baseVertexIndex + 6);
+                triangles.Add(baseVertexIndex + 1);
+                triangles.Add(baseVertexIndex + 6);
+                triangles.Add(baseVertexIndex + 2);
+            }
+
+            mesh.vertices = vertices.ToArray();
+            mesh.triangles = triangles.ToArray();
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+
+            return mesh;
+        }
+
         public static Mesh CreateBezierRailMesh(BezierCurve bezierCurve, int curveResolution, float gaugeInside, float gaugeHeadWidth, Vector3 offset, float RAIL_TOP_HEIGHT, float RAIL_BOTTOM_HEIGHT)
         {
             var mesh = new Mesh();
@@ -254,6 +354,56 @@ namespace FUSE.Editor.Resources
             combinedMesh.CombineMeshes(combineInstances);
 
             return combinedMesh;
+        }
+
+        public static Mesh CreateSolidTriangleMesh(Vector3 center, Quaternion rotation, float size)
+        {
+            var mesh = new Mesh();
+            mesh.name = "SolidTriangleMesh";
+
+            // Create triangular prism vertices - tapered at front, wide at back, 3D top to bottom
+            var vertices = new Vector3[]
+            {
+                // Top vertices
+                new Vector3(0, size * 0.1f, -size * 0.5f),     // 0: Front center top (tapered)
+                new Vector3(-size, size * 0.1f, size * 0.5f),  // 1: Back-left top
+                new Vector3(size, size * 0.1f, size * 0.5f),   // 2: Back-right top
+
+                // Bottom vertices
+                new Vector3(0, -size * 0.1f, -size * 0.5f),    // 3: Front center bottom (tapered)
+                new Vector3(-size, -size * 0.1f, size * 0.5f), // 4: Back-left bottom
+                new Vector3(size, -size * 0.1f, size * 0.5f)   // 5: Back-right bottom
+            };
+
+            // Apply rotation to each vertex and add center offset
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                vertices[i] = rotation * vertices[i] + center;
+            }
+
+            var triangles = new int[]
+            {
+                // Top face
+                0, 1, 2,
+                // Bottom face
+                3, 5, 4,
+                // Front-left side face
+                0, 3, 1,
+                1, 3, 4,
+                // Front-right side face
+                0, 2, 3,
+                2, 5, 3,
+                // Back face
+                1, 5, 2,
+                1, 4, 5
+            };
+
+            mesh.vertices = vertices;
+            mesh.triangles = triangles;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+
+            return mesh;
         }
     }
 }

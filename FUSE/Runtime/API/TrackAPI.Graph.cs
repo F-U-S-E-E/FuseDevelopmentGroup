@@ -259,7 +259,7 @@ namespace FUSE.Runtime.API
             return gameObject.AddComponent<T>();
         }
 
-        private static Location MakeLocation(Graph graph, FuseTrackLocation definition)
+        public static Location MakeLocation(Graph graph, FuseTrackLocation definition)
         {
             if (definition == null)
             {

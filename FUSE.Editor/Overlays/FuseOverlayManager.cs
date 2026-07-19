@@ -105,6 +105,7 @@ namespace FUSE.Editor.Overlays
 
                 _discoverySystem.RegisterStrategy(new TrackNodeDiscoveryStrategy());
                 _discoverySystem.RegisterStrategy(new TrackSegmentDiscoveryStrategy());
+                _discoverySystem.RegisterStrategy(new TrackSpanDiscoveryStrategy());
 
                 // Initialize tooltip manager
                 _tooltipManager = gameObject.AddComponent<OverlayTooltipManager>();
