@@ -21,6 +21,15 @@ namespace FUSE.Patches
                     return;
                 }
 
+                // Vanilla UpdateTag has already resolved the destination and painted every
+                // image before this postfix runs. Most destinations already have a visible
+                // color, so inspect that result first instead of repeating the ops lookup for
+                // every nearby tagged car on every one-second tag refresh.
+                if (!HasTransparentTagColor(tagCallout))
+                {
+                    return;
+                }
+
                 string destinationName;
                 bool isAtDestination;
                 Vector3 destinationPosition;
@@ -94,6 +103,26 @@ namespace FUSE.Patches
         private static bool IsTransparent(Color color)
         {
             return color.a <= 0.001f;
+        }
+
+        private static bool HasTransparentTagColor(TagCallout tagCallout)
+        {
+            var images = tagCallout?.colorImages;
+            if (images == null)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < images.Length; index++)
+            {
+                var image = images[index];
+                if (image != null)
+                {
+                    return IsTransparent(image.color);
+                }
+            }
+
+            return false;
         }
     }
 }

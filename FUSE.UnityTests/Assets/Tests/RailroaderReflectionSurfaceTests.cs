@@ -548,6 +548,17 @@ namespace FUSE.UnityTests
         }
 
         [Test]
+        public void ProgressionManager_OnEnableWithProperties_Method()
+        {
+            // FuseProgressionManagerNoProgressionHookPatch postfixes this
+            // restore handler to learn when a load settled WITHOUT a
+            // configured progression (sandbox saves, unresolvable progression
+            // ids) — the point where the deferred progression refresh must be
+            // replayed because Progression.Configure will never fire.
+            AssertMethod("Game.Progression.ProgressionManager", "OnEnableWithProperties", InstanceNonPublic);
+        }
+
+        [Test]
         public void Progression_Sections_AutoPropertyBackingField()
         {
             // Compiler-generated backing field for an auto-property.

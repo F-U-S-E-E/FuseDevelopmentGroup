@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using FUSE.Infrastructure;
 using FUSE.Patches;
@@ -18,11 +19,14 @@ namespace FUSE.Tests.Patches
     /// drain/record side stays out of xUnit per the repo test policy.
     /// </summary>
     [Collection(FuseRuntimeGuardCountersTestCollection.Name)]
-    public class FuseSceneryLoadFailureWatchTests
+    public sealed class FuseSceneryLoadFailureWatchTests
     {
+        private long _timestamp;
+
         public FuseSceneryLoadFailureWatchTests()
         {
             // Static per-map state; make each test independent.
+            FuseSceneryLoadFailurePatch.SetGameLogAcceptanceForTests(false);
             FuseSceneryLoadFailurePatch.ResetForNewMap();
             FuseRuntimeGuardCounters.ResetForTests();
         }
@@ -83,33 +87,31 @@ namespace FUSE.Tests.Patches
         }
 
         [Fact]
-        public void RepeatedFailures_RequestQuarantineExactlyOnceAtThreshold()
+        public void TimeSeparatedRetries_KeepOneReportButRequestOneQuarantine()
         {
-            // Five observed failures of one identifier queue one quarantine
-            // request; further failures do not queue another.
             for (var attempt = 0; attempt < 7; attempt++)
             {
-                var source = new TaskCompletionSource<object>();
-                FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", source.Task);
-                source.SetException(new Exception("Failed to load asset from asset bundle"));
+                ObserveTaskFailure("aspenbridgeclear");
+                AdvancePastEpisodeWindow();
             }
 
             Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
-            // Reporting stays deduped to one row regardless of retry count.
             Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.True(FuseSceneryLoadFailurePatch.IsQuarantined("ASPENBRIDGECLEAR"));
         }
 
         [Fact]
-        public void FewFailures_DoNotRequestQuarantine()
+        public void FewerThanThresholdFailures_DoNotQuarantine()
         {
             for (var attempt = 0; attempt < 4; attempt++)
             {
-                var source = new TaskCompletionSource<object>();
-                FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", source.Task);
-                source.SetException(new Exception("Failed to load asset from asset bundle"));
+                ObserveTaskFailure("occasionally-transient-asset");
+                AdvancePastEpisodeWindow();
             }
 
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
             Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("occasionally-transient-asset"));
         }
 
         [Fact]
@@ -156,19 +158,204 @@ namespace FUSE.Tests.Patches
 
             for (var attempt = 0; attempt < 4; attempt++)
             {
-                var source = new TaskCompletionSource<object>();
-                FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", source.Task);
-                source.SetException(new Exception("Failed to load asset from asset bundle"));
+                ObserveTaskFailure("aspenbridgeclear");
+                AdvancePastEpisodeWindow();
             }
 
             Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("aspenbridgeclear"));
 
-            var threshold = new TaskCompletionSource<object>();
-            FuseSceneryLoadFailurePatch.Postfix("aspenbridgeclear", threshold.Task);
-            threshold.SetException(new Exception("Failed to load asset from asset bundle"));
+            ObserveTaskFailure("aspenbridgeclear");
 
             Assert.True(FuseSceneryLoadFailurePatch.IsQuarantined("ASPENBRIDGECLEAR"));
             Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Fact]
+        public void Threshold_IsCaseInsensitiveAndIndependentPerIdentifier()
+        {
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                ObserveTaskFailure(attempt % 2 == 0 ? "Mixed-Case-Asset" : "mixed-case-asset");
+                if (attempt < 4)
+                {
+                    ObserveTaskFailure("other-asset");
+                }
+
+                AdvancePastEpisodeWindow();
+            }
+
+            Assert.Equal(2, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Fact]
+        public void SameIdentifierBurst_IsOneEpisodePerObserver()
+        {
+            for (var placement = 0; placement < 50; placement++)
+            {
+                ObserveTaskFailure("dense-placement-asset");
+                ObserveLogFailure("dense-placement-asset");
+            }
+
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("dense-placement-asset"));
+        }
+
+        [Fact]
+        public void ContinuousBurst_CountsFromLastCountedEpisodeNotLastObservation()
+        {
+            var window = FuseSceneryLoadFailurePatch.FailureEpisodeCoalesceWindowTicksForTests;
+            ObserveTaskFailure("continuous-storm");
+
+            // A coalesced observation must not slide the episode boundary.
+            _timestamp = window - 1;
+            ObserveTaskFailure("continuous-storm");
+
+            for (var episode = 1; episode < 5; episode++)
+            {
+                _timestamp = episode * window;
+                ObserveTaskFailure("continuous-storm");
+            }
+
+            Assert.True(FuseSceneryLoadFailurePatch.IsQuarantined("continuous-storm"));
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Fact]
+        public void TaskAndLogObservers_KeepIndependentRetryEpisodeCounts()
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                ObserveTaskFailure("dual-observed-asset");
+                ObserveLogFailure("dual-observed-asset");
+                AdvancePastEpisodeWindow();
+            }
+
+            // Six total observations must not combine into one threshold: each
+            // observer has independently seen only three retry episodes.
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("dual-observed-asset"));
+
+            ObserveTaskFailure("dual-observed-asset");
+            AdvancePastEpisodeWindow();
+            ObserveTaskFailure("dual-observed-asset");
+
+            Assert.True(FuseSceneryLoadFailurePatch.IsQuarantined("dual-observed-asset"));
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Fact]
+        public void ResetForNewMap_ClearsCountsAndRearmsQuarantine()
+        {
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                ObserveTaskFailure("map-scoped-asset");
+                AdvancePastEpisodeWindow();
+            }
+
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+
+            FuseSceneryLoadFailurePatch.ResetForNewMap();
+
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("map-scoped-asset"));
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                ObserveTaskFailure("map-scoped-asset");
+                AdvancePastEpisodeWindow();
+            }
+
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Fact]
+        public void MapWillLoadReset_IgnoresOldCompletionButRetainsCurrentLoadFailure()
+        {
+            var oldMapSource = new TaskCompletionSource<object>();
+            FuseSceneryLoadFailurePatch.Postfix("old-map-asset", oldMapSource.Task);
+
+            FuseSceneryLoadFailurePatch.ResetForNewMap();
+            var currentMapSource = new TaskCompletionSource<object>();
+            FuseSceneryLoadFailurePatch.Postfix("current-map-asset", currentMapSource.Task);
+
+            oldMapSource.SetException(new Exception("late old-map failure"));
+            currentMapSource.SetException(new Exception("current map failure"));
+
+            Assert.True(oldMapSource.Task.IsFaulted);
+            Assert.True(currentMapSource.Task.IsFaulted);
+            Assert.Equal(1, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Fact]
+        public void Shutdown_ClearsStateAndInvalidatesOutstandingTask()
+        {
+            FuseSceneryLoadFailurePatch.RequestQuarantine("quarantined-asset");
+            var source = new TaskCompletionSource<object>();
+            FuseSceneryLoadFailurePatch.Postfix("late-asset", source.Task);
+
+            FuseSceneryLoadFailurePatch.Shutdown();
+            source.SetException(new Exception("completed after shutdown"));
+
+            Assert.False(FuseSceneryLoadFailurePatch.IsQuarantined("quarantined-asset"));
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task LifecycleInvalidation_IgnoresThreadedLogCallbackAlreadyInFlight(bool shutdown)
+        {
+            FuseSceneryLoadFailurePatch.SetGameLogAcceptanceForTests(true);
+            var generationCaptured = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (var resumeObservation = new ManualResetEventSlim(false))
+            {
+                var observation = Task.Run(() =>
+                    FuseSceneryLoadFailurePatch.ObserveGameLogMessageForTests(
+                        "Error loading scenery stale-log-asset",
+                        () =>
+                        {
+                            generationCaptured.TrySetResult(null);
+                            resumeObservation.Wait();
+                        }));
+
+                await generationCaptured.Task;
+                try
+                {
+                    if (shutdown)
+                    {
+                        FuseSceneryLoadFailurePatch.Shutdown();
+                    }
+                    else
+                    {
+                        FuseSceneryLoadFailurePatch.ResetForNewMap();
+                    }
+                }
+                finally
+                {
+                    resumeObservation.Set();
+                }
+
+                await observation;
+            }
+
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.PendingCountForTests);
+            Assert.Equal(0, FuseSceneryLoadFailurePatch.QuarantinePendingCountForTests);
+        }
+
+        [Fact]
+        public void BuildQuarantineIdentifierSet_DeduplicatesCaseInsensitivelyAndSkipsBlanks()
+        {
+            var requested = FuseSceneryLoadFailurePatch.BuildQuarantineIdentifierSet(
+                new[] { "asset-a", "ASSET-A", null, "  ", "asset-b" });
+
+            Assert.Equal(2, requested.Count);
+            Assert.Contains(requested, identifier =>
+                string.Equals(identifier, "Asset-A", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(requested, identifier =>
+                string.Equals(identifier, "ASSET-B", StringComparison.OrdinalIgnoreCase));
         }
 
         [Theory]
@@ -192,6 +379,27 @@ namespace FUSE.Tests.Patches
         {
             Assert.False(FuseSceneryLoadFailurePatch.TryParseSceneryLoadErrorLine(line, out var identifier));
             Assert.Null(identifier);
+        }
+
+        private void ObserveTaskFailure(string identifier)
+        {
+            FuseSceneryLoadFailurePatch.ObserveFailureForTests(
+                identifier,
+                fromGameLog: false,
+                _timestamp);
+        }
+
+        private void ObserveLogFailure(string identifier)
+        {
+            FuseSceneryLoadFailurePatch.ObserveFailureForTests(
+                identifier,
+                fromGameLog: true,
+                _timestamp);
+        }
+
+        private void AdvancePastEpisodeWindow()
+        {
+            _timestamp += FuseSceneryLoadFailurePatch.FailureEpisodeCoalesceWindowTicksForTests + 1;
         }
     }
 }

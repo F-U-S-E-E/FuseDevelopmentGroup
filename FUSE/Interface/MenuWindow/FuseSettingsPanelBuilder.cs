@@ -141,7 +141,7 @@ namespace FUSE.Interface.MenuWindow
                     builder.Rebuild();
                 }));
 
-            builder.AddLabel("Logs every scenery load/unload flip to FUSE.log ('scenery-cull'). For culling-churn hunts; verbose while moving.");
+            builder.AddLabel("Logs every scenery load/unload flip to FUSE.log ('scenery-cull'). Session-only and resets when the game restarts; verbose while moving.");
 
             builder.AddSection("Experimental");
 

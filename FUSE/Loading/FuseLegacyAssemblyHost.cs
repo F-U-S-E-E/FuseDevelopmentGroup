@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Runtime.Remoting.Messaging;
 using System.Runtime.Remoting.Proxies;
 using FUSE.Infrastructure;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Railloader;
 using UI.Console;
@@ -570,10 +571,13 @@ namespace FUSE.Loading
                     }
                     return null;
                 case "LoadSettingsData":
-                    FuseLog.Warning($"FUSE legacy IModdingContext.{method.Name} called through real Railloader bridge; returning null.");
-                    return null;
+                    return context.LoadSettingsData(
+                        method.ReturnType,
+                        args != null && args.Length > 0 ? args[0] as string : null);
                 case "SaveSettingsData":
-                    FuseLog.Warning($"FUSE legacy IModdingContext.{method.Name} called through real Railloader bridge; no-op.");
+                    context.SaveSettingsDataObject(
+                        args != null && args.Length > 0 ? args[0] as string : null,
+                        args != null && args.Length > 1 ? args[1] : null);
                     return null;
                 case "GetMixintos":
                     return CreateEmptyArrayForReturnType(method.ReturnType);
@@ -1221,6 +1225,19 @@ namespace FUSE.Loading
         // that plugins may check against the legacy loader's contract.
         private static readonly System.Version LegacyRailloaderVersion = new System.Version(1, 11, 1, 2);
 
+        // Railloader uses JsonConvert's default serializer, whose default
+        // TypeNameHandling is None. Pin that security-sensitive behavior here
+        // instead of inheriting a process-wide JsonConvert.DefaultSettings
+        // override installed by another mod.
+        private static readonly JsonSerializerSettings LegacySettingsJson = new JsonSerializerSettings
+        {
+            Formatting = Formatting.None,
+            TypeNameHandling = TypeNameHandling.None
+        };
+
+        private static readonly HashSet<char> InvalidSettingsFileNameChars = CreateInvalidSettingsFileNameChars();
+        private static readonly object LegacySettingsCommitGate = new object();
+
         public FuseLegacyModdingContext(string modsBaseDirectory)
         {
             ModsBaseDirectory = modsBaseDirectory ?? string.Empty;
@@ -1237,13 +1254,152 @@ namespace FUSE.Loading
 
         public T LoadSettingsData<T>(string settingsIdentifier) where T : class
         {
-            FuseLog.Warning($"FUSE legacy IModdingContext.LoadSettingsData<{typeof(T).Name}>('{settingsIdentifier}') is not wired; returning null. Migrate to FUSE settings API.");
-            return null;
+            return (T)LoadSettingsData(typeof(T), settingsIdentifier);
         }
 
         public void SaveSettingsData<T>(string settingsIdentifier, T settings) where T : class
         {
-            FuseLog.Warning($"FUSE legacy IModdingContext.SaveSettingsData<{typeof(T).Name}>('{settingsIdentifier}') is not wired; no-op. Migrate to FUSE settings API.");
+            SaveSettingsDataObject(settingsIdentifier, settings);
+        }
+
+        internal object LoadSettingsData(Type settingsType, string settingsIdentifier)
+        {
+            if (settingsType == null)
+            {
+                throw new ArgumentNullException(nameof(settingsType));
+            }
+
+            // Keep path validation outside the recovery block, matching
+            // Railloader: invalid API arguments fail fast, while malformed or
+            // unreadable settings files fail softly and let the mod use its
+            // defaults.
+            var path = GetSettingsFilePath(settingsIdentifier);
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                return JsonConvert.DeserializeObject(
+                    File.ReadAllText(path),
+                    settingsType,
+                    LegacySettingsJson);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception(
+                    $"FUSE legacy support could not load configuration of type '{settingsType.FullName}' from '{path}'",
+                    ex);
+                return null;
+            }
+        }
+
+        internal void SaveSettingsDataObject(string settingsIdentifier, object settings)
+        {
+            var path = GetSettingsFilePath(settingsIdentifier);
+            var directory = Path.GetDirectoryName(path);
+            Directory.CreateDirectory(directory);
+
+            var json = JsonConvert.SerializeObject(settings, LegacySettingsJson);
+            var temporaryPath = Path.Combine(
+                directory,
+                "." + Path.GetFileName(path) + "." + Guid.NewGuid().ToString("N") + ".tmp");
+
+            try
+            {
+                // The temporary file lives beside the destination, so Move for
+                // a first save and Replace for an update are same-volume atomic
+                // operations. Readers therefore see either complete old JSON or
+                // complete new JSON, never a truncated settings file.
+                File.WriteAllText(temporaryPath, json);
+                // The API is synchronous and multiple legacy plugins can save
+                // during the same lifecycle transition. Serialize only the
+                // existence check and atomic commit so concurrent first saves
+                // cannot both select File.Move for the same destination.
+                lock (LegacySettingsCommitGate)
+                {
+                    if (File.Exists(path))
+                    {
+                        File.Replace(temporaryPath, path, null);
+                    }
+                    else
+                    {
+                        File.Move(temporaryPath, path);
+                    }
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(temporaryPath))
+                    {
+                        File.Delete(temporaryPath);
+                    }
+                }
+                catch (Exception cleanupException)
+                {
+                    // Best-effort cleanup must not hide the original save error,
+                    // but retain enough evidence to diagnose a stranded temp file.
+                    FuseLog.Warning(
+                        $"FUSE legacy support could not clean up temporary settings file " +
+                        $"'{temporaryPath}': {cleanupException.GetBaseException().Message}");
+                }
+            }
+        }
+
+        internal string GetSettingsFilePath(string settingsIdentifier)
+        {
+            if (settingsIdentifier == null)
+            {
+                throw new ArgumentNullException(nameof(settingsIdentifier));
+            }
+
+            var sanitizedIdentifier = SanitizeSettingsIdentifier(settingsIdentifier);
+            var settingsDirectory = Path.GetFullPath(Path.Combine(
+                ModsBaseDirectory,
+                "Railloader",
+                "ModSettings"));
+            var candidate = Path.GetFullPath(Path.Combine(settingsDirectory, sanitizedIdentifier + ".json"));
+            var directoryPrefix = settingsDirectory.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
+            if (!candidate.StartsWith(directoryPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Settings identifier resolves outside the Railloader settings directory.", nameof(settingsIdentifier));
+            }
+
+            return candidate;
+        }
+
+        private static string SanitizeSettingsIdentifier(string settingsIdentifier)
+        {
+            var sanitized = settingsIdentifier.ToCharArray();
+            for (var index = 0; index < sanitized.Length; index++)
+            {
+                if (InvalidSettingsFileNameChars.Contains(sanitized[index]))
+                {
+                    sanitized[index] = '_';
+                }
+            }
+
+            return new string(sanitized);
+        }
+
+        private static HashSet<char> CreateInvalidSettingsFileNameChars()
+        {
+            var invalid = new HashSet<char>(Path.GetInvalidFileNameChars());
+            invalid.UnionWith(Path.GetInvalidPathChars());
+
+            // These are already invalid filename characters on Windows. Keep
+            // them explicit so the containment guarantee survives a different
+            // runtime's narrower invalid-character table.
+            invalid.Add(Path.DirectorySeparatorChar);
+            invalid.Add(Path.AltDirectorySeparatorChar);
+            invalid.Add(Path.VolumeSeparatorChar);
+            return invalid;
         }
 
         public IEnumerable<ModMixinto> GetMixintos(string target)

@@ -24,15 +24,16 @@ namespace FUSE.Runtime.API
     ///
     /// Lifecycle: created/refreshed by <see cref="SceneryAPI"/> right after each decouple (on model
     /// load and on update). It dies with the scenery root — RemoveScenery destroys the root, which
-    /// also drops the standalone via <see cref="MapAPI.RemoveDecoupledMasksFor"/>. Cost is bounded:
-    /// only mask-bearing scenery carries it, that set is small and held resident, and the poll uses
-    /// reused buffers so it allocates nothing after warmup.
+    /// also drops the standalone via <see cref="MapAPI.RemoveDecoupledMasksFor"/>. Polls are
+    /// deterministically staggered across the half-second interval instead of firing as one load
+    /// burst, and the owner-indexed mask update touches only this scenery's masks.
     /// </summary>
     internal sealed class FuseDecoupledMaskVisibilityWatcher : MonoBehaviour
     {
         // The hide is a rare, coarse state change, not a per-frame value: a half-second cadence is
         // imperceptible for a terrain flatten appearing/disappearing yet negligible to poll.
         private const float CheckIntervalSeconds = 0.5f;
+        private const int StaggerBucketCount = 16;
 
         // Shared across instances: WaitForSeconds is an immutable duration, so reusing one instance
         // is safe and avoids a per-iteration allocation on every watcher's loop.
@@ -49,6 +50,7 @@ namespace FUSE.Runtime.API
         // its mask dropped, and a visible one keeps it applied. Defaults to Visible so the mask
         // stays applied until the building is proven hidden (matches the decouple default).
         private MapAPI.DecoupledMaskVisibility _lastDecisive = MapAPI.DecoupledMaskVisibility.Visible;
+        private bool _hasAppliedMaskState;
 
         private Coroutine _loop;
 
@@ -70,7 +72,20 @@ namespace FUSE.Runtime.API
                 watcher = sceneryRoot.AddComponent<FuseDecoupledMaskVisibilityWatcher>();
             }
 
+            if (!string.Equals(watcher._sceneryId, sceneryId, StringComparison.Ordinal))
+            {
+                watcher._lastDecisive = MapAPI.DecoupledMaskVisibility.Visible;
+            }
+
             watcher._sceneryId = sceneryId;
+            // Ensure is invoked by SceneryAPI's OnDidLoadModels hook. Capture the renderer set at
+            // that lifecycle boundary instead of traversing the full hierarchy on every 2 Hz
+            // visibility check. A subsequent stream-in calls Ensure and refreshes the cache.
+            watcher.RefreshRenderers();
+            // A reload/update may have created a fresh standalone while this watcher retained the
+            // previous visibility. Force one application even if the decision itself did not
+            // change (notably: hidden before and after the re-decouple).
+            watcher._hasAppliedMaskState = false;
             // Sync immediately so a building that streamed in already-hidden never shows a flatten
             // waiting for the first poll, and a re-decouple (update) applies the current state now.
             watcher.SyncNow();
@@ -92,6 +107,14 @@ namespace FUSE.Runtime.API
 
         private void OnEnable()
         {
+            // Existing watchers can be disabled/re-enabled with their scenery root. Preserve the
+            // old immediate-on-enable behavior; a newly added watcher has no id yet and Ensure
+            // performs its first sync after assigning one.
+            if (!string.IsNullOrEmpty(_sceneryId))
+            {
+                SyncNow();
+            }
+
             _loop = StartCoroutine(PollLoop());
         }
 
@@ -106,6 +129,17 @@ namespace FUSE.Runtime.API
 
         private IEnumerator PollLoop()
         {
+            // AddComponent invokes OnEnable before Ensure can assign the scenery id. Let Ensure do
+            // the immediate sync, then spread subsequent work over stable buckets so a pack loaded
+            // in one burst does not wake every watcher on the same frame twice a second.
+            yield return null;
+            var staggerBucket = GetPollStaggerBucket(_sceneryId);
+            if (staggerBucket > 0)
+            {
+                yield return new WaitForSeconds(
+                    CheckIntervalSeconds * staggerBucket / StaggerBucketCount);
+            }
+
             while (true)
             {
                 // SyncNow swallows exceptions so a transient failure can't kill the loop.
@@ -125,8 +159,40 @@ namespace FUSE.Runtime.API
             // holds the last decisive Visible/Hidden, so we never drop a mask just because the model
             // isn't currently loaded. The result is both the effective decision and the new retained
             // value (see MapAPI.ResolveEffectiveMaskVisibility).
-            _lastDecisive = MapAPI.ResolveEffectiveMaskVisibility(CaptureVisibility(), _lastDecisive);
-            MapAPI.SetDecoupledMasksActive(_sceneryId, _lastDecisive == MapAPI.DecoupledMaskVisibility.Visible);
+            var next = MapAPI.ResolveEffectiveMaskVisibility(CaptureVisibility(), _lastDecisive);
+            var mustApply = !_hasAppliedMaskState || next != _lastDecisive;
+            _lastDecisive = next;
+            if (!mustApply)
+            {
+                return;
+            }
+
+            MapAPI.SetDecoupledMasksActive(_sceneryId, next == MapAPI.DecoupledMaskVisibility.Visible);
+            _hasAppliedMaskState = true;
+        }
+
+        /// <summary>
+        /// Stable, process-independent bucket for distributing watcher wakeups. Kept pure so its
+        /// range and determinism can be covered without a live Unity scene.
+        /// </summary>
+        internal static int GetPollStaggerBucket(string sceneryId)
+        {
+            if (string.IsNullOrEmpty(sceneryId))
+            {
+                return 0;
+            }
+
+            unchecked
+            {
+                uint hash = 2166136261;
+                for (var i = 0; i < sceneryId.Length; i++)
+                {
+                    hash ^= sceneryId[i];
+                    hash *= 16777619;
+                }
+
+                return (int)(hash % StaggerBucketCount);
+            }
         }
 
         private MapAPI.DecoupledMaskVisibility CaptureVisibility()
@@ -140,15 +206,16 @@ namespace FUSE.Runtime.API
                 return MapAPI.DecoupledMaskVisibility.Indeterminate;
             }
 
-            _renderers.Clear();
-            GetComponentsInChildren(true, _renderers);
-
             _samples.Clear();
-            for (var index = 0; index < _renderers.Count; index++)
+            for (var index = _renderers.Count - 1; index >= 0; index--)
             {
                 var renderer = _renderers[index];
                 if (renderer == null)
                 {
+                    // Stream-out destroys the model renderers. Compact stale Unity references so
+                    // an unloaded building's steady-state poll is an empty-list classification;
+                    // OnDidLoadModels/Ensure repopulates the cache on the next stream-in.
+                    _renderers.RemoveAt(index);
                     continue;
                 }
 
@@ -159,6 +226,12 @@ namespace FUSE.Runtime.API
             }
 
             return MapAPI.ClassifyMaskVisibility(_samples);
+        }
+
+        private void RefreshRenderers()
+        {
+            _renderers.Clear();
+            GetComponentsInChildren(true, _renderers);
         }
     }
 }

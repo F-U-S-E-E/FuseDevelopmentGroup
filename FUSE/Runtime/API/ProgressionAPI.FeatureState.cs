@@ -28,6 +28,19 @@ namespace FUSE.Runtime.API
         // via reflection that depend on it — must be deferred.
         private static volatile bool _gameProgressionConfigured;
 
+        // Track whether the load settled WITHOUT a configured progression. The
+        // game decides this once per load, inside ProgressionManager's restore
+        // handler: sandbox saves discard their progression blob ("Game is
+        // sandbox but has progression ... Ignoring.") and company saves whose
+        // progression id resolves to nothing both leave Progression unconfigured
+        // — so Progression.Configure NEVER fires and a refresh parked on it
+        // would wait forever (observed in the field: a whole sandbox session
+        // with FUSE's pre-enabled track groups never re-gated). Set by the
+        // Harmony postfix in FuseProgressionManagerNoProgressionHookPatch at the
+        // exact point GameMode has become authoritative — the same guarantee
+        // Configure gives on company loads.
+        private static volatile bool _gameProgressionSettledWithoutProgression;
+
         // Track-group ids referenced by mod-added segments. Populated by
         // FuseModLoader.PreEnableInitialTrackGroups for every groupId it
         // collects from segments — regardless of whether PreEnable actually
@@ -186,6 +199,9 @@ namespace FUSE.Runtime.API
             lock (_pendingRefreshLock)
             {
                 _gameProgressionConfigured = true;
+                // A configured progression supersedes any earlier no-progression
+                // observation for this load.
+                _gameProgressionSettledWithoutProgression = false;
                 pendingReason = _pendingRefreshReason;
                 _pendingRefreshReason = null;
             }
@@ -203,6 +219,47 @@ namespace FUSE.Runtime.API
         }
 
         /// <summary>
+        /// Called by the Harmony postfix on the game's per-load progression
+        /// restore handler when it finished WITHOUT configuring a Progression
+        /// (sandbox save, or a progression id that resolved to nothing). At
+        /// that point the save's GameMode has been deserialized — the same
+        /// trust guarantee <c>Progression.Configure</c> gives on company loads
+        /// — but <c>Configure</c> itself will never fire this load, so a
+        /// refresh parked on it must be replayed from here instead. The replay
+        /// runs the reduced <see cref="ProgressionRefreshProfile.NoProgression"/>
+        /// profile.
+        /// </summary>
+        internal static void NotifyGameProgressionSettledWithoutProgression()
+        {
+            string pendingReason;
+            lock (_pendingRefreshLock)
+            {
+                if (_gameProgressionConfigured)
+                {
+                    // Configure already ran this load (its postfix fires from
+                    // inside the same restore handler, before this one) — the
+                    // full-profile notification has this covered.
+                    return;
+                }
+
+                _gameProgressionSettledWithoutProgression = true;
+                pendingReason = _pendingRefreshReason;
+                _pendingRefreshReason = null;
+            }
+
+            var sandbox = StateManager.IsSandbox;
+            var gameMode = StateManager.Shared?.GameMode.ToString() ?? "<null>";
+            FuseLog.Info(
+                $"FUSE progression settle observed (game finished progression restore with NO configured progression) " +
+                $"IsSandbox={sandbox} GameMode={gameMode} hadPendingRefresh={(pendingReason != null)}.");
+
+            if (pendingReason != null)
+            {
+                RefreshRuntimeStateAfterApply($"deferred from no-progression settle: {pendingReason}");
+            }
+        }
+
+        /// <summary>
         /// Called by the Harmony postfix on <c>Game.Progression.Progression.Unconfigure</c>.
         /// Resets the configured-flag so the next save load can correctly detect
         /// its own pre-Configure racy window. Without this reset, reloading a
@@ -216,6 +273,7 @@ namespace FUSE.Runtime.API
             lock (_pendingRefreshLock)
             {
                 _gameProgressionConfigured = false;
+                _gameProgressionSettledWithoutProgression = false;
                 // Drop any deferred reason — its requester is gone with the
                 // previous load. The next load will produce its own refresh
                 // request via FuseModLoader.
@@ -227,6 +285,43 @@ namespace FUSE.Runtime.API
                 "configured-flag cleared so the next load's pre-Configure window is detected fresh.");
         }
 
+        /// <summary>
+        /// Called from FuseLifecycle.OnMapWillUnload. Sandbox sessions never
+        /// configure a Progression, so <c>Progression.Unconfigure</c> — and
+        /// with it <see cref="NotifyGameProgressionUnconfigured"/> — never
+        /// fires for them; without this unconditional reset a sandbox
+        /// session's settled-flag would leak into the next load and let its
+        /// staged refresh run inside the stale-IsSandbox window (the exact
+        /// corruption class the deferral exists to prevent). Also drops the
+        /// transiently pre-enabled track-group records: they name groups of
+        /// the map being torn down, and if the session's refresh never drained
+        /// them they must not leak into the next map's first refresh (which
+        /// could flip available=false on same-named groups there).
+        /// </summary>
+        internal static void NotifyMapUnloading()
+        {
+            lock (_pendingRefreshLock)
+            {
+                _gameProgressionConfigured = false;
+                _gameProgressionSettledWithoutProgression = false;
+                _pendingRefreshReason = null;
+            }
+
+            int droppedTransient;
+            lock (_transientlyPreEnabledLock)
+            {
+                droppedTransient = _transientlyPreEnabledTrackGroups.Count;
+                _transientlyPreEnabledTrackGroups.Clear();
+            }
+
+            if (droppedTransient > 0)
+            {
+                FuseLog.Info(
+                    $"FUSE progression map-unload reset dropped {droppedTransient} undrained " +
+                    "transiently pre-enabled track-group record(s) from the unloading map.");
+            }
+        }
+
         public static void RefreshRuntimeStateAfterApply(string reason)
         {
             // Game-mode checkpoint. If IsSandbox is true here AND the player is in a
@@ -236,12 +331,36 @@ namespace FUSE.Runtime.API
             // Harmony postfix on Game.Progression.Progression.Configure).
             var sandboxAtEntry = StateManager.IsSandbox;
             var gameModeAtEntry = StateManager.Shared?.GameMode.ToString() ?? "<null>";
-            var configured = _gameProgressionConfigured;
-            FuseLog.Info(
-                $"FUSE progression refresh entry reason='{reason ?? "unspecified"}' " +
-                $"IsSandbox={sandboxAtEntry} GameMode={gameModeAtEntry} configured={configured}.");
+            var effectiveReason = string.IsNullOrWhiteSpace(reason) ? "unspecified" : reason;
+            ProgressionRefreshProfile profile;
+            bool configuredAtEntry;
+            bool settledWithoutProgressionAtEntry;
+            lock (_pendingRefreshLock)
+            {
+                configuredAtEntry = _gameProgressionConfigured;
+                settledWithoutProgressionAtEntry = _gameProgressionSettledWithoutProgression;
+                profile = ProgressionRefreshProfiles.Determine(
+                    configuredAtEntry,
+                    settledWithoutProgressionAtEntry);
 
-            if (!configured)
+                if (profile == ProgressionRefreshProfile.Deferred)
+                {
+                    // Publish the pending request under the same lock that the
+                    // Configure / no-progression notifications use to publish
+                    // their settle state. Otherwise a notification could land
+                    // after Determine returned Deferred but before this write,
+                    // observe no pending request, and leave the refresh parked
+                    // forever. Normalize the reason so null cannot masquerade
+                    // as "no pending refresh" in those notification paths.
+                    _pendingRefreshReason = effectiveReason;
+                }
+            }
+            FuseLog.Info(
+                $"FUSE progression refresh entry reason='{effectiveReason}' " +
+                $"IsSandbox={sandboxAtEntry} GameMode={gameModeAtEntry} configured={configuredAtEntry} " +
+                $"settledWithoutProgression={settledWithoutProgressionAtEntry} profile={profile}.");
+
+            if (profile == ProgressionRefreshProfile.Deferred)
             {
                 // The game's Progression.Configure hasn't run yet, so IsSandbox is
                 // not trustworthy. If we proceed to ForceApplyCurrentMapFeatureState
@@ -255,15 +374,13 @@ namespace FUSE.Runtime.API
                 // SetGroupEnabled(false) is emitted. The visible regression was
                 // Alarka's Ela bridge appearing in a company-mode save.
                 //
-                // Park the request and let the Configure postfix re-fire it once
-                // GameMode is reliable.
-                lock (_pendingRefreshLock)
-                {
-                    _pendingRefreshReason = reason;
-                }
+                // Park the request and let the Configure postfix — or, for
+                // loads that never configure a progression, the
+                // no-progression settle postfix — re-fire it once GameMode is
+                // reliable.
                 FuseLog.Info(
-                    $"FUSE progression refresh deferred until Progression.Configure " +
-                    $"(reason='{reason ?? "unspecified"}', stale IsSandbox would corrupt graph state).");
+                    $"FUSE progression refresh deferred until Progression.Configure or the no-progression settle point " +
+                    $"(reason='{effectiveReason}', stale IsSandbox would corrupt graph state).");
                 return;
             }
 
@@ -273,6 +390,36 @@ namespace FUSE.Runtime.API
                 FuseLog.Warning(
                     $"FUSE progression refresh skipped package='<all>' operation='refresh progression state' " +
                     $"kind='map feature manager' id='<shared>' reason='{reason ?? "unspecified"}' message='MapFeatureManager.Shared was not available'.");
+                return;
+            }
+
+            if (profile == ProgressionRefreshProfile.NoProgression)
+            {
+                // This session has no configured Progression (sandbox save, or
+                // a save whose progression id resolved to nothing). The game's
+                // own initial feature pass already applied explicit save
+                // entries plus sandbox defaults, and there is no Progression to
+                // derive section state from — so replaying
+                // HandleFeatureEnablesChanged or re-disabling feature-claimed
+                // track groups here would LOCK mod content that sandbox
+                // convention keeps open (synthesized section-unlock features
+                // are authored defaultEnableInSandbox=false). Run only the
+                // mode-independent maintenance steps; the payoff is
+                // orphan-group finalization, which never ran at all in these
+                // sessions before this profile existed.
+                RefreshMapFeatureManager(manager);
+                RefreshProgressionManager();
+                var initializedNoProgression = InitializeMissingMapFeatureStates(manager);
+                var inferredNoProgression = InferMapFeatureIndustryIncludes(manager, reason);
+                var reboundNoProgression = ReResolveMapFeatureLiveReferences(manager, reason);
+                var finalisedNoProgression = RevokeTransientlyPreEnabledOrphanGroups(manager, reason);
+                FuseLog.Info(
+                    $"FUSE refreshed progression runtime state package='<all>' operation='refresh progression state' " +
+                    $"kind='map features' id='<all>' reason='{reason ?? "unspecified"}' profile='no-progression' " +
+                    $"initializedFeatureStates={initializedNoProgression} " +
+                    $"inferredIndustryIncludes={inferredNoProgression} reboundLiveReferences={reboundNoProgression} " +
+                    $"finalisedOrphanTrackGroups={finalisedNoProgression} " +
+                    "(feature-state replay and track-group restore intentionally skipped: no progression is configured).");
                 return;
             }
 
@@ -314,6 +461,29 @@ namespace FUSE.Runtime.API
             if (FuseSettings.VerboseApplyReportDetails)
             {
                 DumpProgressionStateForDiagnostics(manager, reason);
+            }
+        }
+
+        /// <summary>
+        /// Whether the given ProgressionManager holds a configured current
+        /// Progression. Used by the no-progression settle postfix to tell the
+        /// two restore outcomes apart: on company loads the manager assigns and
+        /// configures its current progression inside the restore handler, so a
+        /// null current after it returns means this load runs progression-less.
+        /// </summary>
+        internal static bool HasConfiguredCurrentProgression(ProgressionManager manager)
+        {
+            try
+            {
+                return manager != null &&
+                       ManagerCurrentProgressionField?.GetValue(manager) is Progression;
+            }
+            catch
+            {
+                // Reflection failure: report the pessimistic answer — the
+                // settle notify path double-checks against the configured-flag
+                // anyway, so a false negative cannot demote a configured load.
+                return false;
             }
         }
 
