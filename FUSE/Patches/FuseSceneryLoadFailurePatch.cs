@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using FUSE.Infrastructure;
 using FUSE.Loading;
@@ -17,14 +19,11 @@ namespace FUSE.Patches
     /// culling-band transition — forever, invisibly, with a hitch per retry
     /// cluster. The user never learns which pack is broken.
     ///
-    /// This postfix watches every scenery load task and, on the first fault per
-    /// asset identifier, records a <see cref="FuseLoadReport"/> entry (visible in
-    /// the FUSE menu Status page, the main-menu status panel, and /fuse.report) and
-    /// raises one toast per asset pack. Resolution of pack/owner names uses Unity
-    /// APIs, so faults are queued from the task continuation (which may complete
-    /// off the main thread) and drained on the main thread by
-    /// <see cref="DrainPending"/>. Everything is fail-open: a failure inside this
-    /// patch never affects the load path itself.
+    /// Task continuations and the Unity log hook can run off the main thread, so
+    /// they only update locked state and queues. <see cref="DrainPending"/> does
+    /// all Unity object and report work on the main thread. Findings surface in
+    /// the health report without per-pack popups. Everything is fail-open: a
+    /// failure inside this patch never affects the load path itself.
     /// </summary>
     [HarmonyPatch(typeof(SceneryAssetManager), nameof(SceneryAssetManager.LoadScenery))]
     internal static class FuseSceneryLoadFailurePatch
@@ -40,34 +39,63 @@ namespace FUSE.Patches
         private static readonly HashSet<string> SeenCatalogMismatches =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object SeenLock = new object();
+        private static int _mapGeneration;
+        private static int _hasQuarantinedIdentifiers;
 
         /// <summary>Distinct failing scenery assets recorded since startup (diagnostics).</summary>
         internal static long RecordedFailures => FuseRuntimeGuardCounters.SceneryLoadFailures;
 
         internal static void ResetForNewMap()
         {
-            lock (SeenLock)
-            {
-                SeenIdentifiers.Clear();
-                SeenCatalogMismatches.Clear();
-                FailureCounts.Clear();
-                QuarantinedIdentifiers.Clear();
+            var resumeGameLogMessages = Volatile.Read(ref _acceptGameLogMessages) != 0;
+            ResetForNewMap(resumeGameLogMessages);
+        }
 
-                // Producers update their dedupe/quarantine set and enqueue while
-                // holding this same lock. Drain inside it so a map reset cannot
-                // split those paired state transitions across maps.
-                while (Pending.TryDequeue(out _))
+        private static void ResetForNewMap(bool resumeGameLogMessages)
+        {
+            // Close the producer gate before invalidating the generation. A
+            // callback already past the gate still carries the old generation
+            // and is rejected under SeenLock; callbacks entering during reset
+            // return without observing half-cleared state.
+            Volatile.Write(ref _acceptGameLogMessages, 0);
+            try
+            {
+                lock (SeenLock)
                 {
+                    unchecked
+                    {
+                        _mapGeneration++;
+                    }
+
+                    SeenIdentifiers.Clear();
+                    SeenCatalogMismatches.Clear();
+                    FailureCounts.Clear();
+                    QuarantinedIdentifiers.Clear();
+                    Volatile.Write(ref _hasQuarantinedIdentifiers, 0);
+
+                    // Producers update their dedupe/quarantine set and enqueue while
+                    // holding this same lock. Drain inside it so a map reset cannot
+                    // split those paired state transitions across maps.
+                    while (Pending.TryDequeue(out _))
+                    {
+                    }
+
+                    while (PendingQuarantine.TryDequeue(out _))
+                    {
+                    }
                 }
 
-                while (PendingQuarantine.TryDequeue(out _))
+                // The bundle audit shares this dedupe lifecycle: its findings land in
+                // the same report bucket, so both repopulate together after a reload.
+                FuseAssetPackBundleAuditPatch.ResetForNewMap();
+            }
+            finally
+            {
+                if (resumeGameLogMessages)
                 {
+                    Volatile.Write(ref _acceptGameLogMessages, 1);
                 }
             }
-
-            // The bundle audit shares this dedupe lifecycle: its findings land in
-            // the same report bucket, so both repopulate together after a reload.
-            FuseAssetPackBundleAuditPatch.ResetForNewMap();
         }
 
         // ---- Broken-scenery quarantine -------------------------------------
@@ -84,13 +112,16 @@ namespace FUSE.Patches
         // same), and the quarantine re-arms per map load, so fixing the pack
         // brings the placements back on the next load.
 
-        // Runtime failures before quarantine. The task watch and the log hook
-        // can each count the same retry, so this is a heuristic bound on real
-        // retry churn, not an exact retry count.
+        // Runtime retry episodes before quarantine. One placement wave can
+        // fault many placements at once, and the task watch plus log hook can
+        // observe the same wave. Coalesce each source independently so density
+        // and dual observation cannot make a first attempt look like retries.
         private const int RuntimeFailureQuarantineThreshold = 5;
+        private static readonly long FailureEpisodeCoalesceWindowTicks =
+            Math.Max(1L, Stopwatch.Frequency);
 
-        private static readonly Dictionary<string, int> FailureCounts =
-            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, FailureObservationCounts> FailureCounts =
+            new Dictionary<string, FailureObservationCounts>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> QuarantinedIdentifiers =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly ConcurrentQueue<string> PendingQuarantine = new ConcurrentQueue<string>();
@@ -118,6 +149,7 @@ namespace FUSE.Patches
         {
             if (QuarantinedIdentifiers.Add(identifier))
             {
+                Volatile.Write(ref _hasQuarantinedIdentifiers, 1);
                 PendingQuarantine.Enqueue(identifier);
             }
         }
@@ -133,7 +165,8 @@ namespace FUSE.Patches
         /// </summary>
         internal static bool IsQuarantined(string identifier)
         {
-            if (string.IsNullOrWhiteSpace(identifier))
+            if (string.IsNullOrWhiteSpace(identifier) ||
+                Volatile.Read(ref _hasQuarantinedIdentifiers) == 0)
             {
                 return false;
             }
@@ -148,7 +181,7 @@ namespace FUSE.Patches
             IReadOnlyList<string> identifiers,
             SceneScenerySnapshot snapshot)
         {
-            var requested = new HashSet<string>(identifiers, StringComparer.OrdinalIgnoreCase);
+            var requested = BuildQuarantineIdentifierSet(identifiers);
             var disabledByIdentifier = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var instance in snapshot.Instances)
             {
@@ -179,6 +212,25 @@ namespace FUSE.Patches
                     $"{disabled} scenery placement(s) of '{identifier}' were disabled for this session because the " +
                     "asset cannot load (see the asset load failures section). Fixing the pack restores them.");
             }
+        }
+
+        internal static HashSet<string> BuildQuarantineIdentifierSet(IEnumerable<string> identifiers)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (identifiers == null)
+            {
+                return result;
+            }
+
+            foreach (var identifier in identifiers)
+            {
+                if (!string.IsNullOrWhiteSpace(identifier))
+                {
+                    result.Add(identifier);
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -227,8 +279,9 @@ namespace FUSE.Patches
 
             try
             {
+                var generation = Volatile.Read(ref _mapGeneration);
                 __result.ContinueWith(
-                    task => Enqueue(identifier, task.Exception),
+                    task => Enqueue(identifier, task.Exception, generation),
                     TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
                 // Liveness counter (guards line): proves from a pasted report
                 // whether this postfix is seeing scenery loads at all, since a
@@ -242,31 +295,47 @@ namespace FUSE.Patches
             }
         }
 
-        private static void Enqueue(string identifier, AggregateException exception)
+        private static void Enqueue(string identifier, AggregateException exception, int generation)
         {
             var message = exception != null
                 ? exception.GetBaseException().Message
                 : "asset load failed";
-            EnqueueFailure(identifier, message, packIdentifier: null);
+            EnqueueFailure(
+                identifier,
+                message,
+                null,
+                generation,
+                FailureObservationSource.LoadTask,
+                Stopwatch.GetTimestamp());
         }
 
-        private static void EnqueueFailure(string identifier, string message, string packIdentifier)
+        private static void EnqueueFailure(
+            string identifier,
+            string message,
+            string packIdentifier,
+            int generation,
+            FailureObservationSource source,
+            long monotonicTimestamp)
         {
+            if (string.IsNullOrWhiteSpace(identifier))
+            {
+                return;
+            }
+
             try
             {
                 lock (SeenLock)
                 {
-                    // Count every observed failure (pre-dedupe): repeated
-                    // failures of the same identifier are the retry churn the
-                    // quarantine exists to stop.
-                    FailureCounts.TryGetValue(identifier, out var count);
-                    FailureCounts[identifier] = ++count;
-                    // >= (not ==): QueueQuarantineUnderLock dedupes, so this is
-                    // free hardening against any future multi-step increment.
-                    if (count >= RuntimeFailureQuarantineThreshold)
+                    if (generation != _mapGeneration)
                     {
-                        // Keep threshold state, persistent suppression, and the
-                        // main-thread work item atomic with map reset.
+                        return; // a task from the previous map completed late.
+                    }
+
+                    FailureCounts.TryGetValue(identifier, out var counts);
+                    var sourceCount = counts.Observe(source, monotonicTimestamp);
+                    FailureCounts[identifier] = counts;
+                    if (sourceCount >= RuntimeFailureQuarantineThreshold)
+                    {
                         QueueQuarantineUnderLock(identifier);
                     }
 
@@ -297,11 +366,30 @@ namespace FUSE.Patches
         private const string GameLogErrorPrefix = "Error loading scenery ";
 
         private static bool _logHookInstalled;
+        private static int _acceptGameLogMessages;
+
+        internal static long FailureEpisodeCoalesceWindowTicksForTests =>
+            FailureEpisodeCoalesceWindowTicks;
+
+        internal static void ObserveFailureForTests(
+            string identifier,
+            bool fromGameLog,
+            long monotonicTimestamp)
+        {
+            EnqueueFailure(
+                identifier,
+                "test failure",
+                null,
+                Volatile.Read(ref _mapGeneration),
+                fromGameLog ? FailureObservationSource.GameLog : FailureObservationSource.LoadTask,
+                monotonicTimestamp);
+        }
 
         internal static void EnsureGameLogHook()
         {
             if (_logHookInstalled)
             {
+                Volatile.Write(ref _acceptGameLogMessages, 1);
                 return;
             }
 
@@ -312,35 +400,53 @@ namespace FUSE.Patches
                 // is one prefix check per log message.
                 UnityEngine.Application.logMessageReceivedThreaded += OnGameLogMessage;
                 _logHookInstalled = true;
+                Volatile.Write(ref _acceptGameLogMessages, 1);
             }
             catch (Exception ex)
             {
+                Volatile.Write(ref _acceptGameLogMessages, 0);
                 FuseLog.Exception("FUSE scenery load-failure log hook could not install", ex);
             }
         }
 
         internal static void Shutdown()
         {
-            if (!_logHookInstalled)
+            Volatile.Write(ref _acceptGameLogMessages, 0);
+            if (_logHookInstalled)
             {
-                return;
+                try
+                {
+                    UnityEngine.Application.logMessageReceivedThreaded -= OnGameLogMessage;
+                    _logHookInstalled = false;
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception("FUSE scenery load-failure log hook could not uninstall", ex);
+                }
             }
 
-            try
-            {
-                UnityEngine.Application.logMessageReceivedThreaded -= OnGameLogMessage;
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception("FUSE scenery load-failure log hook could not uninstall", ex);
-            }
-
-            _logHookInstalled = false;
+            ResetForNewMap(resumeGameLogMessages: false);
         }
 
         private static void OnGameLogMessage(string condition, string stackTrace, UnityEngine.LogType type)
         {
-            if (type != UnityEngine.LogType.Error && type != UnityEngine.LogType.Exception)
+            ObserveGameLogMessage(
+                condition,
+                type == UnityEngine.LogType.Error || type == UnityEngine.LogType.Exception,
+                afterGenerationCaptured: null);
+        }
+
+        private static void ObserveGameLogMessage(
+            string condition,
+            bool isFailureType,
+            Action afterGenerationCaptured)
+        {
+            // Capture before parsing: a lifecycle reset that begins while this
+            // callback is in flight advances the generation and makes the final
+            // enqueue reject the stale observation.
+            var generation = Volatile.Read(ref _mapGeneration);
+            afterGenerationCaptured?.Invoke();
+            if (Volatile.Read(ref _acceptGameLogMessages) == 0 || !isFailureType)
             {
                 return;
             }
@@ -354,7 +460,27 @@ namespace FUSE.Patches
                 identifier,
                 "the game logged 'Error loading scenery' for this asset (see Player.log for the exception; " +
                 "usually the pack's bundle does not contain an asset its catalog declares)",
-                packIdentifier: null);
+                null,
+                generation,
+                FailureObservationSource.GameLog,
+                Stopwatch.GetTimestamp());
+        }
+
+        /// <summary>Drives the threaded-log core without loading Unity in xUnit.</summary>
+        internal static void ObserveGameLogMessageForTests(
+            string condition,
+            Action afterGenerationCaptured)
+        {
+            ObserveGameLogMessage(
+                condition,
+                isFailureType: true,
+                afterGenerationCaptured: afterGenerationCaptured);
+        }
+
+        /// <summary>Controls the log producer gate without installing Unity's event hook.</summary>
+        internal static void SetGameLogAcceptanceForTests(bool accept)
+        {
+            Volatile.Write(ref _acceptGameLogMessages, accept ? 1 : 0);
         }
 
         /// <summary>
@@ -385,8 +511,8 @@ namespace FUSE.Patches
 
         /// <summary>
         /// Resolves and records queued failures, then executes queued
-        /// quarantines. Main thread only (touches Unity object queries and the
-        /// toast UI); driven every frame by <see cref="FUSE.Runtime.Lifecycle.FuseRuntimePump"/>
+        /// quarantines. Main thread only (touches Unity object queries and report
+        /// bookkeeping); driven every frame by <see cref="FUSE.Runtime.Lifecycle.FuseRuntimePump"/>
         /// — an always-on host, deliberately NOT an optional UI component (the
         /// original driver, the since-deleted Health window's Update, was never
         /// instantiated after the menu-UI rewrite, silently starving this drain
@@ -716,6 +842,54 @@ namespace FUSE.Patches
             internal bool IsCatalogMismatch { get; }
 
             internal FuseAssetPackBundleAuditPatch.CatalogAssetEntry CatalogEntry { get; }
+        }
+
+        private enum FailureObservationSource
+        {
+            LoadTask,
+            GameLog
+        }
+
+        private struct FailureObservationCounts
+        {
+            private FailureObservationState _loadTask;
+            private FailureObservationState _gameLog;
+
+            internal int Observe(FailureObservationSource source, long timestamp)
+            {
+                if (source == FailureObservationSource.GameLog)
+                {
+                    return _gameLog.Observe(timestamp);
+                }
+
+                return _loadTask.Observe(timestamp);
+            }
+        }
+
+        private struct FailureObservationState
+        {
+            private int _episodes;
+            private long _lastCountedEpisodeTimestamp;
+            private bool _hasObservation;
+
+            internal int Observe(long timestamp)
+            {
+                if (_hasObservation)
+                {
+                    var elapsed = timestamp - _lastCountedEpisodeTimestamp;
+                    if (elapsed < FailureEpisodeCoalesceWindowTicks)
+                    {
+                        return _episodes;
+                    }
+                }
+                else
+                {
+                    _hasObservation = true;
+                }
+
+                _lastCountedEpisodeTimestamp = timestamp;
+                return ++_episodes;
+            }
         }
     }
 }

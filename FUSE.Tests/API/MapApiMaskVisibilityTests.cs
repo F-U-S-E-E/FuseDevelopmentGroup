@@ -143,6 +143,27 @@ namespace FUSE.Tests.API
             Assert.Equal(Visibility.Visible, MapAPI.ResolveEffectiveMaskVisibility(Visibility.Indeterminate, Visibility.Visible));
         }
 
+        [Theory]
+        [InlineData("BryShop4")]
+        [InlineData("bridge-clear-variant-2")]
+        [InlineData("Whittier/Depot")]
+        public void PollStaggerBucket_IsStableAndWithinSchedulerRange(string sceneryId)
+        {
+            var first = FuseDecoupledMaskVisibilityWatcher.GetPollStaggerBucket(sceneryId);
+            var second = FuseDecoupledMaskVisibilityWatcher.GetPollStaggerBucket(sceneryId);
+
+            Assert.InRange(first, 0, 15);
+            Assert.Equal(first, second);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void PollStaggerBucket_MissingIdUsesFirstBucket(string sceneryId)
+        {
+            Assert.Equal(0, FuseDecoupledMaskVisibilityWatcher.GetPollStaggerBucket(sceneryId));
+        }
+
         [Fact]
         public void MaskActiveLifecycle_CullKeepsMask_IntentionalHideDropsIt()
         {

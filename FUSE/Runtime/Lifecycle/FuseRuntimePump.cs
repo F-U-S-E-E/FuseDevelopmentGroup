@@ -29,16 +29,23 @@ namespace FUSE.Runtime.Lifecycle
                 return;
             }
 
+            GameObject host = null;
             try
             {
-                _host = new GameObject("FUSE.RuntimePump");
-                UnityEngine.Object.DontDestroyOnLoad(_host);
-                _host.hideFlags = HideFlags.HideAndDontSave;
-                _host.AddComponent<FuseRuntimePumpRunner>();
+                host = new GameObject("FUSE.RuntimePump");
+                host.hideFlags = HideFlags.HideAndDontSave;
+                host.AddComponent<FuseRuntimePumpRunner>();
+                UnityEngine.Object.DontDestroyOnLoad(host);
+                _host = host;
                 FuseLog.Info("FUSE runtime pump initialized.");
             }
             catch (Exception ex)
             {
+                if (host != null)
+                {
+                    UnityEngine.Object.Destroy(host);
+                }
+
                 FuseLog.Exception("FUSE runtime pump host creation failed", ex);
             }
         }
@@ -50,12 +57,26 @@ namespace FUSE.Runtime.Lifecycle
                 return;
             }
 
-            UnityEngine.Object.Destroy(_host);
-            _host = null;
+            try
+            {
+                UnityEngine.Object.Destroy(_host);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE runtime pump shutdown failed", ex);
+            }
+            finally
+            {
+                _host = null;
+            }
         }
 
         private sealed class FuseRuntimePumpRunner : MonoBehaviour
         {
+            // slopwatch-ignore: SW002 Unity invokes Update as an instance message, so CA1822 suppression is required.
+            [System.Diagnostics.CodeAnalysis.SuppressMessage(
+                "Performance", "CA1822:Mark members as static",
+                Justification = "Unity invokes Update() as an instance message; a static method is never called.")]
             private void Update()
             {
                 // Scenery load-failure records + broken-scenery quarantines:

@@ -100,6 +100,7 @@ namespace FUSE.Loading
             var sourcePaths = EnumerateAvailableAssetPackFolders().ToArray();
             if (sourcePaths.Length == 0)
             {
+                ReplaceStoreIdentifierMappings(null);
                 FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
                 FusePerformanceMetrics.RecordCount("direct asset pack store count", 0);
                 return;
@@ -124,7 +125,13 @@ namespace FUSE.Loading
                 ReadHostingPackageId,
                 ReadHostingPackageFolder);
 
-            MethodInfo addStore;
+            // AssetLoader has already registered its normal stores by the time
+            // PrefabStore.Create returns. Index by resolved physical BasePath so
+            // FUSE can reuse those exact stores instead of appending a second
+            // store (and a second Container cache) for the same folder.
+            var existingStoreIndex = IndexExistingStoresByRegistrationOrder(prefabStore);
+
+            MethodInfo addStore = null;
             try
             {
                 addStore = AccessTools.Method(
@@ -135,12 +142,6 @@ namespace FUSE.Loading
             catch (Exception ex)
             {
                 FuseLog.Exception($"FUSE could not locate PrefabStore.AddStore for direct asset pack mounting", ex);
-                FuseLog.Warning(
-                    "FUSE direct asset pack mounting is unavailable. " +
-                    "Set Settings.MirrorAssetPacksToLocalLow=true in Info.json to use the slower LocalLow mirror fallback.");
-                FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
-                FusePerformanceMetrics.RecordCount("direct asset pack store count", DirectAssetPackStoreIdentifiers.Count);
-                return;
             }
 
             if (addStore == null)
@@ -149,28 +150,41 @@ namespace FUSE.Loading
                 FuseLog.Warning(
                     "FUSE direct asset pack mounting is unavailable. " +
                     "Set Settings.MirrorAssetPacksToLocalLow=true in Info.json to use the slower LocalLow mirror fallback.");
-                FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
-                FusePerformanceMetrics.RecordCount("direct asset pack store count", DirectAssetPackStoreIdentifiers.Count);
-                return;
             }
 
             var added = 0;
-            var skippedAlreadyAdded = 0;
+            var reusedExistingPhysicalStore = 0;
+            var failedToAdd = 0;
+            var selectedIdentifiersByPath =
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var sourcePath in sourcePaths)
             {
                 var identifier = ToDirectStoreIdentifier(sourcePath);
-                // MountAllAvailableAssetPacks is invoked twice per session (FusePlugin.Load
-                // then FuseDataPackageDiscovery.LoadPackagesFromDisk). Without this check the
-                // second pass re-invokes PrefabStore.AddStore for every identifier we already
-                // mounted, leaving two AssetPackRuntimeStore instances per asset pack — each
-                // with its own _container cache. Anything that iterates stores then triggers
-                // two ContainerSerialization.Deserialize calls per pack, double-firing every
-                // legacy Postfix on Deserialize (notably LegosLibraryOfStuff's, which mutates
-                // shared Component instances on each pass — breaking per-car component-group
-                // toggles like ERIE LOGO.)
-                if (DirectAssetPackStoreIdentifiers.Contains(identifier))
+                var normalizedPath = NormalizeAssetPackPhysicalPath(sourcePath);
+                var plan = PlanStoreRegistration(
+                    sourcePath,
+                    existingStoreIndex,
+                    identifier);
+
+                if (plan.Action == AssetPackStoreRegistrationAction.ReuseExisting)
                 {
-                    skippedAlreadyAdded++;
+                    selectedIdentifiersByPath[normalizedPath] = plan.SelectedIdentifier;
+                    reusedExistingPhysicalStore++;
+                    continue;
+                }
+
+                if (plan.Action == AssetPackStoreRegistrationAction.IdentifierConflict)
+                {
+                    failedToAdd++;
+                    FuseLog.Warning(
+                        $"FUSE skipped direct asset pack store '{sourcePath}' because identifier " +
+                        $"'{plan.SelectedIdentifier}' is already owned by another PrefabStore entry.");
+                    continue;
+                }
+
+                if (addStore == null)
+                {
+                    failedToAdd++;
                     continue;
                 }
 
@@ -182,19 +196,31 @@ namespace FUSE.Loading
                         AssetPackRuntimeStore.StoreLocation.External
                     });
                     DirectAssetPackStoreIdentifiers.Add(identifier);
+                    if (!string.IsNullOrWhiteSpace(normalizedPath))
+                    {
+                        selectedIdentifiersByPath[normalizedPath] = identifier;
+                        existingStoreIndex.Observe(identifier, sourcePath);
+                    }
                     added++;
                 }
                 catch (Exception ex)
                 {
+                    failedToAdd++;
                     FuseLog.Exception($"FUSE could not add direct asset pack store '{sourcePath}'", ex);
                 }
             }
 
-            if (added > 0 || skippedAlreadyAdded > 0)
+            // Alias generation is lazy and may have run before this postfix.
+            // Publish the physical-folder selections and invalidate that cache
+            // atomically so catalog/path aliases rebuild against real stores.
+            ReplaceStoreIdentifierMappings(selectedIdentifiersByPath);
+
+            if (added > 0 || reusedExistingPhysicalStore > 0 || failedToAdd > 0)
             {
                 FuseLog.Info(
                     $"FUSE added {added} direct asset pack store(s) to PrefabStore; " +
-                    $"skippedAlreadyAdded={skippedAlreadyAdded}.");
+                    $"reusedExistingPhysicalStore={reusedExistingPhysicalStore}; " +
+                    $"failedToAdd={failedToAdd}; discovered={sourcePaths.Length}.");
             }
 
             // Verbose mode dumps the post-discovery state of the legacy
@@ -235,6 +261,256 @@ namespace FUSE.Loading
 
             FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
             FusePerformanceMetrics.RecordCount("direct asset pack store count", DirectAssetPackStoreIdentifiers.Count);
+            FusePerformanceMetrics.RecordCount(
+                "reused existing physical asset pack store count",
+                reusedExistingPhysicalStore);
+        }
+
+        private static AssetPackStoreRegistrationIndex IndexExistingStoresByRegistrationOrder(
+            PrefabStore prefabStore)
+        {
+            var result = new AssetPackStoreRegistrationIndex();
+            if (prefabStore == null || PrefabStoreStoresField == null)
+            {
+                return result;
+            }
+
+            try
+            {
+                if (!(PrefabStoreStoresField.GetValue(prefabStore) is System.Collections.IEnumerable stores))
+                {
+                    return result;
+                }
+
+                // Preserve registration order. AssetPackForIdentifier compares
+                // identifiers case-sensitively and returns the first match, so a
+                // later store with the same exact ID is reusable only when it
+                // resolves to the same physical path as that first registration.
+                foreach (var item in stores)
+                {
+                    var store = item as AssetPackRuntimeStore;
+                    if (store == null || string.IsNullOrWhiteSpace(store.Identifier))
+                    {
+                        continue;
+                    }
+
+                    string basePath;
+                    try
+                    {
+                        // Use the shared accessor so AssetLoader's BasePath patch
+                        // participates; its resolved physical folder is the
+                        // identity FUSE must compare, not the raw identifier.
+                        basePath = FuseAssetPackPatchHelpers.ResolveBasePath(store);
+                    }
+                    catch
+                    {
+                        // Record unknown first ownership. A later store with this
+                        // same exact ID cannot safely claim a path because host
+                        // lookup still selects this unresolved first store.
+                        basePath = null;
+                    }
+
+                    result.Observe(store.Identifier, basePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE could not index existing PrefabStore asset-pack folders; " +
+                    $"direct-store deduplication will fall back to direct registration: " +
+                    $"{ex.GetBaseException().Message}");
+            }
+
+            return result;
+        }
+
+        internal static string NormalizeAssetPackPhysicalPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                var fullPath = Path.GetFullPath(path.Trim());
+                var root = Path.GetPathRoot(fullPath) ?? string.Empty;
+                while (fullPath.Length > root.Length &&
+                       (fullPath.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) ||
+                        fullPath.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal)))
+                {
+                    fullPath = fullPath.Substring(0, fullPath.Length - 1);
+                }
+
+                return fullPath;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        internal static bool TrySelectExistingStoreIdentifier(
+            string sourcePath,
+            IReadOnlyDictionary<string, string> existingIdentifiersByNormalizedPath,
+            out string identifier)
+        {
+            identifier = null;
+            var normalized = NormalizeAssetPackPhysicalPath(sourcePath);
+            return !string.IsNullOrWhiteSpace(normalized) &&
+                   existingIdentifiersByNormalizedPath != null &&
+                   existingIdentifiersByNormalizedPath.TryGetValue(normalized, out identifier) &&
+                   !string.IsNullOrWhiteSpace(identifier);
+        }
+
+        internal static string SelectStoreIdentifierForPhysicalPath(
+            string sourcePath,
+            IReadOnlyDictionary<string, string> existingIdentifiersByNormalizedPath,
+            string fallbackIdentifier)
+        {
+            return TrySelectExistingStoreIdentifier(
+                sourcePath,
+                existingIdentifiersByNormalizedPath,
+                out var existingIdentifier)
+                ? existingIdentifier
+                : fallbackIdentifier;
+        }
+
+        internal static AssetPackStoreRegistrationPlan PlanStoreRegistration(
+            string sourcePath,
+            AssetPackStoreRegistrationIndex registrationIndex,
+            string directIdentifier)
+        {
+            if (TrySelectExistingStoreIdentifier(
+                    sourcePath,
+                    registrationIndex?.ReusableIdentifiersByNormalizedPath,
+                    out var existingIdentifier))
+            {
+                return new AssetPackStoreRegistrationPlan(
+                    AssetPackStoreRegistrationAction.ReuseExisting,
+                    existingIdentifier);
+            }
+
+            // PrefabStore resolves identifiers by first registration. Adding the
+            // same exact identifier for a different (or unresolved) path would
+            // create a shadowed store that can never be selected, while making
+            // the registry report a successful mount. Treat that as a conflict.
+            if (registrationIndex?.ContainsIdentifier(directIdentifier) == true)
+            {
+                return new AssetPackStoreRegistrationPlan(
+                    AssetPackStoreRegistrationAction.IdentifierConflict,
+                    directIdentifier);
+            }
+
+            // Historical entries in DirectAssetPackStoreIdentifiers are
+            // deliberately irrelevant here. Every PrefabStore instance needs
+            // its own store unless that current instance already owns the path.
+            return new AssetPackStoreRegistrationPlan(
+                AssetPackStoreRegistrationAction.AddDirect,
+                directIdentifier);
+        }
+
+        internal enum AssetPackStoreRegistrationAction
+        {
+            ReuseExisting,
+            AddDirect,
+            IdentifierConflict
+        }
+
+        internal readonly struct AssetPackStoreRegistrationPlan
+        {
+            internal AssetPackStoreRegistrationPlan(
+                AssetPackStoreRegistrationAction action,
+                string selectedIdentifier)
+            {
+                Action = action;
+                SelectedIdentifier = selectedIdentifier;
+            }
+
+            internal AssetPackStoreRegistrationAction Action { get; }
+
+            internal string SelectedIdentifier { get; }
+        }
+
+        internal sealed class AssetPackStoreRegistrationIndex
+        {
+            // Host lookup is exact/case-sensitive; "Owner/Pack" and
+            // "owner/pack" establish independent first registrations.
+            private readonly Dictionary<string, string> _firstNormalizedPathByIdentifier =
+                new Dictionary<string, string>(StringComparer.Ordinal);
+            private readonly Dictionary<string, string> _reusableIdentifiersByNormalizedPath =
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            internal IReadOnlyDictionary<string, string> ReusableIdentifiersByNormalizedPath =>
+                _reusableIdentifiersByNormalizedPath;
+
+            internal bool ContainsIdentifier(string identifier)
+            {
+                return !string.IsNullOrWhiteSpace(identifier) &&
+                       _firstNormalizedPathByIdentifier.ContainsKey(identifier);
+            }
+
+            internal bool Observe(string identifier, string resolvedBasePath)
+            {
+                if (string.IsNullOrWhiteSpace(identifier))
+                {
+                    return false;
+                }
+
+                var normalizedPath = NormalizeAssetPackPhysicalPath(resolvedBasePath);
+                if (!_firstNormalizedPathByIdentifier.TryGetValue(identifier, out var firstPath))
+                {
+                    // Null is intentional: an unresolved first registration owns
+                    // the identifier but cannot safely lend it to any later path.
+                    _firstNormalizedPathByIdentifier[identifier] = normalizedPath;
+                    firstPath = normalizedPath;
+                }
+
+                if (string.IsNullOrWhiteSpace(firstPath) ||
+                    string.IsNullOrWhiteSpace(normalizedPath) ||
+                    !string.Equals(firstPath, normalizedPath, StringComparison.OrdinalIgnoreCase) ||
+                    _reusableIdentifiersByNormalizedPath.ContainsKey(normalizedPath))
+                {
+                    return false;
+                }
+
+                _reusableIdentifiersByNormalizedPath[normalizedPath] = identifier;
+                return true;
+            }
+        }
+
+        private static void ReplaceStoreIdentifierMappings(
+            IDictionary<string, string> identifiersByNormalizedPath)
+        {
+            lock (LegacyAssetPackAliasLock)
+            {
+                StoreIdentifiersByPhysicalPath.Clear();
+                if (identifiersByNormalizedPath != null)
+                {
+                    foreach (var pair in identifiersByNormalizedPath)
+                    {
+                        if (!string.IsNullOrWhiteSpace(pair.Key) &&
+                            !string.IsNullOrWhiteSpace(pair.Value))
+                        {
+                            StoreIdentifiersByPhysicalPath[pair.Key] = pair.Value;
+                        }
+                    }
+                }
+
+                LegacyAssetPackAliases = null;
+            }
+        }
+
+        private static string ResolveStoreIdentifierForAssetPackFolder(string sourcePath)
+        {
+            var directIdentifier = ToDirectStoreIdentifier(sourcePath);
+            lock (LegacyAssetPackAliasLock)
+            {
+                return SelectStoreIdentifierForPhysicalPath(
+                    sourcePath,
+                    StoreIdentifiersByPhysicalPath,
+                    directIdentifier);
+            }
         }
 
         /// <summary>
@@ -420,18 +696,28 @@ namespace FUSE.Loading
         internal static bool TryLoadSanitizedDirectContainer(AssetPackRuntimeStore store, out Container container)
         {
             container = null;
-            if (store == null || !TryResolveDirectStoreBasePath(store.Identifier, out var basePath))
+            if (store == null || string.IsNullOrWhiteSpace(store.Identifier) ||
+                !store.Identifier.StartsWith(DirectStorePrefix, StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }
 
+            string basePath = null;
             try
             {
+                // Container() is called repeatedly during prefab lookup. The
+                // common post-first-load path needs only the cached field; avoid
+                // URI unescaping and path work unless the direct store is cold.
                 var cached = RuntimeStoreContainerField?.GetValue(store) as Container;
                 if (cached != null)
                 {
                     container = cached;
                     return true;
+                }
+
+                if (!TryResolveDirectStoreBasePath(store.Identifier, out basePath))
+                {
+                    return false;
                 }
 
                 var definitionsPath = Path.Combine(basePath, "Definitions.json");
