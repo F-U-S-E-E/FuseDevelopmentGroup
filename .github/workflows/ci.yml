@@ -36,12 +36,6 @@ jobs:
     env:
       DOTNET_NOLOGO: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
-      # setup-dotnet installs into C:\Program Files\dotnet by default, which
-      # the self-hosted runner service account cannot write to — the install
-      # step fails and every downstream step skips. The tool cache lives under
-      # the runner's own _work tree, so it is always writable and persists
-      # between runs (no re-download per build).
-      DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
 
     steps:
       - name: Checkout repository
@@ -55,6 +49,16 @@ jobs:
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: "10.0.x"
+        env:
+          # setup-dotnet installs into C:\Program Files\dotnet by default,
+          # which the self-hosted runner service account cannot write to — the
+          # install fails and every downstream step skips. The tool cache lives
+          # under the runner's own _work tree: always writable, and persistent
+          # between runs so the SDK is not re-downloaded per build. Set here
+          # rather than on the job because the runner context is only in scope
+          # for steps; the action exports DOTNET_ROOT and PATH from it, so the
+          # later build/test steps resolve this SDK.
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
 
       # JSON lint and .NET format checks are split out into dedicated
       # workflows (.github/workflows/json-lint.yml and dotnet-lint.yml)
