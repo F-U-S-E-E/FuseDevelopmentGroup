@@ -458,6 +458,36 @@ namespace FUSE.Infrastructure
                 $"(threshold {FrameSpikeThresholdMs:F0}ms). Takes effect immediately.");
         }
 
+        // The spike-floor clamp: 20ms matches the read-time floor applied to
+        // Info.json values (below that, ordinary frames at low fps would log
+        // as spikes); 500ms is far past anything worth calling a "spike"
+        // rather than a stall.
+        internal const float MinFrameSpikeThresholdMs = 20f;
+        internal const float MaxFrameSpikeThresholdMs = 500f;
+
+        /// <summary>
+        /// Live preview while the settings slider is being dragged: updates
+        /// the running value (the spike logger reads it per frame) without
+        /// persisting, so a drag does not write the override file once per
+        /// slider tick. <see cref="SetFrameSpikeThresholdMs"/> persists on
+        /// release.
+        /// </summary>
+        internal static void PreviewFrameSpikeThresholdMs(float thresholdMs)
+        {
+            FrameSpikeThresholdMs = Mathf.Clamp(
+                thresholdMs, MinFrameSpikeThresholdMs, MaxFrameSpikeThresholdMs);
+        }
+
+        public static void SetFrameSpikeThresholdMs(float thresholdMs)
+        {
+            FrameSpikeThresholdMs = Mathf.Clamp(
+                thresholdMs, MinFrameSpikeThresholdMs, MaxFrameSpikeThresholdMs);
+            SaveUserOverride(nameof(FrameSpikeThresholdMs), FrameSpikeThresholdMs);
+            FuseLog.Info(
+                $"FUSE setting changed: {nameof(FrameSpikeThresholdMs)}={FrameSpikeThresholdMs:F0}ms. " +
+                "Takes effect immediately.");
+        }
+
         public static void SetEnableNativeLeakStackTraces(bool enabled)
         {
             EnableNativeLeakStackTraces = enabled;
