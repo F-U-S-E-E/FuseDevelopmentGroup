@@ -134,6 +134,13 @@ namespace FUSE.Loading
                 FuseLog.Info($"FUSE legacy support hosted {hostedCount} old-loader plugin instance(s) for '{reason ?? "unspecified"}'.");
             }
 
+            // The mod population may have changed even when hostedCount is 0
+            // (LoadOrFindAssembly can pull new DLLs into the AppDomain before a
+            // plugin fails to host), so drop the attribution cache
+            // unconditionally — invalidation is a flag clear; the rebuild is
+            // lazy on the next observed exception.
+            FuseModAttributionMap.Invalidate();
+
             RetryPendingConsoleCommands();
             return hostedCount;
         }
@@ -301,6 +308,7 @@ namespace FUSE.Loading
                 }
                 catch (Exception ex)
                 {
+                    FuseModExceptionRegistry.RecordContained(ex, hosted.Manifest.Id, "legacy host plugin disable");
                     FuseLog.Exception(
                         $"FUSE legacy support failed while disabling hosted old-loader plugin '{hosted.Type.FullName}'",
                         ex);
@@ -335,6 +343,9 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
+                // Contained here, so Unity never logs it — feed the mod health
+                // registry directly (attribution is the manifest id itself).
+                FuseModExceptionRegistry.RecordContained(ex, manifest.Id, "legacy host plugin instantiate");
                 FuseLog.Exception(
                     $"FUSE legacy support failed to instantiate old-loader plugin '{pluginType.FullName}' from '{manifest.Id}'",
                     ex);
@@ -357,6 +368,7 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
+                FuseModExceptionRegistry.RecordContained(ex, manifest.Id, "legacy host plugin enable");
                 FuseLog.Exception(
                     $"FUSE legacy support failed to enable old-loader plugin '{pluginType.FullName}' from '{manifest.Id}'",
                     ex);
@@ -1288,6 +1300,10 @@ namespace FUSE.Loading
             }
             catch (Exception ex)
             {
+                // The settings identifier is the legacy mod's own id by the old
+                // loader's convention — the closest attribution available here
+                // (the shared context does not know which manifest is calling).
+                FuseModExceptionRegistry.RecordContained(ex, settingsIdentifier, "legacy host settings load");
                 FuseLog.Exception(
                     $"FUSE legacy support could not load configuration of type '{settingsType.FullName}' from '{path}'",
                     ex);

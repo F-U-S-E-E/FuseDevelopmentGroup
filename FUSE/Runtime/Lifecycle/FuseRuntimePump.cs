@@ -83,6 +83,11 @@ namespace FUSE.Runtime.Lifecycle
                 // queued from task continuations / the log hook / the bundle
                 // audit (any thread), resolved and applied here.
                 FUSE.Patches.FuseSceneryLoadFailurePatch.DrainPending();
+
+                // Mod health exception observations: first-seen signatures
+                // queued by the threaded log hook (any thread), attributed and
+                // recorded (with throttled log lines) here.
+                FuseModExceptionLogHook.DrainPending();
             }
         }
     }

@@ -7,6 +7,15 @@ using Xunit;
 
 namespace FUSE.Tests.Loading
 {
+    /// <summary>
+    /// The broken-settings cases drive FuseLegacyModdingContext's
+    /// LoadSettingsData catch site, which records into the static
+    /// session-cumulative <c>FuseModExceptionRegistry</c> — so this class
+    /// shares the registry's xUnit collection (different collections run in
+    /// parallel, and stray records would race the registry/report
+    /// assertions).
+    /// </summary>
+    [Collection(FUSE.Tests.Infrastructure.FuseModExceptionRegistryTestCollection.Name)]
     public sealed class FuseLegacyModdingContextSettingsTests : IDisposable
     {
         private readonly string _modsRoot;

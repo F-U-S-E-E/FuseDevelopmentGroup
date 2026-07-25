@@ -31,7 +31,14 @@ namespace FUSE.Tests.Patches
     /// integration test; the finalizer is exercised the same way
     /// FusePrefabStoreMaterialDefinitionsPatchTests exercises its
     /// patch bodies — as a plain static method.
+    ///
+    /// Invoking the finalizer records the contained exception into the
+    /// static session-cumulative <c>FuseModExceptionRegistry</c>, so this
+    /// class shares the registry's xUnit collection — xUnit runs different
+    /// collections in parallel, and stray records would otherwise race the
+    /// registry/report assertions.
     /// </summary>
+    [Collection(FUSE.Tests.Infrastructure.FuseModExceptionRegistryTestCollection.Name)]
     public class FuseMessengerIsolationPatchTests
     {
         // ---- target resolution against the real game assemblies ----
