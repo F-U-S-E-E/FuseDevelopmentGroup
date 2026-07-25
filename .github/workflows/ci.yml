@@ -36,6 +36,12 @@ jobs:
     env:
       DOTNET_NOLOGO: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      # setup-dotnet installs into C:\Program Files\dotnet by default, which
+      # the self-hosted runner service account cannot write to — the install
+      # step fails and every downstream step skips. The tool cache lives under
+      # the runner's own _work tree, so it is always writable and persists
+      # between runs (no re-download per build).
+      DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
 
     steps:
       - name: Checkout repository

@@ -21,6 +21,11 @@ jobs:
     env:
       DOTNET_NOLOGO: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      # See the matching note in ci.yml: the default install root is not
+      # writable by the self-hosted runner service account, so pin the SDK
+      # install to the runner-owned tool cache. Without this the release lane
+      # fails at SDK setup before it ever builds an artifact.
+      DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
 
     steps:
       - name: Checkout repository
