@@ -83,10 +83,14 @@ namespace FUSE.Runtime.Lifecycle
 
         // First few hitches individually (enough to align with nearby logs),
         // then a heartbeat so persistent stutter stays visible without a line
-        // for every slow frame.
-        private static bool ShouldLog(long count)
+        // for every slow frame — but a session-worst spike ALWAYS logs: in a
+        // field capture the single biggest stall was invisible because it fell
+        // between heartbeats, leaving only the "worst" aggregate with no
+        // timestamp to correlate against. Worst is monotone, so break-through
+        // lines are self-limiting.
+        internal static bool ShouldLogSpike(long count, bool isNewWorst)
         {
-            return count <= 10 || count % 25 == 0;
+            return isNewWorst || count <= 10 || count % 25 == 0;
         }
 
         private sealed class FuseFrameSpikeRunner : MonoBehaviour
@@ -190,17 +194,28 @@ namespace FUSE.Runtime.Lifecycle
                     var observation = _hitchDetector.Observe(frameMs, absoluteFloorMs);
                     if (observation.IsHitch)
                     {
+                        var isNewWorst = frameMs > FuseRuntimeGuardCounters.FrameSpikeWorstMs;
                         var spikeCount = FuseRuntimeGuardCounters.RecordFrameSpike(frameMs);
-                        if (ShouldLog(spikeCount))
+                        if (ShouldLogSpike(spikeCount, isNewWorst))
                         {
+                            // Streaming context at spike time: a spike with a
+                            // deep scenery queue or a decal-registry jump is a
+                            // streaming wave, not a sim/GC problem — the exact
+                            // split a field capture needs one line to answer.
+                            var decalRegistry = FuseDecalCullingScrubPatch.TryGetRegistryCount(out var registryCount)
+                                ? registryCount.ToString()
+                                : "n/a";
                             FuseLog.Warning(
-                                $"FUSE frame spike #{spikeCount}: {frameMs:F0}ms " +
+                                $"FUSE frame spike #{spikeCount}: {frameMs:F0}ms{(isNewWorst ? " (session worst)" : string.Empty)} " +
                                 $"(adaptive baseline {observation.BaselineMs:F1}ms, absolute floor {absoluteFloorMs:F0}ms, " +
                                 $"effective threshold {observation.EffectiveThresholdMs:F1}ms, " +
                                 $"worst {FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}ms) frame={Time.frameCount} " +
-                                $"gcDelta0={gen0 - _gen0} gcDelta1={gen1 - _gen1} gcDelta2={gen2 - _gen2}. " +
+                                $"gcDelta0={gen0 - _gen0} gcDelta1={gen1 - _gen1} gcDelta2={gen2 - _gen2} " +
+                                $"sceneryLoadQueue={FuseSceneryLoadThrottlePatch.QueueDepth} " +
+                                $"decalRegistry={decalRegistry}. " +
                                 "Correlate this timestamp with surrounding FUSE.log/Player.log activity; " +
-                                "a positive GC delta with no nearby activity points at allocation pressure.");
+                                "a positive GC delta points at allocation pressure, a deep scenery queue " +
+                                "or decal-registry jump at a streaming wave.");
                         }
                     }
                 }
