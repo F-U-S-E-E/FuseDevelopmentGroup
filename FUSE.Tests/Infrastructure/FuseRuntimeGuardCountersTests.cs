@@ -30,6 +30,8 @@ namespace FUSE.Tests.Infrastructure
                 "decalRegistrationsRejected=0 " +
                 "curveMesh=0 sceneryCarDecalsDisabled=0 sceneryLoadFailures=0 sceneryQuarantined=0 " +
                 "sceneryLoadWatch=0 " +
+                "mapEnhancerCullingGuarded=0 " +
+                "rebillAutoConfigSuppressed=0 " +
                 "flares=0 switchRailsBackfilled=0 frameSpikes=0",
                 FuseRuntimeGuardCounters.FormatSummary());
         }
@@ -77,6 +79,23 @@ namespace FUSE.Tests.Infrastructure
             Assert.Contains("sceneryCarDecalsDisabled=1", summary);
             Assert.Contains("sceneryLoadFailures=1", summary);
             Assert.Equal(5, FuseRuntimeGuardCounters.GuardTotal);
+        }
+
+        [Fact]
+        public void ThirdPartyGuardCounters_FeedTheTotal_AndTheSummary()
+        {
+            Assert.Equal(1, FuseRuntimeGuardCounters.RecordMapEnhancerCullingGuarded());
+            Assert.Equal(2, FuseRuntimeGuardCounters.RecordMapEnhancerCullingGuarded());
+            Assert.Equal(1, FuseRuntimeGuardCounters.RecordRebillAutoConfigSuppressed());
+
+            // Third-party containment must surface as guard activity: an
+            // active suppression storm reading as "guards idle" would hide
+            // the offender from every report surface.
+            Assert.False(FuseRuntimeGuardCounters.AllIdle);
+            Assert.Equal(3, FuseRuntimeGuardCounters.GuardTotal);
+            var summary = FuseRuntimeGuardCounters.FormatSummary();
+            Assert.Contains("mapEnhancerCullingGuarded=2", summary);
+            Assert.Contains("rebillAutoConfigSuppressed=1", summary);
         }
     }
 }

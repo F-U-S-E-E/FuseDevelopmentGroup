@@ -88,6 +88,8 @@ namespace FUSE
                 FuseFrameSpikeDiagnostic.EnsureStarted();
                 FuseRuntimePump.EnsureStarted();
                 FuseSceneryLoadFailurePatch.EnsureGameLogHook();
+                FuseModExceptionLogHook.Install();
+                FuseThirdPartyGuardInstaller.EnsureInstalled();
                 FuseUmmInjector.ScheduleInjection(modEntry.Path, ReadInfoJsonString(Path.Combine(modEntry.Path ?? string.Empty, "Info.json"), "Version"));
                 FuseLegacyAssemblyHost.EnsureStartupHost();
 
@@ -226,6 +228,7 @@ namespace FUSE
 
             FuseSceneryLoadThrottlePatch.Shutdown();
             FuseSceneryLoadFailurePatch.Shutdown();
+            FuseModExceptionLogHook.Shutdown();
             FuseLegacyAssemblyHost.Shutdown();
             FuseLegacySupportAssemblyShim.Shutdown();
             FuseRuntimeRebindService.Shutdown();

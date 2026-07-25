@@ -55,6 +55,12 @@ namespace FUSE.Infrastructure
             _pendingFuseModEntryPath = null;
             _pendingFuseVersion = null;
             InjectLegacyEntries(path, version);
+
+            // The flush runs after UMM's _Start finished loading every real mod
+            // entry, i.e. the moment the UMM mod population is complete — drop
+            // the exception-attribution cache so its next lazy rebuild sees
+            // them all.
+            FuseModAttributionMap.Invalidate();
         }
 
         public static void InjectLegacyEntries(string fuseModEntryPath, string fuseVersion)

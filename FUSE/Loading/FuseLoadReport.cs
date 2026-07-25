@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using FUSE.Authoring.Data;
@@ -400,6 +401,15 @@ namespace FUSE.Loading
             var legacyConvertedPackageIds = FuseDataPackageDiscovery.GetLegacyConvertedPackageIds().ToArray();
             var orphanedCars = FuseSaveCarFaultRegistry.GetAll().ToArray();
 
+            // Session-cumulative third-party exception observations. Snapshotted
+            // once per capture (mirroring how the runtime-guard counters are read
+            // fresh per render) so the summary line, details section, JSON block,
+            // and HasProblems all describe the same instant even while the log
+            // hook keeps recording on other threads.
+            var modExceptions = FuseModExceptionRegistry.SnapshotForReport();
+            var modExceptionTotal = FuseModExceptionRegistry.GrandTotal;
+            var modExceptionUnattributed = FuseModExceptionRegistry.TotalUnattributed;
+
             return new ReportSnapshot
             {
                 Reason = string.IsNullOrWhiteSpace(reason) ? "map load" : reason,
@@ -421,7 +431,10 @@ namespace FUSE.Loading
                 ProgressionTransferSkips = progressionTransferSkips,
                 Notices = notices,
                 SceneryLoadFailures = sceneryLoadFailures,
-                OrphanedCars = orphanedCars
+                OrphanedCars = orphanedCars,
+                ModExceptions = modExceptions,
+                ModExceptionTotal = modExceptionTotal,
+                ModExceptionUnattributed = modExceptionUnattributed
             };
         }
 
@@ -438,7 +451,8 @@ namespace FUSE.Loading
                 $"conflicts {snapshot.Conflicts.Length} | assets {snapshot.UnknownSceneryAssets.Length} | " +
                 $"brokenAssets {snapshot.SceneryLoadFailureCount} | " +
                 $"graph {snapshot.GraphPostBindIssues.Length} | transfers {snapshot.ProgressionTransferSkips.Length} | " +
-                $"suppressions {suppressionCount} | orphans {snapshot.OrphanedCarCount} | /fuse.report";
+                $"suppressions {suppressionCount} | orphans {snapshot.OrphanedCarCount} | " +
+                $"modErrors {snapshot.ModExceptionTotal} | /fuse.report";
         }
 
         private static string BuildDetails(ReportSnapshot snapshot, string summary)
@@ -477,6 +491,8 @@ namespace FUSE.Loading
             // keeps around broken content, so a pasted report answers "did the guards
             // fire?" without the reporter having to open the Health window at all.
             sb.AppendLine("Runtime guards (session): " + FuseRuntimeGuardCounters.FormatSummary() + ".");
+
+            AppendModExceptions(sb, snapshot);
 
             sb.AppendLine(
                 $"Suppressions active: scenePaths={snapshot.SceneSuppressions.Length}; " +
@@ -523,6 +539,50 @@ namespace FUSE.Loading
             }
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Renders the session-cumulative third-party exception observations
+        /// (see <see cref="FuseModExceptionRegistry"/>). One row per mod,
+        /// worst first — the row itself answers "which mod, how often, since
+        /// when, what kind" so a pasted report needs no log spelunking.
+        /// Omitted entirely while the registry is idle.
+        /// </summary>
+        private static void AppendModExceptions(StringBuilder sb, ReportSnapshot snapshot)
+        {
+            // The registry's snapshot already carries the "(unattributed)" and
+            // "(other mods)" sentinel buckets as records of their own, so the
+            // per-record rows below are the complete story — no separate
+            // unattributed footer, or the bucket would be mentioned twice.
+            var records = snapshot.ModExceptions ?? Array.Empty<FuseModExceptionSnapshot>();
+            if (records.Length == 0)
+            {
+                return;
+            }
+
+            sb.AppendLine("Third-party mod exceptions observed this session:");
+            foreach (var record in records.OrderByDescending(item => item.Count))
+            {
+                var signatures = record.Signatures;
+                var signatureCount = signatures == null ? 0 : signatures.Length;
+                var display = string.IsNullOrWhiteSpace(record.DisplayName) ? record.ModId : record.DisplayName;
+                var line =
+                    $"  {display}: {record.Count} exception(s) over {record.Episodes} episode(s), " +
+                    $"{signatureCount} signature(s), " +
+                    $"first {FormatSessionTime(record.FirstSeenUtc)} last {FormatSessionTime(record.LastSeenUtc)}";
+                if (signatureCount > 0)
+                {
+                    var top = signatures.OrderByDescending(item => item.Count).First();
+                    line += $" — top: {top.ExceptionType} @ {top.TopOwnedFrame}";
+                }
+
+                sb.AppendLine(line);
+            }
+        }
+
+        private static string FormatSessionTime(DateTime timestampUtc)
+        {
+            return timestampUtc.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
         }
 
         private static string BuildJson(ReportSnapshot snapshot, string summary)
@@ -596,6 +656,9 @@ namespace FUSE.Loading
                     ["frameSpikes"] = FuseRuntimeGuardCounters.FrameSpikes,
                     ["frameSpikeWorstMs"] = FuseRuntimeGuardCounters.FrameSpikeWorstMs
                 },
+                // Session-cumulative like runtimeGuards above, sourced from the
+                // third-party exception registry snapshot taken with this capture.
+                ["modExceptions"] = BuildModExceptionsJson(snapshot),
                 ["suppressions"] = new JObject
                 {
                     ["scenePaths"] = ToArray(snapshot.SceneSuppressions),
@@ -636,6 +699,48 @@ namespace FUSE.Loading
             return root.ToString(Newtonsoft.Json.Formatting.Indented);
         }
 
+        private static JObject BuildModExceptionsJson(ReportSnapshot snapshot)
+        {
+            var records = snapshot.ModExceptions ?? Array.Empty<FuseModExceptionSnapshot>();
+            var mods = new JArray();
+            foreach (var record in records.OrderByDescending(item => item.Count))
+            {
+                var signatures = new JArray();
+                if (record.Signatures != null)
+                {
+                    foreach (var signature in record.Signatures.OrderByDescending(item => item.Count))
+                    {
+                        signatures.Add(new JObject
+                        {
+                            ["type"] = signature.ExceptionType ?? string.Empty,
+                            ["frame"] = signature.TopOwnedFrame ?? string.Empty,
+                            ["count"] = signature.Count,
+                            ["episodes"] = signature.Episodes,
+                            ["source"] = $"{signature.Source}"
+                        });
+                    }
+                }
+
+                mods.Add(new JObject
+                {
+                    ["modId"] = record.ModId ?? string.Empty,
+                    ["displayName"] = record.DisplayName ?? string.Empty,
+                    ["count"] = record.Count,
+                    ["episodes"] = record.Episodes,
+                    ["firstSeen"] = record.FirstSeenUtc.ToString("o", CultureInfo.InvariantCulture),
+                    ["lastSeen"] = record.LastSeenUtc.ToString("o", CultureInfo.InvariantCulture),
+                    ["signatures"] = signatures
+                });
+            }
+
+            return new JObject
+            {
+                ["total"] = snapshot.ModExceptionTotal,
+                ["unattributed"] = snapshot.ModExceptionUnattributed,
+                ["mods"] = mods
+            };
+        }
+
         private static void AppendList(StringBuilder sb, string label, IEnumerable<string> values)
         {
             var items = (values ?? Enumerable.Empty<string>())
@@ -667,6 +772,14 @@ namespace FUSE.Loading
                 sb.AppendLine($"  {entry.Key}: {entry.Value}");
             }
         }
+
+        // Test seams (InternalsVisibleTo): the string/JSON builders stay
+        // private because production callers must come through the capture
+        // pipeline; tests exercise the composition against a hand-built
+        // snapshot without touching the live registries CaptureSnapshot reads.
+        internal static string BuildSummaryForTests(ReportSnapshot snapshot) => BuildSummary(snapshot);
+        internal static string BuildDetailsForTests(ReportSnapshot snapshot) => BuildDetails(snapshot, BuildSummary(snapshot));
+        internal static string BuildJsonForTests(ReportSnapshot snapshot) => BuildJson(snapshot, BuildSummary(snapshot));
 
         private static void PresentToast(string summary, bool hasProblems)
         {
@@ -739,6 +852,9 @@ namespace FUSE.Loading
             public string[] Notices { get; set; }
             public SceneryLoadFailure[] SceneryLoadFailures { get; set; }
             public FuseSaveCarFault[] OrphanedCars { get; set; }
+            public FuseModExceptionSnapshot[] ModExceptions { get; set; }
+            public long ModExceptionTotal { get; set; }
+            public long ModExceptionUnattributed { get; set; }
 
             public int FaultedPackageCount =>
                 Faults == null
@@ -758,7 +874,15 @@ namespace FUSE.Loading
                 (SkippedPackages != null && SkippedPackages.Any(item => !FusePackageFaultRegistry.IsOptionalSkipReason(item.Value))) ||
                 (Notices != null && Notices.Length > 0) ||
                 SceneryLoadFailureCount > 0 ||
-                OrphanedCarCount > 0;
+                OrphanedCarCount > 0 ||
+                HasModExceptionProblem;
+
+            // A single one-off third-party exception must not flip the report
+            // red, but a per-cycle thrower (world moves, update ticks) crosses
+            // these thresholds within seconds of the fault starting.
+            public bool HasModExceptionProblem =>
+                ModExceptions != null &&
+                ModExceptions.Any(record => record.Episodes >= 3 || record.Count >= 10);
         }
 
         private static JArray ToArray(IEnumerable<string> values)

@@ -4,6 +4,7 @@ using FUSE.Authoring.Migrations;
 using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using UI.Builder;
 using UI.Common;
@@ -64,6 +65,17 @@ namespace FUSE.Interface.MenuWindow
                 FuseRuntimeGuardCounters.AllIdle,
                 "idle",
                 FuseRuntimeGuardCounters.GuardTotal + " contained event(s)");
+            // Session-cumulative third-party exception observations — same
+            // live-counter semantics as Guards, sourced from the exception
+            // registry rather than the load snapshot. Snapshotted once here
+            // and reused by the breakdown section below.
+            var modExceptions = FuseModExceptionRegistry.SnapshotForReport();
+            AddReadinessRow(
+                builder,
+                "Mod Health",
+                FuseModExceptionRegistry.AllIdle,
+                "0 exceptions observed",
+                $"{FuseModExceptionRegistry.GrandTotal} exception(s) across {modExceptions.Length} mod(s)");
             builder.Spacer(6f);
 
             // Full per-guard breakdown (this window is the only UI surface, so
@@ -77,6 +89,32 @@ namespace FUSE.Interface.MenuWindow
                 FuseRuntimeGuardCounters.AllIdle
                     ? "All idle — no broken content needed containing this session."
                     : "Non-zero counters are content problems FUSE is containing; offenders are named in FUSE.log and the health report.");
+            builder.Spacer(6f);
+
+            // Per-mod breakdown for the third-party exception registry,
+            // mirroring the Runtime Guards treatment above (this window is
+            // the only UI surface, so the observations must be readable
+            // here, not just in copied reports).
+            builder.AddSection("Mod Health");
+            builder.AddLabel(FuseModExceptionRegistry.FormatSummary());
+            if (modExceptions.Length > 0)
+            {
+                foreach (var record in modExceptions.OrderByDescending(item => item.Count).Take(5))
+                {
+                    var display = string.IsNullOrWhiteSpace(record.DisplayName) ? record.ModId : record.DisplayName;
+                    builder.AddField(display, DescribeModExceptionRecord(record));
+                }
+
+                if (modExceptions.Length > 5)
+                {
+                    builder.AddLabel($"...and {modExceptions.Length - 5} more mod(s) — full list in the health report.");
+                }
+            }
+
+            builder.AddLabel(
+                FuseModExceptionRegistry.AllIdle
+                    ? "All idle — no third-party mod exceptions were observed this session."
+                    : "Non-zero counts are third-party mod faults FUSE observed or contained; offenders are named in FUSE.log and the health report.");
             builder.Spacer(6f);
 
             builder.AddSection("Actions");
@@ -148,6 +186,24 @@ namespace FUSE.Interface.MenuWindow
         private static bool ReadBool(JToken token, bool fallback)
         {
             return token != null && bool.TryParse(token.ToString(), out var value) ? value : fallback;
+        }
+
+        /// <summary>
+        /// One-line per-mod value for the Mod Health breakdown: counts plus
+        /// the mod's top signature (by count), matching the per-mod row the
+        /// health report renders so the two surfaces read the same.
+        /// </summary>
+        private static string DescribeModExceptionRecord(FuseModExceptionSnapshot record)
+        {
+            var text = $"{record.Count} exception(s) over {record.Episodes} episode(s)";
+            var signatures = record.Signatures;
+            if (signatures != null && signatures.Length > 0)
+            {
+                var top = signatures.OrderByDescending(item => item.Count).First();
+                text += $" — top: {top.ExceptionType} @ {top.TopOwnedFrame}";
+            }
+
+            return text;
         }
 
         private static void AddReadinessRow(UIPanelBuilder builder, string label, bool ok, string okText, string problemText)

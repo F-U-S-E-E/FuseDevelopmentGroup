@@ -3,7 +3,9 @@ namespace FUSE.Infrastructure
     /// <summary>
     /// Session-cumulative counters for every runtime guard FUSE keeps around
     /// broken content (decal culling, car-decal helpers, curve-mesh culling,
-    /// scenery decal machinery, scenery asset loads, stale flares) plus the
+    /// scenery decal machinery, scenery asset loads, stale flares, switch
+    /// geometry backfills, and the third-party containment guards for Map
+    /// Enhancer culling and Rebill Industry Cars config loads) plus the
     /// frame-spike diagnostic.
     ///
     /// Lives in Infrastructure so both ends of the dependency rule work: the
@@ -28,6 +30,8 @@ namespace FUSE.Infrastructure
         internal static long SceneryPlacementsQuarantined { get; private set; }
         internal static long FlareSuppressed { get; private set; }
         internal static long SwitchGeometryRailsBackfilled { get; private set; }
+        internal static long MapEnhancerCullingGuarded { get; private set; }
+        internal static long RebillAutoConfigSuppressed { get; private set; }
 
         internal static long FrameSpikes { get; private set; }
         internal static float FrameSpikeWorstMs { get; private set; }
@@ -55,7 +59,9 @@ namespace FUSE.Infrastructure
             SceneryLoadFailures +
             SceneryPlacementsQuarantined +
             FlareSuppressed +
-            SwitchGeometryRailsBackfilled;
+            SwitchGeometryRailsBackfilled +
+            MapEnhancerCullingGuarded +
+            RebillAutoConfigSuppressed;
 
         internal static bool AllIdle => GuardTotal == 0;
 
@@ -80,6 +86,10 @@ namespace FUSE.Infrastructure
         internal static long RecordFlareSuppressed() => ++FlareSuppressed;
 
         internal static long RecordSwitchGeometryRailsBackfilled() => ++SwitchGeometryRailsBackfilled;
+
+        internal static long RecordMapEnhancerCullingGuarded() => ++MapEnhancerCullingGuarded;
+
+        internal static long RecordRebillAutoConfigSuppressed() => ++RebillAutoConfigSuppressed;
 
         internal static long RecordFrameSpike(float frameMs)
         {
@@ -110,6 +120,8 @@ namespace FUSE.Infrastructure
                 $"curveMesh={CurveMeshSuppressed} sceneryCarDecalsDisabled={SceneryDecalComponentsDisabled} " +
                 $"sceneryLoadFailures={SceneryLoadFailures} sceneryQuarantined={SceneryPlacementsQuarantined} " +
                 $"sceneryLoadWatch={SceneryLoadWatchAttached} " +
+                $"mapEnhancerCullingGuarded={MapEnhancerCullingGuarded} " +
+                $"rebillAutoConfigSuppressed={RebillAutoConfigSuppressed} " +
                 $"flares={FlareSuppressed} switchRailsBackfilled={SwitchGeometryRailsBackfilled} " +
                 spikes;
         }
@@ -128,6 +140,8 @@ namespace FUSE.Infrastructure
             SceneryPlacementsQuarantined = 0;
             FlareSuppressed = 0;
             SwitchGeometryRailsBackfilled = 0;
+            MapEnhancerCullingGuarded = 0;
+            RebillAutoConfigSuppressed = 0;
             FrameSpikes = 0;
             FrameSpikeWorstMs = 0f;
             SceneryLoadWatchAttached = 0;
