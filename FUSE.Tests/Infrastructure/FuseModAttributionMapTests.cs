@@ -216,6 +216,35 @@ namespace FUSE.Tests.Infrastructure
         }
 
         [Fact]
+        public void BuildTokenMapCore_DropsTwoSegmentTokensUnderADeniedRoot()
+        {
+            // Mods routinely ship polyfill/generated types under BCL roots
+            // (System.Runtime.CompilerServices.IsExternalInit and friends).
+            // Harvesting those as two-segment tokens would attribute every
+            // engine/BCL frame to whichever mod happened to embed the
+            // polyfill — the denied root has to cover its children too.
+            var map = FuseModAttributionMap.BuildTokenMapCore(
+                new[]
+                {
+                    ("System.Runtime", "mod.a", "Mod A"),
+                    ("System.Diagnostics", "mod.a", "Mod A"),
+                    ("Microsoft.CodeAnalysis", "mod.b", "Mod B"),
+                    ("ModA.Internals", "mod.a", "Mod A")
+                },
+                new[] { "System", "Microsoft" },
+                out var dropped);
+
+            Assert.Equal(3, dropped);
+            Assert.False(map.ContainsKey("System.Runtime"));
+            Assert.False(map.ContainsKey("System.Diagnostics"));
+            Assert.False(map.ContainsKey("Microsoft.CodeAnalysis"));
+
+            // A mod-owned two-segment token still attributes normally.
+            Assert.True(map.ContainsKey("ModA.Internals"));
+            Assert.Equal("mod.a", map["ModA.Internals"].modId);
+        }
+
+        [Fact]
         public void BuildTokenMapCore_DropsTokensClaimedByTwoMods()
         {
             var map = FuseModAttributionMap.BuildTokenMapCore(

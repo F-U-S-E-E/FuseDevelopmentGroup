@@ -253,6 +253,19 @@ namespace FUSE.Infrastructure
                     continue;
                 }
 
+                // A denied ROOT also denies its two-segment children: mods
+                // commonly embed polyfill/generated types under System.*,
+                // Microsoft.*, etc. (System.Runtime.CompilerServices
+                // .IsExternalInit and friends), and harvesting those as
+                // two-segment tokens would attribute engine/BCL frames to
+                // whichever mod shipped the polyfill.
+                var rootLength = token.IndexOf('.');
+                if (rootLength > 0 && denied.Contains(token.Substring(0, rootLength)))
+                {
+                    droppedTokens++;
+                    continue;
+                }
+
                 if (map.TryGetValue(token, out var existing))
                 {
                     if (!string.Equals(existing.modId, candidate.modId, StringComparison.OrdinalIgnoreCase))

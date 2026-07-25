@@ -67,15 +67,18 @@ namespace FUSE.Interface.MenuWindow
                 FuseRuntimeGuardCounters.GuardTotal + " contained event(s)");
             // Session-cumulative third-party exception observations — same
             // live-counter semantics as Guards, sourced from the exception
-            // registry rather than the load snapshot. Snapshotted once here
-            // and reused by the breakdown section below.
-            var modExceptions = FuseModExceptionRegistry.SnapshotForReport();
+            // registry rather than the load snapshot. One atomic capture here
+            // (rows + totals + summary line under the registry's lock), reused
+            // by the readiness row and the breakdown section below so a
+            // concurrent log event can never render contradictory rows.
+            var modExceptionState = FuseModExceptionRegistry.CaptureReportState();
+            var modExceptions = modExceptionState.Mods;
             AddReadinessRow(
                 builder,
                 "Mod Health",
-                FuseModExceptionRegistry.AllIdle,
+                modExceptionState.Total == 0,
                 "0 exceptions observed",
-                $"{FuseModExceptionRegistry.GrandTotal} exception(s) across {modExceptions.Length} mod(s)");
+                $"{modExceptionState.Total} exception(s) across {modExceptions.Length} mod(s)");
             builder.Spacer(6f);
 
             // Full per-guard breakdown (this window is the only UI surface, so
@@ -96,7 +99,7 @@ namespace FUSE.Interface.MenuWindow
             // the only UI surface, so the observations must be readable
             // here, not just in copied reports).
             builder.AddSection("Mod Health");
-            builder.AddLabel(FuseModExceptionRegistry.FormatSummary());
+            builder.AddLabel(modExceptionState.SummaryLine);
             if (modExceptions.Length > 0)
             {
                 foreach (var record in modExceptions.OrderByDescending(item => item.Count).Take(5))
@@ -112,7 +115,7 @@ namespace FUSE.Interface.MenuWindow
             }
 
             builder.AddLabel(
-                FuseModExceptionRegistry.AllIdle
+                modExceptionState.Total == 0
                     ? "All idle — no third-party mod exceptions were observed this session."
                     : "Non-zero counts are third-party mod faults FUSE observed or contained; offenders are named in FUSE.log and the health report.");
             builder.Spacer(6f);

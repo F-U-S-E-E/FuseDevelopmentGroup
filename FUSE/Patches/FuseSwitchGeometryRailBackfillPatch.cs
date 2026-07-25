@@ -61,20 +61,24 @@ namespace FUSE.Patches
                 }
 
                 var origin = __result.switchHome;
-                var stub = new LineCurve(new[]
+
+                // One fresh curve per field: consumers may mutate a curve in
+                // place or read Hand for left/right semantics, and a shared
+                // aliased instance would leak edits across all eight rails.
+                LineCurve Stub(Hand hand) => new LineCurve(new[]
                 {
                     new LinePoint(origin, rotation),
                     new LinePoint(origin + rotation * Vector3.forward * 0.1f, rotation),
-                }, Hand.Right);
+                }, hand);
 
-                __result.aPointRail ??= stub;
-                __result.bPointRail ??= stub;
-                __result.aClosureRail ??= stub;
-                __result.bClosureRail ??= stub;
-                __result.leftStockRail ??= stub;
-                __result.rightStockRail ??= stub;
-                __result.leftGuardRail ??= stub;
-                __result.rightGuardRail ??= stub;
+                __result.aPointRail ??= Stub(Hand.Right);
+                __result.bPointRail ??= Stub(Hand.Left);
+                __result.aClosureRail ??= Stub(Hand.Right);
+                __result.bClosureRail ??= Stub(Hand.Left);
+                __result.leftStockRail ??= Stub(Hand.Left);
+                __result.rightStockRail ??= Stub(Hand.Right);
+                __result.leftGuardRail ??= Stub(Hand.Left);
+                __result.rightGuardRail ??= Stub(Hand.Right);
                 __result.frogPoints ??= new LinePoint[3];
 
                 var count = FuseRuntimeGuardCounters.RecordSwitchGeometryRailsBackfilled();

@@ -237,6 +237,22 @@ namespace FUSE.Infrastructure
                 catch (Exception ex)
                 {
                     FuseLog.Exception("FUSE mod health could not record an observed exception", ex);
+
+                    // Liveness: the entry must still resolve, or its repeats
+                    // ride DirtyRepeats forever and the drain never idles.
+                    var entry = item.Entry;
+                    lock (Sync)
+                    {
+                        if (!entry.Resolved)
+                        {
+                            entry.ModId = UnattributedBucket;
+                            entry.DisplayName = UnattributedBucket;
+                            entry.ExceptionType = entry.ExceptionType ?? "Exception";
+                            entry.TopOwnedFrame = entry.TopOwnedFrame ?? string.Empty;
+                            entry.SampleMessage = entry.SampleMessage ?? string.Empty;
+                            entry.Resolved = true;
+                        }
+                    }
                 }
             }
 

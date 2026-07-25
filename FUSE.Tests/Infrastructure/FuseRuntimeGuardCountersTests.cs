@@ -87,15 +87,17 @@ namespace FUSE.Tests.Infrastructure
             Assert.Equal(1, FuseRuntimeGuardCounters.RecordMapEnhancerCullingGuarded());
             Assert.Equal(2, FuseRuntimeGuardCounters.RecordMapEnhancerCullingGuarded());
             Assert.Equal(1, FuseRuntimeGuardCounters.RecordRebillAutoConfigSuppressed());
+            Assert.Equal(1, FuseRuntimeGuardCounters.RecordSwitchGeometryRailsBackfilled());
 
             // Third-party containment must surface as guard activity: an
             // active suppression storm reading as "guards idle" would hide
             // the offender from every report surface.
             Assert.False(FuseRuntimeGuardCounters.AllIdle);
-            Assert.Equal(3, FuseRuntimeGuardCounters.GuardTotal);
+            Assert.Equal(4, FuseRuntimeGuardCounters.GuardTotal);
             var summary = FuseRuntimeGuardCounters.FormatSummary();
             Assert.Contains("mapEnhancerCullingGuarded=2", summary);
             Assert.Contains("rebillAutoConfigSuppressed=1", summary);
+            Assert.Contains("switchRailsBackfilled=1", summary);
         }
     }
 }

@@ -86,7 +86,7 @@ namespace FUSE.Patches
             {
                 // Unreadable version: fall through and install — the finalizers
                 // only ever act on an observed throw, so over-installing is inert.
-                FUSE.Infrastructure.FuseModExceptionRegistry.CountSelfFault();
+                FuseModExceptionRegistry.CountSelfFault();
             }
 
             if (!ShouldInstallForVersion(assemblyVersion))

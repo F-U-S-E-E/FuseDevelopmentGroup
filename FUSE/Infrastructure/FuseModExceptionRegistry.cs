@@ -247,26 +247,43 @@ namespace FUSE.Infrastructure
             var selfFaults = SelfFaults;
             lock (Gate)
             {
-                var summary = $"modErrors={_totalObserved} unattributed={_totalUnattributed} mods={_namedModCount}";
-                return selfFaults == 0 ? summary : summary + $" selfFaults={selfFaults}";
+                return ComposeSummaryLocked(selfFaults);
+            }
+        }
+
+        private static string ComposeSummaryLocked(long selfFaults)
+        {
+            var summary = $"modErrors={_totalObserved} unattributed={_totalUnattributed} mods={_namedModCount}";
+            return selfFaults == 0 ? summary : summary + $" selfFaults={selfFaults}";
+        }
+
+        /// <summary>
+        /// Everything a report/UI render needs, captured under one lock so the
+        /// summary line, totals, and per-mod rows all describe the same
+        /// instant even while the log hook records on other threads.
+        /// </summary>
+        internal static FuseModExceptionReportState CaptureReportState()
+        {
+            var selfFaults = SelfFaults;
+            lock (Gate)
+            {
+                var mods = Mods.Values
+                    .OrderByDescending(record => record.Total)
+                    .ThenBy(record => record.ModId, StringComparer.OrdinalIgnoreCase)
+                    .Select(SnapshotRecordLocked)
+                    .ToArray();
+                return new FuseModExceptionReportState(
+                    mods, _totalObserved, _totalUnattributed, ComposeSummaryLocked(selfFaults));
             }
         }
 
         /// <summary>
         /// Materialized copy of every tracked bucket, worst first. Sentinel
-        /// buckets sort by their counts like any other row.
+        /// buckets sort by their counts like any other row. Prefer
+        /// <see cref="CaptureReportState"/> when totals are rendered beside the
+        /// rows — this overload cannot guarantee they agree.
         /// </summary>
-        internal static FuseModExceptionSnapshot[] SnapshotForReport()
-        {
-            lock (Gate)
-            {
-                return Mods.Values
-                    .OrderByDescending(record => record.Total)
-                    .ThenBy(record => record.ModId, StringComparer.OrdinalIgnoreCase)
-                    .Select(SnapshotRecordLocked)
-                    .ToArray();
-            }
-        }
+        internal static FuseModExceptionSnapshot[] SnapshotForReport() => CaptureReportState().Mods;
 
         /// <summary>Test hook — the registry is session-cumulative by design.</summary>
         internal static void ResetForTests()
@@ -506,5 +523,27 @@ namespace FUSE.Infrastructure
 
             return value.Length <= maxLength ? value : value.Substring(0, maxLength);
         }
+    }
+
+    /// <summary>
+    /// One coherent registry observation: rows, totals, and the summary line
+    /// captured under the same lock so no consumer can render totals that
+    /// disagree with the rows beside them.
+    /// </summary>
+    internal sealed class FuseModExceptionReportState
+    {
+        public FuseModExceptionReportState(
+            FuseModExceptionSnapshot[] mods, long total, long unattributed, string summaryLine)
+        {
+            Mods = mods ?? new FuseModExceptionSnapshot[0];
+            Total = total;
+            Unattributed = unattributed;
+            SummaryLine = summaryLine ?? string.Empty;
+        }
+
+        public FuseModExceptionSnapshot[] Mods { get; }
+        public long Total { get; }
+        public long Unattributed { get; }
+        public string SummaryLine { get; }
     }
 }

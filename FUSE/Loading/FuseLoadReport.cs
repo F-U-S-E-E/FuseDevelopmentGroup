@@ -401,14 +401,15 @@ namespace FUSE.Loading
             var legacyConvertedPackageIds = FuseDataPackageDiscovery.GetLegacyConvertedPackageIds().ToArray();
             var orphanedCars = FuseSaveCarFaultRegistry.GetAll().ToArray();
 
-            // Session-cumulative third-party exception observations. Snapshotted
-            // once per capture (mirroring how the runtime-guard counters are read
-            // fresh per render) so the summary line, details section, JSON block,
-            // and HasProblems all describe the same instant even while the log
-            // hook keeps recording on other threads.
-            var modExceptions = FuseModExceptionRegistry.SnapshotForReport();
-            var modExceptionTotal = FuseModExceptionRegistry.GrandTotal;
-            var modExceptionUnattributed = FuseModExceptionRegistry.TotalUnattributed;
+            // Session-cumulative third-party exception observations. One
+            // atomic capture (rows + totals under the registry's lock) so the
+            // summary line, details section, JSON block, and HasProblems all
+            // describe the same instant even while the log hook keeps
+            // recording on other threads.
+            var modExceptionState = FuseModExceptionRegistry.CaptureReportState();
+            var modExceptions = modExceptionState.Mods;
+            var modExceptionTotal = modExceptionState.Total;
+            var modExceptionUnattributed = modExceptionState.Unattributed;
 
             return new ReportSnapshot
             {
@@ -582,7 +583,9 @@ namespace FUSE.Loading
 
         private static string FormatSessionTime(DateTime timestampUtc)
         {
-            return timestampUtc.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+            // Sortable date + explicit UTC marker: a session spanning midnight
+            // must not render a later event as an earlier time-of-day.
+            return timestampUtc.ToString("u", CultureInfo.InvariantCulture);
         }
 
         private static string BuildJson(ReportSnapshot snapshot, string summary)
