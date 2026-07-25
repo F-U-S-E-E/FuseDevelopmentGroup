@@ -30,7 +30,7 @@ namespace FUSE.Tests.Infrastructure
                 "decalRegistrationsRejected=0 " +
                 "curveMesh=0 sceneryCarDecalsDisabled=0 sceneryLoadFailures=0 sceneryQuarantined=0 " +
                 "sceneryLoadWatch=0 " +
-                "flares=0 frameSpikes=0",
+                "flares=0 switchRailsBackfilled=0 frameSpikes=0",
                 FuseRuntimeGuardCounters.FormatSummary());
         }
 
