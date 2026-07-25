@@ -274,6 +274,28 @@ namespace FUSE.Loading
 
         private static void ApplyArray(JArray target, JArray patchArray, JObject root, string source)
         {
+            // A directive-free array that contains objects is the author's
+            // complete intended value, not a merge program. The legacy loader
+            // only ever accepted such an array when the key was new (assigning
+            // it wholesale) and rejected it against an existing array — but
+            // FUSE's game-graph expansion replays patches against the live
+            // runtime state, where the package's own splineys/roads already
+            // exist, so the same file that loaded cleanly as a fresh key would
+            // fault here. Replacing reproduces the legacy end state no matter
+            // which side of that race the target is on. Arrays that mix in
+            // $-directives keep strict merge semantics below, and all-primitive
+            // arrays keep their existing append behavior.
+            if (IsPlainObjectArray(patchArray))
+            {
+                target.Clear();
+                foreach (var plainItem in patchArray)
+                {
+                    target.Add(plainItem.DeepClone());
+                }
+
+                return;
+            }
+
             foreach (var item in patchArray)
             {
                 if (!(item is JObject instruction))
@@ -330,6 +352,35 @@ namespace FUSE.Loading
                 throw new InvalidOperationException(
                     $"Legacy patch '{source}' has an array object without $add, $append, $prepend, $insert, $replace, $remove, or $find.");
             }
+        }
+
+        /// <summary>
+        /// True when the array carries at least one object and none of its
+        /// objects is a $-directive instruction — i.e. it is a literal array
+        /// value, not a merge program.
+        /// </summary>
+        private static bool IsPlainObjectArray(JArray patchArray)
+        {
+            var sawObject = false;
+            foreach (var item in patchArray)
+            {
+                if (!(item is JObject candidate))
+                {
+                    continue;
+                }
+
+                foreach (var property in candidate.Properties())
+                {
+                    if (IsDirective(property.Name))
+                    {
+                        return false;
+                    }
+                }
+
+                sawObject = true;
+            }
+
+            return sawObject;
         }
 
         private static void ApplyFindInstruction(JArray target, JObject instruction, JToken findToken, JObject root, string source)
