@@ -82,13 +82,23 @@ namespace FUSE.Patches
                     for (int j = i + 1; j < codes.Count; j++)
                     {
                         var op = codes[j].opcode;
+                        // Bind to the radius early-out specifically: it is the
+                        // FIRST branch after the stloc, so any other branch
+                        // opcode appearing first means the loop shape changed
+                        // and we must not guess.
+                        if (op.FlowControl != FlowControl.Cond_Branch &&
+                            op.FlowControl != FlowControl.Branch)
+                        {
+                            continue;
+                        }
+
                         if (op == OpCodes.Bgt || op == OpCodes.Bgt_S ||
                             op == OpCodes.Bgt_Un || op == OpCodes.Bgt_Un_S)
                         {
                             continueLabel = (Label)codes[j].operand;
                             foundContinue = true;
-                            break;
                         }
+                        break;
                     }
 
                     if (!foundContinue)
