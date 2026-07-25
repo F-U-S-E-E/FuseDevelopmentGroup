@@ -236,6 +236,7 @@ namespace FUSE.Infrastructure
                 }
                 catch (Exception ex)
                 {
+                    FuseModExceptionRegistry.CountSelfFault();
                     FuseLog.Exception("FUSE mod health could not record an observed exception", ex);
 
                     // Liveness: the entry must still resolve, or its repeats
@@ -314,6 +315,7 @@ namespace FUSE.Infrastructure
                 }
                 catch (Exception ex)
                 {
+                    FuseModExceptionRegistry.CountSelfFault();
                     FuseLog.Exception("FUSE mod health could not flush repeated exception observations", ex);
                 }
             }

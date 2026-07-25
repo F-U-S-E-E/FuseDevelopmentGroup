@@ -43,13 +43,13 @@ namespace FUSE.Patches
         {
             try
             {
-                var needsBackfill =
+                var railsNeedBackfill =
                     __result.aPointRail == null || __result.bPointRail == null ||
                     __result.aClosureRail == null || __result.bClosureRail == null ||
                     __result.leftStockRail == null || __result.rightStockRail == null ||
-                    __result.leftGuardRail == null || __result.rightGuardRail == null ||
-                    __result.frogPoints == null;
-                if (!needsBackfill)
+                    __result.leftGuardRail == null || __result.rightGuardRail == null;
+                var frogNeedsBackfill = __result.frogPoints == null;
+                if (!railsNeedBackfill && !frogNeedsBackfill)
                 {
                     return;
                 }
@@ -80,6 +80,14 @@ namespace FUSE.Patches
                 __result.leftGuardRail ??= Stub(Hand.Left);
                 __result.rightGuardRail ??= Stub(Hand.Right);
                 __result.frogPoints ??= new LinePoint[3];
+
+                // The counter and warning are specifically about rail curves —
+                // a frog-only repair (rails all present) is patched above but
+                // must not report as a rail backfill.
+                if (!railsNeedBackfill)
+                {
+                    return;
+                }
 
                 var count = FuseRuntimeGuardCounters.RecordSwitchGeometryRailsBackfilled();
                 if (FuseGuardLog.ShouldLog(count))
