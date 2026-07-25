@@ -118,6 +118,24 @@ namespace FUSE.Interface.MenuWindow
                     ? $"Logging adaptive hitches to FUSE.log (absolute floor {FuseSettings.FrameSpikeThresholdMs:F0}ms; spikes so far: {FuseRuntimeGuardCounters.FrameSpikes}, worst {FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}ms)."
                     : "For stutter reports: logs frames that exceed both the configured floor and the rolling frame-time baseline, with memory and queue context. Takes effect immediately.");
 
+            builder.AddField("Spike Floor", control: builder.AddSliderQuantized(
+                () => FuseSettings.FrameSpikeThresholdMs,
+                () => $"{FuseSettings.FrameSpikeThresholdMs:F0}ms",
+                FuseSettings.PreviewFrameSpikeThresholdMs,
+                5f,
+                FuseSettings.MinFrameSpikeThresholdMs,
+                250f,
+                value =>
+                {
+                    FuseSettings.SetFrameSpikeThresholdMs(value);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel(
+                "Frames shorter than the floor never log as spikes, even when they exceed the rolling " +
+                "baseline. 50ms suits subtle-stutter hunts; the 100ms default keeps only severe hitches. " +
+                "Takes effect immediately.");
+
             builder.AddField("Native Allocation Stacks", control: BuildToggleBoxWithButton(
                 builder,
                 FuseSettings.EnableNativeLeakStackTraces,
