@@ -124,7 +124,7 @@ namespace FUSE.Interface.MenuWindow
                 FuseSettings.PreviewFrameSpikeThresholdMs,
                 5f,
                 FuseSettings.MinFrameSpikeThresholdMs,
-                250f,
+                FuseSettings.MaxFrameSpikeThresholdMs,
                 value =>
                 {
                     FuseSettings.SetFrameSpikeThresholdMs(value);

@@ -549,9 +549,12 @@ namespace FUSE.Infrastructure
         /// method whose every visible patch belongs to one mapped mod
         /// attributes. Results are memoized per (type, method) — the walk of
         /// Harmony's full patch state is not per-exception cheap — and the
-        /// cache drops with the maps on <see cref="Invalidate"/>. Fail-open:
-        /// any Harmony absence or shape drift returns null and counts a
-        /// self-fault.
+        /// cache drops with the maps on <see cref="Invalidate"/>. A cached
+        /// null therefore outlives patches installed AFTER the first wrapper
+        /// fault on that method until the next map invalidation; accepted,
+        /// since staleness here can only cost an attribution, never invent
+        /// one. Fail-open: any Harmony absence or shape drift returns null
+        /// and counts a self-fault.
         /// </summary>
         private static (string modId, string displayName)? ResolveHarmonyPatchOwner(string typeName, string methodName)
         {

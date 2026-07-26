@@ -216,7 +216,7 @@ namespace FUSE.Infrastructure
                     ReadFloat(settings, "RandomVisualConditionMax", DefaultRandomVisualConditionMax));
                 EnableFrameSpikeDiagnostics =
                     ReadBool(settings, "EnableFrameSpikeDiagnostics", DefaultEnableFrameSpikeDiagnostics);
-                FrameSpikeThresholdMs = Mathf.Max(20f,
+                FrameSpikeThresholdMs = ClampFrameSpikeThresholdMs(
                     ReadFloat(settings, "FrameSpikeThresholdMs", DefaultFrameSpikeThresholdMs));
                 EnableNativeLeakStackTraces =
                     ReadBool(settings, "EnableNativeLeakStackTraces", DefaultEnableNativeLeakStackTraces);
@@ -465,6 +465,14 @@ namespace FUSE.Infrastructure
         internal const float MinFrameSpikeThresholdMs = 20f;
         internal const float MaxFrameSpikeThresholdMs = 500f;
 
+        // Every path that writes FrameSpikeThresholdMs — Info.json load, user
+        // override apply, slider preview, and persist — funnels through this
+        // clamp so no source can smuggle a value outside the documented range.
+        private static float ClampFrameSpikeThresholdMs(float thresholdMs)
+        {
+            return Mathf.Clamp(thresholdMs, MinFrameSpikeThresholdMs, MaxFrameSpikeThresholdMs);
+        }
+
         /// <summary>
         /// Live preview while the settings slider is being dragged: updates
         /// the running value (the spike logger reads it per frame) without
@@ -474,14 +482,12 @@ namespace FUSE.Infrastructure
         /// </summary>
         internal static void PreviewFrameSpikeThresholdMs(float thresholdMs)
         {
-            FrameSpikeThresholdMs = Mathf.Clamp(
-                thresholdMs, MinFrameSpikeThresholdMs, MaxFrameSpikeThresholdMs);
+            FrameSpikeThresholdMs = ClampFrameSpikeThresholdMs(thresholdMs);
         }
 
         public static void SetFrameSpikeThresholdMs(float thresholdMs)
         {
-            FrameSpikeThresholdMs = Mathf.Clamp(
-                thresholdMs, MinFrameSpikeThresholdMs, MaxFrameSpikeThresholdMs);
+            FrameSpikeThresholdMs = ClampFrameSpikeThresholdMs(thresholdMs);
             SaveUserOverride(nameof(FrameSpikeThresholdMs), FrameSpikeThresholdMs);
             FuseLog.Info(
                 $"FUSE setting changed: {nameof(FrameSpikeThresholdMs)}={FrameSpikeThresholdMs:F0}ms. " +
@@ -706,7 +712,7 @@ namespace FUSE.Infrastructure
                     ReadFloat(settings, nameof(RandomVisualConditionMax), RandomVisualConditionMax));
                 EnableFrameSpikeDiagnostics =
                     ReadBool(settings, nameof(EnableFrameSpikeDiagnostics), EnableFrameSpikeDiagnostics);
-                FrameSpikeThresholdMs = Mathf.Max(20f,
+                FrameSpikeThresholdMs = ClampFrameSpikeThresholdMs(
                     ReadFloat(settings, nameof(FrameSpikeThresholdMs), FrameSpikeThresholdMs));
                 EnableNativeLeakStackTraces =
                     ReadBool(settings, nameof(EnableNativeLeakStackTraces), EnableNativeLeakStackTraces);

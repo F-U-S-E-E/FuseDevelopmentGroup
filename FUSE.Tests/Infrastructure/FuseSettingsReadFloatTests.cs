@@ -76,6 +76,7 @@ namespace FUSE.Tests.Infrastructure
         [InlineData(9999f, FuseSettings.MaxFrameSpikeThresholdMs)]   // above ceiling clamps down
         public void PreviewFrameSpikeThresholdMs_ClampsToDocumentedRange(float input, float expected)
         {
+            var original = FuseSettings.FrameSpikeThresholdMs;
             try
             {
                 FuseSettings.PreviewFrameSpikeThresholdMs(input);
@@ -83,7 +84,7 @@ namespace FUSE.Tests.Infrastructure
             }
             finally
             {
-                FuseSettings.PreviewFrameSpikeThresholdMs(FuseSettings.DefaultFrameSpikeThresholdMs);
+                FuseSettings.PreviewFrameSpikeThresholdMs(original);
             }
         }
     }

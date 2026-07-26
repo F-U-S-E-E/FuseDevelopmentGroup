@@ -263,19 +263,29 @@ namespace FUSE.Runtime.Lifecycle
                 var consoleStopwatch = Stopwatch.StartNew();
                 FuseConsoleRegistrar.TryRegisterAll();
                 FuseLegacyAssemblyHost.RetryPendingConsoleCommands();
-                // Second attempt for the third-party guards: FUSE loads before
-                // MapEnhancer and the rebill mod in UMM's order, so the
-                // plugin-load attempt resolves neither ("idle (not present)")
-                // and the guards never engaged in the field. By map load every
-                // mod assembly is up; the installer re-resolves absent targets
-                // and latches anything already installed.
-                FUSE.Patches.FuseThirdPartyGuardInstaller.EnsureInstalled();
                 FusePerformanceMetrics.RecordTiming("console registration", consoleStopwatch.ElapsedMilliseconds);
                 FuseLog.Info($"FUSE load timing phase='console registration' elapsedMs={consoleStopwatch.ElapsedMilliseconds}.");
             }
             catch (Exception ex)
             {
                 FuseLog.Exception("FUSE console registration on map-load failed.", ex);
+            }
+
+            // Second attempt for the third-party guards: FUSE loads before
+            // MapEnhancer and the rebill mod in UMM's order, so the
+            // plugin-load attempt resolves neither ("idle (not present)")
+            // and the guards never engaged in the field. By map load every
+            // mod assembly is up; the installer re-resolves absent targets
+            // and latches anything already installed. Guarded separately so
+            // an installer fault can neither abort nor mislabel console
+            // registration.
+            try
+            {
+                FUSE.Patches.FuseThirdPartyGuardInstaller.EnsureInstalled();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE third-party guard install retry on map load failed.", ex);
             }
 
             // Defer the actual publish (toast + log summary +

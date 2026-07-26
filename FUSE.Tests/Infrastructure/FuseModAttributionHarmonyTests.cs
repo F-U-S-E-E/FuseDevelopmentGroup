@@ -26,6 +26,12 @@ namespace FUSE.Tests.Infrastructure
 
         internal static bool ProbePrefix() => true;
 
+        // The wrapper frame Mono would print for a throw inside the probe
+        // target's rewritten body — shared by every test in this class.
+        private const string ProbeWrapperTrace =
+            "at (wrapper dynamic-method) MonoMod.Utils.DynamicMethodDefinition" +
+            ".FuseModAttributionHarmonyTests.WrapperAttributionProbeTarget_Patch1(int)";
+
         [Fact]
         public void WrapperFrame_ResolvesThroughLiveHarmonyPatchState_ToTheOwningMod()
         {
@@ -49,9 +55,7 @@ namespace FUSE.Tests.Infrastructure
                         [typeof(FuseModAttributionHarmonyTests).Assembly] = ("test.mod", "Test Mod")
                     });
 
-                var trace =
-                    "at (wrapper dynamic-method) MonoMod.Utils.DynamicMethodDefinition" +
-                    ".FuseModAttributionHarmonyTests.WrapperAttributionProbeTarget_Patch1(int)";
+                var trace = ProbeWrapperTrace;
 
                 Assert.True(FuseModAttributionMap.TryAttributeStack(
                     trace, out var modId, out var displayName, out var frame));
@@ -86,7 +90,7 @@ namespace FUSE.Tests.Infrastructure
             // A static void no-arg method from the FUSE assembly works as a
             // Harmony prefix; the target is never invoked, so it never runs.
             var fuseOwnedPrefix = typeof(FuseModAttributionMap).GetMethod(
-                "Invalidate", BindingFlags.Static | BindingFlags.NonPublic);
+                nameof(FuseModAttributionMap.Invalidate), BindingFlags.Static | BindingFlags.NonPublic);
             Assert.NotNull(fuseOwnedPrefix);
 
             try
@@ -102,9 +106,7 @@ namespace FUSE.Tests.Infrastructure
                         [typeof(FuseModAttributionHarmonyTests).Assembly] = ("test.mod", "Test Mod")
                     });
 
-                var trace =
-                    "at (wrapper dynamic-method) MonoMod.Utils.DynamicMethodDefinition" +
-                    ".FuseModAttributionHarmonyTests.WrapperAttributionProbeTarget_Patch1(int)";
+                var trace = ProbeWrapperTrace;
 
                 Assert.False(FuseModAttributionMap.TryAttributeStack(
                     trace, out var modId, out _, out _));
@@ -137,9 +139,7 @@ namespace FUSE.Tests.Infrastructure
                         StringComparer.OrdinalIgnoreCase),
                     assemblyMap: new Dictionary<Assembly, (string modId, string displayName)>());
 
-                var trace =
-                    "at (wrapper dynamic-method) MonoMod.Utils.DynamicMethodDefinition" +
-                    ".FuseModAttributionHarmonyTests.WrapperAttributionProbeTarget_Patch1(int)";
+                var trace = ProbeWrapperTrace;
 
                 Assert.False(FuseModAttributionMap.TryAttributeStack(
                     trace, out var modId, out _, out _));
