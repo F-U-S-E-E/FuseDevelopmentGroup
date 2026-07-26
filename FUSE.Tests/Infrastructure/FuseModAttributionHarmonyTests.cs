@@ -28,6 +28,12 @@ namespace FUSE.Tests.Infrastructure
 
         // The wrapper frame Mono would print for a throw inside the probe
         // target's rewritten body — shared by every test in this class.
+        // Deliberately a fixture (captured verbatim from a field log), NOT a
+        // stack recorded from throwing through the patched probe: this suite
+        // runs on the .NET Framework CLR, whose dynamic-method frames never
+        // use Mono's "(wrapper dynamic-method) MonoMod..." shape, so a live
+        // throw here cannot produce the production format these tests exist
+        // to cover.
         private const string ProbeWrapperTrace =
             "at (wrapper dynamic-method) MonoMod.Utils.DynamicMethodDefinition" +
             ".FuseModAttributionHarmonyTests.WrapperAttributionProbeTarget_Patch1(int)";

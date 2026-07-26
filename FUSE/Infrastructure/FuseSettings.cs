@@ -468,8 +468,15 @@ namespace FUSE.Infrastructure
         // Every path that writes FrameSpikeThresholdMs — Info.json load, user
         // override apply, slider preview, and persist — funnels through this
         // clamp so no source can smuggle a value outside the documented range.
+        // NaN would sail through Mathf.Clamp (ReadFloat accepts the string
+        // "NaN"), so it degrades to the default; infinities clamp normally.
         private static float ClampFrameSpikeThresholdMs(float thresholdMs)
         {
+            if (float.IsNaN(thresholdMs))
+            {
+                return DefaultFrameSpikeThresholdMs;
+            }
+
             return Mathf.Clamp(thresholdMs, MinFrameSpikeThresholdMs, MaxFrameSpikeThresholdMs);
         }
 

@@ -74,6 +74,9 @@ namespace FUSE.Tests.Infrastructure
         [InlineData(5f, FuseSettings.MinFrameSpikeThresholdMs)]     // below floor clamps up
         [InlineData(50f, 50f)]                                       // in-range passes through
         [InlineData(9999f, FuseSettings.MaxFrameSpikeThresholdMs)]   // above ceiling clamps down
+        [InlineData(float.NaN, FuseSettings.DefaultFrameSpikeThresholdMs)]           // NaN degrades to default
+        [InlineData(float.PositiveInfinity, FuseSettings.MaxFrameSpikeThresholdMs)]  // +Inf clamps down
+        [InlineData(float.NegativeInfinity, FuseSettings.MinFrameSpikeThresholdMs)]  // -Inf clamps up
         public void PreviewFrameSpikeThresholdMs_ClampsToDocumentedRange(float input, float expected)
         {
             var original = FuseSettings.FrameSpikeThresholdMs;
