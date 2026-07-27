@@ -1,0 +1,28 @@
+{
+  "facilities": [
+    {
+      "id": "example-rb-diesel-stand-diesel",
+      "targetObjectNames": [
+        "O_Round-Bottom_Diesel"
+      ],
+      "useExistingTargetLoader": true,
+      "serviceLoadId": "diesel-fuel",
+      "infiniteSupply": true,
+      "requirePlayerOwnedCars": true,
+      "attachTargetPickable": false,
+      "requestTitle": "Diesel Stand"
+    },
+    {
+      "id": "example-ravensford-diesel-stand-bunker-c",
+      "targetObjectNames": [
+        "O_KG.RAVENS_l31f"
+      ],
+      "useExistingTargetLoader": true,
+      "serviceLoadId": "bunker-c",
+      "infiniteSupply": true,
+      "requirePlayerOwnedCars": true,
+      "attachTargetPickable": false,
+      "requestTitle": "Ravensford Bunker C Stand"
+    }
+  ]
+}

@@ -191,6 +191,22 @@ namespace FUSE.Loading
             }
         }
 
+        internal static bool IsFuseManagedStoreIdentifier(string identifier)
+        {
+            if (string.IsNullOrWhiteSpace(identifier))
+            {
+                return false;
+            }
+
+            lock (LegacyAssetPackAliasLock)
+            {
+                return DirectAssetPackStoreIdentifiers.Contains(identifier) ||
+                       StoreIdentifiersByPhysicalPath.Values.Contains(
+                           identifier,
+                           StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
         internal static FuseAssetPackDiagnostics GetDiagnostics()
         {
             var folders = EnumerateAvailableAssetPackFolders().ToArray();

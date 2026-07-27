@@ -33,7 +33,11 @@ namespace FUSE.Runtime.API
         // The hide is a rare, coarse state change, not a per-frame value: a half-second cadence is
         // imperceptible for a terrain flatten appearing/disappearing yet negligible to poll.
         private const float CheckIntervalSeconds = 0.5f;
-        private const int StaggerBucketCount = 16;
+        // A heavily modded map can have hundreds of mask-bearing scenery roots.
+        // Sixty-four buckets spreads their 2 Hz checks across almost every rendered
+        // frame at common frame rates instead of waking roughly one-sixteenth of
+        // them together. Poll frequency and visibility semantics are unchanged.
+        private const int StaggerBucketCount = 64;
 
         // Shared across instances: WaitForSeconds is an immutable duration, so reusing one instance
         // is safe and avoids a per-iteration allocation on every watcher's loop.

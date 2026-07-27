@@ -38,6 +38,10 @@ namespace FUSE.Runtime.API
     /// </summary>
     internal static class FuseSceneryDeferralClassifier
     {
+        private static readonly object ClassificationCacheLock = new object();
+        private static readonly Dictionary<string, Classification> ClassificationCache =
+            new Dictionary<string, Classification>(StringComparer.OrdinalIgnoreCase);
+
         // Matched (case-insensitive) against each component's Type.FullName. FullName
         // is used so both the type name and its namespace participate (e.g.
         // "Model.Definition.Components.MapMasks.RectangleMapMaskComponent").
@@ -102,21 +106,8 @@ namespace FUSE.Runtime.API
         /// </summary>
         internal static bool CanDefer(string assetIdentifier)
         {
-            if (!TryResolveDefinition(assetIdentifier, "deferral check", out var definition))
-            {
-                return false;
-            }
-
-            try
-            {
-                return !DeclaresEagerOnlyComponent(definition, ComponentLifetime.Static)
-                    && !DeclaresEagerOnlyComponent(definition, ComponentLifetime.Model);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception($"FUSE deferred-scenery classifier could not inspect '{assetIdentifier}'", ex);
-                return false;
-            }
+            return TryGetClassification(assetIdentifier, out var classification) &&
+                   classification.CanDefer;
         }
 
         /// <summary>
@@ -128,21 +119,71 @@ namespace FUSE.Runtime.API
         /// </summary>
         internal static bool HasMaskComponent(string assetIdentifier)
         {
-            if (!TryResolveDefinition(assetIdentifier, "mask check", out var definition))
+            return TryGetClassification(assetIdentifier, out var classification) &&
+                   classification.HasMask;
+        }
+
+        internal static void InvalidateCache()
+        {
+            lock (ClassificationCacheLock)
             {
+                ClassificationCache.Clear();
+            }
+        }
+
+        private static bool TryGetClassification(
+            string assetIdentifier,
+            out Classification classification)
+        {
+            if (string.IsNullOrWhiteSpace(assetIdentifier))
+            {
+                classification = default;
+                return false;
+            }
+
+            lock (ClassificationCacheLock)
+            {
+                if (ClassificationCache.TryGetValue(assetIdentifier, out classification))
+                {
+                    return classification.Resolved;
+                }
+            }
+
+            if (!TryResolveDefinition(assetIdentifier, "classification", out var definition))
+            {
+                classification = default;
+                lock (ClassificationCacheLock)
+                {
+                    ClassificationCache[assetIdentifier] = classification;
+                }
                 return false;
             }
 
             try
             {
-                return DeclaresMaskComponent(definition, ComponentLifetime.Static)
-                    || DeclaresMaskComponent(definition, ComponentLifetime.Model);
+                classification = new Classification(
+                    resolved: true,
+                    canDefer:
+                        !DeclaresEagerOnlyComponent(definition, ComponentLifetime.Static) &&
+                        !DeclaresEagerOnlyComponent(definition, ComponentLifetime.Model),
+                    hasMask:
+                        DeclaresMaskComponent(definition, ComponentLifetime.Static) ||
+                        DeclaresMaskComponent(definition, ComponentLifetime.Model));
             }
             catch (Exception ex)
             {
-                FuseLog.Exception($"FUSE deferred-scenery classifier could not inspect '{assetIdentifier}' for mask components", ex);
-                return false;
+                FuseLog.Exception(
+                    $"FUSE deferred-scenery classifier could not inspect '{assetIdentifier}'",
+                    ex);
+                classification = default;
             }
+
+            lock (ClassificationCacheLock)
+            {
+                ClassificationCache[assetIdentifier] = classification;
+            }
+
+            return classification.Resolved;
         }
 
         private static bool DeclaresMaskComponent(SceneryDefinition definition, ComponentLifetime lifetime)
@@ -255,6 +296,22 @@ namespace FUSE.Runtime.API
             }
 
             return false;
+        }
+
+        private readonly struct Classification
+        {
+            internal Classification(bool resolved, bool canDefer, bool hasMask)
+            {
+                Resolved = resolved;
+                CanDefer = canDefer;
+                HasMask = hasMask;
+            }
+
+            internal bool Resolved { get; }
+
+            internal bool CanDefer { get; }
+
+            internal bool HasMask { get; }
         }
     }
 }

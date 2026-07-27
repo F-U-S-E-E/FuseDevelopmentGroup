@@ -110,6 +110,10 @@
       <HintPath>$(UnityManagedDir)\Assembly-CSharp.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <Reference Include="AssetPack.Common" Condition="Exists('$(UnityManagedDir)\AssetPack.Common.dll')">
+      <HintPath>$(UnityManagedDir)\AssetPack.Common.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="UnityEngine.AssetBundleModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll</HintPath>
       <Private>true</Private>

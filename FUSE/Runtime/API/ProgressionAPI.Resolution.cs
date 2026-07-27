@@ -19,6 +19,38 @@ namespace FUSE.Runtime.API
 {
     public static partial class ProgressionAPI
     {
+        private static int _scenePathResolutionBatchDepth;
+        private static ScenePathEntry[] _scenePathResolutionSnapshot;
+
+        /// <summary>
+        /// Reuses one immutable Transform/path census across a staged progression
+        /// apply. Legacy definitions can contain several missing optional scene paths;
+        /// without this scope every miss performs FindObjectsOfType&lt;Transform&gt; and
+        /// reconstructs every hierarchy path again.
+        /// </summary>
+        internal static void BeginScenePathResolutionBatch()
+        {
+            if (_scenePathResolutionBatchDepth++ == 0)
+            {
+                _scenePathResolutionSnapshot = null;
+            }
+        }
+
+        internal static void EndScenePathResolutionBatch()
+        {
+            if (_scenePathResolutionBatchDepth <= 0)
+            {
+                _scenePathResolutionBatchDepth = 0;
+                _scenePathResolutionSnapshot = null;
+                return;
+            }
+
+            _scenePathResolutionBatchDepth--;
+            if (_scenePathResolutionBatchDepth == 0)
+            {
+                _scenePathResolutionSnapshot = null;
+            }
+        }
 
         private static Section[] ResolveSections(string[] ids)
         {
@@ -274,6 +306,21 @@ namespace FUSE.Runtime.API
                         value = value.Substring(scenePrefix.Length);
                     }
 
+                    // Legacy packages commonly spell FUSE scenery as
+                    // path://scene/<leaf-id>. Those objects are inactive while the
+                    // initial scenery wave is queued, so GameObject.Find cannot see
+                    // them. Resolve the already-indexed authored object before the
+                    // expensive inactive-Transform fallback. Full scene paths retain
+                    // the old scene-first precedence.
+                    if (IsLeafOnlyPath(value))
+                    {
+                        var authoredLeaf = ResolveAuthoredWorldObject(value);
+                        if (authoredLeaf != null)
+                        {
+                            return authoredLeaf;
+                        }
+                    }
+
                     return ResolveGameObjectPath(value) ?? ResolveAuthoredWorldObject(value);
                 }
 
@@ -284,6 +331,13 @@ namespace FUSE.Runtime.API
             }
 
             return ResolveGameObjectPath(path) ?? ResolveAuthoredWorldObject(path);
+        }
+
+        internal static bool IsLeafOnlyPath(string value)
+        {
+            return !string.IsNullOrWhiteSpace(value) &&
+                   value.IndexOf('/') < 0 &&
+                   value.IndexOf('\\') < 0;
         }
 
         private static GameObject ResolveAuthoredWorldObject(string value)
@@ -337,13 +391,16 @@ namespace FUSE.Runtime.API
             }
 
             var normalized = NormalizeScenePath(path);
-            var transforms = UnityEngine.Object.FindObjectsOfType<Transform>(true);
-            var exact = transforms.FirstOrDefault(transform =>
-                string.Equals(transform.name, path, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(NormalizeScenePath(GetScenePath(transform)), normalized, StringComparison.OrdinalIgnoreCase));
-            if (exact != null)
+            var entries = GetScenePathEntries();
+            for (var index = 0; index < entries.Length; index++)
             {
-                return exact.gameObject;
+                var entry = entries[index];
+                if (entry.Transform != null &&
+                    (string.Equals(entry.Name, path, StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(entry.NormalizedPath, normalized, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return entry.Transform.gameObject;
+                }
             }
 
             if (normalized.IndexOf('/') < 0)
@@ -352,24 +409,82 @@ namespace FUSE.Runtime.API
             }
 
             var suffix = "/" + normalized.TrimStart('/');
-            var suffixMatches = transforms
-                .Where(transform => NormalizeScenePath(GetScenePath(transform)).EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                .Take(2)
-                .ToArray();
-            if (suffixMatches.Length == 1)
+            Transform suffixMatch = null;
+            var suffixMatchCount = 0;
+            for (var index = 0; index < entries.Length && suffixMatchCount < 2; index++)
             {
-                FuseLog.Info(
-                    $"FUSE resolved shortened scene path '{path}' to '{GetScenePath(suffixMatches[0])}'.");
-                return suffixMatches[0].gameObject;
+                var entry = entries[index];
+                if (entry.Transform == null ||
+                    !entry.NormalizedPath.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                suffixMatch = entry.Transform;
+                suffixMatchCount++;
             }
 
-            if (suffixMatches.Length > 1)
+            if (suffixMatchCount == 1)
+            {
+                FuseLog.Info(
+                    $"FUSE resolved shortened scene path '{path}' to '{GetScenePath(suffixMatch)}'.");
+                return suffixMatch.gameObject;
+            }
+
+            if (suffixMatchCount > 1)
             {
                 FuseLog.Warning(
                     $"FUSE could not resolve shortened scene path '{path}' because multiple scene objects match that suffix.");
             }
 
             return null;
+        }
+
+        private static ScenePathEntry[] GetScenePathEntries()
+        {
+            if (_scenePathResolutionBatchDepth > 0 && _scenePathResolutionSnapshot != null)
+            {
+                return _scenePathResolutionSnapshot;
+            }
+
+            var transforms = UnityEngine.Object.FindObjectsOfType<Transform>(true);
+            var entries = new List<ScenePathEntry>(transforms.Length);
+            foreach (var transform in transforms)
+            {
+                if (transform == null)
+                {
+                    continue;
+                }
+
+                entries.Add(new ScenePathEntry(
+                    transform,
+                    transform.name,
+                    NormalizeScenePath(GetScenePath(transform))));
+            }
+
+            var snapshot = entries.ToArray();
+            if (_scenePathResolutionBatchDepth > 0)
+            {
+                _scenePathResolutionSnapshot = snapshot;
+            }
+
+            return snapshot;
+        }
+
+        private readonly struct ScenePathEntry
+        {
+            internal ScenePathEntry(Transform transform, string name, string normalizedPath)
+            {
+                Transform = transform;
+                Name = name;
+                NormalizedPath = normalizedPath ?? string.Empty;
+            }
+
+            internal Transform Transform { get; }
+
+            internal string Name { get; }
+
+            internal string NormalizedPath { get; }
         }
 
         private static string NormalizeScenePath(string path)

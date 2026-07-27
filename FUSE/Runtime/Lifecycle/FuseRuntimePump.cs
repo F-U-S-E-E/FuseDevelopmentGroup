@@ -84,10 +84,26 @@ namespace FUSE.Runtime.Lifecycle
                 // audit (any thread), resolved and applied here.
                 FUSE.Patches.FuseSceneryLoadFailurePatch.DrainPending();
 
+                // Scenery models are destroyed at the end of the frame. Release
+                // their asset references on the following frame so a load/unload
+                // race cannot keep a bundle alive or unload it too early.
+                FUSE.Patches.FuseDeferredAssetReferenceReleaseQueue.Update();
+
                 // Mod health exception observations: first-seen signatures
                 // queued by the threaded log hook (any thread), attributed and
                 // recorded (with throttled log lines) here.
                 FuseModExceptionLogHook.DrainPending();
+
+                // Completed FUSE asset requests whose reference count reached
+                // zero are removed individually by the store patch. Reclaim
+                // their now-unreachable Unity assets only after streaming has
+                // remained quiet long enough to avoid load/unload thrashing.
+                FuseUnusedAssetReclaimer.Update();
+
+                // AssetBundle requests may all complete together after a
+                // teleport. Finish only a bounded number of car bodies,
+                // trucks, unique materials, and load models per frame.
+                FUSE.Patches.FuseCarModelCompletionScheduler.Update();
             }
         }
     }

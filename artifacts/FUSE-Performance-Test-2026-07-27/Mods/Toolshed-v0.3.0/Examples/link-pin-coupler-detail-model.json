@@ -1,0 +1,83 @@
+{
+  "notes": [
+    "Paste one of these objects into a car, tender, or locomotive components array.",
+    "This uses Railroader's built-in DetailModel component, so it only affects vehicles that explicitly include it.",
+    "Set the parent path and transform values for the model you are fitting."
+  ],
+  "frontLinkAndPinCoupler": {
+    "kind": "DetailModel",
+    "name": "Link And Pin Coupler F",
+    "model": {
+      "assetPackIdentifier": "LinkAndPinCoupler",
+      "assetIdentifier": "link-pin-coupler"
+    },
+    "offset": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "count": 1,
+    "parent": {
+      "path": [
+        "Car"
+      ]
+    },
+    "transform": {
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "enabled": true
+  },
+  "rearLinkAndPinCoupler": {
+    "kind": "DetailModel",
+    "name": "Link And Pin Coupler R",
+    "model": {
+      "assetPackIdentifier": "LinkAndPinCoupler",
+      "assetIdentifier": "link-pin-coupler"
+    },
+    "offset": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "count": 1,
+    "parent": {
+      "path": [
+        "Car"
+      ]
+    },
+    "transform": {
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "enabled": true
+  }
+}

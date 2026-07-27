@@ -662,12 +662,72 @@ namespace FUSE.UnityTests
         }
 
         [Test]
+        public void Car_MaterialPerformancePatch_Surface()
+        {
+            var carType = RequireType("Model.Car");
+            var ownedMaterials = AccessTools.Field(carType, "_ownedMaterials");
+            Assert.That(
+                ownedMaterials,
+                Is.Not.Null,
+                "Car._ownedMaterials not found; the material optimization will fall back to the stock path.");
+
+            var makeMaterialsUnique = AccessTools.Method(carType, "MakeMaterialsUnique");
+            Assert.That(
+                makeMaterialsUnique,
+                Is.Not.Null,
+                "Car.MakeMaterialsUnique not found; the material optimization patch cannot bind.");
+
+            var getRenderers = AccessTools.Method(carType, "GetRenderers");
+            Assert.That(
+                getRenderers,
+                Is.Not.Null,
+                "Car.GetRenderers not found; the renderer collection optimization patch cannot bind.");
+        }
+
+        [Test]
+        public void MapFeatureManager_SnapshotTrackRebuildCoalescing_Surface()
+        {
+            AssertField(
+                "Game.Progression.MapFeatureManager",
+                "_scheduledRebuildTrack",
+                InstanceNonPublic);
+            AssertMethod(
+                "Game.Progression.MapFeatureManager",
+                "HandleFeatureEnablesChanged",
+                InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_modelLoadTask_InstanceField()
+        {
+            AssertField("Helpers.SceneryAssetInstance", "_modelLoadTask", InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_cullRenderers_InstanceField()
+        {
+            AssertField("Helpers.SceneryAssetInstance", "_cullRenderers", InstanceNonPublic);
+        }
+
+        [Test]
         public void SceneryAssetInstance_SetLoaded_InstanceMethod()
         {
             // FuseSceneryLoadThrottlePatch both Harmony-patches and reflectively
             // re-invokes this private method to release deferred loads from its
             // pump; a rename detaches the patch AND breaks the pump's re-drive.
             AssertMethod("Helpers.SceneryAssetInstance", "SetLoaded", InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_DidLoadModel_InstanceMethod()
+        {
+            AssertMethod("Helpers.SceneryAssetInstance", "DidLoadModel", InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_WillUnloadModel_InstanceMethod()
+        {
+            AssertMethod("Helpers.SceneryAssetInstance", "WillUnloadModel", InstanceNonPublic);
         }
 
         // -----------------------------------------------------------------
@@ -751,6 +811,19 @@ namespace FUSE.UnityTests
             // failing scenery asset loads (pack bundle/catalog mismatch) and bubble
             // them up to the health report.
             AssertMethod("Helpers.SceneryAssetManager", "LoadScenery", InstancePublic);
+        }
+
+        [Test]
+        public void CullingManager_SceneryReconciliationSurface()
+        {
+            // The destination reconciliation reads the live token registry and
+            // postfixes the world-shift callback that vanilla uses to move spheres.
+            AssertField("Helpers.Culling.CullingManager", "_tokens", InstanceNonPublic);
+            AssertField("Helpers.Culling.CullingManager", "_cullingGroup", InstanceNonPublic);
+            AssertField("Helpers.Culling.CullingManager", "_spheres", InstanceNonPublic);
+            AssertField("Helpers.Culling.CullingManager", "_distances", InstanceNonPublic);
+            AssertField("Helpers.Culling.CullingManager", "_needsUpdate", InstanceNonPublic);
+            AssertMethod("Helpers.Culling.CullingManager", "OnWorldDidMove", InstanceNonPublic);
         }
 
         [Test]

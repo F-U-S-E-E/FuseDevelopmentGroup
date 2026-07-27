@@ -19,6 +19,12 @@ namespace FUSE.Tests.Infrastructure
         }
 
         [Fact]
+        public void ForcedConstrainedVramMode_IsOptInByDefault()
+        {
+            Assert.False(FuseSettings.DefaultForceConstrainedVramMode);
+        }
+
+        [Fact]
         public void SyntheticUmmEntries_AreMetadataOnlyAndInactive()
         {
             Assert.False(FuseUmmInjector.SyntheticEntriesAreActive);

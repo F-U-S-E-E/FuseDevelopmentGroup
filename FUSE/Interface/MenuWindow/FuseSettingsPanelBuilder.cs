@@ -118,6 +118,20 @@ namespace FUSE.Interface.MenuWindow
                     ? $"Logging adaptive hitches to FUSE.log (absolute floor {FuseSettings.FrameSpikeThresholdMs:F0}ms; spikes so far: {FuseRuntimeGuardCounters.FrameSpikes}, worst {FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}ms)."
                     : "For stutter reports: logs frames that exceed both the configured floor and the rolling frame-time baseline, with memory and queue context. Takes effect immediately.");
 
+            builder.AddField("Force 8 GB VRAM Mode", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.ForceConstrainedVramMode,
+                () =>
+                {
+                    FuseSettings.SetForceConstrainedVramMode(!FuseSettings.ForceConstrainedVramMode);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel(
+                "For comparison testing on larger GPUs: applies the constrained-card " +
+                "one-level texture mip cap while preserving normal scenery distance. " +
+                "Restart before capturing results.");
+
             builder.AddField("Spike Floor", control: builder.AddSliderQuantized(
                 () => FuseSettings.FrameSpikeThresholdMs,
                 () => $"{FuseSettings.FrameSpikeThresholdMs:F0}ms",

@@ -78,6 +78,22 @@ namespace FUSE.Runtime.API
 
         public static void RebuildGraph()
         {
+            RebuildGraphCore(null);
+        }
+
+        /// <summary>
+        /// Runs the normal graph-applying companion callbacks, then invalidates
+        /// every segment curve immediately before TrackObjectManager consumes
+        /// them. This guarantees curves reflect both the merged package plan and
+        /// any topology changes made by subscribers, without a second rebuild.
+        /// </summary>
+        internal static void RebuildGraphWithFreshCurves(string reason)
+        {
+            RebuildGraphCore(reason ?? "graph rebuild after subscribers");
+        }
+
+        private static void RebuildGraphCore(string curveInvalidationReason)
+        {
             _rebuildRequested = false;
 
             BeginBatch();
@@ -93,6 +109,11 @@ namespace FUSE.Runtime.API
                 _rebuildRequested = false;
             }
 
+            if (!string.IsNullOrEmpty(curveInvalidationReason))
+            {
+                InvalidateAllCurves(curveInvalidationReason);
+            }
+
             var manager = TrackObjectManager.Instance;
             if (manager != null)
             {
@@ -104,6 +125,18 @@ namespace FUSE.Runtime.API
             }
 
             FuseEvents.RaiseGraphRebuilt();
+        }
+
+        /// <summary>
+        /// Refreshes Graph's node/segment/span lookup collections without
+        /// rebuilding TrackObjectManager's visual and culling descriptors.
+        /// Use after span-only mutations; spans do not change rail geometry.
+        /// Graph.RebuildCollections publishes the game's graph-rebuilt message,
+        /// which drives FUSE's normal graph-index and companion refresh hooks.
+        /// </summary>
+        internal static void RebuildCollectionsOnly()
+        {
+            RequireGraph().RebuildCollections();
         }
 
         /// <summary>

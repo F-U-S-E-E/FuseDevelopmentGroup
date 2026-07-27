@@ -152,7 +152,7 @@ namespace FUSE.Tests.API
             var first = FuseDecoupledMaskVisibilityWatcher.GetPollStaggerBucket(sceneryId);
             var second = FuseDecoupledMaskVisibilityWatcher.GetPollStaggerBucket(sceneryId);
 
-            Assert.InRange(first, 0, 15);
+            Assert.InRange(first, 0, 63);
             Assert.Equal(first, second);
         }
 

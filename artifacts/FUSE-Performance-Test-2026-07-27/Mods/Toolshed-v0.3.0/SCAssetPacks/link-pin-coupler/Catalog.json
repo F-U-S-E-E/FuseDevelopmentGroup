@@ -1,0 +1,17 @@
+﻿{
+  "identifier": "link-pin-coupler",
+  "name": "Link and Pin Coupler",
+  "shared": false,
+  "assets": {
+    "link-pin-coupler": {
+      "name": "link-pin-coupler",
+      "type": "prefab",
+      "filename": "link-pin-coupler.prefab"
+    },
+    "Link And Pin Coupler": {
+      "name": "Link And Pin Coupler",
+      "type": "prefab",
+      "filename": "link-pin-coupler.prefab"
+    }
+  }
+}

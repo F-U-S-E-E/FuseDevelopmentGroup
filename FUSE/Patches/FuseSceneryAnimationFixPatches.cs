@@ -131,25 +131,8 @@ namespace FUSE.Patches
         private static readonly Type DecalProjectorType =
             Type.GetType("UnityEngine.Rendering.Universal.DecalProjector, Unity.RenderPipelines.Universal.Runtime");
 
-        // Optional third-party mod type; resolved lazily (mod load order vs. patch
-        // class init is not guaranteed) and tolerated absent.
-        private static Type _legosDecalHelperType;
-        private static bool _legosDecalHelperResolveAttempted;
-
         /// <summary>Car-only decal definitions/helpers blocked on scenery since startup (diagnostics).</summary>
         internal static long ScrubbedDecalComponents => FuseRuntimeGuardCounters.SceneryDecalComponentsDisabled;
-
-        private static Type ResolveLegosDecalHelperType()
-        {
-            if (!_legosDecalHelperResolveAttempted)
-            {
-                // The first scenery setup runs during map load, after all mods loaded.
-                _legosDecalHelperResolveAttempted = true;
-                _legosDecalHelperType = AccessTools.TypeByName("LegosLogosAndDeco.LegosDecalHelper");
-            }
-
-            return _legosDecalHelperType;
-        }
 
         internal static void ScrubCarOnlyDecalMachinery(
             SceneryAssetInstance instance, ComponentLifetime lifetime, Transform modelRoot)
@@ -165,7 +148,6 @@ namespace FUSE.Patches
             try
             {
                 DisableCarOnlyHelpers(root, typeof(DecalProjectorHelper), instance);
-                DisableCarOnlyHelpers(root, ResolveLegosDecalHelperType(), instance);
             }
             catch (Exception ex)
             {

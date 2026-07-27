@@ -125,11 +125,10 @@ namespace FUSE.Runtime.Lifecycle
                     FuseDeferredSceneryActivator.OpenInitialMapLoadWave();
                     FuseLoadingScreen.SetStep("Applying mods", "Applying definitions");
                     appliedCount = FuseDataPackageDiscovery.ApplyLoadedPackages("map load");
-                    // Run the cleanup cluster inside one batch so the rebuild
-                    // RemoveInvalidTrackSpans requests folds together with any
-                    // rebuild industry/marker cleanup may also request. Without
-                    // this, RemoveInvalidTrackSpans fires its own full rebuild
-                    // while the rest of the cleanup is still running.
+                    // Run the cleanup cluster inside one batch. The only
+                    // structural mutation here is invalid-span removal; spans
+                    // do not change TrackObjectManager's rail/switch/bumper
+                    // descriptors, so a collections refresh is sufficient.
                     FuseLoadingScreen.SetStep("Rebuilding track graph");
                     TrackAPI.BeginBatch();
                     try
@@ -139,25 +138,19 @@ namespace FUSE.Runtime.Lifecycle
                         IndustryAPI.ScrubIndustryComponentCaches("map load after FUSE package apply");
                         IndustryAPI.DisableOrphanedBaseGameIndustries("map load after FUSE package apply");
                         TrackAPI.DisableInvalidTrackMarkers("map load after FUSE package apply");
-                        // Wholesale invalidate every segment's cached
-                        // BezierCurve so the rebuild that EndBatch(true)
-                        // fires below computes fresh curves against the
-                        // post-migration node transforms. Without this,
-                        // segments whose endpoint node positions or
-                        // rotations were mutated by a later legacy
-                        // mixinto migration (e.g. Foxy's KaterRepair-migration
-                        // moving a Bryson Tweaks switch node) keep the
-                        // stale curve baked in at first-access, and
-                        // <c>SwitchGeometry.Calculate</c> in
-                        // <c>TrackObjectManager.BuildDescriptors</c>
-                        // throws "Switch tracks do not intersect" —
-                        // silently dropping the switch and every segment
-                        // attached to it from the mesh build.
-                        TrackAPI.InvalidateAllCurves("map load after FUSE package apply");
+                        // Curve invalidation now occurs immediately before the
+                        // staged merged graph rebuild, after all final node
+                        // transforms have landed. Repeating it here forced a
+                        // redundant full TrackObjectManager rebuild.
                     }
                     finally
                     {
-                        TrackAPI.EndBatch(true);
+                        TrackAPI.EndBatch(false);
+                    }
+                    if (!TrackAPI.IsBatching &&
+                        TrackAPI.ConsumePendingRebuildRequest())
+                    {
+                        TrackAPI.RebuildCollectionsOnly();
                     }
                     var earlyLoaderStopwatch = Stopwatch.StartNew();
                     FuseEarlyLoader.ApplyFallbackAfterMapLoad();
@@ -228,8 +221,8 @@ namespace FUSE.Runtime.Lifecycle
             }
 
             // Replay FUSE's industrial-segment push to Map Enhancer now that the
-            // load-time apply AND the trailing track-graph rebuild (EndBatch(true)
-            // above) have settled. The inline RefreshIndustry in
+            // load-time apply and the trailing graph-collection refresh above
+            // have settled. The inline RefreshIndustry in
             // AddOrUpdateComponents runs DURING apply — before that rebuild — so a
             // FUSE-created industry's TrackSpans have no resolvable cached segments
             // yet and nothing lands in Map Enhancer's industrial-segment cache

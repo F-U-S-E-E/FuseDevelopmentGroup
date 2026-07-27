@@ -1,0 +1,10 @@
+{
+  "Id": "LegosLibraryPerformancePatch",
+  "Version": "0.4.0",
+  "DisplayName": "Lego's Library Performance Patch",
+  "Author": "Hunter Rogers",
+  "EntryMethod": "LegosLibraryPerformancePatch.Main.Load",
+  "AssemblyName": "LegosLibraryPerformancePatch.dll",
+  "ManagerVersion": "0.32.4",
+  "GameVersion": "2025.1"
+}
