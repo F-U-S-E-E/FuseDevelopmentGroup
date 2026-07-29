@@ -65,10 +65,12 @@ jobs:
           $version = $Matches.version
           "version=$version" >> $env:GITHUB_OUTPUT
 
-          # Treat anything in the 0.x series or with a pre-release suffix as a
-          # GitHub pre-release. FUSE is still in beta so 0.10.0 ships as a
-          # pre-release until a 1.0.0 GA tag.
-          if ($version -match '^0\.' -or $version -match '-') {
+          # Only an explicit pre-release suffix (-rc.1, -beta.2, ...) marks a
+          # GitHub pre-release. Plain 0.x tags publish as full releases so the
+          # repo front page shows a "Latest" card with the version number —
+          # when every release is a pre-release, GitHub hides the card and
+          # shows only the bare tag count.
+          if ($version -match '-') {
             "is_prerelease=true" >> $env:GITHUB_OUTPUT
           }
           else {
