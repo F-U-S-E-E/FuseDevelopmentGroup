@@ -11,6 +11,7 @@
   <Project Path="FUSE.TestCli/FUSE.TestCli.csproj" />
   <Project Path="FUSE.LiveHarness/FUSE.LiveHarness.csproj" />
   <Project Path="FUSE.LiveHarness.Tests/FUSE.LiveHarness.Tests.csproj" />
+  <Project Path="FUSE.Profiler/FUSE.Profiler.csproj" />
   <Project Path="FUSE.Tests/FUSE.Tests.csproj" />
   <Project Path="FUSE/FUSE.csproj" />
 </Solution>

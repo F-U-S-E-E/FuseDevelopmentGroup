@@ -1,0 +1,11 @@
+{
+  "Id": "FUSE.Profiler",
+  "DisplayName": "FUSE Profiler",
+  "Author": "FUSE Development Group",
+  "Version": "0.1.0",
+  "ManagerVersion": "0.27.10",
+  "AssemblyName": "FUSE.Profiler.dll",
+  "EntryMethod": "FUSE.Profiler.ProfilerMod.Load",
+  "HomePage": "https://github.com/F-U-S-E-E/FuseDevelopmentGroup",
+  "Repository": ""
+}

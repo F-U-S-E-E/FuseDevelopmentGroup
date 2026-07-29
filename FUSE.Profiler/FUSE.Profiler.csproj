@@ -1,0 +1,106 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Paths.user is imported by Directory.Build.props so that $(GameDir) is
+       available to the property defaults below (same convention as FUSE.csproj). -->
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>FUSE.Profiler</AssemblyName>
+    <RootNamespace>FUSE.Profiler</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <Platforms>AnyCPU</Platforms>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GameDir Condition="'$(GameDir)' == ''">C:\Steam\steamapps\common\Railroader</GameDir>
+    <UnityManagedDir Condition="'$(UnityManagedDir)' == ''">$(GameDir)\Railroader_Data\Managed</UnityManagedDir>
+    <UnityModManagerDir Condition="'$(UnityModManagerDir)' == ''">$(UnityManagedDir)\UnityModManager</UnityModManagerDir>
+    <ModDeployDir Condition="'$(ModDeployDir)' == ''">$(GameDir)\Mods\FUSE.Profiler</ModDeployDir>
+    <EnableModDeploy Condition="'$(EnableModDeploy)' == ''">false</EnableModDeploy>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FUSE.Tests" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">$(UnityModManagerDir)\UnityModManagerNet.dll</UnityModManagerAssemblyPath>
+    <UnityModManagerAssemblyPath Condition="'$(UnityModManagerAssemblyPath)' == '' and Exists('$(UnityModManagerDir)\UnityModManager.dll')">$(UnityModManagerDir)\UnityModManager.dll</UnityModManagerAssemblyPath>
+    <UnityModManagerReferenceName Condition="'$(UnityModManagerReferenceName)' == '' and Exists('$(UnityModManagerDir)\UnityModManagerNet.dll')">UnityModManagerNet</UnityModManagerReferenceName>
+    <UnityModManagerReferenceName Condition="'$(UnityModManagerReferenceName)' == '' and Exists('$(UnityModManagerDir)\UnityModManager.dll')">UnityModManager</UnityModManagerReferenceName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="0Harmony" Condition="Exists('$(UnityModManagerDir)\0Harmony.dll')">
+      <HintPath>$(UnityModManagerDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony" Condition="!Exists('$(UnityModManagerDir)\0Harmony.dll') and Exists('$(UnityManagedDir)\0Harmony.dll')">
+      <HintPath>$(UnityManagedDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(UnityModManagerReferenceName)" Condition="Exists('$(UnityModManagerAssemblyPath)')">
+      <HintPath>$(UnityModManagerAssemblyPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp" Condition="Exists('$(UnityManagedDir)\Assembly-CSharp.dll')">
+      <HintPath>$(UnityManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Core" Condition="Exists('$(UnityManagedDir)\Core.dll')">
+      <HintPath>$(UnityManagedDir)\Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="KeyValue.Runtime" Condition="Exists('$(UnityManagedDir)\KeyValue.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\KeyValue.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.InputLegacyModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.TextRenderingModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.UIModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI" Condition="Exists('$(UnityManagedDir)\UnityEngine.UI.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Info.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <Target Name="ValidateUnityReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(UnityModManagerAssemblyPath)')" Text="UnityModManagerNet.dll or UnityModManager.dll was not found. Set UnityModManagerDir or GameDir to your installed Railroader + UMM location." />
+    <Error Condition="!Exists('$(UnityModManagerDir)\0Harmony.dll') and !Exists('$(UnityManagedDir)\0Harmony.dll')" Text="0Harmony.dll was not found. Set UnityModManagerDir or GameDir to your installed Railroader + UMM location." />
+    <Error Condition="!Exists('$(UnityManagedDir)\Assembly-CSharp.dll')" Text="Assembly-CSharp.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')" Text="UnityEngine.IMGUIModule.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.InputLegacyModule.dll')" Text="UnityEngine.InputLegacyModule.dll was not found in the Railroader Managed folder." />
+  </Target>
+
+  <Target Name="DeployToUnityModManagerFolder" AfterTargets="Build" Condition="'$(EnableModDeploy)' == 'true'">
+    <MakeDir Directories="$(ModDeployDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="Info.json" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="false" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+  </Target>
+</Project>
