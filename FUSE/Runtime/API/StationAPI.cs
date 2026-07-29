@@ -28,6 +28,21 @@ namespace FUSE.Runtime.API
         private static readonly Vector3 EmptyStationPickVolumeSize = new Vector3(3.2f, 2.3f, 0.9f);
         private static readonly Vector3 EmptyStationPickVolumeCenter = new Vector3(0f, 1.35f, 0f);
         private const float EmptyStationPickVolumeFaceOffset = 0.85f;
+        private static readonly Dictionary<string, string> LocationPassengerStopIds =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                // Keep these station industries associated with their canonical
+                // passenger stops when a compatible track pack replaces or
+                // recreates the live stop outside the industry's current lookup.
+                { "bryson-house", "bryson" },
+                { "Bryson Depot", "bryson" },
+                { "hemingway-depot", "hemingway" },
+                { "Hemingway Station", "hemingway" }
+            };
+        private static readonly HashSet<string> LoggedLocationPassengerStopFallbacks =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> LoggedUnresolvedLocationPassengerStops =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static Transform _fallbackRoot;
         private static Sprite _stationIconSprite;
         private static Material _stationIconMaterial;
@@ -262,10 +277,239 @@ namespace FUSE.Runtime.API
 
         public static PassengerStop GetPassengerStop(string id)
         {
-            return !string.IsNullOrWhiteSpace(id)
-                ? PassengerStop.FindAll().FirstOrDefault(stop =>
-                    string.Equals(stop.identifier, id, StringComparison.OrdinalIgnoreCase))
-                : null;
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            var cachedStop = PassengerStop.FindAll().FirstOrDefault(stop =>
+                PassengerStopMatchesStopId(stop, id));
+            return cachedStop ?? UnityEngine.Object.FindObjectsOfType<PassengerStop>(true)
+                .FirstOrDefault(stop => PassengerStopMatchesStopId(stop, id));
+        }
+
+        internal static PassengerStop GetLocationPassengerStop(Industry industry)
+        {
+            if (industry == null)
+            {
+                return null;
+            }
+
+            if (TryGetLocationPassengerStopId(industry.identifier, out var stopId) ||
+                TryGetLocationPassengerStopId(industry.name, out stopId))
+            {
+                var mappedStop = ResolveMappedLocationPassengerStop(
+                    industry,
+                    stopId,
+                    out var resolutionSource);
+                if (mappedStop != null)
+                {
+                    LogLocationPassengerStopResolution(
+                        industry,
+                        mappedStop,
+                        resolutionSource);
+                    return mappedStop;
+                }
+
+                LogUnresolvedLocationPassengerStop(industry, stopId);
+            }
+
+            return industry.GetComponentInChildren<PassengerStop>();
+        }
+
+        private static PassengerStop ResolveMappedLocationPassengerStop(
+            Industry industry,
+            string stopId,
+            out string resolutionSource)
+        {
+            var stop = GetPassengerStop(stopId);
+            resolutionSource = "live scene identifier";
+            if (stop == null)
+            {
+                stop = GetAreaStationAgentPassengerStop(industry, stopId);
+                resolutionSource = "station-agent reference";
+            }
+
+            if (stop == null)
+            {
+                stop = GetUniqueAreaPassengerStop(industry);
+                resolutionSource = "unique area passenger stop";
+            }
+
+            return stop;
+        }
+
+        private static void LogLocationPassengerStopResolution(
+            Industry industry,
+            PassengerStop stop,
+            string resolutionSource)
+        {
+            if (LoggedLocationPassengerStopFallbacks.Add(industry.identifier))
+            {
+                FuseLog.Info(
+                    $"FUSE Company Locations associated industry='{industry.identifier}' " +
+                    $"passengerStop='{stop.identifier}' source='{resolutionSource}' " +
+                    "using the base-game compatibility mapping.");
+            }
+        }
+
+        private static void LogUnresolvedLocationPassengerStop(Industry industry, string stopId)
+        {
+            if (LoggedUnresolvedLocationPassengerStops.Add(industry.identifier))
+            {
+                var area = industry.GetComponentInParent<Area>(true);
+                FuseLog.Warning(
+                    $"FUSE Company Locations could not resolve mapped passenger stop for " +
+                    $"industry='{industry.identifier}' name='{industry.name}' stopHint='{stopId}' " +
+                    $"area='{area?.identifier ?? "<none>"}'.");
+            }
+        }
+
+        private static PassengerStop GetAreaStationAgentPassengerStop(Industry industry, string stopId)
+        {
+            var industryArea = industry.GetComponentInParent<Area>(true);
+            if (industryArea == null)
+            {
+                return null;
+            }
+
+            PassengerStop candidate = null;
+            foreach (var agent in UnityEngine.Object.FindObjectsOfType<StationAgent>(true))
+            {
+                if (agent == null)
+                {
+                    continue;
+                }
+
+                var agentArea = AreaField?.GetValue(agent) as Area;
+                if (!AreasMatch(industryArea, agentArea, stopId))
+                {
+                    continue;
+                }
+
+                var agentStop = GetStationPassengerStop(agent);
+                if (agentStop == null)
+                {
+                    continue;
+                }
+
+                if (candidate != null && !ReferenceEquals(candidate, agentStop))
+                {
+                    return null;
+                }
+
+                candidate = agentStop;
+            }
+
+            return candidate;
+        }
+
+        private static PassengerStop GetUniqueAreaPassengerStop(Industry industry)
+        {
+            var industryArea = industry.GetComponentInParent<Area>(true);
+            if (industryArea == null)
+            {
+                return null;
+            }
+
+            PassengerStop candidate = null;
+            foreach (var stop in UnityEngine.Object.FindObjectsOfType<PassengerStop>(true))
+            {
+                if (stop == null ||
+                    !AreasMatch(industryArea, stop.GetComponentInParent<Area>(true), industryArea.identifier))
+                {
+                    continue;
+                }
+
+                if (candidate != null && !ReferenceEquals(candidate, stop))
+                {
+                    return null;
+                }
+
+                candidate = stop;
+            }
+
+            return candidate;
+        }
+
+        private static bool AreasMatch(Area expected, Area candidate, string areaIdHint)
+        {
+            if (expected == null || candidate == null)
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(expected, candidate))
+            {
+                return true;
+            }
+
+            return string.Equals(expected.identifier, candidate.identifier, StringComparison.OrdinalIgnoreCase) &&
+                   (string.IsNullOrWhiteSpace(areaIdHint) ||
+                    string.Equals(expected.identifier, areaIdHint, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(expected.name, areaIdHint, StringComparison.OrdinalIgnoreCase));
+        }
+
+        internal static IEnumerable<IIndustryTrackDisplayable> GetLocationTrackDisplayables(Industry industry)
+        {
+            if (industry == null)
+            {
+                return Enumerable.Empty<IIndustryTrackDisplayable>();
+            }
+
+            var displayables = industry.TrackDisplayables;
+            if (!TryGetLocationPassengerStopId(industry.identifier, out _) &&
+                !TryGetLocationPassengerStopId(industry.name, out _))
+            {
+                return displayables;
+            }
+
+            var stop = GetLocationPassengerStop(industry);
+            var safeDisplayables = displayables
+                .Where(displayable =>
+                    !(displayable is PassengerStop) ||
+                    HasUsableLocationTrackSpan(displayable))
+                .ToList();
+
+            // A compatible track pack can leave the selected Industry's cached
+            // displayables pointing at a stale PassengerStop. Include the live
+            // resolved stop when its replacement span is usable; this restores
+            // the platform under TRACKS without evaluating the stale span.
+            if (stop != null &&
+                HasUsableLocationTrackSpan(stop) &&
+                !safeDisplayables.Any(displayable => ReferenceEquals(displayable, stop)))
+            {
+                safeDisplayables.Add(stop);
+            }
+
+            return safeDisplayables;
+        }
+
+        private static bool HasUsableLocationTrackSpan(IIndustryTrackDisplayable displayable)
+        {
+            try
+            {
+                return displayable?.TrackSpans?.Any(span =>
+                {
+                    var lower = span?.lower;
+                    var upper = span?.upper;
+                    return lower.HasValue &&
+                           upper.HasValue &&
+                           lower.Value.segment != null &&
+                           upper.Value.segment != null;
+                }) == true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        internal static bool TryGetLocationPassengerStopId(string industryId, out string passengerStopId)
+        {
+            passengerStopId = null;
+            return !string.IsNullOrWhiteSpace(industryId) &&
+                   LocationPassengerStopIds.TryGetValue(industryId, out passengerStopId);
         }
 
         public static IEnumerable<PassengerStop> GetAllPassengerStops()

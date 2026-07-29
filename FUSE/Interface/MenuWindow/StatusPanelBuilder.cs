@@ -29,6 +29,15 @@ namespace FUSE.Interface.MenuWindow
 
         public static void Build(UIPanelBuilder builder)
         {
+            // The status page can grow substantially when runtime guards or
+            // third-party mods report problems. Give the complete page its own
+            // viewport so diagnostics never spill into the action rows or out
+            // of the window.
+            builder.VScrollView(BuildScrollableContent, new RectOffset(0, 8, 0, 0));
+        }
+
+        private static void BuildScrollableContent(UIPanelBuilder builder)
+        {
             builder.AddTitle("FUSE Status", "");
 
             var reportSnapshot = FuseLoadReport.GetLastReportSnapshot();
@@ -84,14 +93,16 @@ namespace FUSE.Interface.MenuWindow
             // Full per-guard breakdown (this window is the only UI surface, so
             // the counters must be readable here, not just in copied reports).
             builder.AddSection("Runtime Guards");
-            builder.AddLabel(FuseRuntimeGuardCounters.FormatSummary());
+            InterfaceUtils.AddWrappedLabel(builder, FuseRuntimeGuardCounters.FormatSummary(), 76f);
             builder.AddField(
                 "Native leak stacks",
                 $"{FuseNativeLeakDiagnostic.ModeLabel} (FUSE setting: {(FuseSettings.EnableNativeLeakStackTraces ? "enabled" : "disabled")})");
-            builder.AddLabel(
+            InterfaceUtils.AddWrappedLabel(
+                builder,
                 FuseRuntimeGuardCounters.AllIdle
                     ? "All idle — no broken content needed containing this session."
-                    : "Non-zero counters are content problems FUSE is containing; offenders are named in FUSE.log and the health report.");
+                    : "Non-zero counters are content problems FUSE is containing; offenders are named in FUSE.log and the health report.",
+                48f);
             builder.Spacer(6f);
 
             // Per-mod breakdown for the third-party exception registry,
@@ -105,19 +116,24 @@ namespace FUSE.Interface.MenuWindow
                 foreach (var record in modExceptions.OrderByDescending(item => item.Count).Take(5))
                 {
                     var display = string.IsNullOrWhiteSpace(record.DisplayName) ? record.ModId : record.DisplayName;
-                    builder.AddField(display, DescribeModExceptionRecord(record));
+                    InterfaceUtils.AddWrappedField(builder, display, DescribeModExceptionRecord(record), 52f);
                 }
 
                 if (modExceptions.Length > 5)
                 {
-                    builder.AddLabel($"...and {modExceptions.Length - 5} more mod(s) — full list in the health report.");
+                    InterfaceUtils.AddWrappedLabel(
+                        builder,
+                        $"...and {modExceptions.Length - 5} more mod(s) — full list in the health report.",
+                        28f);
                 }
             }
 
-            builder.AddLabel(
+            InterfaceUtils.AddWrappedLabel(
+                builder,
                 modExceptionState.Total == 0
                     ? "All idle — no third-party mod exceptions were observed this session."
-                    : "Non-zero counts are third-party mod faults FUSE observed or contained; offenders are named in FUSE.log and the health report.");
+                    : "Non-zero counts are third-party mod faults FUSE observed or contained; offenders are named in FUSE.log and the health report.",
+                48f);
             builder.Spacer(6f);
 
             builder.AddSection("Actions");

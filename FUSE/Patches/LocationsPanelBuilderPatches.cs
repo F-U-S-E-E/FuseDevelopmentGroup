@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using Model.Ops;
 using FUSE.Runtime.API;
@@ -112,6 +113,96 @@ namespace FUSE.Patches
             public int AreaSortOrder { get; set; }
             public string IndustrySortKey { get; }
             public int AreaFirstIndex { get; set; }
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class LocationsIndustryDetailPatches
+    {
+        private const string TracksMethodName = "AddTracksSection";
+        private const string PassengerMethodName = "AddPassengerSection";
+
+        private static MethodBase[] TargetMethods()
+        {
+            var detailBuilderType = typeof(LocationsPanelBuilder)
+                .GetNestedType("IndustryDetailBuilder", BindingFlags.NonPublic);
+            if (detailBuilderType == null)
+            {
+                throw new MissingMemberException(
+                    typeof(LocationsPanelBuilder).FullName,
+                    "IndustryDetailBuilder");
+            }
+
+            var tracksMethod = detailBuilderType.GetMethod(
+                TracksMethodName,
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            var passengerMethod = detailBuilderType.GetMethod(
+                PassengerMethodName,
+                BindingFlags.Instance | BindingFlags.Public);
+            if (tracksMethod == null || passengerMethod == null)
+            {
+                throw new MissingMethodException(
+                    detailBuilderType.FullName,
+                    tracksMethod == null ? TracksMethodName : PassengerMethodName);
+            }
+
+            return new MethodBase[] { tracksMethod, passengerMethod };
+        }
+
+        private static IEnumerable<CodeInstruction> Transpiler(
+            IEnumerable<CodeInstruction> instructions,
+            MethodBase __originalMethod)
+        {
+            var trackDisplayablesGetter = AccessTools.PropertyGetter(
+                typeof(Industry),
+                nameof(Industry.TrackDisplayables));
+            var locationTrackDisplayables = AccessTools.Method(
+                typeof(StationAPI),
+                nameof(StationAPI.GetLocationTrackDisplayables));
+            var locationPassengerStop = AccessTools.Method(
+                typeof(StationAPI),
+                nameof(StationAPI.GetLocationPassengerStop));
+
+            var replacementCount = 0;
+            foreach (var instruction in instructions)
+            {
+                if (Equals(instruction.operand, trackDisplayablesGetter))
+                {
+                    instruction.opcode = OpCodes.Call;
+                    instruction.operand = locationTrackDisplayables;
+                    replacementCount++;
+                }
+                else if (IsPassengerStopChildLookup(instruction.operand as MethodInfo))
+                {
+                    instruction.opcode = OpCodes.Call;
+                    instruction.operand = locationPassengerStop;
+                    replacementCount++;
+                }
+
+                yield return instruction;
+            }
+
+            if (replacementCount == 0)
+            {
+                FuseLog.Warning(
+                    $"FUSE could not patch LocationsPanelBuilder.{__originalMethod?.Name ?? "<unknown>"} " +
+                    "for external passenger-stop ownership.");
+            }
+        }
+
+        private static bool IsPassengerStopChildLookup(MethodInfo method)
+        {
+            if (method == null ||
+                method.DeclaringType != typeof(UnityEngine.Component) ||
+                method.Name != nameof(UnityEngine.Component.GetComponentInChildren) ||
+                !method.IsGenericMethod ||
+                method.GetParameters().Length != 0)
+            {
+                return false;
+            }
+
+            var genericArguments = method.GetGenericArguments();
+            return genericArguments.Length == 1 && genericArguments[0] == typeof(PassengerStop);
         }
     }
 
