@@ -58,6 +58,9 @@ namespace FUSE.Infrastructure
         // any refresh rate without flagging ordinary frame-time noise.
         public const bool DefaultEnableFrameSpikeDiagnostics = false;
         public const float DefaultFrameSpikeThresholdMs = 100f;
+        // Test override for reproducing the constrained-card scenery policy on
+        // higher-VRAM hardware. Off by default and persisted as a user setting.
+        public const bool DefaultForceConstrainedVramMode = false;
         // Unity's native-allocation leak stacks are process-wide and expensive.
         // Keep them opt-in and restore the host's prior mode when FUSE unloads.
         public const bool DefaultEnableNativeLeakStackTraces = false;
@@ -122,6 +125,9 @@ namespace FUSE.Infrastructure
 
         public static float FrameSpikeThresholdMs { get; private set; } = DefaultFrameSpikeThresholdMs;
 
+        public static bool ForceConstrainedVramMode { get; private set; } =
+            DefaultForceConstrainedVramMode;
+
         public static bool EnableNativeLeakStackTraces { get; private set; } = DefaultEnableNativeLeakStackTraces;
 
         public static void Load(UnityModManager.ModEntry modEntry)
@@ -152,6 +158,7 @@ namespace FUSE.Infrastructure
             RandomVisualConditionMax = DefaultRandomVisualConditionMax;
             EnableFrameSpikeDiagnostics = DefaultEnableFrameSpikeDiagnostics;
             FrameSpikeThresholdMs = DefaultFrameSpikeThresholdMs;
+            ForceConstrainedVramMode = DefaultForceConstrainedVramMode;
             EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -218,6 +225,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "EnableFrameSpikeDiagnostics", DefaultEnableFrameSpikeDiagnostics);
                 FrameSpikeThresholdMs = ClampFrameSpikeThresholdMs(
                     ReadFloat(settings, "FrameSpikeThresholdMs", DefaultFrameSpikeThresholdMs));
+                ForceConstrainedVramMode =
+                    ReadBool(settings, "ForceConstrainedVramMode", DefaultForceConstrainedVramMode);
                 EnableNativeLeakStackTraces =
                     ReadBool(settings, "EnableNativeLeakStackTraces", DefaultEnableNativeLeakStackTraces);
                 ApplyUserOverrides();
@@ -251,6 +260,7 @@ namespace FUSE.Infrastructure
                     $"RandomVisualConditionMax={RandomVisualConditionMax} " +
                     $"EnableFrameSpikeDiagnostics={EnableFrameSpikeDiagnostics} " +
                     $"FrameSpikeThresholdMs={FrameSpikeThresholdMs} " +
+                    $"ForceConstrainedVramMode={ForceConstrainedVramMode} " +
                     $"EnableNativeLeakStackTraces={EnableNativeLeakStackTraces} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
@@ -282,6 +292,7 @@ namespace FUSE.Infrastructure
                 RandomVisualConditionMax = DefaultRandomVisualConditionMax;
                 EnableFrameSpikeDiagnostics = DefaultEnableFrameSpikeDiagnostics;
                 FrameSpikeThresholdMs = DefaultFrameSpikeThresholdMs;
+                ForceConstrainedVramMode = DefaultForceConstrainedVramMode;
                 EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Exception($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled", ex);
@@ -456,6 +467,15 @@ namespace FUSE.Infrastructure
             FuseLog.Info(
                 $"FUSE setting changed: {nameof(EnableFrameSpikeDiagnostics)}={enabled} " +
                 $"(threshold {FrameSpikeThresholdMs:F0}ms). Takes effect immediately.");
+        }
+
+        public static void SetForceConstrainedVramMode(bool enabled)
+        {
+            ForceConstrainedVramMode = enabled;
+            SaveUserOverride(nameof(ForceConstrainedVramMode), enabled);
+            FuseLog.Info(
+                $"FUSE setting changed: {nameof(ForceConstrainedVramMode)}={enabled}. " +
+                "Restart the game before collecting a comparison capture.");
         }
 
         // The spike-floor clamp: 20ms matches the read-time floor applied to
@@ -721,6 +741,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(EnableFrameSpikeDiagnostics), EnableFrameSpikeDiagnostics);
                 FrameSpikeThresholdMs = ClampFrameSpikeThresholdMs(
                     ReadFloat(settings, nameof(FrameSpikeThresholdMs), FrameSpikeThresholdMs));
+                ForceConstrainedVramMode =
+                    ReadBool(settings, nameof(ForceConstrainedVramMode), ForceConstrainedVramMode);
                 EnableNativeLeakStackTraces =
                     ReadBool(settings, nameof(EnableNativeLeakStackTraces), EnableNativeLeakStackTraces);
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");

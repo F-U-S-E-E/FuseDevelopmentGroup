@@ -215,22 +215,28 @@ namespace FUSE.Loading
 
         public void Created(string kind, string id)
         {
-            Report.CreatedObjects.Add(Format(kind, id));
+            Report.CreatedObjects.Add(
+                FuseSettings.VerboseApplyReportDetails ? Format(kind, id) : null);
         }
 
         public void Updated(string kind, string id)
         {
-            Report.UpdatedObjects.Add(Format(kind, id));
+            Report.UpdatedObjects.Add(
+                FuseSettings.VerboseApplyReportDetails ? Format(kind, id) : null);
         }
 
         public void Removed(string kind, string id)
         {
-            Report.RemovedObjects.Add(Format(kind, id));
+            Report.RemovedObjects.Add(
+                FuseSettings.VerboseApplyReportDetails ? Format(kind, id) : null);
         }
 
         public void Skipped(string kind, string id, string reason)
         {
-            Report.SkippedObjects.Add($"{Format(kind, id)} reason='{reason ?? string.Empty}'");
+            Report.SkippedObjects.Add(
+                FuseSettings.VerboseApplyReportDetails
+                    ? $"{Format(kind, id)} reason='{reason ?? string.Empty}'"
+                    : null);
         }
 
         public void Warning(string kind, string id, string message)
@@ -250,7 +256,10 @@ namespace FUSE.Loading
 
         public void PostBind(string kind, string id, string message)
         {
-            Report.PostBindValidationResults.Add($"{Format(kind, id)} {message ?? string.Empty}");
+            Report.PostBindValidationResults.Add(
+                FuseSettings.VerboseApplyReportDetails
+                    ? $"{Format(kind, id)} {message ?? string.Empty}"
+                    : null);
         }
 
         private string Format(string kind, string id)

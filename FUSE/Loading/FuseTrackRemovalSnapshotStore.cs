@@ -81,9 +81,12 @@ namespace FUSE.Loading
             }
 
             package.Spans[spanId] = snapshot;
-            FuseLog.Info(
-                $"FUSE captured removable base-game track snapshot package='{packageId}' operation='capture-track-removal-snapshot' " +
-                $"kind='track span' id='{spanId}'.");
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                FuseLog.Info(
+                    $"FUSE captured removable base-game track snapshot package='{packageId}' operation='capture-track-removal-snapshot' " +
+                    $"kind='track span' id='{spanId}'.");
+            }
         }
 
         public static void CaptureSegmentBeforeRemoval(string packageId, string segmentId, FuseApplyTransaction transaction)
@@ -119,9 +122,12 @@ namespace FUSE.Loading
             }
 
             package.Segments[segmentId] = snapshot;
-            FuseLog.Info(
-                $"FUSE captured removable base-game track snapshot package='{packageId}' operation='capture-track-removal-snapshot' " +
-                $"kind='track segment' id='{segmentId}'.");
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                FuseLog.Info(
+                    $"FUSE captured removable base-game track snapshot package='{packageId}' operation='capture-track-removal-snapshot' " +
+                    $"kind='track segment' id='{segmentId}'.");
+            }
         }
 
         public static void CaptureNodeBeforeRemoval(string packageId, string nodeId, FuseApplyTransaction transaction)
@@ -151,9 +157,12 @@ namespace FUSE.Loading
             }
 
             package.Nodes[nodeId] = SnapshotNode(node);
-            FuseLog.Info(
-                $"FUSE captured removable base-game track snapshot package='{packageId}' operation='capture-track-removal-snapshot' " +
-                $"kind='track node' id='{nodeId}'.");
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                FuseLog.Info(
+                    $"FUSE captured removable base-game track snapshot package='{packageId}' operation='capture-track-removal-snapshot' " +
+                    $"kind='track node' id='{nodeId}'.");
+            }
         }
 
         public static void RestorePackage(string packageId)

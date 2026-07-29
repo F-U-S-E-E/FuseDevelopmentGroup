@@ -535,7 +535,7 @@ namespace FUSE.Infrastructure
         public FuseModExceptionReportState(
             FuseModExceptionSnapshot[] mods, long total, long unattributed, string summaryLine)
         {
-            Mods = mods ?? new FuseModExceptionSnapshot[0];
+            Mods = mods ?? Array.Empty<FuseModExceptionSnapshot>();
             Total = total;
             Unattributed = unattributed;
             SummaryLine = summaryLine ?? string.Empty;

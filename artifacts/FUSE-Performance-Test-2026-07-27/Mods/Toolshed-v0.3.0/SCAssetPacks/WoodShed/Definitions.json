@@ -1,0 +1,90 @@
+{
+  "objects": [
+    {
+      "identifier": "wood-shed",
+      "metadata": {
+        "name": "Wood Fuel Shed",
+        "description": "Wood fuel shed scenery asset for Toolshed service-facility setups.",
+        "tags": [
+          "structure",
+          "service",
+          "wood"
+        ],
+        "credits": null
+      },
+      "definition": {
+        "kind": "Scenery",
+        "modelIdentifier": "wood-shed",
+        "cullingRadius": 500,
+        "components": [
+          {
+            "kind": "ToolshedServiceStorage",
+            "name": "Wood Storage",
+            "facilityId": "wood-shed",
+            "storageId": "pulpwood",
+            "serviceLoadId": "pulpwood",
+            "infiniteSupply": false,
+            "facilityCapacity": 180000.0,
+            "initialStorage": 45000.0,
+            "defaultLoadingRate": 250.0,
+            "showStorageTooltip": true,
+            "displayTitle": "Wood Loader",
+            "maxPickDistance": 50.0,
+            "interactionRadius": 2.0,
+            "editorPreviewEnabled": true,
+            "storageAnimationMapKey": "Wood Pile",
+            "storageAnimationLoadId": "pulpwood",
+            "storageAnimationCapacity": 180000.0,
+            "storageAnimationUseTransformFallback": true,
+            "storageAnimationFallbackTransformName": "Empty",
+            "storageAnimationEmptyLocalY": 0.2793902,
+            "storageAnimationFullLocalY": 2.7911012,
+            "storageAnimationEmptyLocalScaleZ": 0.109580874,
+            "storageAnimationFullLocalScaleZ": 1.0,
+            "transform": {
+              "position": [ 0.0, 0.0, 0.0 ],
+              "rotation": [ 0.0, 0.0, 0.0, 1.0 ],
+              "scale": [ 1.0, 1.0, 1.0 ]
+            },
+            "parent": null,
+            "enabled": true
+          },
+          {
+            "kind": "ToolshedServiceLoadPoint",
+            "name": "Wood Load Point",
+            "facilityId": "wood-shed",
+            "storageId": "pulpwood",
+            "loadPointId": "WoodLoadPoint",
+            "serviceLoadId": "pulpwood",
+            "loadingRate": 250.0,
+            "serviceRadius": 0.9,
+            "maximumSpeedMph": 5.0,
+            "requirePlayerOwnedCars": true,
+            "enableExtendedTenderSearch": true,
+            "extendedSearchRadius": 20.0,
+            "extendedLoadTargetRadius": 10.0,
+            "useServiceTargetBox": true,
+            "serviceTargetBoxCenter": { "x": 0.0, "y": 0.0, "z": 0.0 },
+            "serviceTargetBoxSize": { "x": 5.0, "y": 4.0, "z": 8.0 },
+            "restrictLoadingToServiceTrackSpan": false,
+            "serviceTrackRouteLimit": 80.0,
+            "displayTitle": "Wood Loader",
+            "messageWhenActive": "Click to Stop Loading",
+            "messageWhenInactive": "Click to Start Loading",
+            "maxPickDistance": 50.0,
+            "interactionRadius": 2.0,
+            "requireLoweredBeforeLoading": false,
+            "editorPreviewEnabled": true,
+            "transform": {
+              "position": [ 0.0, 0.0, 0.0 ],
+              "rotation": [ 0.0, 0.0, 0.0, 1.0 ],
+              "scale": [ 1.0, 1.0, 1.0 ]
+            },
+            "parent": null,
+            "enabled": true
+          }
+        ]
+      }
+    }
+  ]
+}

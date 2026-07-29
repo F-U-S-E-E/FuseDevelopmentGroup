@@ -798,9 +798,101 @@ namespace FUSE.Loading
         private static Container BypassDeserialize(string text)
         {
             var settings = (JsonSerializerSettings)ContainerSerializerSettingsMethod.Invoke(null, null);
+            // Railroader's stock Vec2/Vec3/Quaternion converters accept only
+            // array-shaped values. Some otherwise-valid asset packs serialize
+            // Unity structs as objects (for example {"x":0,"y":0,"z":0}).
+            // Put the tolerant reader first so those packs deserialize in one
+            // pass instead of throwing, reparsing the full container, and
+            // incorrectly classifying the component as an unknown subtype.
+            settings.Converters.Insert(0, TolerantUnityStructConverter.Instance);
             var container = JsonConvert.DeserializeObject<Container>(text, settings);
             container?.Awake();
             return container;
+        }
+
+        private sealed class TolerantUnityStructConverter : JsonConverter
+        {
+            internal static readonly TolerantUnityStructConverter Instance =
+                new TolerantUnityStructConverter();
+
+            public override bool CanWrite => false;
+
+            public override bool CanConvert(Type objectType)
+            {
+                return objectType == typeof(Vector2) ||
+                       objectType == typeof(Vector3) ||
+                       objectType == typeof(Quaternion);
+            }
+
+            public override object ReadJson(
+                JsonReader reader,
+                Type objectType,
+                object existingValue,
+                JsonSerializer serializer)
+            {
+                var token = JToken.Load(reader);
+                if (objectType == typeof(Vector2))
+                {
+                    return new Vector2(
+                        ReadComponent(token, "x", 0),
+                        ReadComponent(token, "y", 1));
+                }
+
+                if (objectType == typeof(Vector3))
+                {
+                    return new Vector3(
+                        ReadComponent(token, "x", 0),
+                        ReadComponent(token, "y", 1),
+                        ReadComponent(token, "z", 2));
+                }
+
+                if (objectType == typeof(Quaternion))
+                {
+                    return new Quaternion(
+                        ReadComponent(token, "x", 0),
+                        ReadComponent(token, "y", 1),
+                        ReadComponent(token, "z", 2),
+                        ReadComponent(token, "w", 3));
+                }
+
+                throw new JsonSerializationException(
+                    $"Unsupported Unity struct type '{objectType}'.");
+            }
+
+            public override void WriteJson(
+                JsonWriter writer,
+                object value,
+                JsonSerializer serializer)
+            {
+                throw new NotSupportedException(
+                    "The tolerant Unity struct converter is read-only.");
+            }
+
+            private static float ReadComponent(
+                JToken token,
+                string propertyName,
+                int arrayIndex)
+            {
+                JToken value = null;
+                if (token is JArray array && arrayIndex < array.Count)
+                {
+                    value = array[arrayIndex];
+                }
+                else if (token is JObject obj)
+                {
+                    value = obj.GetValue(
+                        propertyName,
+                        StringComparison.OrdinalIgnoreCase);
+                }
+
+                if (value == null || value.Type == JTokenType.Null)
+                {
+                    throw new JsonSerializationException(
+                        $"Unity struct value is missing component '{propertyName}'.");
+                }
+
+                return value.ToObject<float>();
+            }
         }
 
         /// <summary>

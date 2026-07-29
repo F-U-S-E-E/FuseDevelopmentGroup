@@ -64,11 +64,13 @@ namespace FUSE
                 WarnIfLegacyRailloaderInstallPresent();
                 LogStartupVersions(modEntry);
                 FuseSettings.Load(modEntry);
+                FuseConstrainedTextureMemoryPolicy.ApplyIfNeeded();
                 FuseNativeLeakDiagnostic.Initialize(FuseSettings.EnableNativeLeakStackTraces);
                 FuseAssetPackRegistry.MountAllAvailableAssetPacks();
 
                 _harmony = new Harmony(HarmonyId);
                 FusePatchResilience.ApplyAll(_harmony, Assembly.GetExecutingAssembly());
+                FuseNarrowGaugePerformanceCompatibility.Initialize(_harmony);
                 FuseEarlyLoader.SetPatchAvailable(FusePatchResilience.Applied.Any(patch =>
                     string.Equals(patch.TypeName, "FUSE.Patches.FuseEarlyLoaderSceneManagerPatch", StringComparison.Ordinal)));
                 _lifecycle = new FuseLifecycle();
@@ -198,6 +200,8 @@ namespace FUSE
 
         private static void Shutdown()
         {
+            FuseNarrowGaugePerformanceCompatibility.Shutdown();
+
             if (_harmony != null)
             {
                 try
@@ -227,6 +231,11 @@ namespace FUSE
             }
 
             FuseSceneryLoadThrottlePatch.Shutdown();
+            FuseCullingManagerUpdateRacePatch.ResetStats();
+            FuseTrackRebuilderQueueProcessor.Shutdown();
+            FuseCarCullerPendingProcessor.Shutdown();
+            FuseCarModelCompletionScheduler.Shutdown();
+            FuseDeferredAssetReferenceReleaseQueue.Shutdown();
             FuseSceneryLoadFailurePatch.Shutdown();
             FuseModExceptionLogHook.Shutdown();
             FuseLegacyAssemblyHost.Shutdown();
@@ -240,6 +249,8 @@ namespace FUSE
             FuseFrameSpikeDiagnostic.Shutdown();
             FuseRuntimePump.Shutdown();
             FuseNativeLeakDiagnostic.Shutdown();
+            FuseUnusedAssetReclaimer.Reset();
+            FuseConstrainedTextureMemoryPolicy.Restore();
 
             if (_isLoaded)
             {

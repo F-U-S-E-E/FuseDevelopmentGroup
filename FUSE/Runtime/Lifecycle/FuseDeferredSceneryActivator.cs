@@ -59,14 +59,18 @@ namespace FUSE.Runtime.Lifecycle
         // resolve against a live camera rather than the null-camera "nearest" band.
         private const float CameraWaitSeconds = 2f;
 
-        // Activation-wave tuning: per-frame time budget, the hard wave timeout after
-        // which any remaining scenery is activated inline, and a per-frame item cap so
-        // a burst of sub-millisecond activations can't spike GC in one frame. Measured
-        // per-item work is ~0.5ms; the old 6ms/64 settings made the wave budget-bound
-        // (~180 frames, 17-21s wall-clock on a 2,100-item load) rather than work-bound.
-        private const float FrameBudgetMilliseconds = 24f;
-        private const float WaveTimeoutSeconds = 30f;
-        private const int MaxItemsPerFrame = 128;
+        // Activation-wave tuning: the enhanced loading screen remains visible while
+        // this initial wave drains, so use a deliberately aggressive budget to make
+        // the world complete before control is released. The scenery model loader's
+        // independent concurrency gate still limits AssetBundle requests to four,
+        // preventing this activation queue from recreating the VRAM load race.
+        // A slow wave must never bulk-flush: doing so defeats both load throttling and
+        // the null-camera safety this class exists to provide. Measured
+        // per-item work is sub-millisecond; 24ms/128 made the 2,584-item E&A wave
+        // item-cap-bound at 20-23 frames and 5.5-6.6 seconds.
+        private const float FrameBudgetMilliseconds = 50f;
+        private const float SlowWaveWarningSeconds = 30f;
+        private const int MaxItemsPerFrame = 512;
 
         // Items beyond this distance from the activation anchor cannot trigger model
         // streaming (the game's streaming band is 1,500m; 2x leaves margin for the
@@ -77,7 +81,7 @@ namespace FUSE.Runtime.Lifecycle
         // the distance sort: with no camera the game treats distance as "nearest", so
         // bulk activation would force-stream everything (see class comment).
         private const float FarActivationThresholdMeters = 3000f;
-        private const int FarMaxItemsPerFrame = 256;
+        private const int FarMaxItemsPerFrame = 2048;
 
         // Re-sort trigger: if the camera anchor moves this far from the position the
         // unprocessed queue was last sorted against (teleport, fast travel), the
@@ -245,10 +249,6 @@ namespace FUSE.Runtime.Lifecycle
                 yield return null;
             }
 
-            // Do not lengthen this gate: past WaveTimeoutSeconds the remainder
-            // flushes in a single frame, so a longer wait just converts the wave
-            // into one big hitch.
-            //
             // The far-drain gate is keyed to Camera.main specifically — that is
             // the camera the game's streaming band resolves against (see
             // FuseSceneryCameraRef). Camera.current may be live while Camera.main
@@ -279,6 +279,7 @@ namespace FUSE.Runtime.Lifecycle
             var farDrained = 0;
             var resorts = 0;
             var framesSinceResort = int.MaxValue;
+            var slowWarningLogged = false;
 
             while (index < Queue.Count)
             {
@@ -291,8 +292,8 @@ namespace FUSE.Runtime.Lifecycle
                 // Re-resolve the streaming camera EVERY frame, not just at wave
                 // start. Two transitions matter: (1) it can blank or be replaced
                 // mid-wave (camera-mode change right after the loading screen) — a
-                // frame without one drains at the near cap, since those
-                // activations resolve against the null-camera nearest band; (2) it
+                // frame without one pauses so no null-camera nearest-band loads
+                // can begin; (2) it
                 // can come up just AFTER the initial 2s wait expired, the
                 // slow-startup path this wave most wants to help — arm the far
                 // drain then by re-anchoring and re-sorting the unprocessed tail.
@@ -304,6 +305,24 @@ namespace FUSE.Runtime.Lifecycle
                     ResortUnprocessed(index, anchor);
                     farStartIndex = FindFarPartitionStart(index);
                     framesSinceResort = 0;
+                }
+
+                // Never activate scenery without the gameplay camera. The game's
+                // culler treats a null camera as its nearest band, which turns an
+                // otherwise harmless activation wave into "load every model".
+                if (frameCamera == null)
+                {
+                    if (!slowWarningLogged &&
+                        Time.realtimeSinceStartup - _waveStart >= SlowWaveWarningSeconds)
+                    {
+                        slowWarningLogged = true;
+                        FuseLog.Warning(
+                            "FUSE deferred scenery wave is paused because no active " +
+                            "gameplay camera is available; queued scenery remains unloaded.");
+                    }
+
+                    yield return null;
+                    continue;
                 }
 
                 var frameStart = Time.realtimeSinceStartup;
@@ -341,31 +360,14 @@ namespace FUSE.Runtime.Lifecycle
                     processed++;
                 }
 
-                if (Time.realtimeSinceStartup - _waveStart >= WaveTimeoutSeconds)
+                if (!slowWarningLogged &&
+                    Time.realtimeSinceStartup - _waveStart >= SlowWaveWarningSeconds)
                 {
+                    slowWarningLogged = true;
                     FuseLog.Warning(
-                        $"FUSE deferred scenery wave exceeded {WaveTimeoutSeconds:0}s; " +
-                        $"activating the remaining {Queue.Count - index} item(s) inline.");
-                    while (index < Queue.Count)
-                    {
-                        switch (ActivateOne(Queue[index]))
-                        {
-                            case ActivationResult.Activated:
-                                activated++;
-                                break;
-                            case ActivationResult.KeptHidden:
-                                keptHidden++;
-                                break;
-                            default:
-                                failed++;
-                                break;
-                        }
-
-                        index++;
-                        processed++;
-                    }
-
-                    break;
+                        $"FUSE deferred scenery wave exceeded {SlowWaveWarningSeconds:0}s; " +
+                        $"continuing the remaining {Queue.Count - index} item(s) under " +
+                        "the normal per-frame budget.");
                 }
 
                 yield return null;

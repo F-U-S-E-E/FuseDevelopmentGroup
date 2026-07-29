@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using FUSE.Infrastructure;
 using FUSE.Interface;
@@ -119,9 +120,21 @@ namespace FUSE.Runtime.Lifecycle
             private int _gameObjects;
             private int _renderers;
             private int _sceneryInstances;
+            private int _fuseSceneryInstances;
+            private int _fuseSceneryWanted;
+            private int _fuseSceneryLoaded;
+            private int _distinctFuseLoadedAssets;
+            private int _texture2Ds;
+            private int _mipmappedTexture2Ds;
+            private int _ignoredMipmapLimitTexture2Ds;
+            private int _activeMipmapLimitedTexture2Ds;
+            private long _texture2DRuntimeBytes;
+            private long _mipmappedTexture2DRuntimeBytes;
+            private long _ignoredMipmapLimitTexture2DRuntimeBytes;
             private double _gameObjectScanMs;
             private double _rendererScanMs;
             private double _sceneryScanMs;
+            private double _textureScanMs;
 
             private bool _frameTimingCapabilityChecked;
             private bool _frameTimingAvailable;
@@ -139,6 +152,7 @@ namespace FUSE.Runtime.Lifecycle
                 GameObjects,
                 Renderers,
                 Scenery,
+                Textures,
                 Log
             }
 
@@ -212,6 +226,11 @@ namespace FUSE.Runtime.Lifecycle
                                 $"worst {FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}ms) frame={Time.frameCount} " +
                                 $"gcDelta0={gen0 - _gen0} gcDelta1={gen1 - _gen1} gcDelta2={gen2 - _gen2} " +
                                 $"sceneryLoadQueue={FuseSceneryLoadThrottlePatch.QueueDepth} " +
+                                $"sceneryInFlight={FuseSceneryLoadThrottlePatch.InFlightLoads} " +
+                                $"trackBuildQueue={FuseTrackRebuilderQueueProcessor.BuildQueueDepth} " +
+                                $"trackDestroyQueue={FuseTrackRebuilderQueueProcessor.DestroyQueueDepth} " +
+                                $"equipmentCullQueue={FuseCarCullerPendingProcessor.QueueDepth} " +
+                                $"equipmentCompletionQueue={FuseCarModelCompletionScheduler.QueueDepth} " +
                                 $"decalRegistry={decalRegistry}. " +
                                 "Correlate this timestamp with surrounding FUSE.log/Player.log activity; " +
                                 "a positive GC delta points at allocation pressure, a deep scenery queue " +
@@ -277,9 +296,21 @@ namespace FUSE.Runtime.Lifecycle
                 _gameObjects = -1;
                 _renderers = -1;
                 _sceneryInstances = -1;
+                _fuseSceneryInstances = -1;
+                _fuseSceneryWanted = -1;
+                _fuseSceneryLoaded = -1;
+                _distinctFuseLoadedAssets = -1;
+                _texture2Ds = -1;
+                _mipmappedTexture2Ds = -1;
+                _ignoredMipmapLimitTexture2Ds = -1;
+                _activeMipmapLimitedTexture2Ds = -1;
+                _texture2DRuntimeBytes = -1L;
+                _mipmappedTexture2DRuntimeBytes = -1L;
+                _ignoredMipmapLimitTexture2DRuntimeBytes = -1L;
                 _gameObjectScanMs = 0d;
                 _rendererScanMs = 0d;
                 _sceneryScanMs = 0d;
+                _textureScanMs = 0d;
                 _censusPhase = CensusPhase.GameObjects;
             }
 
@@ -297,6 +328,10 @@ namespace FUSE.Runtime.Lifecycle
                         break;
                     case CensusPhase.Scenery:
                         ScanSceneryInstances();
+                        _censusPhase = CensusPhase.Textures;
+                        break;
+                    case CensusPhase.Textures:
+                        ScanTextures();
                         _censusPhase = CensusPhase.Log;
                         break;
                     case CensusPhase.Log:
@@ -365,9 +400,40 @@ namespace FUSE.Runtime.Lifecycle
                 var started = Stopwatch.GetTimestamp();
                 try
                 {
-                    _sceneryInstances = UnityEngine.Object
-                        .FindObjectsByType<Helpers.SceneryAssetInstance>(FindObjectsSortMode.None)
-                        .Length;
+                    var instances = UnityEngine.Object.FindObjectsByType<Helpers.SceneryAssetInstance>(
+                        FindObjectsSortMode.None);
+                    _sceneryInstances = instances.Length;
+                    _fuseSceneryInstances = 0;
+                    _fuseSceneryWanted = FuseSceneryModelState.Available ? 0 : -1;
+                    _fuseSceneryLoaded = FuseSceneryModelState.ModelAvailable ? 0 : -1;
+
+                    var loadedAssets = FuseSceneryModelState.ModelAvailable
+                        ? new HashSet<string>(StringComparer.Ordinal)
+                        : null;
+                    foreach (var instance in instances)
+                    {
+                        if (instance == null ||
+                            instance.GetComponent<FUSE.Runtime.API.SceneryAPI.FuseSceneryMarker>() == null)
+                        {
+                            continue;
+                        }
+
+                        _fuseSceneryInstances++;
+                        if (_fuseSceneryWanted >= 0 &&
+                            FuseSceneryModelState.IsLoadRequested(instance))
+                        {
+                            _fuseSceneryWanted++;
+                        }
+
+                        if (_fuseSceneryLoaded >= 0 &&
+                            FuseSceneryModelState.GetModel(instance) != null)
+                        {
+                            _fuseSceneryLoaded++;
+                            loadedAssets.Add(instance.identifier ?? string.Empty);
+                        }
+                    }
+
+                    _distinctFuseLoadedAssets = loadedAssets?.Count ?? -1;
                 }
                 catch (Exception ex)
                 {
@@ -376,6 +442,59 @@ namespace FUSE.Runtime.Lifecycle
                 finally
                 {
                     _sceneryScanMs = ElapsedMilliseconds(started);
+                    _skipSpikeThisFrame = true;
+                }
+            }
+
+            private void ScanTextures()
+            {
+                var started = Stopwatch.GetTimestamp();
+                try
+                {
+                    var textures = Resources.FindObjectsOfTypeAll<Texture2D>();
+                    _texture2Ds = textures.Length;
+                    _mipmappedTexture2Ds = 0;
+                    _ignoredMipmapLimitTexture2Ds = 0;
+                    _activeMipmapLimitedTexture2Ds = 0;
+                    _texture2DRuntimeBytes = 0L;
+                    _mipmappedTexture2DRuntimeBytes = 0L;
+                    _ignoredMipmapLimitTexture2DRuntimeBytes = 0L;
+
+                    foreach (var texture in textures)
+                    {
+                        if (texture == null)
+                        {
+                            continue;
+                        }
+
+                        var runtimeBytes =
+                            UnityEngine.Profiling.Profiler.GetRuntimeMemorySizeLong(texture);
+                        _texture2DRuntimeBytes += runtimeBytes;
+                        if (texture.mipmapCount > 1)
+                        {
+                            _mipmappedTexture2Ds++;
+                            _mipmappedTexture2DRuntimeBytes += runtimeBytes;
+                        }
+
+                        if (texture.ignoreMipmapLimit)
+                        {
+                            _ignoredMipmapLimitTexture2Ds++;
+                            _ignoredMipmapLimitTexture2DRuntimeBytes += runtimeBytes;
+                        }
+
+                        if (texture.activeMipmapLimit > 0)
+                        {
+                            _activeMipmapLimitedTexture2Ds++;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception("FUSE runtime census Texture2D scan failed", ex);
+                }
+                finally
+                {
+                    _textureScanMs = ElapsedMilliseconds(started);
                     _skipSpikeThisFrame = true;
                 }
             }
@@ -391,11 +510,23 @@ namespace FUSE.Runtime.Lifecycle
                 var unityAllocatedBytes = -1L;
                 var unityReservedBytes = -1L;
                 var graphicsDriverBytes = -1L;
+                var textureCurrentBytes = -1L;
+                var textureDesiredBytes = -1L;
+                var textureTargetBytes = -1L;
+                var textureNonStreamingBytes = -1L;
+                var streamingTextureCount = -1L;
+                var nonStreamingTextureCount = -1L;
                 try
                 {
                     unityAllocatedBytes = UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong();
                     unityReservedBytes = UnityEngine.Profiling.Profiler.GetTotalReservedMemoryLong();
                     graphicsDriverBytes = UnityEngine.Profiling.Profiler.GetAllocatedMemoryForGraphicsDriver();
+                    textureCurrentBytes = ToSignedBytes(Texture.currentTextureMemory);
+                    textureDesiredBytes = ToSignedBytes(Texture.desiredTextureMemory);
+                    textureTargetBytes = ToSignedBytes(Texture.targetTextureMemory);
+                    textureNonStreamingBytes = ToSignedBytes(Texture.nonStreamingTextureMemory);
+                    streamingTextureCount = ToSignedBytes(Texture.streamingTextureCount);
+                    nonStreamingTextureCount = ToSignedBytes(Texture.nonStreamingTextureCount);
                 }
                 catch (Exception ex)
                 {
@@ -423,7 +554,11 @@ namespace FUSE.Runtime.Lifecycle
                     ? "failed"
                     : _frameTimingAvailable ? "enabled" : "unavailable";
 
-                var scanTotalMs = _gameObjectScanMs + _rendererScanMs + _sceneryScanMs;
+                var scanTotalMs =
+                    _gameObjectScanMs +
+                    _rendererScanMs +
+                    _sceneryScanMs +
+                    _textureScanMs;
                 var effectiveThresholdMs = Math.Max(
                     Mathf.Max(20f, FuseSettings.FrameSpikeThresholdMs),
                     _hitchDetector.BaselineMs * AdaptiveFrameHitchDetector.DefaultBaselineMultiplier);
@@ -431,16 +566,63 @@ namespace FUSE.Runtime.Lifecycle
                 FuseLog.Info(
                     $"FUSE runtime census: avgFps={averageFps:F1} frame={_censusFrame} " +
                     $"gameObjects={_gameObjects} renderers={_renderers} sceneryInstances={_sceneryInstances} " +
+                    $"fuseScenery={_fuseSceneryInstances} fuseSceneryWanted={_fuseSceneryWanted} " +
+                    $"fuseSceneryLoaded={_fuseSceneryLoaded} " +
+                    $"distinctFuseLoadedAssets={_distinctFuseLoadedAssets} " +
                     $"cars={cars} managedMB={ToMegabytes(managedBytes):F1} " +
                     $"unityAllocMB={ToMegabytes(unityAllocatedBytes):F1} " +
                     $"unityReservedMB={ToMegabytes(unityReservedBytes):F1} " +
                     $"gfxDriverMB={ToMegabytes(graphicsDriverBytes):F1} " +
+                    $"textureCurrentMB={ToMegabytes(textureCurrentBytes):F1} " +
+                    $"textureDesiredMB={ToMegabytes(textureDesiredBytes):F1} " +
+                    $"textureTargetMB={ToMegabytes(textureTargetBytes):F1} " +
+                    $"textureNonStreamingMB={ToMegabytes(textureNonStreamingBytes):F1} " +
+                    $"streamingTextures={streamingTextureCount} " +
+                    $"nonStreamingTextures={nonStreamingTextureCount} " +
+                    $"textureMipLimit={QualitySettings.globalTextureMipmapLimit} " +
+                    $"texture2Ds={_texture2Ds} mipmappedTexture2Ds={_mipmappedTexture2Ds} " +
+                    $"ignoredMipmapLimitTexture2Ds={_ignoredMipmapLimitTexture2Ds} " +
+                    $"activeMipmapLimitedTexture2Ds={_activeMipmapLimitedTexture2Ds} " +
+                    $"texture2DRuntimeMB={ToMegabytes(_texture2DRuntimeBytes):F1} " +
+                    $"mipmappedTexture2DRuntimeMB={ToMegabytes(_mipmappedTexture2DRuntimeBytes):F1} " +
+                    $"ignoredMipmapLimitTexture2DRuntimeMB={ToMegabytes(_ignoredMipmapLimitTexture2DRuntimeBytes):F1} " +
+                    $"constrainedTexturePolicy={FuseConstrainedTextureMemoryPolicy.IsApplied} " +
+                    $"graphicsMemoryMB={SystemInfo.graphicsMemorySize} " +
+                    $"forceConstrainedVram={FuseSettings.ForceConstrainedVramMode} " +
                     $"processPrivateMB={ToMegabytes(privateBytes):F1} " +
                     $"processWorkingSetMB={ToMegabytes(workingSetBytes):F1} " +
                     $"nativeLeakMode={FuseNativeLeakDiagnostic.ModeLabel} " +
                     $"decalRegistry={decalRegistry} " +
                     $"sceneryLoadQueue={FuseSceneryLoadThrottlePatch.QueueDepth} " +
                     $"sceneryLoadQueuePeak={FuseSceneryLoadThrottlePatch.PeakQueueDepth} " +
+                    $"sceneryInFlight={FuseSceneryLoadThrottlePatch.InFlightLoads} " +
+                    $"sceneryInFlightPeak={FuseSceneryLoadThrottlePatch.PeakInFlightLoads} " +
+                    $"sceneryDestinationInFlight={FuseSceneryLoadThrottlePatch.DestinationInFlightLoads} " +
+                    $"sceneryPriorityResorts={FuseSceneryLoadThrottlePatch.PriorityResorts} " +
+                    $"sceneryDestinationReconciles={FuseCullingManagerUpdateRacePatch.DestinationReconciliationRequests} " +
+                    $"sceneryDestinationCallbacks={FuseCullingManagerUpdateRacePatch.DestinationReconciliationCallbacks} " +
+                    $"trackBuildQueue={FuseTrackRebuilderQueueProcessor.BuildQueueDepth} " +
+                    $"trackBuildQueuePeak={FuseTrackRebuilderQueueProcessor.PeakBuildQueueDepth} " +
+                    $"trackDestroyQueue={FuseTrackRebuilderQueueProcessor.DestroyQueueDepth} " +
+                    $"trackDestroyQueuePeak={FuseTrackRebuilderQueueProcessor.PeakDestroyQueueDepth} " +
+                    $"trackBuilds={FuseTrackRebuilderQueueProcessor.Built} " +
+                    $"trackDestroys={FuseTrackRebuilderQueueProcessor.Destroyed} " +
+                    $"trackStaleBuildsSkipped={FuseTrackRebuilderQueueProcessor.StaleBuildsSkipped} " +
+                    $"equipmentCullQueue={FuseCarCullerPendingProcessor.QueueDepth} " +
+                    $"equipmentCullQueuePeak={FuseCarCullerPendingProcessor.PeakQueueDepth} " +
+                    $"equipmentLoadRetains={FuseCarCullerPendingProcessor.LoadRetains} " +
+                    $"equipmentUnloadReleases={FuseCarCullerPendingProcessor.UnloadReleases} " +
+                    $"equipmentLoadSceneryYieldFrames={FuseCarCullerPendingProcessor.SceneryYieldFrames} " +
+                    $"equipmentCompletionQueue={FuseCarModelCompletionScheduler.QueueDepth} " +
+                    $"equipmentCompletionQueuePeak={FuseCarModelCompletionScheduler.PeakQueueDepth} " +
+                    $"equipmentModelsCompleted={FuseCarModelCompletionScheduler.CompletedModels} " +
+                    $"equipmentCompletionSceneryYieldFrames={FuseCarModelCompletionScheduler.SceneryYieldFrames} " +
+                    $"equipmentAbandonedReferencesReleased={FuseCarModelCompletionScheduler.ReleasedReferences} " +
+                    $"aggregateLoadMaterialsReleased={FuseAggregateLoadMaterialReleasePatch.ReleasedMaterials} " +
+                    $"assetRequestEvictions={FuseUnusedAssetReclaimer.TotalEvictions} " +
+                    $"assetRequestEvictionsPending={FuseUnusedAssetReclaimer.PendingEvictions} " +
+                    $"unusedAssetSweeps={FuseUnusedAssetReclaimer.CompletedSweeps} " +
+                    $"unusedAssetSweepActive={FuseUnusedAssetReclaimer.SweepInProgress} " +
                     $"deferredScenery={FuseDeferredSceneryActivator.PendingCount} " +
                     $"frameTiming={frameTimingState} cpuFrameAvgMs={cpuFrameAverageMs:F2} " +
                     $"cpuMainAvgMs={cpuMainAverageMs:F2} cpuRenderAvgMs={cpuRenderAverageMs:F2} " +
@@ -450,7 +632,7 @@ namespace FUSE.Runtime.Lifecycle
                     $"hitchThresholdMs={effectiveThresholdMs:F1} " +
                     $"censusScanMs={scanTotalMs:F1} " +
                     $"(gameObjects={_gameObjectScanMs:F1}, renderers={_rendererScanMs:F1}, " +
-                    $"scenery={_sceneryScanMs:F1}) " +
+                    $"scenery={_sceneryScanMs:F1}, textures={_textureScanMs:F1}) " +
                     $"spikes={FuseRuntimeGuardCounters.FrameSpikes} " +
                     $"worstMs={FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}. " +
                     "A metric that climbs while average FPS falls identifies the likely accumulator; " +
@@ -625,6 +807,11 @@ namespace FUSE.Runtime.Lifecycle
             private static double ToMegabytes(long bytes)
             {
                 return bytes >= 0L ? bytes / BytesPerMegabyte : -1d;
+            }
+
+            private static long ToSignedBytes(ulong value)
+            {
+                return value <= long.MaxValue ? (long)value : long.MaxValue;
             }
 
             private static bool IsFinitePositive(double value)

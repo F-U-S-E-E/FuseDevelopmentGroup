@@ -244,10 +244,12 @@ namespace FUSE.Interface
                         ? (throttleOverride.Value ? "forced-on" : "forced-off")
                         : "default-on",
                     ["maxLoadsPerFrame"] = FuseSceneryLoadThrottlePatch.MaxLoadsPerFrame,
+                    ["maxConcurrentLoads"] = FuseSceneryLoadThrottlePatch.MaxConcurrentLoads,
                     ["deferredLoads"] = FuseSceneryLoadThrottlePatch.DeferredLoads,
                     ["releasedLoads"] = FuseSceneryLoadThrottlePatch.ReleasedLoads,
                     ["droppedStaleLoads"] = FuseSceneryLoadThrottlePatch.DroppedStaleLoads,
                     ["peakQueueDepth"] = FuseSceneryLoadThrottlePatch.PeakQueueDepth,
+                    ["trackedPeakInFlight"] = FuseSceneryLoadThrottlePatch.PeakInFlightLoads,
                     ["avgLoadMs"] = Math.Round(sampler.AvgLoadMs, 0),
                     ["maxLoadMs"] = Math.Round(sampler.MaxLoadMs, 0),
                     ["csv"] = sampler.FileName

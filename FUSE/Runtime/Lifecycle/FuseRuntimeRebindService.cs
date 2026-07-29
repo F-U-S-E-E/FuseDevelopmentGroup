@@ -30,6 +30,12 @@ namespace FUSE.Runtime.Lifecycle
         private static bool _deferredSceneCloneReapplyScheduled;
         private static int _deferredSceneCloneReapplyRequests;
         private static string _lastDeferredSceneCloneReapplyReason;
+        private static int _snapshotRestoreDepth;
+        private static int _coalescedSnapshotRebindRequests;
+        private static string _lastCoalescedSnapshotRebindReason;
+
+        internal static bool IsSnapshotRestoreInProgress =>
+            _snapshotRestoreDepth > 0;
 
         public static void ResetUnknownKindLog()
         {
@@ -44,6 +50,9 @@ namespace FUSE.Runtime.Lifecycle
             _deferredSceneCloneReapplyScheduled = false;
             _deferredSceneCloneReapplyRequests = 0;
             _lastDeferredSceneCloneReapplyReason = null;
+            _snapshotRestoreDepth = 0;
+            _coalescedSnapshotRebindRequests = 0;
+            _lastCoalescedSnapshotRebindReason = null;
 
             if (_host != null)
             {
@@ -52,9 +61,64 @@ namespace FUSE.Runtime.Lifecycle
             }
         }
 
+        /// <summary>
+        /// Marks the start of the game's outer snapshot restore. Turntable restore
+        /// callbacks run inside this operation and used to trigger their own complete
+        /// scene-cache rebuilds before and after the turntable pass. While the world
+        /// is still changing, those intermediate indexes are immediately obsolete.
+        /// Keep their requests, then perform one complete rebind after the outer
+        /// snapshot reaches its settled state.
+        /// </summary>
+        public static IDisposable BeginSnapshotRestore(string completionReason)
+        {
+            _snapshotRestoreDepth++;
+            return new SnapshotRestoreScope(completionReason);
+        }
+
+        /// <summary>
+        /// Completes an outer snapshot restore and executes the single coalesced
+        /// rebind requested by its nested callbacks. An unmatched call is a no-op,
+        /// which lets both a Harmony postfix and finalizer safely invoke this method.
+        /// </summary>
+        private static void EndSnapshotRestore(string reason)
+        {
+            if (_snapshotRestoreDepth <= 0)
+            {
+                return;
+            }
+
+            _snapshotRestoreDepth--;
+            if (_snapshotRestoreDepth > 0)
+            {
+                return;
+            }
+
+            var nestedRequests = _coalescedSnapshotRebindRequests;
+            var nestedReason = _lastCoalescedSnapshotRebindReason;
+            _coalescedSnapshotRebindRequests = 0;
+            _lastCoalescedSnapshotRebindReason = null;
+
+            var label = string.IsNullOrWhiteSpace(reason)
+                ? nestedReason ?? "after snapshot restore"
+                : reason;
+            RebindAfterSnapshotCore(label, nestedRequests);
+        }
+
         public static void RebindAfterSnapshot(string reason)
         {
             var label = string.IsNullOrWhiteSpace(reason) ? "snapshot" : reason;
+            if (_snapshotRestoreDepth > 0)
+            {
+                _coalescedSnapshotRebindRequests++;
+                _lastCoalescedSnapshotRebindReason = label;
+                return;
+            }
+
+            RebindAfterSnapshotCore(label, 0);
+        }
+
+        private static void RebindAfterSnapshotCore(string label, int coalescedRequests)
+        {
 
             try
             {
@@ -93,7 +157,8 @@ namespace FUSE.Runtime.Lifecycle
 
             FuseLog.Info(
                 $"FUSE snapshot rebind completed for '{label}' without world mutation " +
-                $"(rebound={rebound}, missing={missing}). No package files reloaded, " +
+                $"(rebound={rebound}, missing={missing}, coalescedNestedRequests={coalescedRequests}). " +
+                "No package files reloaded, " +
                 "no world definitions applied, no scenery created or updated, " +
                 "no graph nodes/segments mutated, no SceneryAssetInstance.ReloadComponents calls.");
 
@@ -262,6 +327,33 @@ namespace FUSE.Runtime.Lifecycle
 
         private sealed class FuseRuntimeRebindHost : MonoBehaviour
         {
+        }
+
+        /// <summary>
+        /// Per-Harmony-invocation scope. Harmony runs a finalizer after a successful
+        /// postfix as well as after a fault; idempotent disposal prevents that pair
+        /// from decrementing the nesting depth twice.
+        /// </summary>
+        private sealed class SnapshotRestoreScope : IDisposable
+        {
+            private readonly string _completionReason;
+            private bool _disposed;
+
+            internal SnapshotRestoreScope(string completionReason)
+            {
+                _completionReason = completionReason;
+            }
+
+            public void Dispose()
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                EndSnapshotRestore(_completionReason);
+            }
         }
     }
 }

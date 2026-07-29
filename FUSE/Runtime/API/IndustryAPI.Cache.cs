@@ -282,7 +282,22 @@ namespace FUSE.Runtime.API
                 return 0;
             }
 
-            if (cachedComponents == null || cachedComponents.All(IsLiveIndustryComponent))
+            if (cachedComponents == null)
+            {
+                return 0;
+            }
+
+            var hasStaleComponent = false;
+            for (var i = 0; i < cachedComponents.Length; i++)
+            {
+                if (!IsLiveIndustryComponent(cachedComponents[i]))
+                {
+                    hasStaleComponent = true;
+                    break;
+                }
+            }
+
+            if (!hasStaleComponent)
             {
                 return 0;
             }
@@ -368,16 +383,22 @@ namespace FUSE.Runtime.API
 
                 component.trackSpans = retained.ToArray();
                 pruned += removed;
-                FuseLog.Warning(
-                    $"FUSE removed industry component reference(s) to removed TrackSpan component='{DescribeComponent(component)}' " +
-                    $"spanId='{removedSpanId}' removed={removed} reason='{source ?? "unspecified"}'.");
+                if (FuseSettings.VerboseApplyReportDetails)
+                {
+                    FuseLog.Warning(
+                        $"FUSE removed industry component reference(s) to removed TrackSpan component='{DescribeComponent(component)}' " +
+                        $"spanId='{removedSpanId}' removed={removed} reason='{source ?? "unspecified"}'.");
+                }
             }
 
             if (pruned > 0)
             {
-                FuseLog.Warning(
-                    $"FUSE removed {pruned} industry component reference(s) to removed TrackSpan " +
-                    $"spanId='{removedSpanId}' after '{source ?? "unspecified"}'.");
+                if (FuseSettings.VerboseApplyReportDetails)
+                {
+                    FuseLog.Warning(
+                        $"FUSE removed {pruned} industry component reference(s) to removed TrackSpan " +
+                        $"spanId='{removedSpanId}' after '{source ?? "unspecified"}'.");
+                }
             }
 
             return pruned;
