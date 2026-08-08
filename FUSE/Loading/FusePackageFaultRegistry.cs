@@ -168,7 +168,8 @@ namespace FUSE.Loading
         public static bool IsOptionalSkipReason(string reason)
         {
             return !string.IsNullOrWhiteSpace(reason) &&
-                   reason.StartsWith("mixinto dependency missing", StringComparison.OrdinalIgnoreCase);
+                   (reason.StartsWith("mixinto dependency missing", StringComparison.OrdinalIgnoreCase) ||
+                    reason.StartsWith(FuseMapSession.InactiveSkipReasonPrefix, StringComparison.OrdinalIgnoreCase));
         }
 
         public static void LogFinalReport(string reason, int residentDefinitionCount)

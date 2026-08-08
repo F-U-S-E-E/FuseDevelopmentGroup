@@ -15,8 +15,8 @@
 //
 // Checks:
 //   - Archive layout: exactly one top-level folder named <mod-id> containing the
-//     runtime DLL set (FUSE.dll, FUSE.Editor.dll, FUSE.Converter.dll), Info.json,
-//     a non-empty schemas/ tree and assets/fuse_icon.png. No stray files, no *.pdb.
+//     runtime DLL (FUSE.dll), Info.json, a non-empty schemas/ tree and
+//     assets/fuse_icon.png. No stray files, no *.pdb.
 //   - Info.json: required fields present and non-empty; Version is the version
 //     CORE (MAJOR.MINOR.PATCH, the only shape UMM's System.Version parser accepts)
 //     and matches the expected core; AssemblyName matches the entry DLL;
@@ -56,13 +56,9 @@ string expectedVersion = args[1];
 string modId = args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]) ? args[2] : "FUSE";
 string? refDirArg = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3] : null;
 
-// The entry DLL (carries EntryMethod) plus the companion assemblies FUSE ships
-// alongside it. FUSE.dll loads FUSE.Editor.dll lazily via Assembly.LoadFrom after
-// UMM boots; FUSE.Editor.dll references FUSE.Converter.dll for its Convert button.
-// All three must be present for the mod to be functional, so a release missing any
-// of them is a packaging regression worth failing on.
+// The entry DLL carries the UMM EntryMethod. The retired in-game editor and its
+// converter dependency are intentionally not part of the runtime mod package.
 string entryDll = $"{modId}.dll";
-string[] companionDlls = { "FUSE.Editor.dll", "FUSE.Converter.dll" };
 
 // UMM does not accept SemVer pre-release tags in Info.json (it parses Version as
 // System.Version, which only allows numeric segments), so the build stamps Info.json
@@ -144,8 +140,6 @@ try
 
     Require(infoExists, "Info.json missing from mod folder.");
     Require(entryDllExists, $"{entryDll} missing from mod folder.");
-    foreach (var dll in companionDlls)
-        Require(File.Exists(Path.Combine(modFolder.FullName, dll)), $"{dll} missing from mod folder.");
 
     // schemas/ ships the JSON schemas FUSE validates mods against at runtime; an
     // empty or absent tree means the zip is broken.
@@ -170,7 +164,6 @@ try
         "Info.json",
         entryDll,
     };
-    foreach (var dll in companionDlls) allowedFlat.Add(dll);
 
     bool IsAllowed(string rel) =>
         allowedFlat.Contains(rel) ||

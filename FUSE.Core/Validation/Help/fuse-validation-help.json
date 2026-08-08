@@ -41,6 +41,24 @@
     "fix": "Make the top level of the file a JSON object, with at least id and name set.",
     "example": "{\"id\":\"my-mod\",\"name\":\"My Mod\"}"
   },
+  "fuse.map.displayName.blank": {
+    "title": "Map displayName is blank",
+    "why": "The map declaration has no displayName, so wherever the map is offered for selection (console listings, menus) FUSE falls back to the package name. That usually reads worse than a purpose-written map title.",
+    "fix": "Set map.displayName to the player-facing name of the map.",
+    "example": "{\"map\": {\"displayName\": \"PRR Middle Division\", \"mapFolder\": \"Map\"}}"
+  },
+  "fuse.map.folder.outsidePackage": {
+    "title": "Map mapFolder escapes the package",
+    "why": "mapFolder is rooted or uses .. segments, so it resolves outside the package folder. FUSE refuses those paths: a distributed pack must be self-contained, and path escapes would read from unpredictable locations on other machines.",
+    "fix": "Move the map data inside the package and reference it with a plain relative path such as \"Map\" or \"Data/Map\".",
+    "example": "{\"map\": {\"displayName\": \"PRR Middle Division\", \"mapFolder\": \"Map\"}}"
+  },
+  "fuse.map.folder.required": {
+    "title": "Map mapFolder is missing",
+    "why": "A map declaration without mapFolder cannot point FUSE at the folder holding Map.json and the tile_XXX_YYY.data heightmap tiles, so the map can never be registered or launched.",
+    "fix": "Set map.mapFolder to the package-relative folder that contains Map.json and the map's tiles.",
+    "example": "{\"map\": {\"displayName\": \"PRR Middle Division\", \"mapFolder\": \"Map\"}}"
+  },
   "fuse.mapMask.circle.radius": {
     "title": "Circle mask needs a positive radius",
     "why": "A map mask with type circle has no radius, or its radius is zero or negative, so the circle would cover no area. This is an error and must be fixed before the mask is usable.",
@@ -167,17 +185,17 @@
     "fix": "Set density to 0 or a positive number, or omit the field to use the default.",
     "example": "{ \"operations\": { \"loads\": { \"coal\": { \"name\": \"Coal\", \"units\": \"pounds\", \"density\": 47.5 } } } }"
   },
-  "fuse.operations.loads.units": {
-    "title": "Invalid load units",
-    "why": "The load's units value is not one of the three recognized unit kinds. The validator only accepts Pounds, Gallons, or Quantity (case-insensitive), and anything else is an error that fails validation.",
-    "fix": "Set units to \"pounds\", \"gallons\", or \"quantity\".",
-    "example": "{ \"operations\": { \"loads\": { \"diesel\": { \"name\": \"Diesel Fuel\", \"units\": \"gallons\" } } } }"
-  },
   "fuse.operations.loads.unitWeightInPounds": {
     "title": "Negative load unit weight",
     "why": "The load's unitWeightInPounds is set to a value below 0, which the validator rejects — it must be greater than or equal to 0. The definition fails validation until corrected.",
     "fix": "Set unitWeightInPounds to 0 or a positive number of pounds per unit, or omit the field.",
     "example": "{ \"operations\": { \"loads\": { \"crates\": { \"name\": \"Crates\", \"units\": \"quantity\", \"unitWeightInPounds\": 1200 } } } }"
+  },
+  "fuse.operations.loads.units": {
+    "title": "Invalid load units",
+    "why": "The load's units value is not one of the three recognized unit kinds. The validator only accepts Pounds, Gallons, or Quantity (case-insensitive), and anything else is an error that fails validation.",
+    "fix": "Set units to \"pounds\", \"gallons\", or \"quantity\".",
+    "example": "{ \"operations\": { \"loads\": { \"diesel\": { \"name\": \"Diesel Fuel\", \"units\": \"gallons\" } } } }"
   },
   "fuse.operations.teamTrack.profile": {
     "title": "Team track missing team profiles",
