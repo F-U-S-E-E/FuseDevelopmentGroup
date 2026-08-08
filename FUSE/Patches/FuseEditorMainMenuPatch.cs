@@ -29,23 +29,14 @@ namespace FUSE.Patches
     /// Skipped when no lifecycle provider is registered so users without
     /// FUSE.Editor.dll deployed don't see a dead button.
     ///
-    /// Currently gated off via <see cref="EditorButtonEnabled"/> while the
-    /// editor is still under development — the button is not injected even
-    /// when a lifecycle provider is present. Flip the flag to true to
-    /// restore it once the editor is ready to ship.
+    /// Gated off with the in-game editor bootstrap. Custom maps remain
+    /// available through <see cref="FuseNewGameMapMenuPatch"/>.
     /// </summary>
     [HarmonyPatch(typeof(MainMenu), "Awake")]
     internal static class FuseEditorMainMenuPatch
     {
         private const string InjectedButtonName = "FuseEditorMainMenuButton";
         private const string InjectedButtonLabel = "FUSE Editor";
-
-        // Temporary gate: the FUSE Editor surface isn't ready for general
-        // use yet, so its main-menu entry point stays hidden. Kept as a
-        // static readonly (not a const) so the gated-off injection path
-        // below doesn't trip an unreachable-code warning. Flip to true to
-        // surface the button once the editor is shippable.
-        private static readonly bool EditorButtonEnabled = false;
 
         private static readonly FieldInfo MenuManagerGameManagerField =
             AccessTools.Field(typeof(MenuManager), "gameManager");
@@ -73,7 +64,7 @@ namespace FUSE.Patches
             // stays hidden for the time being. The stale pending-flag
             // clear above still runs, so a leftover flag can't spuriously
             // open the editor on the next sandbox session.
-            if (!EditorButtonEnabled)
+            if (!FusePlugin.InGameEditorEnabled)
             {
                 return;
             }

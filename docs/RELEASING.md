@@ -13,8 +13,8 @@ Runs [`.github/workflows/release.yml`](../.github/workflows/release.yml) on the
 **self-hosted** Railroader runner (it needs the game's Unity/UMM reference
 assemblies). Produces and attaches:
 
-- `FUSE-v<ver>.zip` — the UMM mod (FUSE.dll, FUSE.Editor.dll, FUSE.Converter.dll,
-  stamped `Info.json`, schemas, icon)
+- `FUSE-v<ver>.zip` — the UMM runtime mod (FUSE.dll, stamped `Info.json`,
+  schemas, icon)
 - `FUSE.LiveBridge-v<ver>.zip` — optional in-game hot-reload bridge
 - `FUSE-Converter.exe`, `FUSE-Installer.exe`, `FUSEConvertFolder.pyz` — tools
 
@@ -30,7 +30,7 @@ This lane does **not** ship the standalone editor — that has its own lane.
 Tag: `externaleditor-v0.2.0`, `externaleditor-v1.0.0-rc.1`, ...
 
 The prefix is `externaleditor-` (not `editor-`) to distinguish the standalone
-desktop editor from the in-game editor, which ships inside the mod.
+desktop editor from the retired in-game editor, which is no longer shipped.
 
 Runs [`.github/workflows/release-externaleditor.yml`](../.github/workflows/release-externaleditor.yml)
 on a **GitHub-hosted** `ubuntu-latest` runner — the standalone editor is

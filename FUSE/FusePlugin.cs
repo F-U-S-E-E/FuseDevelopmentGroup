@@ -27,6 +27,10 @@ namespace FUSE
     {
         private const string HarmonyId = "FUSE";
         private const string ConverterVersion = "0.2.0";
+
+        // The retired in-game editor is intentionally disconnected from FUSE
+        // startup. Custom map discovery and launching do not depend on it.
+        internal static bool InGameEditorEnabled => false;
 #if DEBUG
         private const string BuildConfiguration = "Debug";
 #else
@@ -79,8 +83,11 @@ namespace FUSE
                 // re-attempts registration on the first map load.
                 FuseConsoleRegistrar.TryRegisterAll();
 
-                FuseEditorAssemblyLoader.TryInitialize(modEntry.Path);
-                FuseEditorBridge.NotifyFuseLoaded();
+                if (InGameEditorEnabled)
+                {
+                    FuseEditorAssemblyLoader.TryInitialize(modEntry.Path);
+                    FuseEditorBridge.NotifyFuseLoaded();
+                }
                 FuseOrphanedCarWindow.Ensure();
                 FuseMenuWindow.Ensure();
                 FuseTrackDebugOverlay.Ensure();
@@ -252,9 +259,13 @@ namespace FUSE
             FuseUnusedAssetReclaimer.Reset();
             FuseConstrainedTextureMemoryPolicy.Restore();
 
-            if (_isLoaded)
+            if (_isLoaded && InGameEditorEnabled)
             {
                 FuseEditorBridge.NotifyFuseUnloaded();
+            }
+
+            if (_isLoaded)
+            {
                 FuseEvents.RaiseFuseUnloaded();
                 FuseLog.Info("FUSE unloaded.");
             }

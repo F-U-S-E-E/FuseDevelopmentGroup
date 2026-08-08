@@ -4,7 +4,7 @@ name: Release External Editor
 # net10, game-free). Triggered by externaleditor-v<semver> tags so the external
 # editor ships on its own cadence, decoupled from the mod's mod-v<semver>
 # release (release.yml). The prefix is externaleditor- (not editor-) to keep it
-# distinct from the in-game editor, which ships inside the mod.
+# distinct from the retired in-game editor.
 on:
   push:
     tags:

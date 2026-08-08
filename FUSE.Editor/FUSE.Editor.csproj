@@ -19,11 +19,11 @@
     <UnityModManagerDir Condition="'$(UnityModManagerDir)' == ''">$(UnityManagedDir)\UnityModManager</UnityModManagerDir>
     <ModDeployDir Condition="'$(ModDeployDir)' == ''">$(GameDir)\Mods\FUSE</ModDeployDir>
     <EnableModDeploy Condition="'$(EnableModDeploy)' == ''">false</EnableModDeploy>
+    <EnableInGameEditorDeploy Condition="'$(EnableInGameEditorDeploy)' == ''">false</EnableInGameEditorDeploy>
   </PropertyGroup>
 
-  <!-- FUSE.Editor ships inside the FUSE mod folder; it has no Info.json of its
-       own. FUSE.csproj is the UMM entry point and loads FUSE.Editor.dll lazily
-       from the same folder via Assembly.LoadFrom once the mod has booted. -->
+  <!-- The retired in-game editor remains buildable for source history and its
+       pure-logic tests, but FUSE no longer initializes or ships this assembly. -->
   <ItemGroup>
     <ProjectReference Include="..\FUSE\FUSE.csproj" />
     <!-- FUSE.Converter is the legacy-to-FUSE conversion engine the
@@ -146,10 +146,8 @@
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found in the Railroader Managed folder." />
   </Target>
 
-  <!-- FUSE.Editor.dll deploys into the same Mods/FUSE/ folder as FUSE.dll.
-       FUSE.csproj's deploy target already creates that directory; build order
-       (FUSE.Editor depends on FUSE) means FUSE has already deployed by the
-       time this target fires. -->
+  <!-- Legacy developer-only deployment. It requires a second explicit opt-in
+       so a normal FUSE deployment cannot restore the retired editor files. -->
   <!-- Icons folder: loose PNGs the runtime loads via File.ReadAllBytes +
        Texture2D.LoadImage. Each <FuseEditorIconKind>.png is optional —
        FuseEditorIcons falls back to a Unicode glyph when a file is
@@ -167,7 +165,7 @@
     </Content>
   </ItemGroup>
 
-  <Target Name="DeployFuseEditorToUnityModManagerFolder" AfterTargets="Build" Condition="'$(EnableModDeploy)' == 'true'">
+  <Target Name="DeployFuseEditorToUnityModManagerFolder" AfterTargets="Build" Condition="'$(EnableModDeploy)' == 'true' and '$(EnableInGameEditorDeploy)' == 'true'">
     <MakeDir Directories="$(ModDeployDir)" />
     <MakeDir Directories="$(ModDeployDir)\Icons" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" />
