@@ -184,7 +184,16 @@ try
 
     var extras = allFiles.Where(rel => !IsAllowed(rel)).ToList();
     if (extras.Count > 0)
+    {
+        // Print what this build actually saw. A stray-file failure is otherwise
+        // hard to tell apart from the validator running different code than the
+        // checkout (stale build cache, wrong working directory), which is exactly
+        // the ambiguity that stalled the 1.0.0 dry runs.
+        Console.Error.WriteLine("Stray-file check details:");
+        Console.Error.WriteLine("  allow-list: " + string.Join(", ", allowedFlat.OrderBy(x => x)));
+        Console.Error.WriteLine("  mod folder: " + string.Join(", ", allFiles.OrderBy(x => x)));
         Fail("Mod folder contains unexpected entries: " + string.Join(", ", extras));
+    }
 
     var pdbs = allFiles.Where(rel => rel.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase)).ToList();
     if (pdbs.Count > 0)
