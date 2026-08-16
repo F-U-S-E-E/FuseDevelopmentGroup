@@ -14,9 +14,21 @@ Runs [`.github/workflows/release.yml`](../.github/workflows/release.yml) on the
 assemblies). Produces and attaches:
 
 - `FUSE-v<ver>.zip` — the UMM runtime mod (FUSE.dll, stamped `Info.json`,
-  schemas, icon)
+  schemas, icon, `LICENSE`). **This is the only file that goes to Nexus.**
+- `FUSE-Complete-v<ver>.zip` — everything in one download, GitHub only:
+  `Mods/FUSE`, `Mods/FUSE.LiveBridge`, `Tools/` (converter, installer,
+  folder-converter), plus `LICENSE` and `INSTALL.md`. `Mods/` sits at the
+  archive root so `FUSE-Installer.exe` can consume it as a multi-package zip.
 - `FUSE.LiveBridge-v<ver>.zip` — optional in-game hot-reload bridge
 - `FUSE-Converter.exe`, `FUSE-Installer.exe`, `FUSEConvertFolder.pyz` — tools
+
+Both mod zips carry `LICENSE`; FUSE ships under the AGPL-3.0, which requires
+conveying the license with the binary, and `scripts/Validate-ModPackage.cs`
+fails the release if it is missing.
+
+Nexus receives the core zip alone, on purpose. A player installing from Nexus
+needs one file; the converter, installer and dev bridge only belong in front of
+package authors, who get them from GitHub.
 
 The mod version flows in via `-p:ModVersion=<ver>`, which stamps the assemblies
 and `Info.json` (see `Directory.Build.targets`). On a non-prerelease (GA) tag,

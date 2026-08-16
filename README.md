@@ -39,6 +39,9 @@ The FUSE JSON schema lives at `schemas/fuse-mod.schema.json`. The hand-written s
 
 ## Install
 
+For step-by-step instructions covering the core mod only — which is all a player
+needs — see [`docs/INSTALL.md`](docs/INSTALL.md). In short:
+
 1. Install Unity Mod Manager for Railroader.
 2. Place the `FUSE` mod folder in `Railroader/Mods/FUSE`.
 3. Place converted `*.FUSE` package folders in `Railroader/Mods`.

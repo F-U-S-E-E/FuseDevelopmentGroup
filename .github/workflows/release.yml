@@ -207,6 +207,45 @@ jobs:
       - name: Build FUSEConvertFolder.pyz
         run: python tools/build_folder_converter_pyz.py
 
+      # Everything in one download, for GitHub only. Nexus deliberately receives
+      # just the core mod zip (see the Nexus step at the bottom): a player there
+      # needs FUSE.dll and nothing else, and a Files tab listing a converter, an
+      # installer, a folder-converter and a dev bridge is exactly the confusion
+      # we are avoiding. This bundle serves package authors who want the whole
+      # toolchain in one file.
+      - name: Package complete bundle zip
+        id: bundle
+        shell: powershell
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $stagingRoot = Join-Path $PWD "staging-complete"
+          $archiveName = "FUSE-Complete-v$version.zip"
+          $archivePath = Join-Path $PWD $archiveName
+
+          if (Test-Path $stagingRoot) { Remove-Item $stagingRoot -Recurse -Force }
+          $modsDir  = New-Item -ItemType Directory -Path (Join-Path $stagingRoot 'Mods') -Force
+          $toolsDir = New-Item -ItemType Directory -Path (Join-Path $stagingRoot 'Tools') -Force
+
+          # Reuse the exact staging folders the two mod zips were built from, so
+          # the bundle can never drift from the individually published zips.
+          Copy-Item -Recurse "staging\FUSE" $modsDir.FullName
+          Copy-Item -Recurse "staging-livebridge\FUSE.LiveBridge" $modsDir.FullName
+
+          Copy-Item "dist\FUSE-Converter.exe" $toolsDir.FullName
+          Copy-Item "dist\FUSE-Installer.exe" $toolsDir.FullName
+          Copy-Item "dist\FUSEConvertFolder.pyz" $toolsDir.FullName
+
+          Copy-Item "LICENSE" $stagingRoot
+          Copy-Item "docs\INSTALL.md" $stagingRoot
+
+          if (Test-Path $archivePath) { Remove-Item $archivePath -Force }
+          # Zip the CONTENTS so Mods/ sits at the archive root, which is the
+          # multi-package layout FUSE-Installer.exe already understands.
+          Compress-Archive -Path (Join-Path $stagingRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal
+
+          "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
+          "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
@@ -214,14 +253,19 @@ jobs:
           name: FUSE v${{ steps.version.outputs.version }}
           prerelease: ${{ steps.version.outputs.is_prerelease }}
           generate_release_notes: true
+          # GitHub gets both: the same core-only zip Nexus receives, plus the
+          # complete bundle and the individual tools.
           files: |
             ${{ steps.package.outputs.archive_path }}
+            ${{ steps.bundle.outputs.archive_path }}
             dist/FUSE-Converter.exe
             dist/FUSE-Installer.exe
             dist/FUSEConvertFolder.pyz
             FUSE.LiveBridge-v${{ steps.version.outputs.version }}.zip
 
-      # Uploads the same archive to the mod's Nexus Mods page.
+      # Uploads ONLY the core mod zip to the mod's Nexus Mods page — deliberately
+      # not the complete bundle, the tools, or the Live Bridge. Players installing
+      # from Nexus need exactly one file; keep the Files tab that way.
       # Skipped automatically until the repo variable NEXUS_FILE_GROUP_ID is set.
       # Requires:
       #   - secret  NEXUSMODS_API_KEY    (https://www.nexusmods.com/settings/api-keys)
