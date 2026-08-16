@@ -57,18 +57,40 @@ jobs:
       # GitHub does not create the <repo>.wiki.git repository until the wiki has
       # at least one page, so on a wiki that has never been opened the clone
       # fails with a bare "Repository not found". Check first and say what to do.
+      #
+      # Probe with the same tokenized remote the sync uses, so this keeps working
+      # if the repo goes private, and distinguish a genuinely missing wiki from a
+      # transient network or auth failure — reporting "create a page" for those
+      # would send someone to create a page that already exists.
       - name: Verify the wiki has been initialized
         shell: pwsh
         env:
+          WIKI_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          $url = "https://github.com/$($env:REPO).wiki.git"
-          git ls-remote $url *> $null
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::The wiki repo for $($env:REPO) does not exist yet. GitHub only creates it once the wiki has one page: open the repo's Wiki tab, create any page, save it, then re-run this workflow. Everything after that is automatic."
-            exit 1
+          $url = "https://x-access-token:$($env:WIKI_TOKEN)@github.com/$($env:REPO).wiki.git"
+          $output = (git ls-remote $url 2>&1 | Out-String)
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Wiki repo present."
+            return
           }
-          Write-Host "Wiki repo present."
+
+          # Actions masks GITHUB_TOKEN in logs; scrub anyway so a tokenized
+          # remote echoed back by git can never surface here verbatim.
+          $detail = $output.Replace($env:WIKI_TOKEN, '***').Trim()
+
+          # Deliberately narrow. "Could not read from remote repository" is NOT
+          # matched here: git emits it for permission and auth failures too, so
+          # keying on it would reintroduce the misdiagnosis this check exists to
+          # avoid. Only git's genuine repo-missing wording counts.
+          if ($detail -match 'not found|does not exist') {
+            Write-Host "::error::The wiki for $($env:REPO) has no pages yet, so GitHub has not created its repository. Open the repo's Wiki tab, create any page, save it, then re-run this workflow — everything after that is automatic."
+          }
+          else {
+            Write-Host "::error::Could not reach the wiki remote for $($env:REPO) (git exit $LASTEXITCODE). This is not the same as an uninitialized wiki; check the detail below and re-run."
+            Write-Host $detail
+          }
+          exit 1
 
       - name: Configure git identity
         shell: pwsh
