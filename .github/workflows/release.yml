@@ -65,12 +65,21 @@ jobs:
           $version = $Matches.version
           "version=$version" >> $env:GITHUB_OUTPUT
 
-          # Only an explicit pre-release suffix (-rc.1, -beta.2, ...) marks a
-          # GitHub pre-release. Plain 0.x tags publish as full releases so the
-          # repo front page shows a "Latest" card with the version number —
-          # when every release is a pre-release, GitHub hides the card and
-          # shows only the bare tag count.
-          if ($version -match '-') {
+          # Release candidates publish as FULL releases, not GitHub prereleases.
+          # GitHub defines the "Latest" badge and /releases/latest as the newest
+          # non-draft, non-prerelease release, so a tag flagged prerelease can
+          # never hold it — and we want testers landing on the repo front page
+          # to get the current RC. Plain x.y.z tags publish as full releases for
+          # the same reason (when everything is a prerelease GitHub hides the
+          # Latest card entirely and shows only a bare tag count).
+          #
+          # Any OTHER prerelease suffix (-beta.2, -alpha.1) still publishes as a
+          # GitHub prerelease. Both -rc.1 and -rc2 spellings are accepted.
+          #
+          # Note this does not affect FUSE/Info.json: sync-info-json.yml matches
+          # ^mod-v<major>.<minor>.<patch>$ only, so an RC never stamps the
+          # manifest regardless of how it is published here.
+          if (($version -match '-') -and ($version -notmatch '-rc\.?[0-9]+$')) {
             "is_prerelease=true" >> $env:GITHUB_OUTPUT
           }
           else {
