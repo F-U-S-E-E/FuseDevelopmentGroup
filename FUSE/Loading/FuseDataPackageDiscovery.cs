@@ -1041,6 +1041,7 @@ namespace FUSE.Loading
         public bool Disabled { get; set; }
         public string DisabledReason { get; set; } = string.Empty;
         public bool IsLegacyConverted { get; set; }
+        public bool IsLegacyHosted { get; set; }
         public string[] Faults { get; set; } = Array.Empty<string>();
     }
 }

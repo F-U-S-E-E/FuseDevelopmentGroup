@@ -19,7 +19,9 @@ namespace FUSE.Interface.MenuWindow
     {
         public static void Build(UIPanelBuilder builder, UIState<string> selectedItem)
         {
-            var manifests = FuseDataPackageDiscovery.GetPackageManifestSnapshots();
+            var manifests = MergeHostedLegacyPackageSnapshots(
+                FuseDataPackageDiscovery.GetPackageManifestSnapshots(),
+                FuseLegacyAssemblyHost.EnumerateAllHostedPlugins().Select(info => info.Manifest));
 
             List<UIPanelBuilder.ListItem<FusePackageManifestSnapshot>> list = manifests
                 .OrderBy(m => m.DisplayName)
@@ -42,6 +44,74 @@ namespace FUSE.Interface.MenuWindow
                     builder.VScrollView(b => BuildModDetail(b, manifest));
                 }
             });
+        }
+
+        internal static IReadOnlyList<FusePackageManifestSnapshot> MergeHostedLegacyPackageSnapshots(
+            IEnumerable<FusePackageManifestSnapshot> dataPackageSnapshots,
+            IEnumerable<FuseLegacyAssemblyManifest> hostedLegacyManifests)
+        {
+            var manifests = (dataPackageSnapshots ?? Enumerable.Empty<FusePackageManifestSnapshot>())
+                .Where(manifest => manifest != null)
+                .ToList();
+            var knownFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var knownIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var manifest in manifests)
+            {
+                AddPackageIdentity(knownFolders, knownIds, manifest.FolderPath, manifest.Id);
+            }
+
+            foreach (var hosted in hostedLegacyManifests ?? Enumerable.Empty<FuseLegacyAssemblyManifest>())
+            {
+                if (hosted == null)
+                {
+                    continue;
+                }
+
+                var normalizedFolder = NormalizePath(hosted.FolderPath);
+                var folderName = normalizedFolder.Length == 0 ? string.Empty : Path.GetFileName(normalizedFolder);
+                var id = string.IsNullOrWhiteSpace(hosted.Id) ? folderName : hosted.Id.Trim();
+                if ((normalizedFolder.Length > 0 && knownFolders.Contains(normalizedFolder)) ||
+                    (id.Length > 0 && knownIds.Contains(id)) ||
+                    (normalizedFolder.Length == 0 && id.Length == 0))
+                {
+                    continue;
+                }
+
+                var folderPath = hosted.FolderPath ?? string.Empty;
+                manifests.Add(new FusePackageManifestSnapshot
+                {
+                    Order = manifests.Count + 1,
+                    Id = id,
+                    DisplayName = string.IsNullOrWhiteSpace(hosted.Name) ? id : hosted.Name.Trim(),
+                    Version = hosted.Version ?? string.Empty,
+                    FolderName = folderName,
+                    FolderPath = folderPath,
+                    IsLegacyHosted = true
+                });
+                AddPackageIdentity(knownFolders, knownIds, folderPath, id);
+            }
+
+            return manifests;
+        }
+
+        private static void AddPackageIdentity(
+            ISet<string> knownFolders,
+            ISet<string> knownIds,
+            string folderPath,
+            string id)
+        {
+            var normalizedFolder = NormalizePath(folderPath);
+            if (normalizedFolder.Length > 0)
+            {
+                knownFolders.Add(normalizedFolder);
+            }
+
+            var normalizedId = (id ?? string.Empty).Trim();
+            if (normalizedId.Length > 0)
+            {
+                knownIds.Add(normalizedId);
+            }
         }
 
         private static void BuildModDetail(UIPanelBuilder builder, FusePackageManifestSnapshot manifest)
@@ -280,7 +350,20 @@ namespace FUSE.Interface.MenuWindow
 
         private static string NormalizePath(string value)
         {
-            return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return Path.GetFullPath(value.Trim())
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch
+            {
+                return value.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
         }
 
         private static string BuildSelectedPackageReport(FusePackageManifestSnapshot manifest, IReadOnlyList<FuseLoadedMod> definitions)
@@ -339,7 +422,7 @@ namespace FUSE.Interface.MenuWindow
                 return manifest.Faults.Length + " fault(s)";
             }
 
-            return manifest.IsLegacyConverted ? "ready | legacy" : "ready";
+            return manifest.IsLegacyConverted || manifest.IsLegacyHosted ? "ready | legacy" : "ready";
         }
 
         private static string PackageStatusTextMarkup(FusePackageManifestSnapshot manifest)
@@ -359,7 +442,7 @@ namespace FUSE.Interface.MenuWindow
                 return "<color=\"red\">Error: " + manifest.Faults.Length + " fault(s)";
             }
 
-            return manifest.IsLegacyConverted
+            return manifest.IsLegacyConverted || manifest.IsLegacyHosted
                 ? "<color=\"green\">Ready</color> - Legacy"
                 : "<color=\"green\"Ready";
         }
