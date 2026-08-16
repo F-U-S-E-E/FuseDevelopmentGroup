@@ -31,9 +31,10 @@ needs one file; the converter, installer and dev bridge only belong in front of
 package authors, who get them from GitHub.
 
 The mod version flows in via `-p:ModVersion=<ver>`, which stamps the assemblies
-and `Info.json` (see `Directory.Build.targets`). On a non-prerelease (GA) tag,
-[`sync-info-json.yml`](../.github/workflows/sync-info-json.yml) commits the
-matching `FUSE/Info.json` version back to `main`.
+and `Info.json` (see `Directory.Build.targets`). That stamping is what the
+shipped artifact carries; the in-repo `FUSE/Info.json` is caught up separately
+by [`sync-info-json.yml`](../.github/workflows/sync-info-json.yml) once this
+workflow **succeeds** on a GA tag (see Notes).
 
 This lane does **not** ship the standalone editor — that has its own lane.
 
@@ -64,11 +65,25 @@ numbers are independent — bump and tag them separately.
 - Both lanes mark a GitHub prerelease only for an explicit prerelease suffix
   (e.g. `-rc.1`). A plain `<major>.<minor>.<patch>` tag publishes as a full
   release, so the repo front page shows a "Latest" card with the version number.
-- A plain GA mod tag also triggers `sync-info-json.yml`, which commits the
-  matching `FUSE/Info.json` version back to `main`.
+- `sync-info-json.yml` commits the matching `FUSE/Info.json` version back to
+  `main`. The **tag does not trigger it.** The Release workflow finishing does,
+  via `workflow_run`, and only when that run succeeded — so a failed release
+  leaves the manifest alone.
+- Do not "simplify" that back to a `release:` or `push: tags:` trigger. The
+  workflow used `release: [published]` until v1.0.0 and never fired once:
+  release.yml creates the release with the default `GITHUB_TOKEN`, and GitHub
+  does not start workflow runs from token-created events. That is why
+  `FUSE/Info.json` sat at `0.0.0` through every release up to `mod-v1.0.0`.
+- Prereleases are excluded by that workflow's `^mod-v<major>.<minor>.<patch>$`
+  parse, which drops any `-rc.N` tag. There is no separate prerelease gate;
+  `github.event.release.prerelease` does not exist on a `workflow_run` event.
 - The tag prefixes don't collide: `mod-v*`, `externaleditor-v*`, and the
   existing `tools-v*` are disjoint globs, and `sync-info-json.yml`'s
   `^mod-v...` parse only ever stamps `Info.json` from a mod release.
 - To dry-run a lane, push a throwaway prerelease tag (e.g.
   `externaleditor-v0.2.0-rc.1`), confirm the release and its assets, then
   delete the tag and release.
+- A prerelease dry-run only proves `sync-info-json.yml` fires and skips. Its
+  stamp-and-push path runs on GA tags alone, so the first GA release after any
+  change to that workflow is the real test. Check the run, and check that the
+  bot's `Sync FUSE/Info.json Version to <ver>` commit landed on `main`.
