@@ -1,6 +1,15 @@
 # Changelog
 
-## 1.0.0
+All notable changes to FUSE are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and FUSE uses
+[semantic versioning](https://semver.org/) with the mod and the external editor
+versioned independently (`mod-v*` and `externaleditor-v*` tags).
+
+## [Unreleased]
+
+Nothing yet.
+
+## [1.0.0]
 
 First stable release. FUSE leaves the 0.x beta series; the package format and
 runtime behavior described in `schemas/FUSE_JSON_SCHEMA.md` are now the
@@ -31,11 +40,11 @@ supported 1.0 baseline.
 - FUSE is now released under the GNU Affero General Public License v3.0. The
   full text is in `LICENSE`. Releases before 1.0.0 carried no license file.
 
-## 2026-07-27 Performance, VRAM, and Load-Race Pass
+## [0.18.0] - 2026-07-29
 
-This section covers the complete optimization cycle performed after the previous
-changelog. The reference save is the 204-car E&A/Bryson install used throughout
-the investigation.
+A performance, VRAM, and load-race pass covering a complete optimization cycle.
+The reference save is the 204-car E&A/Bryson install used throughout the
+investigation.
 
 ### Measured Result
 
@@ -297,7 +306,12 @@ the investigation.
   pinning all of them would multiply live scenery by roughly 7.2 and work
   directly against the 8 GB GPU target.
 
-## Unreleased Beta
+## 0.10.0 – 0.17.0
+
+Development history for the 0.x series before per-version changelog entries were
+kept. Everything below shipped at some point across these releases; the entries
+are not attributed to a specific version. Use `git log` between the `mod-v*` tags
+for exact attribution.
 
 ### Runtime
 
@@ -326,7 +340,7 @@ the investigation.
 - Named materialized legacy interchange aliases from overlapping interchange components so raw sub-ids such as `t1` do not surface as destination names.
 - Added structured conversion reports with repaired, preserved, unresolved, unsupported, and dependency-required entries.
 - Added source-file reporting for passenger stop and span warnings.
-- Added route, map tile, asset pack, and audio pack conversion coverage for the current beta corpus.
+- Added route, map tile, asset pack, and audio pack conversion coverage for the current corpus.
 
 ### Schema
 
@@ -342,5 +356,8 @@ the investigation.
 
 ### Breaking / Compatibility Notes
 
-- `RAIL` naming has been superseded by `FUSE`. Reconvert packages for clean public beta testing.
+- `RAIL` naming has been superseded by `FUSE`. Reconvert packages for a clean install.
 - Converter output should be regenerated with the matching converter version when schema/runtime behavior changes.
+
+[Unreleased]: https://github.com/F-U-S-E-E/FuseDevelopmentGroup/compare/mod-v0.18.0...HEAD
+[0.18.0]: https://github.com/F-U-S-E-E/FuseDevelopmentGroup/releases/tag/mod-v0.18.0

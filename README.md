@@ -2,6 +2,16 @@
 
 FUSE is a Unity Mod Manager modding layer for Railroader. It loads FUSE data packages — route extensions, asset packs, audio packs, track graph changes, world scenery, operations, and progression data — and provides drop-in compatibility for legacy Railloader, Strange Customs, ConfusingSupplements, For Your Convenience, and Alina's Map Mod packages.
 
+## Documentation
+
+Full documentation is in **[docs/](docs/README.md)**.
+
+- New to FUSE: [Getting Started](docs/GETTING_STARTED.md) · [FAQ](docs/FAQ.md)
+- Coming from Railloader or another legacy stack: [Migrating From Legacy Mods](docs/MIGRATION_FROM_LEGACY.md)
+- Reference: [Settings](docs/SETTINGS.md) · [Console Commands](docs/CONSOLE_COMMANDS.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
+- Authoring: [Package Author Guide](docs/PACKAGE_AUTHOR_GUIDE.md) · [Converter](docs/FUSE_CONVERTER.md) · [External Editor](docs/EXTERNAL_EDITOR.md)
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md)
+
 ## Supported Game Version
 
 - Supported Railroader line: `2025.1.x`
@@ -108,6 +118,8 @@ Experimental commands:
 
 Experimental commands should not be used during normal play unless testing recovery.
 
+The full reference, including the commands not listed above, is in [docs/CONSOLE_COMMANDS.md](docs/CONSOLE_COMMANDS.md). Settings are documented in [docs/SETTINGS.md](docs/SETTINGS.md).
+
 ## Known Limitations
 
 FUSE repairs many legacy data issues during conversion, but it does not silently hide authoring errors. Unsupported graph shapes, missing hard dependencies, invalid spans, and missing runtime component assemblies should be reported by the converter or runtime instead of being dropped.
@@ -139,6 +151,7 @@ their own proprietary terms; those assemblies are not redistributed here.
 Requirements
 
 - Visual Studio (in the installer, make sure you have SDKs for .NET Framework 4.8 and C# Support)
+- A .NET 10 SDK — several projects in the solution target `net10.0`
 
 To start developing FUSE locally, follow these steps:
 
@@ -149,3 +162,15 @@ To start developing FUSE locally, follow these steps:
 5. Open the project in Visual Studio
 6. Build the project
     - `EnableModDeploy` is set to true by default which will automatically build to your Railroader/Mods directory. This setting can be configured inside `Paths.user`
+
+You do not need Railroader installed to build. Without `GameDir` set, the build falls back to the checked-in reference assemblies under `lib/refs`.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the testing policy, code conventions, and PR process, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the projects fit together.
+
+## Contributing
+
+Contributions are welcome — start with [CONTRIBUTING.md](CONTRIBUTING.md). Security issues should be reported privately per [SECURITY.md](SECURITY.md), not through the public issue tracker.
+
+## License
+
+FUSE is licensed under the [GNU Affero General Public License v3.0](LICENSE).

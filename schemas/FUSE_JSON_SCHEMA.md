@@ -89,7 +89,7 @@ Do not author new public docs or examples with `RAIL` as the mod name.
 
 ## Example Coverage
 
-The shipped examples cover the public beta authoring cases:
+The shipped examples cover the public authoring cases:
 
 | Case | Example file | Notes |
 | --- | --- | --- |
@@ -106,7 +106,7 @@ The shipped examples cover the public beta authoring cases:
 | Map mask | `fuse-mod.example.json` | `world.mapMasks` for terrain/object mask authoring. |
 | Scene clone | `fuse-mod.example.json` | `world.sceneClones` for base-game object cloning/retargeting. |
 | Span-anchored scenery | `fuse-mod.example.json` | `world.scenery.*.anchorSpanIds`. |
-| Signals | Not included | Signals are deferred for beta and should not be treated as supported yet. |
+| Signals | Not included | Signals are deferred and should not be treated as supported yet. |
 
 The converter guide at `docs/FUSE_CONVERTER.md` covers drag/drop conversion, batch conversion, output reports, and warning classification.
 
@@ -320,7 +320,7 @@ Telegraph pole definitions use the existing Railroader telegraph pole and wire p
 
 FUSE applies pole movements idempotently per package, so snapshot reapply does not stack the same offset repeatedly. Unloading the package restores the captured base pole positions, then reapplies any remaining package claims.
 
-Industry components currently supported by the runtime include `loader`, `unloader`, `formulaic`, `repairTrack`, `teamTrack`, `interchange`, `interchangedLoader`, `interchangedUnloader`, `teleportLoading`, `progression`, and `passengerStop`. Formulaic components are attached directly to the industry object to match the base game component layout expectations; other component types get child objects. Fully-qualified custom `IndustryComponent` type names are accepted as beta compatibility surface when the owning assembly is loaded; FUSE reflectively binds common fields such as `load`, `convertedLoad`, `carLoadRate`, `carUnloadRate`, `loadRate`, `maxStorage`, `costPerUnit`, working hours, fill percentage, title, and book reasons. Custom components may also use `fields` for additional reflection-bound field/property values, so a separate component mod can expose data without requiring a FUSE code change. Legacy ConfusingSupplements shortcuts (`CaptiveConversionLoader`, `CaptiveConversionUnloader`, `Pay4Resource`, and `Empty`) are normalized to their fully-qualified `ConfusingSupplements.IndustryComponents.*` runtime types.
+Industry components currently supported by the runtime include `loader`, `unloader`, `formulaic`, `repairTrack`, `teamTrack`, `interchange`, `interchangedLoader`, `interchangedUnloader`, `teleportLoading`, `progression`, and `passengerStop`. Formulaic components are attached directly to the industry object to match the base game component layout expectations; other component types get child objects. Fully-qualified custom `IndustryComponent` type names are accepted as compatibility surface when the owning assembly is loaded; FUSE reflectively binds common fields such as `load`, `convertedLoad`, `carLoadRate`, `carUnloadRate`, `loadRate`, `maxStorage`, `costPerUnit`, working hours, fill percentage, title, and book reasons. Custom components may also use `fields` for additional reflection-bound field/property values, so a separate component mod can expose data without requiring a FUSE code change. Legacy ConfusingSupplements shortcuts (`CaptiveConversionLoader`, `CaptiveConversionUnloader`, `Pay4Resource`, and `Empty`) are normalized to their fully-qualified `ConfusingSupplements.IndustryComponents.*` runtime types.
 
 The converter emits canonical FUSE component type names. Legacy aliases such as `Model.Ops.IndustryLoader`, `Model.OpsNew.InterchangedIndustryUnloader`, and `AlinasMapMod.PaxStationComponent` are normalized at load time for compatibility, but new JSON should use the FUSE names above so it does not depend on external mod assemblies.
 

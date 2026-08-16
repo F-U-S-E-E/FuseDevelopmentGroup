@@ -6,10 +6,13 @@ Official drag-and-drop converter for legacy Railroader data mods.
 
 Prebuilt binaries are published on the GitHub Releases page rather than tracked in this repo:
 
-- Windows exe: [FUSE-Converter.exe](https://github.com/Hrogers-Rog/Rail/releases/latest/download/FUSE-Converter.exe)
-- Portable Python zipapp: [FUSEConvertFolder.pyz](https://github.com/Hrogers-Rog/Rail/releases/latest/download/FUSEConvertFolder.pyz)
+- Windows exe: [FUSE-Converter.exe](https://github.com/F-U-S-E-E/FuseDevelopmentGroup/releases/latest/download/FUSE-Converter.exe)
+- Portable Python zipapp: [FUSEConvertFolder.pyz](https://github.com/F-U-S-E-E/FuseDevelopmentGroup/releases/latest/download/FUSEConvertFolder.pyz)
 
-All releases live at <https://github.com/Hrogers-Rog/Rail/releases>.
+All releases live at <https://github.com/F-U-S-E-E/FuseDevelopmentGroup/releases>.
+
+Both tools are attached to the mod release (`mod-v*` tag), so `latest/download`
+resolves to the converter built alongside the FUSE build you are running.
 
 ## Quick Use
 
@@ -197,8 +200,8 @@ The converter should classify unsupported content instead of silently dropping i
 | `preserved` | The source data is kept in `extensions` or package files for future/manual work, but does not have full runtime behavior yet. |
 | `dependency-required` | The source entry can work when another package/asset/component dependency is installed. |
 | `unresolved` | FUSE could not resolve a reference from the source data; the output keeps enough context for manual repair where possible. |
-| `unsupported` | FUSE intentionally does not support the legacy behavior in beta. The report must name the source file and concept. |
-| `error` | Conversion failed for that input and the output should not be treated as beta-ready. |
+| `unsupported` | FUSE intentionally does not support the legacy behavior. The report must name the source file and concept. |
+| `error` | Conversion failed for that input and the output should not be treated as usable. |
 
 Current intentional unsupported/deferred areas:
 
@@ -208,4 +211,4 @@ Current intentional unsupported/deferred areas:
 - rolling stock/car/locomotive packages outside FUSE audio definitions
 - unknown custom component types when their owning assembly is not installed or not converted to a FUSE component package
 
-Unsupported entries must remain visible in `conversion-report.json` and `conversion-report.md`. A clean conversion is allowed to have `info` entries, but beta-supported packages should not rely on hidden unsupported runtime behavior.
+Unsupported entries must remain visible in `conversion-report.json` and `conversion-report.md`. A clean conversion is allowed to have `info` entries, but a supported package should not rely on hidden unsupported runtime behavior.

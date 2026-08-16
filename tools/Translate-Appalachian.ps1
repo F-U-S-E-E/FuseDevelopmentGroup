@@ -33,7 +33,7 @@ function Resolve-AppalachianSourcePath {
     $candidates = @(
         (Join-Path 'C:\Steam\steamapps\common\Railroader\Mods' $FolderName),
         (Join-Path 'C:\Steam\steamapps\common\Railroader\Mods.bck' $FolderName),
-        (Join-Path 'C:\Hrogers_Railroader_mods_Projects\GearedSteam\.weatherinspect\Mods' $FolderName)
+        (Join-Path '<projects>\GearedSteam\.weatherinspect\Mods' $FolderName)
     )
 
     foreach ($candidate in $candidates) {

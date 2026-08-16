@@ -1,6 +1,6 @@
 # Package Author Guide
 
-This guide is the short public authoring contract for beta packages. The full schema is documented in `schemas/FUSE_JSON_SCHEMA.md` and `schemas/fuse-mod.schema.json`.
+This guide is the short public authoring contract for FUSE packages. The full schema is documented in [`../schemas/FUSE_JSON_SCHEMA.md`](../schemas/FUSE_JSON_SCHEMA.md) and `schemas/fuse-mod.schema.json`.
 
 ## File Shape
 
