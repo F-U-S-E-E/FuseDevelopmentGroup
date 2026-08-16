@@ -14,13 +14,20 @@
   </PropertyGroup>
 
   <!--
-    Stamp the build-deployed Info.json with the real ModVersion. The source
-    Info.json tracks the latest published release version, kept in sync by
-    .github/workflows/sync-info-json.yml. Local/CI debug builds without
-    -p:ModVersion=... skip stamping so the bin output mirrors source. The
-    release workflow passes -p:ModVersion=<semver from tag>, so the
-    published artifact always carries the right version regardless of what
-    the source manifest currently shows.
+    Stamp the build-deployed Info.json with the real ModVersion.
+
+    The version is supplied by the release flow and nowhere else. The source
+    FUSE/Info.json is pinned at 0.0.0 on purpose: a build without
+    -p:ModVersion=... skips stamping and mirrors source, so 0.0.0 in Unity Mod
+    Manager is the deliberate signal "this is a local/debug build, not a
+    release". Do not bump the source manifest to track the latest release, and
+    do not add a git-describe style fallback — either would make a dev build
+    indistinguishable from a shipped one in UMM.
+
+    release.yml passes -p:ModVersion=<semver from tag>, so published artifacts
+    always carry the real version. scripts/Validate-ModPackage.cs fails the
+    release if a packaged Info.json still reads 0.0.0, which is what stops an
+    unstamped build from ever shipping.
   -->
   <Target Name="InjectModVersionIntoInfoJson" AfterTargets="AfterBuild" Condition="'$(ModVersion)' != '0.0.0' AND Exists('$(TargetDir)Info.json') and '$(FuseIsGameFree)' != 'true'">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\stamp-info-version.ps1&quot; -Path &quot;$(TargetDir)Info.json&quot; -Version $(ModVersionCore)" />

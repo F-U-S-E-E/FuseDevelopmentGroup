@@ -76,9 +76,9 @@ jobs:
           # Any OTHER prerelease suffix (-beta.2, -alpha.1) still publishes as a
           # GitHub prerelease. Both -rc.1 and -rc2 spellings are accepted.
           #
-          # Note this does not affect FUSE/Info.json: sync-info-json.yml matches
-          # ^mod-v<major>.<minor>.<patch>$ only, so an RC never stamps the
-          # manifest regardless of how it is published here.
+          # Note this does not affect the source FUSE/Info.json, which stays
+          # pinned at 0.0.0 so an unstamped local build is recognizable as such
+          # in UMM. See Directory.Build.targets.
           if (($version -match '-') -and ($version -notmatch '-rc\.?[0-9]+$')) {
             "is_prerelease=true" >> $env:GITHUB_OUTPUT
           }
@@ -89,8 +89,8 @@ jobs:
           # Separate from is_prerelease on purpose. Since RCs now publish as full
           # GitHub releases, is_prerelease is false for them, and gating Nexus on
           # it would push every release candidate to the public mod page. is_ga is
-          # true only for a plain x.y.z tag — the same shape sync-info-json.yml
-          # requires — so Nexus and FUSE/Info.json move together, on GA only.
+          # true only for a plain x.y.z tag, so Nexus only ever sees stable
+          # releases.
           if ($version -match '^[0-9]+\.[0-9]+\.[0-9]+$') {
             "is_ga=true" >> $env:GITHUB_OUTPUT
           }
