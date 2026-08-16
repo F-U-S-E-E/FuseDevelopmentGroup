@@ -49,8 +49,11 @@ numbers are independent — bump and tag them separately.
 
 ## Notes
 
-- Both lanes treat the `0.x` series or any prerelease suffix (e.g. `-rc.1`) as a
-  GitHub prerelease (FUSE is pre-1.0).
+- Both lanes mark a GitHub prerelease only for an explicit prerelease suffix
+  (e.g. `-rc.1`). A plain `<major>.<minor>.<patch>` tag publishes as a full
+  release, so the repo front page shows a "Latest" card with the version number.
+- A plain GA mod tag also triggers `sync-info-json.yml`, which commits the
+  matching `FUSE/Info.json` version back to `main`.
 - The tag prefixes don't collide: `mod-v*`, `externaleditor-v*`, and the
   existing `tools-v*` are disjoint globs, and `sync-info-json.yml`'s
   `^mod-v...` parse only ever stamps `Info.json` from a mod release.

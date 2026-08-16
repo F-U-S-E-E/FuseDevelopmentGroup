@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.0.0
+
+First stable release. FUSE leaves the 0.x beta series; the package format and
+runtime behavior described in `schemas/FUSE_JSON_SCHEMA.md` are now the
+supported 1.0 baseline.
+
+### Maps
+
+- Added custom map packages. A FUSE package can now declare a replacement world,
+  which appears in a dedicated New Game map dropdown; Railroader's existing
+  control is retained separately for starting progression.
+- Added base-world isolation so a launched FUSE map does not inherit the vanilla
+  world's graph and scenery state.
+- Added `/fuse.maps` to list registered map packages and the active session map,
+  and `/fuse.map.launch <mapId> [railroadName] [reportingMark]` to start a
+  sandbox session on a registered map from the main menu.
+- Added `map` declaration validation and schema coverage for map packages.
+
+### Editor
+
+- Retired the embedded in-game runtime editor. `FUSE.Editor.dll` and
+  `FUSE.Converter.dll` are no longer packaged in the mod zip, and the mod zip is
+  now built from `FUSE/FUSE.csproj`. Authoring moves to the standalone external
+  editor, which ships in its own `externaleditor-v*` release lane. FUSE still
+  discovers and loads custom map packages at runtime.
+
+### Licensing
+
+- FUSE is now released under the GNU Affero General Public License v3.0. The
+  full text is in `LICENSE`. Releases before 1.0.0 carried no license file.
+
 ## 2026-07-27 Performance, VRAM, and Load-Race Pass
 
 This section covers the complete optimization cycle performed after the previous

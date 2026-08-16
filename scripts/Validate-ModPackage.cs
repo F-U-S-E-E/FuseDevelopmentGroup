@@ -154,6 +154,10 @@ try
     Require(File.Exists(Path.Combine(modFolder.FullName, "assets", "fuse_icon.png")),
         "assets/fuse_icon.png missing from mod folder.");
 
+    // AGPL-3.0 conveys with the binary, so a zip without it is a compliance gap.
+    Require(File.Exists(Path.Combine(modFolder.FullName, "LICENSE")),
+        "LICENSE missing from mod folder (AGPL-3.0 requires conveying the license with the binary).");
+
     // No stray files. The allow-list is the known flat files plus anything under
     // schemas/ and assets/ (both are controlled, recursively-copied trees). Anything
     // else — a stray DLL, a doc XML, a .DS_Store — gets flagged. *.pdb is called out
@@ -163,6 +167,10 @@ try
     {
         "Info.json",
         entryDll,
+        // FUSE ships under the AGPL-3.0, which requires conveying the license
+        // text along with the binary. The release workflow copies the repo-root
+        // LICENSE into every mod zip.
+        "LICENSE",
     };
 
     bool IsAllowed(string rel) =>

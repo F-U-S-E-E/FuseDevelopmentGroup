@@ -111,6 +111,10 @@ jobs:
 
           Copy-Item "tools\assets\fuse_converter_icon.png" (Join-Path $modFolder 'assets\fuse_icon.png')
 
+          # FUSE ships under the AGPL-3.0, which requires conveying the license
+          # text with the binary. Validate-ModPackage.cs enforces its presence.
+          Copy-Item "LICENSE" $modFolder
+
           if (Test-Path $archivePath) {
             Remove-Item $archivePath -Force
           }
@@ -168,6 +172,8 @@ jobs:
           # FUSE.Core.dll is a runtime dependency of the bridge (ProjectReference); ship it too.
           Copy-Item "FUSE.LiveBridge\bin\Release\net48\FUSE.Core.dll" $modFolder
           Copy-Item "FUSE.LiveBridge\bin\Release\net48\Info.json" $modFolder
+          # Same AGPL conveyance requirement as the main mod zip.
+          Copy-Item "LICENSE" $modFolder
           $zip = "FUSE.LiveBridge-v$version.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path $modFolder -DestinationPath $zip -CompressionLevel Optimal

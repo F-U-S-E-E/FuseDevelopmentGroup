@@ -95,6 +95,8 @@ Useful console commands:
 - `/fuse.operations` - summarize operations state
 - `/fuse.progressions` - summarize progression state
 - `/fuse.assets` - list discovered asset pack folders
+- `/fuse.maps` - list maps registered by FUSE map packages and the active session map
+- `/fuse.map.launch <mapId> [railroadName] [reportingMark]` - launch a new sandbox session on a registered FUSE map (main menu only)
 - `/fuse.dumpgraph` - write the captured original graph to `FUSE-original-graph.json`
 - `/fuse.dumpruntimegraph` - write the active post-FUSE graph to `FUSE-runtime-graph.json`
 - `/fuse.dumpmandelas` - write scene clone and world path data to `FUSE-mandelas.json`
@@ -111,6 +113,26 @@ Experimental commands should not be used during normal play unless testing recov
 FUSE repairs many legacy data issues during conversion, but it does not silently hide authoring errors. Unsupported graph shapes, missing hard dependencies, invalid spans, and missing runtime component assemblies should be reported by the converter or runtime instead of being dropped.
 
 See `docs/KNOWN_ISSUES.md` and `docs/TROUBLESHOOTING.md` for the current issue list and debugging workflow.
+
+## License
+
+Copyright (C) 2026 FUSE Development Group and contributors.
+
+FUSE is free software: you can redistribute it and/or modify it under the terms
+of the GNU Affero General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+FUSE is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+The full license text is in [`LICENSE`](LICENSE), and is also available at
+<https://www.gnu.org/licenses/agpl-3.0.html>.
+
+The AGPL covers FUSE's own source. It does not extend to Railroader, Unity, or
+Unity Mod Manager, whose assemblies FUSE builds against and which remain under
+their own proprietary terms; those assemblies are not redistributed here.
 
 ## Local Development
 
