@@ -299,6 +299,7 @@ jobs:
 
           Copy-Item "FUSE\bin\Release\net48\FUSE.dll" $modFolder
           Copy-Item "FUSE\bin\Release\net48\Info.json" $modFolder
+          Copy-Item "LICENSE" $modFolder
           Copy-Item -Recurse "schemas" $modFolder
           Copy-Item "tools\assets\fuse_converter_icon.png" (Join-Path $modFolder 'assets\fuse_icon.png')
 
