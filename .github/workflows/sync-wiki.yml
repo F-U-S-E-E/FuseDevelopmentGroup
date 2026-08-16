@@ -79,11 +79,34 @@ jobs:
           # remote echoed back by git can never surface here verbatim.
           $detail = $output.Replace($env:WIKI_TOKEN, '***').Trim()
 
+          # git reports a missing repository identically whether the wiki merely
+          # has no pages or the wiki feature is switched off for the repo. Ask
+          # the API which it is: telling someone to open a Wiki tab that does not
+          # exist is worse than saying nothing. Only on the failure path, so a
+          # healthy run stays a single probe.
+          $wikiEnabled = $null
+          try {
+            $repoInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/$($env:REPO)" -Headers @{
+              Authorization  = "Bearer $($env:WIKI_TOKEN)"
+              Accept         = 'application/vnd.github+json'
+              'User-Agent'   = 'fuse-sync-wiki'
+            }
+            $wikiEnabled = [bool]$repoInfo.has_wiki
+          }
+          catch {
+            # Metadata is a nicety, not a requirement — fall through to the git
+            # output. $wikiEnabled stays $null, which matches neither branch.
+            Write-Host "note: could not query repository metadata ($($_.Exception.Message)); classifying from git output alone."
+          }
+
           # Deliberately narrow. "Could not read from remote repository" is NOT
           # matched here: git emits it for permission and auth failures too, so
           # keying on it would reintroduce the misdiagnosis this check exists to
           # avoid. Only git's genuine repo-missing wording counts.
-          if ($detail -match 'not found|does not exist') {
+          if ($wikiEnabled -eq $false) {
+            Write-Host "::error::Wikis are disabled for $($env:REPO), so there is no wiki to sync to and no Wiki tab to create a page in. Enable it under Settings -> General -> Features -> Wikis, create any page, then re-run this workflow."
+          }
+          elseif ($detail -match 'not found|does not exist') {
             Write-Host "::error::The wiki for $($env:REPO) has no pages yet, so GitHub has not created its repository. Open the repo's Wiki tab, create any page, save it, then re-run this workflow — everything after that is automatic."
           }
           else {
