@@ -278,7 +278,7 @@ jobs:
           # Read the computed version from the environment rather than ${{ }}
           # template expansion. Mirrors the TAG_NAME hardening in release.yml.
           MOD_VERSION: ${{ steps.build_id.outputs.version }}
-        run: dotnet build FUSE/FUSE.csproj -c Release "-p:ModVersion=$env:MOD_VERSION"
+        run: dotnet build FUSE/FUSE.csproj -c Release --no-restore "-p:ModVersion=$env:MOD_VERSION"
 
       - name: Package mod zip
         shell: powershell
