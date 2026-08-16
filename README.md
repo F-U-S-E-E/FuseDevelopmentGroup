@@ -14,7 +14,6 @@ Full documentation is in **[docs/](docs/README.md)**.
 - Authoring: [Package Author Guide](docs/PACKAGE_AUTHOR_GUIDE.md) · [Converter](docs/FUSE_CONVERTER.md) · [External Editor](docs/EXTERNAL_EDITOR.md)
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md)
 
-## Supported Game Version
 ## What it adds
 
 - **Custom maps** — whole replacement worlds, picked from a map dropdown on the
@@ -163,7 +162,6 @@ recovery.
 
 The full reference, including the commands not listed above, is in [docs/CONSOLE_COMMANDS.md](docs/CONSOLE_COMMANDS.md). Settings are documented in [docs/SETTINGS.md](docs/SETTINGS.md).
 
-## Known Limitations
 ## Supported package types
 
 FUSE supports these package categories:
@@ -246,8 +244,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the testing policy, code conventions,
 
 Contributions are welcome — start with [CONTRIBUTING.md](CONTRIBUTING.md). Security issues should be reported privately per [SECURITY.md](SECURITY.md), not through the public issue tracker.
 
-## License
-
-FUSE is licensed under the [GNU Affero General Public License v3.0](LICENSE).
 See [`AGENTS.md`](AGENTS.md) for skill and sub-agent routing, and
 [`docs/RELEASING.md`](docs/RELEASING.md) for how releases are cut.

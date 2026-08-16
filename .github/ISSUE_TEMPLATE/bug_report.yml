@@ -92,7 +92,8 @@ body:
     attributes:
       label: Logs
       description: |
-        Both live in `C:\Users\<username>\AppData\LocalLow\Giraffe Lab LLC\Railroader\`.
+        Both live in `%USERPROFILE%\AppData\LocalLow\Giraffe Lab LLC\Railroader\`
+        — paste that straight into Explorer's address bar.
         Drag the files into this issue to attach them — do not paste them inline.
       options:
         - label: I have attached `FUSE.log` and `Player.log` to this issue.
