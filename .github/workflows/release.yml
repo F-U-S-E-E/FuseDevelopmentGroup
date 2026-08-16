@@ -154,7 +154,6 @@ jobs:
           # from the triggering ref, but scripts/ comes from the on-disk checkout, so
           # a green "--no-cache is in the log" does not by itself prove the script is
           # current. Hash it and show its LICENSE lines.
-          Write-Host "HEAD: $(git rev-parse HEAD)"
           Write-Host "validator sha256: $((Get-FileHash 'scripts/Validate-ModPackage.cs' -Algorithm SHA256).Hash)"
           $licLines = (Select-String -Path 'scripts/Validate-ModPackage.cs' -Pattern 'LICENSE' -SimpleMatch)
           Write-Host "validator LICENSE mentions: $($licLines.Count)"
