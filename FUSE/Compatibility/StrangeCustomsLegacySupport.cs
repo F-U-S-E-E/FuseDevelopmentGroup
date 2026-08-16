@@ -41,6 +41,9 @@ namespace StrangeCustoms
     [Obsolete(LegacyShim.Message)]
     public interface ISplineyBuilder
     {
+        /// <summary>
+        /// Preserves the legacy spliney-builder signature so compiled plugin implementations can load under FUSE.
+        /// </summary>
         GameObject BuildSpliney(string id, Transform parentTransform, JObject data);
     }
 
@@ -55,6 +58,9 @@ namespace StrangeCustoms
         public string HelpText => "Legacy StrangeCustoms diagnostic; not wired under FUSE.";
         public string Usage => Keyword;
 
+        /// <summary>
+        /// Retains the legacy console-command entry point for ABI compatibility without reproducing its diagnostics.
+        /// </summary>
         public string Execute(string[] components)
         {
             return string.Empty;
@@ -73,6 +79,9 @@ namespace StrangeCustoms
         [Obsolete(LegacyShim.Message)]
         public class CacheEntry
         {
+            /// <summary>
+            /// Preserves the legacy cache-entry constructor while storing only FUSE-owned facade state.
+            /// </summary>
             public CacheEntry(string fileName)
             {
                 FileName = fileName ?? string.Empty;
@@ -97,6 +106,9 @@ namespace StrangeCustoms
             }
             public bool IsLoading { get; set; }
 
+            /// <summary>
+            /// Retains the legacy invalidation call and clears only the compatibility facade's validity state.
+            /// </summary>
             public virtual void Invalidate()
             {
                 IsValid = false;
@@ -106,6 +118,9 @@ namespace StrangeCustoms
         [Obsolete(LegacyShim.Message)]
         public class CacheEntry<T> : CacheEntry
         {
+            /// <summary>
+            /// Preserves the constructed generic cache-entry signature expected by legacy consumers.
+            /// </summary>
             public CacheEntry(string fileName) : base(fileName)
             {
             }
@@ -113,6 +128,9 @@ namespace StrangeCustoms
             public T Value { get; private set; }
             public event Action<T> Loaded;
 
+            /// <summary>
+            /// Retains the legacy cache-completion surface while updating only FUSE-owned facade state.
+            /// </summary>
             public void Set(T value)
             {
                 Value = value;
@@ -124,6 +142,9 @@ namespace StrangeCustoms
                 handler?.Invoke(value);
             }
 
+            /// <summary>
+            /// Retains the deferred legacy setter and delegates to the FUSE-owned value setter.
+            /// </summary>
             public void Set(Func<T> deferredSet)
             {
                 if (deferredSet == null)
@@ -133,12 +154,18 @@ namespace StrangeCustoms
                 Set(deferredSet());
             }
 
+            /// <summary>
+            /// Retains legacy invalidation semantics while clearing only the shim's stored value.
+            /// </summary>
             public override void Invalidate()
             {
                 base.Invalidate();
                 Value = default;
             }
 
+            /// <summary>
+            /// Retains the legacy completion callback using the compatibility facade's local state.
+            /// </summary>
             public void Register(Action<T> callback)
             {
                 if (callback == null)
@@ -153,6 +180,9 @@ namespace StrangeCustoms
                 Loaded += callback;
             }
 
+            /// <summary>
+            /// Retains the legacy diagnostic surface with a FUSE-authored description of facade state.
+            /// </summary>
             public override string ToString()
             {
                 return $"CacheEntry<{typeof(T).Name}> '{FileName}' valid={IsValid}";
@@ -161,18 +191,27 @@ namespace StrangeCustoms
 
         public static FileCache Instance { get; private set; }
 
+        /// <summary>
+        /// Retains the legacy audio-load signature so plugin IL resolves; FUSE does not run that cache pipeline.
+        /// </summary>
         public void LoadAudioClip(string fileName, Action<AudioClip> callback)
         {
             // FUSE does not run the legacy file-cache pipeline. The callback is
             // never invoked under FUSE; the method exists for interop only.
         }
 
+        /// <summary>
+        /// Retains the legacy texture-load signature and reports an uncached miss because FUSE does not service it.
+        /// </summary>
         public Texture2D LoadTexture(string fileName, out bool wasCached)
         {
             wasCached = false;
             return null;
         }
 
+        /// <summary>
+        /// Retains the legacy cache-lookup signature and reports a miss because FUSE does not populate this cache.
+        /// </summary>
         public bool TryGetValue<T>(string fileName, out CacheEntry<T> value)
         {
             value = null;
@@ -209,6 +248,9 @@ namespace StrangeCustoms
     [Obsolete(LegacyShim.Message)]
     public class FlowyThingBuilder : ISplineyBuilder
     {
+        /// <summary>
+        /// Retains the concrete legacy builder slot so plugin IL resolves without reproducing spline rendering.
+        /// </summary>
         public GameObject BuildSpliney(string id, Transform parentTransform, JObject data)
         {
             return null;
@@ -226,12 +268,18 @@ namespace StrangeCustoms
         public global::StrangeCustoms.Tracks.TrackState State;
         private readonly Action<string[]> _onMarkChanged;
 
+        /// <summary>
+        /// Lets FUSE construct the legacy event shape around FUSE-owned graph state and notification handling.
+        /// </summary>
         internal GraphWillChangeEvent(global::StrangeCustoms.Tracks.TrackState state, Action<string[]> onMarkChanged)
         {
             State = state;
             _onMarkChanged = onMarkChanged;
         }
 
+        /// <summary>
+        /// Retains the legacy mutation notification and forwards it only to the FUSE-owned callback.
+        /// </summary>
         public void MarkChanged(params string[] path)
         {
             _onMarkChanged?.Invoke(path);
@@ -246,6 +294,9 @@ namespace StrangeCustoms
     {
         public global::StrangeCustoms.Tracks.TrackState State;
 
+        /// <summary>
+        /// Lets FUSE package its graph state into the event shape expected by legacy subscribers.
+        /// </summary>
         internal GraphDidChangeEvent(global::StrangeCustoms.Tracks.TrackState state)
         {
             State = state;
@@ -264,6 +315,9 @@ namespace StrangeCustoms
         private readonly IReadOnlyDictionary<string, string> _changedKeys;
         private readonly Action<string, JObject> _onApplyPatch;
 
+        /// <summary>
+        /// Lets FUSE construct the legacy event shape from its own changed-key and patch callbacks.
+        /// </summary>
         internal GraphJsonWillDeserializeEvent(
             IReadOnlyDictionary<string, string> changedKeys,
             Action<string, JObject> onApplyPatch)
@@ -275,6 +329,9 @@ namespace StrangeCustoms
         public IReadOnlyDictionary<string, string> ChangedKeys =>
             _changedKeys ?? EmptyChangedKeys;
 
+        /// <summary>
+        /// Retains the legacy patch hook and forwards to FUSE without reproducing Strange Customs patching logic.
+        /// </summary>
         public void ApplyPatch(string patchSource, JObject patch)
         {
             _onApplyPatch?.Invoke(patchSource, patch);
@@ -294,20 +351,32 @@ namespace StrangeCustoms
     [Obsolete(LegacyShim.Message)]
     public class StrangeCustomsPlugin : SingletonPluginBase<StrangeCustomsPlugin>, IModTabHandler
     {
+        /// <summary>
+        /// Retains the legacy host constructor signature so the type loads without invoking the old lifecycle.
+        /// </summary>
         public StrangeCustomsPlugin(IModDefinition self, IModdingContext moddingContext, IUIHelper uiHelper)
         {
             // FUSE does not invoke the legacy plugin lifecycle here; the
             // constructor exists only so the type can be loaded.
         }
 
+        /// <summary>
+        /// Retains the inherited legacy disable slot while FUSE owns lifecycle management.
+        /// </summary>
         public override void OnDisable()
         {
         }
 
+        /// <summary>
+        /// Retains the legacy tab-open callback while FUSE omits the superseded tab UI.
+        /// </summary>
         public void ModTabDidOpen(UIPanelBuilder builder)
         {
         }
 
+        /// <summary>
+        /// Retains the legacy tab-close callback while FUSE omits the superseded tab UI.
+        /// </summary>
         public void ModTabDidClose()
         {
         }
@@ -354,10 +423,16 @@ namespace StrangeCustoms.Tracks
         public Vector3 Rotation { get; set; }
         public bool FlipSwitchStand { get; set; }
 
+        /// <summary>
+        /// Preserves parameterless activation for legacy JSON serializers and plugin code.
+        /// </summary>
         public SerializedNode()
         {
         }
 
+        /// <summary>
+        /// Preserves the legacy convenience signature using a FUSE-authored projection of public game fields.
+        /// </summary>
         public SerializedNode(TrackNode trackNode)
         {
             if (trackNode == null)
@@ -383,10 +458,16 @@ namespace StrangeCustoms.Tracks
         public int SpeedLimit { get; set; } = 45;
         public string GroupId { get; set; }
 
+        /// <summary>
+        /// Preserves parameterless activation for legacy JSON serializers and plugin code.
+        /// </summary>
         public SerializedSegment()
         {
         }
 
+        /// <summary>
+        /// Preserves the legacy convenience signature using a FUSE-authored projection of public game fields.
+        /// </summary>
         public SerializedSegment(TrackSegment trackSegment)
         {
             if (trackSegment == null)
@@ -427,10 +508,16 @@ namespace StrangeCustoms.Tracks
         public float Distance { get; set; }
         public SerializedSegmentEnd End { get; set; }
 
+        /// <summary>
+        /// Preserves parameterless activation for the legacy serialized-location contract.
+        /// </summary>
         public SerializedLocation()
         {
         }
 
+        /// <summary>
+        /// Adapts a public game location into the legacy DTO through FUSE-owned enum mapping.
+        /// </summary>
         public SerializedLocation(SerializableLocation loc)
         {
             SegmentId = loc.segmentId;
@@ -445,6 +532,9 @@ namespace StrangeCustoms.Tracks
             };
         }
 
+        /// <summary>
+        /// Adapts the legacy DTO back to the public game location expected by hosted plugin call sites.
+        /// </summary>
         public static implicit operator SerializableLocation(SerializedLocation loc)
         {
             if (loc is null)
@@ -474,6 +564,9 @@ namespace StrangeCustoms.Tracks
         public SerializedLocation Lower { get; set; }
         public bool Normalize { get; set; }
 
+        /// <summary>
+        /// Preserves parameterless activation for legacy serialized track spans.
+        /// </summary>
         public SerializedSpan()
         {
         }
@@ -495,10 +588,16 @@ namespace StrangeCustoms.Tracks
         public Dictionary<string, SerializedIndustry> Industries { get; set; }
         public int Order { get; set; }
 
+        /// <summary>
+        /// Preserves parameterless activation for the legacy area DTO.
+        /// </summary>
         public SerializedArea()
         {
         }
 
+        /// <summary>
+        /// Retains the native-area constructor signature for binary compatibility without legacy round-tripping.
+        /// </summary>
         public SerializedArea(Area area)
         {
             // Constructor signature is part of the legacy contract; FUSE never
@@ -518,10 +617,16 @@ namespace StrangeCustoms.Tracks
         public bool UsesContract { get; set; }
         public Dictionary<string, SerializedComponent> Components { get; set; }
 
+        /// <summary>
+        /// Preserves parameterless activation for the legacy industry DTO.
+        /// </summary>
         public SerializedIndustry()
         {
         }
 
+        /// <summary>
+        /// Retains the native-industry constructor signature while FUSE owns industry conversion elsewhere.
+        /// </summary>
         public SerializedIndustry(Industry industry)
         {
         }
@@ -543,10 +648,16 @@ namespace StrangeCustoms.Tracks
         public float PayPerQuantity { get; set; }
         public float CostPerUnit { get; set; }
 
+        /// <summary>
+        /// Preserves parameterless activation for the legacy load DTO.
+        /// </summary>
         public SerializedLoad()
         {
         }
 
+        /// <summary>
+        /// Retains the native-load constructor signature without reproducing the legacy round-trip implementation.
+        /// </summary>
         public SerializedLoad(Load load)
         {
         }
@@ -568,10 +679,16 @@ namespace StrangeCustoms.Tracks
         [JsonExtensionData]
         public Dictionary<string, JToken> ExtraData { get; set; }
 
+        /// <summary>
+        /// Preserves parameterless activation for the legacy scenery DTO.
+        /// </summary>
         public SerializedScenery()
         {
         }
 
+        /// <summary>
+        /// Retains the native-scenery constructor signature while FUSE owns scenery conversion elsewhere.
+        /// </summary>
         public SerializedScenery(SceneryAssetInstance scenery)
         {
         }
@@ -625,6 +742,9 @@ namespace StrangeCustoms.Tracks
         [JsonExtensionData]
         public Dictionary<string, JToken> ExtraData { get; set; }
 
+        /// <summary>
+        /// Preserves parameterless activation for the legacy industry-component DTO.
+        /// </summary>
         public SerializedComponent()
         {
         }
@@ -663,6 +783,9 @@ namespace StrangeCustoms.Tracks
     [Obsolete(LegacyShim.Message)]
     public class PatchEditor
     {
+        /// <summary>
+        /// Preserves the legacy editor constructor while retaining only the filename used by the compatibility facade.
+        /// </summary>
         public PatchEditor(string fileName)
         {
             FileName = fileName ?? string.Empty;
@@ -670,46 +793,129 @@ namespace StrangeCustoms.Tracks
 
         public string FileName { get; }
 
+        /// <summary>
+        /// Retains the legacy node-authoring entry point; it is inert because FUSE does not host the old editor pipeline.
+        /// </summary>
         public void AddOrUpdateNode(string id, Vector3 position, Vector3 eulerRotation, bool flipSwitchStand = false)
         {
         }
 
+        /// <summary>
+        /// Retains the legacy segment-authoring entry point; it is inert because FUSE does not host the old editor pipeline.
+        /// </summary>
         public void AddOrUpdateSegment(string segmentId, string startId, string endId, int priority = 0, string groupId = null, int speedLimit = 0, TrackSegment.Style style = TrackSegment.Style.Standard, TrackClass trackClass = default)
         {
         }
 
+        /// <summary>
+        /// Retains the legacy span-authoring entry point; it is inert because FUSE does not host the old editor pipeline.
+        /// </summary>
         public void AddOrUpdateSpan(string spanId, string lowerId, float lowerDistance, SerializedSegmentEnd lowerEnd, string upperId, float upperDistance, SerializedSegmentEnd upperEnd, bool normalize = false)
         {
         }
 
+        /// <summary>
+        /// Retains the legacy spliney-authoring entry point; it is inert because FUSE does not host the old editor pipeline.
+        /// </summary>
         public void AddOrUpdateSpliney(string splineyId, Func<JObject, JObject> addOrUpdate)
         {
         }
 
+        /// <summary>
+        /// Retains the legacy scenery-authoring entry point; it is inert because FUSE does not host the old editor pipeline.
+        /// </summary>
         public void AddOrUpdateScenery(string sceneryId, string modelIdentifier, Vector3 position, Vector3 eulerRotation, Vector3 scale)
         {
         }
 
+        /// <summary>
+        /// Retains the legacy node-reset entry point; FUSE has no legacy editor state to reset.
+        /// </summary>
         public void ResetNode(string id) { }
+
+        /// <summary>
+        /// Retains the legacy segment-reset entry point; FUSE has no legacy editor state to reset.
+        /// </summary>
         public void ResetSegment(string id) { }
+
+        /// <summary>
+        /// Retains the legacy span-reset entry point; FUSE has no legacy editor state to reset.
+        /// </summary>
         public void ResetSpan(string id) { }
+
+        /// <summary>
+        /// Retains the legacy spliney-reset entry point; FUSE has no legacy editor state to reset.
+        /// </summary>
         public void ResetSpliney(string id) { }
+
+        /// <summary>
+        /// Retains the legacy scenery-reset entry point; FUSE has no legacy editor state to reset.
+        /// </summary>
         public void ResetScenery(string id) { }
 
+        /// <summary>
+        /// Retains the legacy node-removal entry point; FUSE has no legacy editor state to mutate.
+        /// </summary>
         public void RemoveNode(string id) { }
+
+        /// <summary>
+        /// Retains the legacy segment-removal entry point; FUSE has no legacy editor state to mutate.
+        /// </summary>
         public void RemoveSegment(string id) { }
+
+        /// <summary>
+        /// Retains the legacy span-removal entry point; FUSE has no legacy editor state to mutate.
+        /// </summary>
         public void RemoveSpan(string id) { }
+
+        /// <summary>
+        /// Retains the legacy spliney-removal entry point; FUSE has no legacy editor state to mutate.
+        /// </summary>
         public void RemoveSpliney(string id) { }
+
+        /// <summary>
+        /// Retains the legacy scenery-removal entry point; FUSE has no legacy editor state to mutate.
+        /// </summary>
         public void RemoveScenery(string id) { }
 
+        /// <summary>
+        /// Retains the legacy node query and returns an empty collection because FUSE hosts no legacy editor state.
+        /// </summary>
         public Dictionary<string, JObject> GetNodes() => new Dictionary<string, JObject>();
+
+        /// <summary>
+        /// Retains the legacy segment query and returns an empty collection because FUSE hosts no legacy editor state.
+        /// </summary>
         public Dictionary<string, JObject> GetSegments() => new Dictionary<string, JObject>();
+
+        /// <summary>
+        /// Retains the legacy span query and returns an empty collection because FUSE hosts no legacy editor state.
+        /// </summary>
         public Dictionary<string, JObject> GetSpans() => new Dictionary<string, JObject>();
+
+        /// <summary>
+        /// Retains the legacy spliney query and returns an empty collection because FUSE hosts no legacy editor state.
+        /// </summary>
         public Dictionary<string, JObject> GetSplineys() => new Dictionary<string, JObject>();
+
+        /// <summary>
+        /// Retains the legacy scenery query and returns an empty collection because FUSE hosts no legacy editor state.
+        /// </summary>
         public Dictionary<string, JObject> GetScenery() => new Dictionary<string, JObject>();
 
+        /// <summary>
+        /// Retains the legacy undo command and reports no operation because FUSE hosts no legacy edit history.
+        /// </summary>
         public bool Undo() => false;
+
+        /// <summary>
+        /// Retains the legacy redo command and reports no operation because FUSE hosts no legacy edit history.
+        /// </summary>
         public bool Redo() => false;
+
+        /// <summary>
+        /// Retains the legacy save command; it is inert because FUSE does not persist the old editor format.
+        /// </summary>
         public void Save() { }
     }
 
@@ -733,6 +939,9 @@ namespace StrangeCustoms.Tracks
         public Vector3 Rotation { get; set; }
         public string Tag { get; set; }
 
+        /// <summary>
+        /// Preserves parameterless activation for legacy simple-graph node data.
+        /// </summary>
         public SerializedSimpleNode()
         {
         }
@@ -747,6 +956,9 @@ namespace StrangeCustoms.Tracks
         public Dictionary<string, SerializedSimpleNode> Nodes { get; internal set; } =
             new Dictionary<string, SerializedSimpleNode>();
 
+        /// <summary>
+        /// Preserves parameterless activation for the legacy simple-graph wrapper.
+        /// </summary>
         public SerializedSimpleGraph()
         {
         }
@@ -771,6 +983,9 @@ namespace StrangeCustoms.Tracks
 
         public IReadOnlyDictionary<string, TrackNode> NodesById { get; }
 
+        /// <summary>
+        /// Builds the minimal FUSE-owned context required by hosted plugins without reproducing legacy patching internals.
+        /// </summary>
         public PatchingContext(Serilog.ILogger logger, IReadOnlyDictionary<string, string> changedEntries)
         {
             Logger = logger ?? Serilog.Log.ForContext<PatchingContext>();
@@ -795,6 +1010,9 @@ namespace StrangeCustoms.Tracks
             return CarPrototypeLibrary.instance?.LoadForId(id);
         }
 
+        /// <summary>
+        /// Builds the FUSE-owned live-graph index exposed through the compatibility context.
+        /// </summary>
         private static Dictionary<string, TrackNode> BuildNodeIndex()
         {
             var dict = new Dictionary<string, TrackNode>(StringComparer.Ordinal);
@@ -826,6 +1044,9 @@ namespace StrangeCustoms.Tracks
     [Obsolete(LegacyShim.Message)]
     public class SCPatchingException : Exception
     {
+        /// <summary>
+        /// Preserves the legacy exception constructor so hosted plugin bodies can resolve the expected type.
+        /// </summary>
         public SCPatchingException(string message, string parameterName)
             : base(message)
         {
@@ -846,7 +1067,14 @@ namespace StrangeCustoms.Tracks.Industries
     [Obsolete(LegacyShim.Message)]
     public interface ICustomIndustryComponent
     {
+        /// <summary>
+        /// Declares the legacy serialization callback so compiled component implementations can resolve under FUSE.
+        /// </summary>
         void SerializeComponent(SerializedComponent serializedComponent);
+
+        /// <summary>
+        /// Declares the legacy deserialization callback so compiled component implementations can resolve under FUSE.
+        /// </summary>
         void DeserializeComponent(SerializedComponent serializedComponent, PatchingContext ctx);
     }
 
@@ -871,6 +1099,9 @@ namespace StrangeCustoms.Splineys
     [Obsolete(LegacyShim.Message)]
     public abstract class GenericSpliney : MonoBehaviour
     {
+        /// <summary>
+        /// Preserves the abstract virtual slot implemented by compiled legacy spliney types.
+        /// </summary>
         public abstract void Deserialize(JObject data);
     }
 
@@ -883,6 +1114,9 @@ namespace StrangeCustoms.Splineys
     [Obsolete(LegacyShim.Message)]
     public abstract class GenericSpliney<TSettings> : GenericSpliney
     {
+        /// <summary>
+        /// Bridges legacy JSON input to the typed virtual slot using standard Newtonsoft conversion owned by FUSE.
+        /// </summary>
         public override void Deserialize(JObject data)
         {
             if (data == null)
@@ -895,6 +1129,9 @@ namespace StrangeCustoms.Splineys
             Deserialize(settings);
         }
 
+        /// <summary>
+        /// Preserves the typed virtual slot implemented by compiled legacy spliney subclasses.
+        /// </summary>
         protected abstract void Deserialize(TSettings settings);
     }
 
@@ -906,6 +1143,9 @@ namespace StrangeCustoms.Splineys
     [Obsolete(LegacyShim.Message)]
     public class GenericSplineyBuilder<T> : ISplineyBuilder where T : GenericSpliney
     {
+        /// <summary>
+        /// Retains the legacy builder entry point so plugin IL resolves while FUSE owns spliney instantiation.
+        /// </summary>
         public GameObject BuildSpliney(string id, Transform parentTransform, JObject data)
         {
             return null;

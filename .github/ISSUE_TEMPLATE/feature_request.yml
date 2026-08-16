@@ -1,0 +1,74 @@
+name: Feature request
+description: Suggest a capability for FUSE
+title: "[FEATURE] "
+labels: ["enhancement"]
+type: Feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [`docs/KNOWN_ISSUES.md`](https://github.com/F-U-S-E-E/FuseDevelopmentGroup/blob/main/docs/KNOWN_ISSUES.md)
+        and the "Not Supported" section of the README first — some things are
+        deliberately out of scope.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I checked that this is not already listed as unsupported or a known issue.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the limitation you hit, not just the feature you want.
+      placeholder: When authoring <x>, I cannot ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should FUSE do instead?
+      description: If it affects the package format, sketch the JSON you would expect to write.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area does this touch?
+      options:
+        - Runtime / loading
+        - Maps
+        - Track graph
+        - World scenery
+        - Operations (industries, loads, stations)
+        - Progression
+        - Audio
+        - Converter
+        - Schema / package format
+        - Diagnostics and console commands
+        - Other or not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What alternatives have you tried?
+      description: Existing workarounds, and why they fall short.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Screenshots, diagrams, or links to packages that motivated this.
+    validations:
+      required: false

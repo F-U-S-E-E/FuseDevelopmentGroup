@@ -16,6 +16,9 @@ namespace Railloader
     [Obsolete(LegacyShim.Message)]
     public interface IMixintoDefinitionProvider
     {
+        /// <summary>
+        /// Preserves the legacy mixinto-discovery contract so existing plugin IL can bind to the FUSE shim.
+        /// </summary>
         IEnumerable<MixintoDefinition> GetMixintoDefinitions(string mixintoIdentifier);
     }
 
@@ -48,22 +51,66 @@ namespace Railloader
         string ModsBaseDirectory { get; }
         IReadOnlyCollection<IMod> Mods { get; }
 
+        /// <summary>
+        /// Preserves the legacy console-registration entry point so existing plugin IL can bind to the FUSE host.
+        /// </summary>
         void RegisterConsoleCommand(IConsoleCommand command);
 
+        /// <summary>
+        /// Preserves the legacy settings-load signature so existing plugin IL can resolve its loader context calls.
+        /// </summary>
         T LoadSettingsData<T>(string settingsIdentifier) where T : class;
+
+        /// <summary>
+        /// Preserves the legacy settings-save signature so existing plugin IL can resolve its loader context calls.
+        /// </summary>
         void SaveSettingsData<T>(string settingsIdentifier, T settings) where T : class;
 
+        /// <summary>
+        /// Preserves the single-target legacy mixinto query used by existing plugin binaries.
+        /// </summary>
         IEnumerable<ModMixinto> GetMixintos(string target);
+
+        /// <summary>
+        /// Preserves the single-target legacy mixinto query overload.
+        /// The allowNonFileEntries parameter is retained for ABI compatibility.
+        /// </summary>
         IEnumerable<ModMixinto> GetMixintos(string target, bool allowNonFileEntries);
+
+        /// <summary>
+        /// Preserves the multi-target legacy mixinto query used by existing plugin binaries.
+        /// </summary>
         IEnumerable<ModMixinto> GetMixintos(string[] targets);
+
+        /// <summary>
+        /// Preserves the multi-target legacy mixinto query overload.
+        /// The allowNonFileEntries parameter is retained for ABI compatibility.
+        /// </summary>
         IEnumerable<ModMixinto> GetMixintos(string[] targets, bool allowNonFileEntries);
 
+        /// <summary>
+        /// Preserves the legacy file-resolution overload used by existing plugin binaries.
+        /// </summary>
         bool TryResolveFilePath(string baseDirectory, string value, bool allowNonFileEntries, out string result);
+
+        /// <summary>
+        /// Preserves the rooted legacy file-resolution overload used by existing plugin binaries.
+        /// </summary>
         bool TryResolveFilePath(string baseDirectory, string rootDirectory, string value, bool allowNonFileEntries, out string result);
 
+        /// <summary>
+        /// Preserves the generic subtype-registration signature required by legacy plugin IL.
+        /// </summary>
         void RegisterSubTypeOverload<TBaseClass, TImplementation>(string identifier);
+
+        /// <summary>
+        /// Preserves the reflection-based subtype-registration signature required by legacy plugin IL.
+        /// </summary>
         void RegisterSubTypeOverload(System.Type baseClass, string identifier, System.Type implementation);
 
+        /// <summary>
+        /// Preserves the legacy component-builder registration contract so plugin types can load under FUSE.
+        /// </summary>
         void RegisterComponent<TComponent, TComponentBuilder>(string kind)
             where TComponent : Component
             where TComponentBuilder : IComponentBuilder;
@@ -72,25 +119,54 @@ namespace Railloader
     [Obsolete(LegacyShim.Message)]
     public interface IModTabHandler
     {
+        /// <summary>
+        /// Preserves the legacy mod-tab open callback so existing plugin IL can bind to the UI contract.
+        /// </summary>
         void ModTabDidOpen(UIPanelBuilder builder);
+
+        /// <summary>
+        /// Preserves the legacy mod-tab close callback so existing plugin IL can bind to the UI contract.
+        /// </summary>
         void ModTabDidClose();
     }
 
     [Obsolete(LegacyShim.Message)]
     public interface IUIHelper
     {
+        /// <summary>
+        /// Preserves the legacy dimension-based window factory signature used by existing plugin binaries.
+        /// </summary>
         Window CreateWindow(int width, int height, Window.Position position);
+
+        /// <summary>
+        /// Preserves the legacy identified window factory signature used by existing plugin binaries.
+        /// </summary>
         Window CreateWindow(string identifier, int width, int height, Window.Position position);
+
+        /// <summary>
+        /// Preserves the legacy configurable builder-window factory signature used by existing plugin binaries.
+        /// </summary>
         Window CreateWindow<TWindow>(string identifier, int width, int height, Window.Position position, Action<TWindow> configure = null)
             where TWindow : Component, UI.IBuilderWindow;
+
+        /// <summary>
+        /// Preserves the legacy programmatic-window factory signature used by existing plugin binaries.
+        /// </summary>
         Window CreateWindow<TWindow>(Action<TWindow> configure = null)
             where TWindow : Component, UI.IProgrammaticWindow;
+
+        /// <summary>
+        /// Preserves the legacy window-population callback contract used by existing plugin binaries.
+        /// </summary>
         UIPanel PopulateWindow(Window window, Action<UIPanelBuilder> closure);
     }
 
     [Obsolete(LegacyShim.Message)]
     public interface IUpdateHandler
     {
+        /// <summary>
+        /// Preserves the legacy per-frame callback signature so update-handler plugin types can load under FUSE.
+        /// </summary>
         void Update();
     }
 
@@ -98,6 +174,10 @@ namespace Railloader
     public interface IComponentBuilder
     {
         System.Type ComponentType { get; }
+
+        /// <summary>
+        /// Preserves the non-generic legacy component-build entry point required by plugin IL.
+        /// </summary>
         void Build(ComponentBuilderContext ctx, Component component);
     }
 
@@ -122,6 +202,9 @@ namespace Railloader
     [Obsolete(LegacyShim.Message)]
     public struct MixintoDefinition
     {
+        /// <summary>
+        /// Preserves the legacy one-argument mixinto-definition constructor used by existing plugin binaries.
+        /// </summary>
         public MixintoDefinition(string mixinto)
         {
             Mixinto = mixinto;
@@ -137,6 +220,9 @@ namespace Railloader
         public MixintoType Type { get; set; }
         internal object ManagedObject { get; set; }
 
+        /// <summary>
+        /// Preserves the legacy string projection used when plugins log or compare mixinto definitions.
+        /// </summary>
         public override string ToString() => Mixinto;
     }
 
@@ -146,6 +232,9 @@ namespace Railloader
     [Obsolete(LegacyShim.Message)]
     public struct ModMixinto
     {
+        /// <summary>
+        /// Preserves the full legacy mixinto constructor signature and compatibility data shape.
+        /// </summary>
         public ModMixinto(IMod source, string mixinto, MixintoType type, ModReference[] requires = null, ModReference[] conflictsWith = null, object managedObject = null)
         {
             Source = source;
@@ -156,16 +245,25 @@ namespace Railloader
             ManagedObject = managedObject;
         }
 
+        /// <summary>
+        /// Preserves the legacy file-mixinto convenience constructor used by existing plugin binaries.
+        /// </summary>
         public ModMixinto(IMod source, string mixinto)
             : this(source, mixinto, MixintoType.File, null, null, null)
         {
         }
 
+        /// <summary>
+        /// Preserves the legacy constructor that combines a mod with a mixinto definition.
+        /// </summary>
         public ModMixinto(IMod source, MixintoDefinition definition)
             : this(source, definition.Mixinto, definition.Type, definition.Requires, definition.ConflictsWith, null)
         {
         }
 
+        /// <summary>
+        /// Preserves the legacy typed-mixinto constructor overload without managed-object state.
+        /// </summary>
         public ModMixinto(IMod source, string mixinto, MixintoType type, ModReference[] requires, ModReference[] conflictsWith)
             : this(source, mixinto, type, requires, conflictsWith, null)
         {
@@ -186,11 +284,17 @@ namespace Railloader
         public System.Version NotBefore;
         public System.Version NotAfter;
 
+        /// <summary>
+        /// Preserves the legacy implicit conversion used by plugin metadata initializers.
+        /// </summary>
         public static implicit operator ModReference(string id)
         {
             return new ModReference { Id = id };
         }
 
+        /// <summary>
+        /// Preserves the legacy version-range text format used by plugin metadata and diagnostics.
+        /// </summary>
         public override string ToString()
         {
             if (NotBefore == null && NotAfter == null)
@@ -220,22 +324,34 @@ namespace Railloader
     {
         public bool IsEnabled { get; private set; }
 
+        /// <summary>
+        /// Provides the legacy host enable transition expected by plugin binaries while FUSE owns invocation.
+        /// </summary>
         internal void Enable()
         {
             OnEnable();
             IsEnabled = true;
         }
 
+        /// <summary>
+        /// Provides the legacy host disable transition expected by plugin binaries while FUSE owns invocation.
+        /// </summary>
         internal void Disable()
         {
             OnDisable();
             IsEnabled = false;
         }
 
+        /// <summary>
+        /// Preserves the overridable legacy enable callback implemented by existing plugins.
+        /// </summary>
         public virtual void OnEnable()
         {
         }
 
+        /// <summary>
+        /// Preserves the overridable legacy disable callback implemented by existing plugins.
+        /// </summary>
         public virtual void OnDisable()
         {
         }
@@ -244,6 +360,9 @@ namespace Railloader
     [Obsolete(LegacyShim.Message)]
     public abstract class SingletonPluginBase<T> : PluginBase where T : SingletonPluginBase<T>
     {
+        /// <summary>
+        /// Preserves the legacy singleton-registration behavior expected by derived plugin constructors.
+        /// </summary>
         protected SingletonPluginBase()
         {
             Shared = (T)(object)this;
@@ -268,11 +387,17 @@ namespace Railloader.Extensions
     {
         public System.Type ComponentType => typeof(T);
 
+        /// <summary>
+        /// Preserves the legacy non-generic dispatch entry point and forwards it to the typed builder contract.
+        /// </summary>
         public void Build(ComponentBuilderContext ctx, Component component)
         {
             Build(ctx, (T)(object)component);
         }
 
+        /// <summary>
+        /// Preserves the typed legacy component-build override implemented by existing plugin binaries.
+        /// </summary>
         protected abstract void Build(ComponentBuilderContext ctx, T component);
     }
 }
@@ -284,6 +409,9 @@ namespace Railloader.Events
     {
         public readonly Action<string> AppendLine;
 
+        /// <summary>
+        /// Preserves the legacy debug-information event payload constructor used by plugin subscribers.
+        /// </summary>
         public WillCopyDebugInformation(Action<string> appendLine)
         {
             AppendLine = appendLine;
@@ -307,6 +435,9 @@ namespace Railloader.Compatibility
         private static MethodInfo _vScrollView;
         private static (MethodInfo Method, int Arity)? _addListDetail;
 
+        /// <summary>
+        /// Keeps the legacy toggle extension callable while adapting to the available game overload at runtime.
+        /// </summary>
         public static RectTransform AddToggleCompat(this UIPanelBuilder builder, Func<bool> valueClosure, Action<bool> action, bool interactable = true)
         {
             var binding = _addToggle ??= ResolveOverload(typeof(UIPanelBuilder), "AddToggle", expectedArities: new[] { 2, 3 });
@@ -316,12 +447,18 @@ namespace Railloader.Compatibility
             return (RectTransform)binding.Method.Invoke(builder, args);
         }
 
+        /// <summary>
+        /// Keeps the legacy scroll-view extension callable through the current runtime method surface.
+        /// </summary>
         public static void VScrollViewCompat(this UIPanelBuilder builder, Action<UIPanelBuilder> closure, RectOffset padding = null)
         {
             var method = _vScrollView ??= RequireInstanceMethod(typeof(UIPanelBuilder), "VScrollView");
             method.Invoke(builder, new object[] { closure, padding });
         }
 
+        /// <summary>
+        /// Keeps the legacy list-detail extension callable while adapting to the available generic overload.
+        /// </summary>
         public static void AddListDetailCompat<TValue>(this UIPanelBuilder builder, IEnumerable<UIPanelBuilder.ListItem<TValue>> data, UIState<string> selectedItem, Action<UIPanelBuilder, TValue> builderClosure, float? listWidth = null)
             where TValue : class
         {
@@ -343,6 +480,9 @@ namespace Railloader.Compatibility
             constructed.Invoke(builder, args);
         }
 
+        /// <summary>
+        /// Centralizes overload validation so compatibility entry points fail clearly when the game API changes.
+        /// </summary>
         private static (MethodInfo Method, int Arity) ResolveOverload(System.Type declaringType, string methodName, int[] expectedArities)
         {
             var method = RequireInstanceMethod(declaringType, methodName);
@@ -356,6 +496,9 @@ namespace Railloader.Compatibility
             return (method, arity);
         }
 
+        /// <summary>
+        /// Resolves the runtime method required to bridge a legacy UI call without embedding another implementation.
+        /// </summary>
         private static MethodInfo RequireInstanceMethod(System.Type declaringType, string methodName)
         {
             return declaringType.GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public)
@@ -371,6 +514,9 @@ namespace FUSE.Compatibility
         private static readonly Assembly ShimAssembly = typeof(Railloader.IModDefinition).Assembly;
         private static bool _registered;
 
+        /// <summary>
+        /// Registers assembly redirection so legacy loader and Strange Customs references resolve to FUSE shim types.
+        /// </summary>
         internal static void Initialize()
         {
             if (_registered)
@@ -383,6 +529,9 @@ namespace FUSE.Compatibility
             FuseLog.Info("FUSE legacy support assembly shim registered for old-loader API references.");
         }
 
+        /// <summary>
+        /// Removes the legacy assembly redirection when FUSE shuts down or reloads.
+        /// </summary>
         internal static void Shutdown()
         {
             if (!_registered)
@@ -395,6 +544,9 @@ namespace FUSE.Compatibility
             FuseLog.Info("FUSE legacy support assembly shim unregistered.");
         }
 
+        /// <summary>
+        /// Redirects recognized legacy assembly requests to the independently implemented FUSE shim assembly.
+        /// </summary>
         private static Assembly ResolveLegacyAssembly(object sender, ResolveEventArgs args)
         {
             try
@@ -414,6 +566,9 @@ namespace FUSE.Compatibility
             return null;
         }
 
+        /// <summary>
+        /// Limits assembly redirection to the legacy loader contracts intentionally hosted by FUSE.
+        /// </summary>
         private static bool IsLegacyLoaderAssembly(string assemblyName)
         {
             if (string.IsNullOrWhiteSpace(assemblyName))

@@ -192,19 +192,24 @@ namespace FUSE.Runtime.API
 
             var boundSpans = ResolveBoundSpans().ToArray();
             stopObject.name = string.IsNullOrWhiteSpace(name) ? stopIdentifier : name;
-            passengerStop.neighbors = ResolveNeighbors().ToArray();
+            passengerStop.neighbors = Array.Empty<PassengerStop>();
             ConfigureTimetable(passengerStop);
 
             stopObject.SetActive(true);
             PassengerStopSpansField?.SetValue(passengerStop, boundSpans);
             PassengerStopMarkersField?.SetValue(passengerStop, RebuildPassengerStopMarkers(passengerStop.transform, boundSpans));
             var cacheCount = RefreshPassengerStopCache();
+            // Each refresh replaces a PassengerStop instance. Re-resolve every
+            // FUSE stop only after the live cache contains the replacement so
+            // earlier modded stops cannot retain missing or destroyed neighbors.
+            var reconciledStops = ReconcileAllFusePassengerStopNeighbors();
             var reboundAgents = StationAPI.RebindStationAgentsForPassengerStop(passengerStop);
             FusePassengerStopValidation.MarkDirty();
             FuseLog.Info(
                 $"FUSE passenger stop refreshed id='{stopIdentifier}' " +
                 $"component='{Identifier}' spanCount={boundSpans.Length} " +
                 $"loadId='{PassengerLoad.id ?? string.Empty}' cacheCount={cacheCount} " +
+                $"reconciledNeighborStops={reconciledStops} " +
                 $"reboundStationAgents={reboundAgents}.");
         }
 
@@ -293,19 +298,42 @@ namespace FUSE.Runtime.API
             return markers;
         }
 
-        private IEnumerable<PassengerStop> ResolveNeighbors()
+        private static int ReconcileAllFusePassengerStopNeighbors()
         {
-            if (NeighborIds == null || NeighborIds.Length == 0)
+            var liveStops = PassengerStop.FindAll()
+                .Where(stop => stop != null)
+                .ToArray();
+            if (liveStops.Length == 0)
             {
-                return Enumerable.Empty<PassengerStop>();
+                return 0;
             }
 
-            var neighborCodes = new HashSet<string>(NeighborIds.Where(id => !string.IsNullOrWhiteSpace(id)), StringComparer.OrdinalIgnoreCase);
-            return PassengerStop.FindAll().Where(stop =>
-                stop != null &&
-                stop != this &&
-                ((!string.IsNullOrWhiteSpace(stop.identifier) && neighborCodes.Contains(stop.identifier)) ||
-                 (!string.IsNullOrWhiteSpace(stop.timetableCode) && neighborCodes.Contains(stop.timetableCode))));
+            var reconciledStops = 0;
+            foreach (var component in UnityEngine.Object.FindObjectsOfType<FusePassengerStopComponent>(true))
+            {
+                if (component == null)
+                {
+                    continue;
+                }
+
+                var stopIdentifier = component.GetStopIdentifier();
+                var sourceStop = liveStops.FirstOrDefault(stop =>
+                    string.Equals(stop.identifier, stopIdentifier, StringComparison.OrdinalIgnoreCase));
+                if (sourceStop == null)
+                {
+                    continue;
+                }
+
+                sourceStop.neighbors = FusePassengerStopNeighborResolver.Resolve(
+                    component.NeighborIds,
+                    sourceStop,
+                    liveStops,
+                    stop => stop.identifier,
+                    stop => stop.timetableCode);
+                reconciledStops++;
+            }
+
+            return reconciledStops;
         }
 
         private void ConfigureTimetable(PassengerStop passengerStop)

@@ -1,23 +1,40 @@
 name: Sync Info.json to latest release
 
 # Keeps the source FUSE/Info.json "Version" field in step with the latest
-# published GitHub release. Skipped for GitHub pre-releases (incl. the
-# 0.x series treated as pre-release by release.yml) and for any tag that
-# isn't a plain mod-v<MAJOR>.<MINOR>.<PATCH>. The release artifact itself is
-# already correctly stamped by the build (see InjectModVersionIntoInfoJson
-# in Directory.Build.targets); this workflow only updates the in-repo
-# manifest so the source-of-truth tracks the latest GA release.
+# published GitHub release. Skipped for any tag that isn't a plain
+# mod-v<MAJOR>.<MINOR>.<PATCH>, which is what excludes prereleases (-rc.1 etc.).
+# The release artifact itself is already correctly stamped by the build (see
+# InjectModVersionIntoInfoJson in Directory.Build.targets); this workflow only
+# updates the in-repo manifest so the source-of-truth tracks the latest GA
+# release.
+#
+# Triggered by the Release workflow completing, NOT by `release: [published]`.
+# GitHub deliberately does not start new workflow runs from events created with
+# the default GITHUB_TOKEN, and release.yml creates the release with exactly
+# that token via softprops/action-gh-release. Under the old `release:` trigger
+# this workflow therefore never ran once — not for any release through
+# mod-v1.0.0 — which is why FUSE/Info.json sat at 0.0.0 while shipped artifacts
+# were correctly versioned. workflow_run fires on the Release run finishing and
+# also lets us gate on it having actually succeeded, so a failed build can't
+# bump the manifest.
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
 
 permissions:
   contents: write
 
+# Serialize manifest bumps so two releases finishing close together can't race
+# on the same push to main.
+concurrency:
+  group: sync-info-json
+  cancel-in-progress: false
+
 jobs:
   sync:
-    if: ${{ github.event.release.prerelease == false }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: windows-latest
 
     steps:
@@ -34,14 +51,15 @@ jobs:
           # this is the one lane that needs write access after checkout.
           persist-credentials: true
 
-      - name: Parse semantic version from release tag
+      - name: Parse semantic version from released tag
         id: version
         shell: powershell
         env:
           # Pass the tag via the environment, not template expansion, so a
           # crafted release tag name can't inject into the script before
           # validation. Mirrors the TAG_NAME hardening in release.yml.
-          TAG_NAME: ${{ github.event.release.tag_name }}
+          # For a tag-triggered Release run, head_branch is the tag name.
+          TAG_NAME: ${{ github.event.workflow_run.head_branch }}
         run: |
           $tag = $env:TAG_NAME
           if ($tag -notmatch '^mod-v(?<version>[0-9]+\.[0-9]+\.[0-9]+)$') {
