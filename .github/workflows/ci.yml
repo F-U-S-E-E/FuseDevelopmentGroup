@@ -302,6 +302,8 @@ jobs:
           Copy-Item -Recurse "schemas" $modFolder
           Copy-Item "tools\assets\fuse_converter_icon.png" (Join-Path $modFolder 'assets\fuse_icon.png')
 
+          Copy-Item 'LICENSE' $modFolder
+
           Compress-Archive -Path $modFolder -DestinationPath $archivePath -CompressionLevel Optimal
 
       # Prove the freshly-packaged zip is actually loadable by Unity Mod Manager
