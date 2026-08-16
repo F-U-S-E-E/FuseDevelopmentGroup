@@ -18,8 +18,9 @@ on:
   # editing pages in the UI by mistake.
   workflow_dispatch:
 
-permissions:
-  contents: write
+# Least privilege: no job gets a token scope unless it asks. The write scope is
+# granted on the sync job alone, below.
+permissions: {}
 
 # The wiki is a single git repo with no merge strategy here — the script force-
 # rewrites the page set. Overlapping runs would race on the push.
@@ -33,6 +34,17 @@ jobs:
     # only, no Railroader or Unity assemblies. Verified the script runs clean
     # under PowerShell 7 on a non-Windows host.
     runs-on: ubuntu-latest
+
+    # A normal sync is clone + rewrite ~14 files + push, well under a minute.
+    # The cap is here so a hung git network call cannot hold the sync-wiki
+    # concurrency slot until the 360-minute default expires.
+    timeout-minutes: 10
+
+    permissions:
+      # Sync-Wiki.ps1 pushes to <repo>.wiki.git with GITHUB_TOKEN. Nothing here
+      # writes to the code repo itself — the checkout above sets
+      # persist-credentials: false.
+      contents: write
 
     steps:
       - name: Checkout repository
