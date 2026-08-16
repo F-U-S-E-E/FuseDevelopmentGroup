@@ -150,6 +150,16 @@ jobs:
           # mod-v1.0.0-rc.1 dry run: the validator rejected the newly-shipped
           # LICENSE using a cached copy of its own pre-LICENSE allow-list. A release
           # gate must always validate with the code that is actually checked out.
+          # Prove which source the validator is about to run. The workflow YAML comes
+          # from the triggering ref, but scripts/ comes from the on-disk checkout, so
+          # a green "--no-cache is in the log" does not by itself prove the script is
+          # current. Hash it and show its LICENSE lines.
+          Write-Host "HEAD: $(git rev-parse HEAD)"
+          Write-Host "validator sha256: $((Get-FileHash 'scripts/Validate-ModPackage.cs' -Algorithm SHA256).Hash)"
+          $licLines = (Select-String -Path 'scripts/Validate-ModPackage.cs' -Pattern 'LICENSE' -SimpleMatch)
+          Write-Host "validator LICENSE mentions: $($licLines.Count)"
+          $licLines | ForEach-Object { Write-Host "    $($_.LineNumber): $($_.Line.Trim())" }
+
           if ($ummDir -and (Test-Path $ummDir)) {
             dotnet run --no-cache scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
           } else {
