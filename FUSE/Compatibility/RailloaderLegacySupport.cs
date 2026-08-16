@@ -72,7 +72,8 @@ namespace Railloader
         IEnumerable<ModMixinto> GetMixintos(string target);
 
         /// <summary>
-        /// Preserves the single-target legacy mixinto query that controls non-file entries.
+        /// Preserves the single-target legacy mixinto query overload.
+        /// The allowNonFileEntries parameter is retained for ABI compatibility.
         /// </summary>
         IEnumerable<ModMixinto> GetMixintos(string target, bool allowNonFileEntries);
 
@@ -82,7 +83,8 @@ namespace Railloader
         IEnumerable<ModMixinto> GetMixintos(string[] targets);
 
         /// <summary>
-        /// Preserves the multi-target legacy mixinto query that controls non-file entries.
+        /// Preserves the multi-target legacy mixinto query overload.
+        /// The allowNonFileEntries parameter is retained for ABI compatibility.
         /// </summary>
         IEnumerable<ModMixinto> GetMixintos(string[] targets, bool allowNonFileEntries);
 
