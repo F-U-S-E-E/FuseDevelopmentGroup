@@ -1,0 +1,139 @@
+name: Bug report
+description: Report a FUSE bug, with the diagnostics needed to act on it
+title: "[BUG] "
+labels: ["bug"]
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Work through the [troubleshooting guide](https://github.com/F-U-S-E-E/FuseDevelopmentGroup/blob/main/docs/TROUBLESHOOTING.md)
+        before filing. Most reports are resolved there.
+
+        Reports arrive without logs more often than not, and without them a bug
+        usually cannot be acted on. The required fields below are the minimum
+        needed to reproduce and diagnose a FUSE issue — not paperwork.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you file
+      options:
+        - label: I followed the troubleshooting guide and the problem is still there.
+          required: true
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am running the latest FUSE release.
+          required: true
+
+  - type: input
+    id: fuse-version
+    attributes:
+      label: FUSE version
+      description: Shown at the top of `/fuse.report` and in the startup version report in `FUSE.log`.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: railroader-version
+    attributes:
+      label: Railroader version
+      placeholder: "2025.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-source
+    attributes:
+      label: Where did you install FUSE from?
+      options:
+        - Nexus Mods
+        - GitHub release
+        - Built from source
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What went wrong, and what you expected instead.
+      placeholder: Describe the bug and the behavior you expected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Number the steps. Say which map and which packages were loaded.
+        A report that reproduces with a minimal package set is prioritized.
+      placeholder: |
+        1. Install FUSE and <package>
+        2. Load <map>
+        3. Go to ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: fuse-report
+    attributes:
+      label: Output of `/fuse.report`
+      description: Run it in the in-game console after the map loads and paste the full output.
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Both live in `C:\Users\<username>\AppData\LocalLow\Giraffe Lab LLC\Railroader\`.
+        Drag the files into this issue to attach them — do not paste them inline.
+      options:
+        - label: I have attached `FUSE.log` and `Player.log` to this issue.
+          required: true
+
+  - type: textarea
+    id: extra-commands
+    attributes:
+      label: Other command output
+      description: |
+        Include whichever matches your problem:
+        `/fuse.loaded` (package state), `/fuse.conflicts` (conflicts),
+        `/fuse.graph` (track/graph), `/fuse.operations` (industries, stations,
+        loaders, turntables), `/fuse.progressions` (map feature or progression
+        visibility), `/fuse.assets` (missing scenery assets).
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: package-info
+    attributes:
+      label: Affected package
+      description: |
+        For a package-specific bug, attach the package folder or zip, plus its
+        `conversion-report.json` and `conversion-report.md` if it was converted.
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or video
+      description: Attach images of the map, scenery, company window, or progression issue.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Other mods installed, multiplayer or single player, recent changes.
+    validations:
+      required: false

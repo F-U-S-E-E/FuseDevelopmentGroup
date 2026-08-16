@@ -11,8 +11,8 @@
 
 Attach these for almost every report:
 
-- `C:\Users\roger\AppData\LocalLow\Giraffe Lab LLC\Railroader\FUSE.log`
-- `C:\Users\roger\AppData\LocalLow\Giraffe Lab LLC\Railroader\Player.log`
+- `C:\Users\<username>\AppData\LocalLow\Giraffe Lab LLC\Railroader\FUSE.log`
+- `C:\Users\<username>\AppData\LocalLow\Giraffe Lab LLC\Railroader\Player.log`
 - The affected package folder or zip when possible
 - The package conversion report: `conversion-report.json`
 - The package conversion report: `conversion-report.md`

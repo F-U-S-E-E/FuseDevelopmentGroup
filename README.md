@@ -72,6 +72,10 @@ Do not mix legacy and converted FUSE copies of the same route unless you are del
 
 ## Support Policy
 
+Bugs are filed through the [bug report form](https://github.com/F-U-S-E-E/FuseDevelopmentGroup/issues/new/choose),
+which requires the diagnostics below before it will submit. Work through
+[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) first.
+
 When reporting an issue, include:
 
 - `FUSE.log`
