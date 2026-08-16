@@ -9,6 +9,79 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
 
 Nothing yet.
 
+## [1.0.2]
+
+### Added
+
+- The FUSE Mods page now lists hosted legacy plugins, including code-only
+  packages that ship no data files, so a legacy mod running under FUSE is
+  visible rather than silently absent. Hosted instances are de-duplicated by
+  folder and then by id, and a data snapshot wins over a hosted entry on a
+  folder collision.
+- `docs/` is mirrored to the GitHub Wiki automatically on merge to `main`
+  (`.github/workflows/sync-wiki.yml`). The repository stays the source of
+  truth — pages edited in the wiki UI are overwritten on the next sync.
+
+### Changed
+
+- The source `FUSE/Info.json` is pinned at `0.0.0` and no longer tracks the
+  latest release. Builds without `-p:ModVersion=...` skip stamping and mirror
+  source, so `0.0.0` in Unity Mod Manager now reliably means "local or debug
+  build", and a release always shows its real version. It had briefly been
+  bumped to `1.0.0`, which made dev builds indistinguishable from releases.
+- The Nexus mod page description links to the repository, releases, and the bug
+  report form, now that the repository is public.
+
+### Removed
+
+- The `sync-info-json` workflow, which committed the released version back into
+  the source manifest. It contradicted the pinned `0.0.0` rule above, and had
+  never once completed: first because a release created with the default
+  `GITHUB_TOKEN` does not trigger `release: [published]`, then because `main`
+  became a protected branch and rejected its push.
+
+## [1.0.1]
+
+### Added
+
+- `FUSE-Complete-v<ver>.zip` on GitHub releases: the core mod, the Live Bridge,
+  and the converter/installer/folder-converter tools in one download, laid out
+  so `FUSE-Installer.exe` can consume it directly as a multi-package zip.
+- Both mod zips now carry `LICENSE`. FUSE ships under the AGPL-3.0, which
+  requires conveying the license with the binary, and the package validator
+  fails the release if it is missing.
+- Bug reports and feature requests are filed through GitHub issue forms that
+  require the diagnostics `docs/TROUBLESHOOTING.md` already asked for — FUSE and
+  Railroader versions, reproduction steps, `/fuse.report` output, and
+  confirmation that `FUSE.log` and `Player.log` are attached. Blank issues are
+  disabled.
+- `docs/INSTALL.md`, covering installation of the core mod only, with the
+  optional authoring tools separated out.
+
+### Changed
+
+- Nexus receives the core mod zip and nothing else. A player installing from
+  Nexus needs one file; the converter, installer and development bridge are
+  published on GitHub for package authors.
+- Release candidates publish as full GitHub releases rather than prereleases, so
+  the newest RC carries the "Latest" badge and testers land on it. Any other
+  prerelease suffix (`-beta.2`, `-alpha.1`) still publishes as a prerelease.
+- The README's user-facing half mirrors the Nexus page section for section, with
+  full install steps inline.
+
+### Fixed
+
+- Passenger stop neighbors are reconciled after a refresh instead of being
+  dropped. Neighbor ids now resolve against the completed live registry by
+  identifier or timetable code, ignoring case and surrounding whitespace.
+- Legacy asset-pack identifiers keep their exact form. A mod alias is no longer
+  applied when a base-game store already owns the incoming identifier, legacy
+  and bare forms normalize to the base-game form, and the FUSE direct-store
+  scheme is preserved.
+- The package validator no longer reports a stale result. `dotnet run <file>.cs`
+  caches the compiled script by path, and on the long-lived self-hosted runner
+  the release gate had been validating with a previous build of its own rules.
+
 ## [1.0.0]
 
 First stable release. FUSE leaves the 0.x beta series; the package format and
@@ -359,5 +432,8 @@ for exact attribution.
 - `RAIL` naming has been superseded by `FUSE`. Reconvert packages for a clean install.
 - Converter output should be regenerated with the matching converter version when schema/runtime behavior changes.
 
-[Unreleased]: https://github.com/F-U-S-E-E/FuseDevelopmentGroup/compare/mod-v0.18.0...HEAD
+[Unreleased]: https://github.com/F-U-S-E-E/FuseDevelopmentGroup/compare/mod-v1.0.2...HEAD
+[1.0.2]: https://github.com/F-U-S-E-E/FuseDevelopmentGroup/compare/mod-v1.0.1...mod-v1.0.2
+[1.0.1]: https://github.com/F-U-S-E-E/FuseDevelopmentGroup/compare/mod-v1.0.0...mod-v1.0.1
+[1.0.0]: https://github.com/F-U-S-E-E/FuseDevelopmentGroup/compare/mod-v0.18.0...mod-v1.0.0
 [0.18.0]: https://github.com/F-U-S-E-E/FuseDevelopmentGroup/releases/tag/mod-v0.18.0
