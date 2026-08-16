@@ -327,9 +327,17 @@ jobs:
           $ummDir = (dotnet msbuild FUSE/FUSE.csproj -getProperty:UnityModManagerDir -nologo 2>$null | Select-Object -Last 1)
           if ($ummDir) { $ummDir = $ummDir.Trim() }
           Write-Host "UnityModManager reference dir: $ummDir"
-          # --no-cache for the same reason as release.yml: `dotnet run <file>.cs`
-          # can re-run a stale cached build of an edited script, so without it this
-          # gate can validate with code that is not the code under test.
+          # Same stale-build hazard as release.yml: `dotnet run <file>.cs` caches the
+          # compiled app under %TEMP%\dotnet\runfile keyed by path, and on a
+          # long-lived self-hosted runner it can re-run a previous build of an edited
+          # script. --no-cache alone did not defeat it, so purge the cache too;
+          # otherwise this gate can report green against code that is not under test.
+          $runfileCache = Join-Path $env:TEMP 'dotnet\runfile'
+          if (Test-Path $runfileCache) {
+            Write-Host "Purging file-based app cache: $runfileCache"
+            Remove-Item $runfileCache -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
           if ($ummDir -and (Test-Path $ummDir)) {
             dotnet run --no-cache scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
           } else {
