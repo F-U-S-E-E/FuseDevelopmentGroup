@@ -1,0 +1,83 @@
+name: Sync Wiki
+
+# Mirrors the user-facing subset of docs/ into the GitHub Wiki by running
+# scripts/Sync-Wiki.ps1. The script has existed since the documentation
+# restructure but nothing invoked it, so docs/ changes never reached the wiki.
+#
+# The repo is the source of truth. Pages edited in the wiki UI are overwritten
+# on the next run — the generated footer on each page says so.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "scripts/Sync-Wiki.ps1"
+      - ".github/workflows/sync-wiki.yml"
+  # Manual runs, for backfilling after the wiki is first created or after
+  # editing pages in the UI by mistake.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# The wiki is a single git repo with no merge strategy here — the script force-
+# rewrites the page set. Overlapping runs would race on the push.
+concurrency:
+  group: sync-wiki
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # ubuntu-latest, not the self-hosted runner: this needs git and PowerShell
+    # only, no Railroader or Unity assemblies. Verified the script runs clean
+    # under PowerShell 7 on a non-Windows host.
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing pushes back to this repo; the wiki push uses its own
+          # tokenized remote below.
+          persist-credentials: false
+
+      # GitHub does not create the <repo>.wiki.git repository until the wiki has
+      # at least one page, so on a wiki that has never been opened the clone
+      # fails with a bare "Repository not found". Check first and say what to do.
+      - name: Verify the wiki has been initialized
+        shell: pwsh
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          $url = "https://github.com/$($env:REPO).wiki.git"
+          git ls-remote $url *> $null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::The wiki repo for $($env:REPO) does not exist yet. GitHub only creates it once the wiki has one page: open the repo's Wiki tab, create any page, save it, then re-run this workflow. Everything after that is automatic."
+            exit 1
+          }
+          Write-Host "Wiki repo present."
+
+      - name: Configure git identity
+        shell: pwsh
+        run: |
+          # Sync-Wiki.ps1 commits inside the wiki checkout. A runner has no
+          # global identity, so git commit would fail without this. Set it
+          # globally rather than in the script, which is also run by hand on
+          # machines that already have an identity.
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync docs to wiki
+        shell: pwsh
+        env:
+          # Passed through the environment rather than template-expanded into
+          # the script body. GITHUB_TOKEN is masked in logs, and the tokenized
+          # remote only ever lives in the ephemeral wiki checkout.
+          WIKI_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Explicit $(...) subexpressions around the variables so the trailing
+          # ".wiki.git" cannot be read as part of the variable path.
+          $url = "https://x-access-token:$($env:WIKI_TOKEN)@github.com/$($env:REPO).wiki.git"
+          ./scripts/Sync-Wiki.ps1 -WikiUrl $url -WorkDir "$($env:RUNNER_TEMP)/fuse-wiki-sync"
