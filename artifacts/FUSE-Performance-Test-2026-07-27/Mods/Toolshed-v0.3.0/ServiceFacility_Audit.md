@@ -8,42 +8,42 @@ Scope: consolidate Oil Firing service-loader work into `Toolshed`, research vani
 
 Base game decompile:
 
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\RollingStock\CarLoadTargetLoader.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\RollingStock\CarLoaderSequencer.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\RollingStock\CarLoadTarget.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Model\Ops\IndustryLoaderBase.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Model\Ops\IndustryLoader.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Model\Ops\IndustryUnloader.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Model\Ops\InterchangedIndustryLoader.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Model\Ops\Industry.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Model\Ops\IndustryStorageHelper.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Model\CarPrototypeLibrary.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Model\SteamLocomotive.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Model\DieselLocomotive.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Model\BaseLocomotive.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Model\AI\AutoEngineerFuelAlerter.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\Effects\WaterCylinderController.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled dlls base game\Assembly-CSharp\RollingStock\Controls\KeyValueBoolParticlePlayer.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\RollingStock\CarLoadTargetLoader.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\RollingStock\CarLoaderSequencer.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\RollingStock\CarLoadTarget.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Model\Ops\IndustryLoaderBase.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Model\Ops\IndustryLoader.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Model\Ops\IndustryUnloader.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Model\Ops\InterchangedIndustryLoader.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Model\Ops\Industry.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Model\Ops\IndustryStorageHelper.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Model\CarPrototypeLibrary.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Model\SteamLocomotive.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Model\DieselLocomotive.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Model\BaseLocomotive.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Model\AI\AutoEngineerFuelAlerter.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\Effects\WaterCylinderController.cs`
+- `<projects>\Decompiled dlls base game\Assembly-CSharp\RollingStock\Controls\KeyValueBoolParticlePlayer.cs`
 
 Mod projects and assets:
 
-- `C:\Hrogers_Railroader_mods_Projects\Oil Firing\*.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Oil Firing\ServiceFacility_Audit.md`
-- `C:\Hrogers_Railroader_mods_Projects\Oil Firing\ServiceFacility_SetupGuide.md`
-- `C:\Hrogers_Railroader_mods_Projects\Oil Firing\ALW.SceneryAssets\SCAssetPacks\ALWLoaders`
-- `C:\Hrogers_Railroader_mods_Projects\Oil Firing\WoodShed\wood shed`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\Toolshed.csproj`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\src\Main.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\Examples`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\SCAssetPacks`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\src\ServiceFacilities\ServiceFacilityRuntime.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\src\ServiceFacilities\ServiceFacilityDefinitionComponents.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Rail\API\LoaderAPI.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Rail\API\SceneryAPI.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Rail\Data\Operations\FuseOperationsDefinition.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Decompiled DLLs Not BASE GAME\LegoCompository\LegosLibraryOfStuff\*.cs`
-- `C:\Users\roger\Downloads\Prefabs for Hunter.unitypackage`
-- `C:\Users\roger\Downloads\Prefabs for Hunter (1).unitypackage`
+- `<projects>\Oil Firing\*.cs`
+- `<projects>\Oil Firing\ServiceFacility_Audit.md`
+- `<projects>\Oil Firing\ServiceFacility_SetupGuide.md`
+- `<projects>\Oil Firing\ALW.SceneryAssets\SCAssetPacks\ALWLoaders`
+- `<projects>\Oil Firing\WoodShed\wood shed`
+- `<projects>\Toolshed\Toolshed.csproj`
+- `<projects>\Toolshed\src\Main.cs`
+- `<projects>\Toolshed\Examples`
+- `<projects>\Toolshed\SCAssetPacks`
+- `<projects>\Toolshed\src\ServiceFacilities\ServiceFacilityRuntime.cs`
+- `<projects>\Toolshed\src\ServiceFacilities\ServiceFacilityDefinitionComponents.cs`
+- `<projects>\Rail\API\LoaderAPI.cs`
+- `<projects>\Rail\API\SceneryAPI.cs`
+- `<projects>\Rail\Data\Operations\FuseOperationsDefinition.cs`
+- `<projects>\Decompiled DLLs Not BASE GAME\LegoCompository\LegosLibraryOfStuff\*.cs`
+- `<downloads>\Prefabs for Hunter.unitypackage`
+- `<downloads>\Prefabs for Hunter (1).unitypackage`
 
 ## 2. Confirmed Call Flow
 
@@ -203,32 +203,32 @@ Remaining:
 
 Created:
 
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\README.md`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\ServiceFacility_Audit.md`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\Examples\service-facility-setup-guide.md`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\src\ServiceFacilities\ServiceFacilityDefinitionComponents.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\src\ServiceFacilities\*.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\src\OilWoodFiring\*.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\SCAssetPacks\WoodShed\*`
+- `<projects>\Toolshed\README.md`
+- `<projects>\Toolshed\ServiceFacility_Audit.md`
+- `<projects>\Toolshed\Examples\service-facility-setup-guide.md`
+- `<projects>\Toolshed\src\ServiceFacilities\ServiceFacilityDefinitionComponents.cs`
+- `<projects>\Toolshed\src\ServiceFacilities\*.cs`
+- `<projects>\Toolshed\src\OilWoodFiring\*.cs`
+- `<projects>\Toolshed\SCAssetPacks\WoodShed\*`
 - ALW loader models are no longer hosted by Toolshed; they should come from `ALW.SceneryAssets` or another external scenery asset pack.
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\FuseServiceFacilityTest\Info.json`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\FuseServiceFacilityTest\service-facility-test.fuse.json`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\FuseServiceFacilityTest\ToolshedServiceFacilities.json`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\FuseServiceFacilityTest\README.md`
+- `<projects>\Toolshed\FuseServiceFacilityTest\Info.json`
+- `<projects>\Toolshed\FuseServiceFacilityTest\service-facility-test.fuse.json`
+- `<projects>\Toolshed\FuseServiceFacilityTest\ToolshedServiceFacilities.json`
+- `<projects>\Toolshed\FuseServiceFacilityTest\README.md`
 
 Modified:
 
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\src\Main.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\src\ServiceFacilities\ServiceFacilityRuntime.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\src\ServiceFacilities\UniversalServiceFacilityComponent.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\src\ServiceFacilities\ServiceFacilityParticleEffectDriver.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\src\ServiceFacilities\ServiceFacilityDefinitionComponents.cs`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\Examples\service-facility-setup-guide.md`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\ServiceFacility_Audit.md`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\FuseServiceFacilityTest\ToolshedServiceFacilities.json`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\FuseServiceFacilityTest\service-facility-test.fuse.json`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\Toolshed.csproj`
-- `C:\Hrogers_Railroader_mods_Projects\Toolshed\Info.json`
+- `<projects>\Toolshed\src\Main.cs`
+- `<projects>\Toolshed\src\ServiceFacilities\ServiceFacilityRuntime.cs`
+- `<projects>\Toolshed\src\ServiceFacilities\UniversalServiceFacilityComponent.cs`
+- `<projects>\Toolshed\src\ServiceFacilities\ServiceFacilityParticleEffectDriver.cs`
+- `<projects>\Toolshed\src\ServiceFacilities\ServiceFacilityDefinitionComponents.cs`
+- `<projects>\Toolshed\Examples\service-facility-setup-guide.md`
+- `<projects>\Toolshed\ServiceFacility_Audit.md`
+- `<projects>\Toolshed\FuseServiceFacilityTest\ToolshedServiceFacilities.json`
+- `<projects>\Toolshed\FuseServiceFacilityTest\service-facility-test.fuse.json`
+- `<projects>\Toolshed\Toolshed.csproj`
+- `<projects>\Toolshed\Info.json`
 
 Packaging note:
 

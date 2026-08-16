@@ -11,6 +11,7 @@ TestResults/
 /_work
 /dist
 /tools/__pycache__/
+/scripts/__pycache__/
 
 # Release workflow scratch space
 /staging/

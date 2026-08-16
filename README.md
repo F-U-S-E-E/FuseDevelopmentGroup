@@ -4,6 +4,17 @@ FUSE is a modding layer for Railroader. It loads FUSE packages — custom maps,
 routes, scenery, industries, and audio — and runs your existing legacy mods
 through a built-in compatibility layer. It runs on Unity Mod Manager.
 
+## Documentation
+
+Full documentation is in **[docs/](docs/README.md)**.
+
+- New to FUSE: [Getting Started](docs/GETTING_STARTED.md) · [FAQ](docs/FAQ.md)
+- Coming from Railloader or another legacy stack: [Migrating From Legacy Mods](docs/MIGRATION_FROM_LEGACY.md)
+- Reference: [Settings](docs/SETTINGS.md) · [Console Commands](docs/CONSOLE_COMMANDS.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
+- Authoring: [Package Author Guide](docs/PACKAGE_AUTHOR_GUIDE.md) · [Converter](docs/FUSE_CONVERTER.md) · [External Editor](docs/EXTERNAL_EDITOR.md)
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md)
+
+## Supported Game Version
 ## What it adds
 
 - **Custom maps** — whole replacement worlds, picked from a map dropdown on the
@@ -150,6 +161,9 @@ Experimental commands:
 Experimental commands should not be used during normal play unless testing
 recovery.
 
+The full reference, including the commands not listed above, is in [docs/CONSOLE_COMMANDS.md](docs/CONSOLE_COMMANDS.md). Settings are documented in [docs/SETTINGS.md](docs/SETTINGS.md).
+
+## Known Limitations
 ## Supported package types
 
 FUSE supports these package categories:
@@ -212,6 +226,7 @@ their own proprietary terms; those assemblies are not redistributed here.
 Requirements
 
 - Visual Studio (in the installer, make sure you have SDKs for .NET Framework 4.8 and C# Support)
+- A .NET 10 SDK — several projects in the solution target `net10.0`
 
 To start developing FUSE locally, follow these steps:
 
@@ -223,5 +238,16 @@ To start developing FUSE locally, follow these steps:
 6. Build the project
     - `EnableModDeploy` is set to true by default which will automatically build to your Railroader/Mods directory. This setting can be configured inside `Paths.user`
 
+You do not need Railroader installed to build. Without `GameDir` set, the build falls back to the checked-in reference assemblies under `lib/refs`.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the testing policy, code conventions, and PR process, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the projects fit together.
+
+## Contributing
+
+Contributions are welcome — start with [CONTRIBUTING.md](CONTRIBUTING.md). Security issues should be reported privately per [SECURITY.md](SECURITY.md), not through the public issue tracker.
+
+## License
+
+FUSE is licensed under the [GNU Affero General Public License v3.0](LICENSE).
 See [`AGENTS.md`](AGENTS.md) for skill and sub-agent routing, and
 [`docs/RELEASING.md`](docs/RELEASING.md) for how releases are cut.

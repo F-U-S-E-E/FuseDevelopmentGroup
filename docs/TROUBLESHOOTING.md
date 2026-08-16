@@ -11,6 +11,8 @@
 
 Attach these for almost every report:
 
+- `%USERPROFILE%\AppData\LocalLow\Giraffe Lab LLC\Railroader\FUSE.log`
+- `%USERPROFILE%\AppData\LocalLow\Giraffe Lab LLC\Railroader\Player.log`
 - `C:\Users\<username>\AppData\LocalLow\Giraffe Lab LLC\Railroader\FUSE.log`
 - `C:\Users\<username>\AppData\LocalLow\Giraffe Lab LLC\Railroader\Player.log`
 - The affected package folder or zip when possible
