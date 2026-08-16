@@ -1,11 +1,10 @@
 #requires -Version 5
 # Rewrites the "Version" field in a UMM Info.json file.
 #
-# Used by:
-#   - Directory.Build.targets (InjectModVersionIntoInfoJson) to stamp the
-#     bin-deployed copy with the MSBuild ModVersion property.
-#   - .github/workflows/sync-info-json.yml to sync the source manifest to
-#     the latest published GitHub release tag.
+# Used by Directory.Build.targets (InjectModVersionIntoInfoJson) to stamp the
+# bin-deployed copy with the MSBuild ModVersion property. It never rewrites the
+# source manifest: FUSE/Info.json stays pinned at 0.0.0 so an unstamped local
+# build is recognizable as such in UMM.
 #
 # The replacement is byte-faithful: only the version value changes;
 # whitespace, line endings, key order, and encoding are preserved.

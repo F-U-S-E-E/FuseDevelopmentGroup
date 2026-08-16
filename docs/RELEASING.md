@@ -31,9 +31,17 @@ needs one file; the converter, installer and dev bridge only belong in front of
 package authors, who get them from GitHub.
 
 The mod version flows in via `-p:ModVersion=<ver>`, which stamps the assemblies
-and `Info.json` (see `Directory.Build.targets`). On a non-prerelease (GA) tag,
-[`sync-info-json.yml`](../.github/workflows/sync-info-json.yml) commits the
-matching `FUSE/Info.json` version back to `main`.
+and `Info.json` (see `Directory.Build.targets`). The release flow is the only
+place a real version is set.
+
+The source `FUSE/Info.json` stays pinned at `0.0.0`. A build without
+`-p:ModVersion=...` skips stamping and mirrors source, so `0.0.0` showing in
+Unity Mod Manager is the deliberate signal that someone is running a local or
+debug build rather than a release. Do not bump the source manifest to track the
+latest release, and do not add a fallback that derives a version from git tags —
+either would make a dev build indistinguishable from a shipped one in UMM.
+`scripts/Validate-ModPackage.cs` fails the release if a packaged `Info.json`
+still reads `0.0.0`, so an unstamped build cannot ship.
 
 This lane does **not** ship the standalone editor — that has its own lane.
 
@@ -71,15 +79,14 @@ numbers are independent — bump and tag them separately.
   it rather than at the last GA, so cut the GA tag when the RCs settle.
 - The external-editor lane still treats **any** suffix as a prerelease. The two
   lanes deliberately differ here; align them if that ever becomes confusing.
-- An RC never stamps `FUSE/Info.json`, regardless of how it is published:
-  `sync-info-json.yml` matches `^mod-v<major>.<minor>.<patch>$` only, so the
-  manifest tracks the last GA release. That workflow runs on the **Release
-  workflow completing successfully**, not on `release: [published]` — GitHub
-  does not start workflow runs from events created with the default
-  `GITHUB_TOKEN`, and under the old trigger it never ran once.
+- Nothing writes a version back into the repo. There used to be a
+  `sync-info-json.yml` workflow that committed the released version into
+  `FUSE/Info.json` on `main`; it was removed because it fought the pinned-`0.0.0`
+  rule above — with it working, a local build would report the last released
+  version and look exactly like a release in UMM. The version lives in the tag
+  and reaches artifacts through `-p:ModVersion`; the repo does not track it.
 - The tag prefixes don't collide: `mod-v*`, `externaleditor-v*`, and the
-  existing `tools-v*` are disjoint globs, and `sync-info-json.yml`'s
-  `^mod-v...` parse only ever stamps `Info.json` from a mod release.
+  existing `tools-v*` are disjoint globs.
 - To dry-run a lane, push a throwaway tag (e.g. `externaleditor-v0.2.0-rc.1`),
   confirm the release and its assets, then delete the tag and release with
   `gh release delete <tag> --yes --cleanup-tag`.
