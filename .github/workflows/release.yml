@@ -144,11 +144,17 @@ jobs:
           $ummDir = (dotnet msbuild FUSE/FUSE.csproj -getProperty:UnityModManagerDir -nologo 2>$null | Select-Object -Last 1)
           if ($ummDir) { $ummDir = $ummDir.Trim() }
           Write-Host "UnityModManager reference dir: $ummDir"
+          # --no-cache is required, not optional. `dotnet run <file>.cs` caches the
+          # compiled file-based app on the runner and its up-to-date check can miss
+          # an edited script, silently re-running a stale build. That bit the
+          # mod-v1.0.0-rc.1 dry run: the validator rejected the newly-shipped
+          # LICENSE using a cached copy of its own pre-LICENSE allow-list. A release
+          # gate must always validate with the code that is actually checked out.
           if ($ummDir -and (Test-Path $ummDir)) {
-            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
+            dotnet run --no-cache scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
           } else {
             Write-Host "UnityModManagerDir unresolved; falling back to validator env-based resolution."
-            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION"
+            dotnet run --no-cache scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION"
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
