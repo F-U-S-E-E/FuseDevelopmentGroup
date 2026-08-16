@@ -57,11 +57,37 @@ FUSE respects Unity Mod Manager's enabled checkbox — a package you disable in 
 
 [line]
 
+[size=4][b]Updating[/b][/size]
+
+[list=1]
+[*]Back up your saves and your current [i]Railroader/Mods/FUSE[/i] folder.
+[*]Replace [i]Railroader/Mods/FUSE[/i] with the new version.
+[*]Start the game and run [b]/fuse.report[/b].
+[/list]
+
+Do not leave a second copy of FUSE anywhere under [i]Railroader/Mods[/i].
+
+[line]
+
+[size=4][b]Uninstalling[/b][/size]
+
+[list=1]
+[*]Exit Railroader.
+[*]Remove or disable your FUSE packages first.
+[*]Remove or disable [i]Railroader/Mods/FUSE[/i].
+[*]Start the game and confirm it loads normally.
+[/list]
+
+Removing FUSE while packages that depend on it are still installed will leave those packages inert.
+
+[line]
+
 [size=4][b]Good to know[/b][/size]
 
 [list]
 [*][b]Multiplayer is compatibility mode only.[/b] FUSE does not sync package contents over the network. Every host and client applies its own local package stack, so everyone needs the same packages installed — the same expectation legacy Railloader had.
 [*]FUSE does not add rolling stock or locomotive mods, apart from audio definitions it can import.
+[*]FUSE loads data, asset, and audio packages. Legacy script mods that are not data packages are not supported.
 [*]The in-game editor was retired in 1.0. Authoring happens in the standalone external editor.
 [/list]
 
