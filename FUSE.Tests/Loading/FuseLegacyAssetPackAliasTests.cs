@@ -48,5 +48,39 @@ namespace FUSE.Tests.Loading
         {
             Assert.Equal(expected, FuseAssetPackRegistry.NormalizeLegacyAssetPackIdentifier(input));
         }
+
+        [Fact]
+        public void DoesNotApplyModAlias_WhenBaseGameStoreOwnsExactIdentifier()
+        {
+            // AFARWhistlePack ships a mod pack whose folder/catalog alias is
+            // "audio.whistles01". Railroader already owns that exact identifier,
+            // and its base-game pack contains the 3ChimeA model used by the
+            // Virginian 3 Chime (MD) whistle. The legacy alias must not redirect
+            // that request to AFARWhistlePack/audio.whistles01.
+            Assert.False(FuseAssetPackRegistry.ShouldApplyLegacyAssetPackAlias(
+                "audio.whistles01",
+                "AFARWhistlePack/audio.whistles01",
+                hasExactRegisteredStore: true));
+        }
+
+        [Fact]
+        public void AppliesModAlias_WhenNoStoreOwnsIncomingIdentifier()
+        {
+            Assert.True(FuseAssetPackRegistry.ShouldApplyLegacyAssetPackAlias(
+                "audio.whistles01",
+                "AFARWhistlePack/audio.whistles01",
+                hasExactRegisteredStore: false));
+        }
+
+        [Fact]
+        public void AppliesLegacySchemeAlias_WhenOnlyNormalizedIdentifierExists()
+        {
+            // The incoming scheme-prefixed string is not an exact host-store
+            // identifier, so it still needs the legacy rewrite.
+            Assert.True(FuseAssetPackRegistry.ShouldApplyLegacyAssetPackAlias(
+                "zsc://Owner/Pack",
+                "Owner/Pack",
+                hasExactRegisteredStore: false));
+        }
     }
 }

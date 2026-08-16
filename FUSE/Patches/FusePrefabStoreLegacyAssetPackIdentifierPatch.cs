@@ -16,14 +16,20 @@ namespace FUSE.Patches
     [HarmonyPatch(typeof(PrefabStore), "AssetPackForIdentifier")]
     internal static class FusePrefabStoreLegacyAssetPackIdentifierPatch
     {
-        private static void Prefix(ref string assetPackIdentifier, out string __state)
+        private static void Prefix(
+            PrefabStore __instance,
+            ref string assetPackIdentifier,
+            out string __state)
         {
             // Capture the input so the Postfix can produce a single line
             // covering "<incoming> -> <resolved> -> store at <basepath>"
             // — three independent moving parts that together describe
             // the lookup outcome for one call.
             __state = assetPackIdentifier;
-            if (FuseAssetPackRegistry.TryResolveLegacyAssetPackIdentifier(assetPackIdentifier, out var resolved))
+            if (FuseAssetPackRegistry.TryResolveLegacyAssetPackIdentifier(
+                    __instance,
+                    assetPackIdentifier,
+                    out var resolved))
             {
                 assetPackIdentifier = resolved;
             }
