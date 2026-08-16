@@ -2,7 +2,8 @@
 
 ## Deferred Systems
 
-- The public in-game editor workflow is not a beta blocker yet.
+- The in-game editor is retired and no longer initialized or shipped with the
+  runtime mod. External editors can continue to produce custom map packages.
 - Rolling stock and locomotive/car mods are out of beta scope unless they are audio-only horn, whistle, or bell packs.
 
 ## Game Limitations

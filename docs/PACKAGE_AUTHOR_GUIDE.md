@@ -75,6 +75,13 @@ Custom components can use `fields` for reflection-bound values. The custom compo
 
 Use `world.scenery` for asset-pack objects. Use `world.sceneClones` for base-game scene objects. Use `world.mapMasks` for terrain flattening, tree cutting, height masks, and mask modifiers. Use `world.splineys` for roads, rivers, trestles, and related spline builders.
 
+Packages with a `map` declaration are treated as complete replacement worlds:
+`map.suppressBaseWorld` defaults to `true`. FUSE keeps Railroader's required
+scene managers but removes the stock track graph and suppresses the stock
+operations, scenery, map labels, signs, setups, progression, and CTC content
+before applying the selected package. Set `suppressBaseWorld` to `false` only
+for a map that intentionally overlays custom terrain on Bushnell/Whittier.
+
 Asset pack objects should keep their real asset identifiers. Do not alias to unrelated assets if the correct pack exists.
 
 ## Diagnostics

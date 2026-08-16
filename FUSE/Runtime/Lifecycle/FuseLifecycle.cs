@@ -110,6 +110,11 @@ namespace FUSE.Runtime.Lifecycle
             {
                 terrainScope = FuseTerrainRefreshScope.Begin();
                 FuseLegacyAssemblyHost.LoadAllAvailableAssemblies("map load fallback");
+                if (canMutateWorld)
+                {
+                    FuseLoadingScreen.SetStep("Preparing map", "Removing the stock world");
+                    FuseBaseWorldIsolation.ApplyForActiveMap("map load before cache rebuild");
+                }
                 var cacheStopwatch = Stopwatch.StartNew();
                 FuseCacheRegistry.RebuildAll();
                 FusePerformanceMetrics.RecordTiming("cache rebuild before map load apply", cacheStopwatch.ElapsedMilliseconds);
@@ -370,6 +375,7 @@ namespace FUSE.Runtime.Lifecycle
                 FuseWorldSuppressor.RestoreAll("map unload");
                 FuseEarlyLoader.RestoreOnMapUnload();
                 FuseModLoader.UnloadAll(resetDiscovery: true, restoreTrackSnapshots: false);
+                FuseBaseWorldIsolation.Reset();
                 FuseMapTileRegistry.ClearAll();
                 TrackAPI.ClearBaseGraphSnapshot();
                 ProgressionAPI.ClearRememberedReferenceIds();

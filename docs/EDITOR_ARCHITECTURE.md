@@ -1,8 +1,11 @@
 # FUSE Editor — Architecture
 
-The FUSE editor is being built as its own top-level mode, inspired by Arma 3's
-EDEN editor. This doc captures the target architecture and the path between
-where we are today (a visual mockup) and the final shape.
+> **Status: retired.** FUSE no longer initializes or ships this in-game editor.
+> The source remains as a historical design reference. Custom map loading and
+> the standalone editor are separate systems and remain supported.
+
+The FUSE editor was designed as its own top-level mode, inspired by Arma 3's
+EDEN editor. This doc captures that historical target architecture.
 
 ## North Star
 
@@ -75,9 +78,8 @@ EDEN parallels:
 - Owns the Harmony patches that touch game UI (the main-menu button).
 - Holds the bridge interfaces (`IFuseEditorLifecycle`, `IFuseSelectionProvider`,
   `IFuseEditorProvider`) and the `FuseEditorBridge` static dispatcher.
-- Loads `FUSE.Editor.dll` lazily via `FuseEditorAssemblyLoader` once UMM
-  has booted. After that one reflection point, every cross-assembly call
-  is typed via the bridge.
+- Retains the disabled `FuseEditorAssemblyLoader` and bridge contracts for
+  source history; the runtime feature gate prevents bootstrap.
 
 `FUSE.Editor.dll`
 
@@ -90,7 +92,7 @@ EDEN parallels:
   logic. These are paused-out today (no entry path); they'll be re-summoned
   once the screen has selection plumbing.
 
-Bridge methods used by the current flow:
+Bridge methods used by the former flow:
 
 | Direction         | Method                                | Use                                             |
 | ----------------- | ------------------------------------- | ----------------------------------------------- |

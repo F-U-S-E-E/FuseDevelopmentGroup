@@ -64,6 +64,10 @@
             ],
             "default": "world"
         },
+        "map": {
+            "$ref": "#/$defs/map",
+            "description": "Declares that this package provides a selectable map. The map id is the package id. Map-package content applies only when its map is the active session map."
+        },
         "mixinto": {
             "$ref": "#/$defs/mixinto",
             "description": "Optional legacy conditional mixinto metadata. FUSE applies this fragment only when its requirements are satisfied, matching RailLoader/Strange Customs conditional mixins."
@@ -135,6 +139,32 @@
             "type": "object",
             "propertyNames": {
                 "$ref": "#/$defs/id"
+            }
+        },
+        "map": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "mapFolder"
+            ],
+            "properties": {
+                "displayName": {
+                    "type": "string",
+                    "description": "Name shown wherever the map is offered for selection. Falls back to the package name when blank."
+                },
+                "description": {
+                    "type": "string"
+                },
+                "mapFolder": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Package-relative folder shaped like StreamingAssets/Maps/<name>: Map.json (origin, tileDimension, tiles) plus tile_XXX_YYY.data heightmap tiles. Must stay inside the package folder."
+                },
+                "suppressBaseWorld": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "When true, the stock Bushnell/Whittier track graph, operations, scenery, labels, signs, setups, progression, and CTC content are suppressed before this complete map package applies. Set false only for an intentional terrain overlay on the stock world."
+                }
             }
         },
         "mixinto": {

@@ -1,5 +1,6 @@
 using FUSE.Authoring.Migrations;
 using FUSE.Infrastructure;
+using FUSE.Interface.Console;
 using FUSE.Loading;
 using FUSE.Runtime.API;
 using FUSE.Runtime.Cache;
@@ -53,6 +54,10 @@ namespace FUSE.Interface.MenuWindow
 
             builder.Spacer(8f);
 
+            AddMapsSection(builder);
+
+            builder.Spacer(8f);
+
             builder.AddSection("Diagnostics Export");
             builder.AddLabel("Attach these to bug reports: the snapshot is a quick paste, the bundle is the full machine-readable state.");
             builder.HStack(row =>
@@ -69,6 +74,47 @@ namespace FUSE.Interface.MenuWindow
             builder.Spacer(8f);
 
             AddWrappedField(builder, "Last Action", _lastAction, 44f);
+        }
+
+        private static void AddMapsSection(UIPanelBuilder builder)
+        {
+            var maps = FuseMapPackageRegistry.GetRegisteredMaps();
+            if (maps.Count == 0)
+            {
+                return;
+            }
+
+            builder.AddSection("Maps");
+            var activeMapId = FuseMapSession.ActiveMapId;
+            builder.AddLabel(string.IsNullOrEmpty(activeMapId)
+                ? "Launch a new sandbox session on a FUSE map. Only available from the main menu."
+                : $"Active session map: {activeMapId}. Return to the main menu to launch a different map.");
+
+            foreach (var map in maps)
+            {
+                var captured = map;
+                builder.HStack(row =>
+                {
+                    if (captured.IsValid)
+                    {
+                        row.AddButtonCompact($"Launch {captured.DisplayName}", () => RunAction(builder, "launch map", () =>
+                        {
+                            if (FuseConsoleCommands.IsInSession())
+                            {
+                                return "Map launch refused: a session is already running. Return to the main menu first.";
+                            }
+
+                            return FuseMapLauncher.TryLaunchMap(captured.MapId, null, null, out var error)
+                                ? $"Launching map '{captured.DisplayName}'…"
+                                : $"Map launch failed: {error}";
+                        }));
+                    }
+                    else
+                    {
+                        row.AddLabel($"{captured.DisplayName}: {captured.FaultReason}");
+                    }
+                }, 6f).Height(32f);
+            }
         }
 
         private static void RunAction(UIPanelBuilder builder, string actionName, Func<string> action)

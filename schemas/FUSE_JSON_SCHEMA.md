@@ -17,6 +17,12 @@ Top-level object groups:
 - `operations`: loads, industries, loaders, turntables, and passenger stations.
 - `world`: scenery, spawn points, splineys, telegraph poles, map labels, map masks, map tile overlays, scene clones, and optional removals for base scene objects.
 - `progression`: progression trees and map features.
+
+Map declarations are complete replacement worlds by default. `map.suppressBaseWorld`
+defaults to `true`, which removes the stock Bushnell/Whittier graph and suppresses
+its operations, scenery, labels, signs, setup, progression, and CTC content before
+the selected package applies. Set it to `false` only when the package deliberately
+uses custom terrain as an overlay on the stock world.
 - `settings`: package-declared UI settings with user, profile, or server scope. Runtime values are stored under LocalLow/FUSE, not written into package folders.
 - `editor`: optional editor-only state that FUSE can ignore at runtime.
 - `extensions`: optional namespaced third-party data.

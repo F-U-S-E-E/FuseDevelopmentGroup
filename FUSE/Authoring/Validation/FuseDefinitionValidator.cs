@@ -24,6 +24,7 @@ namespace FUSE.Authoring.Validation
             FuseMigration.Normalize(value);
             Required(result, "id", value.Id);
             Required(result, "name", value.Name);
+            ValidateMap(result, value.Map);
             ValidateMixinto(result, value.Mixinto);
 
             if (value.SchemaVersion != FuseMigration.CurrentVersion)
@@ -49,6 +50,34 @@ namespace FUSE.Authoring.Validation
             ValidateProgression(result, value.Progression);
             ValidateSettings(result, value.Settings);
             return result;
+        }
+
+        private static void ValidateMap(ValidationResult result, FuseMapDeclaration map)
+        {
+            if (map == null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(map.DisplayName))
+            {
+                result.AddWarning("map.displayName", "Map displayName is blank; the package name will be shown instead.", "fuse.map.displayName.blank");
+            }
+
+            if (string.IsNullOrWhiteSpace(map.MapFolder))
+            {
+                result.AddError("map.mapFolder", "Map packages must set mapFolder to the package-relative folder containing Map.json and its tiles.", "fuse.map.folder.required");
+                return;
+            }
+
+            var folder = map.MapFolder.Trim();
+            var isRooted = folder.StartsWith("/", StringComparison.Ordinal) ||
+                           folder.StartsWith("\\", StringComparison.Ordinal) ||
+                           folder.IndexOf(':') >= 0;
+            if (isRooted || folder.Contains(".."))
+            {
+                result.AddError("map.mapFolder", "Map mapFolder must be a package-relative path that stays inside the package folder.", "fuse.map.folder.outsidePackage", map.MapFolder);
+            }
         }
 
         private static void ValidateMixinto(ValidationResult result, FuseMixintoDefinition mixinto)

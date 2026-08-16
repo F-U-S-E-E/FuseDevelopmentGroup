@@ -17,6 +17,7 @@ FUSE supports these package categories:
 
 - Route/data packages with `*.fuse.json` files
 - Map tile overlays
+- Custom map packages selectable from a dedicated New Game map dropdown, with Railroader's existing control retained separately for starting progression
 - Asset packs, including direct nested asset pack discovery under converted mod folders
 - Track graph nodes, segments, spans, areas, groups, removals, and turntables
 - World scenery, scene clones, map labels, speed signs, map masks, splineys, telegraph poles, telegraph pole movements, and spawn points
@@ -28,7 +29,8 @@ The FUSE JSON schema lives at `schemas/fuse-mod.schema.json`. The hand-written s
 
 ## Not Supported
 
-- Full public in-game editor workflow
+- The retired in-game editor (use an external editor; FUSE still discovers and
+  loads custom map packages at runtime)
 - Multiplayer is compatibility-mode only. FUSE does not sync package contents over the network; instead every host/client applies its own local package stack, matching the legacy Railloader expectation that everyone has the same mods installed. Non-host clients log a warning the first time they apply runtime world changes. Servers that want strict client blocking can set `Settings.BlockNonHostMultiplayerClientWorldApply` to `true`.
 - Arbitrary legacy script mods that are not data, asset, audio, or supported runtime component packages
 - Rolling stock and locomotive/car mods, except audio definitions that FUSE can import
