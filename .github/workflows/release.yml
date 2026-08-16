@@ -86,6 +86,18 @@ jobs:
             "is_prerelease=false" >> $env:GITHUB_OUTPUT
           }
 
+          # Separate from is_prerelease on purpose. Since RCs now publish as full
+          # GitHub releases, is_prerelease is false for them, and gating Nexus on
+          # it would push every release candidate to the public mod page. is_ga is
+          # true only for a plain x.y.z tag — the same shape sync-info-json.yml
+          # requires — so Nexus and FUSE/Info.json move together, on GA only.
+          if ($version -match '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            "is_ga=true" >> $env:GITHUB_OUTPUT
+          }
+          else {
+            "is_ga=false" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Build FUSE mod (Release)
         shell: powershell
         run: dotnet build FUSE/FUSE.csproj -c Release -p:ModVersion=${{ steps.version.outputs.version }}
@@ -275,12 +287,23 @@ jobs:
       # Uploads ONLY the core mod zip to the mod's Nexus Mods page — deliberately
       # not the complete bundle, the tools, or the Live Bridge. Players installing
       # from Nexus need exactly one file; keep the Files tab that way.
+      #
+      # GA tags only. Release candidates publish as full GitHub releases, so
+      # is_prerelease is false for them and gating on it would push every RC to
+      # the public mod page (and archive_existing_file below would churn the
+      # previous file each time). Nexus tracks stable releases only.
+      #
       # Skipped automatically until the repo variable NEXUS_FILE_GROUP_ID is set.
       # Requires:
-      #   - secret  NEXUSMODS_API_KEY    (https://www.nexusmods.com/settings/api-keys)
       #   - variable NEXUS_FILE_GROUP_ID (from "API Info" on the mod's Files tab)
+      #   - secret  NEXUSMODS_API_KEY    (https://www.nexusmods.com/settings/api-keys)
+      # The secret is NOT checked in this condition: `secrets` is not an
+      # available context in a step-level `if`, and referencing it there is a
+      # parse error that breaks the whole workflow. With the variable set but the
+      # key missing, this step fails auth and fails the release job after the
+      # GitHub release has already been published — so set both together.
       - name: Upload to Nexus Mods
-        if: ${{ vars.NEXUS_FILE_GROUP_ID != '' }}
+        if: ${{ vars.NEXUS_FILE_GROUP_ID != '' && steps.version.outputs.is_ga == 'true' }}
         uses: Nexus-Mods/upload-action@0bf670d75d46988c176c9bfacc94ca0144e0fe3f # v1.0.0-beta.7
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}
