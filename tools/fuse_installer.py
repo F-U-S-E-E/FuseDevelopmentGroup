@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import sys
@@ -27,7 +28,8 @@ if str(SCRIPT_DIR) not in sys.path:
 import legacy_json  # noqa: E402
 
 
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.2.0"
+BUNDLED_FUSE_NAME = "bundled_fuse.zip"
 MANIFEST_NAMES = {"info.json", "definition.json"}
 LEGACY_DATA_KEYS = {
     "tracks",
@@ -388,27 +390,80 @@ def install_package(package: ZipPackage, mods_dir: Path, replace: bool, dry_run:
     destination = mods_dir / package.install_name
     backup: Path | None = None
 
-    if destination.exists():
-        if not replace:
-            return InstallResult(package, "skipped", destination, "destination already exists")
+    if destination.exists() and not replace:
+        return InstallResult(package, "skipped", destination, "destination already exists")
 
+    if dry_run:
+        return InstallResult(package, "installed", destination, "dry run", None)
+
+    mods_dir.mkdir(parents=True, exist_ok=True)
+    staging_root = mods_dir / "FUSEInstaller" / "staging"
+    staging_root.mkdir(parents=True, exist_ok=True)
+    staging = unique_path(staging_root / package.install_name)
+
+    # Extract fully into a staging directory first. If any member fails to
+    # write, discard the partial staging copy and re-raise: an existing install
+    # is never touched, and a fresh one is never left half-written for the game
+    # to load.
+    try:
+        extract_package(package, staging)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    # Extraction succeeded. Back up any existing install, then swap staging into
+    # place with a rename on the same filesystem (atomic on Windows and POSIX).
+    if destination.exists():
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         backup_root = mods_dir / "ModBackups" / "FUSEInstaller" / timestamp
         backup = unique_path(backup_root / destination.name)
-        if not dry_run:
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(destination), str(backup))
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(destination), str(backup))
 
-    if not dry_run:
-        extract_package(package, destination)
+    try:
+        shutil.move(str(staging), str(destination))
+    except BaseException:
+        # The swap failed after the old install was moved aside; restore it so
+        # the mod is never left uninstalled, and drop the staging copy.
+        shutil.rmtree(staging, ignore_errors=True)
+        if backup is not None and not destination.exists():
+            shutil.move(str(backup), str(destination))
+            backup = None
+        raise
 
-    return InstallResult(package, "installed", destination, "dry run" if dry_run else "", backup)
+    return InstallResult(package, "installed", destination, "", backup)
 
 
 def default_game_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path.cwd().resolve()
+
+
+def resolve_bundled_fuse() -> Path | None:
+    """Locate the FUSE mod zip bundled into the exe (or supplied for testing).
+
+    Resolution order:
+      1. FUSE_INSTALLER_BUNDLED_ZIP env var (dev/testing and advanced use).
+      2. PyInstaller's extraction dir (sys._MEIPASS) for the frozen exe.
+      3. A bundled_fuse.zip sitting beside this script.
+    """
+    override = os.environ.get("FUSE_INSTALLER_BUNDLED_ZIP", "").strip()
+    if override:
+        candidate = Path(override).expanduser()
+        return candidate.resolve() if candidate.exists() else None
+
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidate = Path(meipass) / BUNDLED_FUSE_NAME
+        if candidate.exists():
+            return candidate.resolve()
+
+    sibling = SCRIPT_DIR / BUNDLED_FUSE_NAME
+    if sibling.exists():
+        return sibling.resolve()
+
+    return None
 
 
 def find_input_zips(args: argparse.Namespace, default_inbox: Path) -> list[Path]:
@@ -455,13 +510,18 @@ def print_result(result: InstallResult) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Install FUSE data packages and UMM mod packages from zip files.",
+        description=(
+            "Install FUSE and mod packages. Run it with no arguments to install "
+            "the bundled FUSE framework; drag mod .zip files onto it (or pass them "
+            "as arguments) to install those mods."
+        ),
     )
     parser.add_argument("zips", nargs="*", help="Zip files to install. Drag-and-drop works on Windows.")
     parser.add_argument("--game-dir", default=None, help="Base folder. Default is this exe's folder, or the current directory when run as a script.")
     parser.add_argument("--mods-dir", default=None, help="Mods folder. Default is <base folder>\\Mods.")
     parser.add_argument("--inbox", default=None, help="Folder to scan for zip files when no zip arguments are passed.")
     parser.add_argument("--replace", action="store_true", help="Backup and replace existing mod folders.")
+    parser.add_argument("--no-fuse", action="store_true", help="Do not install the bundled FUSE framework on a manual run; only process zip files.")
     parser.add_argument("--dry-run", action="store_true", help="Inspect zips and print planned installs without writing files.")
     parser.add_argument("--archive-zips", action="store_true", help="Move successfully processed zips to Mods\\FUSEInstaller\\InstalledZips.")
     parser.add_argument("--pause", action="store_true", help="Pause before closing.")
@@ -473,7 +533,23 @@ def build_parser() -> argparse.ArgumentParser:
 def run(args: argparse.Namespace) -> int:
     game_dir = Path(args.game_dir).resolve() if args.game_dir else default_game_dir()
     mods_dir = Path(args.mods_dir).resolve() if args.mods_dir else (game_dir / "Mods").resolve()
+
+    explicit = bool(args.zips)
     zips = find_input_zips(args, game_dir)
+
+    # Manual run (no zip arguments): install the FUSE framework bundled into the
+    # exe, alongside any loose zips found beside it. Dragging specific zips onto
+    # the exe installs exactly those and never force-installs FUSE.
+    bundle_on_disk = resolve_bundled_fuse()
+    bundled_fuse = bundle_on_disk if (not explicit and not args.no_fuse) else None
+
+    targets: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in ([bundled_fuse] if bundled_fuse else []) + zips:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        targets.append(candidate)
 
     print(f"FUSE Installer {TOOL_VERSION}")
     print(f"base: {game_dir}")
@@ -482,10 +558,15 @@ def run(args: argparse.Namespace) -> int:
         print("mode: dry run")
     if args.replace:
         print("replace: enabled")
+    if bundled_fuse is not None:
+        print(f"bundled FUSE: {bundled_fuse.name}")
     print()
 
-    if not zips:
-        print("No zip files were found.")
+    if not targets:
+        if not explicit and not args.no_fuse and bundle_on_disk is None:
+            print("No zip files were found, and this build has no bundled FUSE payload.")
+        else:
+            print("No zip files were found.")
         return 1
 
     if not args.dry_run:
@@ -493,8 +574,9 @@ def run(args: argparse.Namespace) -> int:
 
     all_results: list[InstallResult] = []
     scan_failures = 0
-    for zip_path in zips:
-        print(f"ZIP: {zip_path}")
+    for zip_path in targets:
+        label = "FUSE" if zip_path == bundled_fuse else "ZIP"
+        print(f"{label}: {zip_path}")
         if not zip_path.exists():
             print("  error: file does not exist")
             scan_failures += 1
@@ -520,7 +602,9 @@ def run(args: argparse.Namespace) -> int:
         print()
 
         zip_results = [result for result in all_results if result.package.zip_path == zip_path]
-        if args.archive_zips and zip_results and not any(result.status == "failed" for result in zip_results):
+        # Never archive the bundled FUSE payload: it lives inside the PyInstaller
+        # extraction dir, not beside the exe.
+        if args.archive_zips and zip_path != bundled_fuse and zip_results and not any(result.status == "failed" for result in zip_results):
             archived_to = archive_zip(zip_path, mods_dir, args.dry_run)
             verb = "Would archive" if args.dry_run else "Archived"
             print(f"{verb}: {zip_path} -> {archived_to}")

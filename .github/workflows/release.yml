@@ -221,9 +221,15 @@ jobs:
         shell: powershell
         run: .\tools\build_converter_exe.ps1
 
+      # Bundle the core mod zip built by the "Package UMM mod zip" step into the
+      # exe so a manual (double-click) run installs FUSE, while dragging a mod
+      # zip onto it installs that mod. Path passed via env rather than ${{ }}
+      # expansion, consistent with the hardening elsewhere in this workflow.
       - name: Build FUSE-Installer.exe
         shell: powershell
-        run: .\tools\build_installer_exe.ps1
+        env:
+          FUSE_PAYLOAD: ${{ steps.package.outputs.archive_path }}
+        run: .\tools\build_installer_exe.ps1 -FusePayload "$env:FUSE_PAYLOAD"
 
       - name: Build FUSEConvertFolder.pyz
         run: python tools/build_folder_converter_pyz.py

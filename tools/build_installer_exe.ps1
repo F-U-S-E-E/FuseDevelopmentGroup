@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputDir = "",
+    [string]$FusePayload = "",
     [switch]$InstallPyInstaller
 )
 
@@ -96,12 +97,32 @@ foreach ($mod in $HiddenImports) {
     $args += $mod
 }
 
+# Bundle the FUSE mod zip into the exe so a manual (no-argument) run installs
+# FUSE. PyInstaller's onefile bundle unpacks this to sys._MEIPASS at runtime,
+# where fuse_installer.resolve_bundled_fuse() picks it up as bundled_fuse.zip.
+$BundledFuse = ''
+if (-not [string]::IsNullOrWhiteSpace($FusePayload)) {
+    if (-not (Test-Path -LiteralPath $FusePayload)) {
+        throw "FUSE payload not found: $FusePayload"
+    }
+    $BundledFuse = Join-Path $WorkDir 'bundled_fuse.zip'
+    Copy-Item -LiteralPath $FusePayload -Destination $BundledFuse -Force
+    # On Windows, --add-data separates the source and destination with ';'.
+    $args += '--add-data'
+    $args += "$BundledFuse;."
+}
+else {
+    Write-Host "WARNING: no -FusePayload given; the exe will NOT self-install FUSE on a manual run."
+    Write-Host "         Pass -FusePayload <path to FUSE-v*.zip> to enable that."
+}
+
 $args += $EntryScript
 
 Write-Host "Building FUSE-Installer.exe..."
 Write-Host "  entry:   $EntryScript"
 Write-Host "  out:     $OutputDir"
 Write-Host "  hidden:  $($HiddenImports -join ', ')"
+Write-Host "  bundled: $(if ($BundledFuse) { $FusePayload } else { '(none)' })"
 
 $buildExit = Invoke-InstallerPython @args
 if ($buildExit -ne 0) {
@@ -119,6 +140,26 @@ $smokeExit = $LASTEXITCODE
 if ($smokeExit -ne 0) {
     Write-Host $smokeOutput
     throw "Smoke check failed (exit=$smokeExit)."
+}
+
+# Self-check: prove that a manual (no-argument) run will actually install FUSE.
+# Uses --dry-run against a throwaway game dir so nothing is written; asserts the
+# bundled payload is detected and resolves to a FUSE install.
+if (-not [string]::IsNullOrWhiteSpace($BundledFuse)) {
+    Write-Host "Self-check: dry-run install of bundled FUSE..."
+    $ProbeDir = Join-Path $WorkDir 'selfcheck'
+    if (Test-Path $ProbeDir) { Remove-Item $ProbeDir -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $ProbeDir | Out-Null
+    $selfOutput = & $exePath --dry-run --no-pause --game-dir $ProbeDir 2>&1
+    $selfExit = $LASTEXITCODE
+    Write-Host $selfOutput
+    if ($selfExit -ne 0) {
+        throw "Self-check failed (exit=$selfExit): bundled FUSE dry-run did not succeed."
+    }
+    if ("$selfOutput" -notmatch 'FUSE') {
+        throw "Self-check failed: bundled FUSE was not detected in the dry-run output."
+    }
+    Write-Host "Self-check passed: a manual run will install FUSE."
 }
 
 Write-Host "Built: $exePath"
