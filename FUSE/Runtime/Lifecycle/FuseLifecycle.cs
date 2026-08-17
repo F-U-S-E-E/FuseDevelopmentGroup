@@ -371,6 +371,9 @@ namespace FUSE.Runtime.Lifecycle
         {
             try
             {
+                // A pending "you're outdated" toast must not fire at the main menu
+                // after the player leaves the map; re-arm it for the next load.
+                FuseVersionCheck.NotifyMapWillUnload();
                 // FUSE does not own the unload screen (the stock "Tyin' down…"
                 // progress is fine), and the post-load pipeline never runs on an
                 // unload — so hide our screen immediately rather than letting the

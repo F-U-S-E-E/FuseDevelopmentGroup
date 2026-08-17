@@ -156,7 +156,7 @@
         "EnableUpdateCheck": {
           "type": "boolean",
           "default": true,
-          "description": "On startup, asks GitHub whether a newer stable FUSE release exists and shows a non-blocking notice if so. Only a public list of release versions is fetched. Turn off to disable all network access for the check."
+          "description": "On startup, asks GitHub whether a newer stable FUSE release exists and shows a non-blocking notice if so. Only a public list of release versions is fetched. Turning it off disables the automatic startup check; the manual /fuse.update console command still checks on demand."
         }
       }
     }

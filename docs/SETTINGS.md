@@ -87,10 +87,12 @@ one-time toast on the next map load, plus an "Update available" line with a
 download button on the FUSE window's Status page. It never blocks play, and a
 build is only ever flagged when a newer stable release is confirmed.
 
-Only a public list of release versions is fetched; nothing about you or your game
-is sent. Release candidates do not trigger the notice, and a local or development
-build (version `0.0.0`) skips the check entirely. The download link points at
-Nexus for a Nexus-installed copy and at GitHub otherwise.
+Only a public list of release versions is fetched. The request carries no FUSE
+account, save, or mod-list data; GitHub sees only the normal metadata of any
+HTTPS request, such as your IP address. Release candidates do not trigger the
+notice, and a local or development build (version `0.0.0`) skips the check
+entirely. The download link points at Nexus for a Nexus-installed copy and at
+GitHub otherwise.
 
 Turn this off to stop the automatic startup check from making any network
 request. The manual `/fuse.update` command still checks on demand — run it to see

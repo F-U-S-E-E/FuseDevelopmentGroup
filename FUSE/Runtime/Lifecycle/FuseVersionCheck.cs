@@ -157,6 +157,20 @@ namespace FUSE.Runtime.Lifecycle
             TryShowToast();
         }
 
+        /// <summary>
+        /// Called when the active map unloads. Clears the "UI is alive" flag so a
+        /// response that lands back at the main menu never presents a toast
+        /// outside a live map; a still-pending toast simply waits for the next
+        /// map load.
+        /// </summary>
+        internal static void NotifyMapWillUnload()
+        {
+            lock (Gate)
+            {
+                _mapActive = false;
+            }
+        }
+
         internal static void Shutdown()
         {
             if (_host != null)

@@ -70,8 +70,9 @@ GitHub. The result also lands in `FUSE.log` and on the FUSE window's Status page
 
 A newer *stable* release shows a download link; release candidates are ignored,
 and a local or development build (version `0.0.0`) reports that the check does not
-run for it. Requires the `EnableUpdateCheck` setting to be on for the automatic
-startup check — see [SETTINGS.md](SETTINGS.md#enableupdatecheck).
+run for it. The `EnableUpdateCheck` setting only governs the automatic startup
+check; this command always checks on demand — see
+[SETTINGS.md](SETTINGS.md#enableupdatecheck).
 
 ### `/fuse.conflicts`
 
