@@ -107,6 +107,40 @@ namespace FUSE.Tests.Patches
         }
 
         [Fact]
+        public void TryReadCompleteTopLevelObjectIdentifiers_AcceptsPropertiesAfterObjectsArray()
+        {
+            var path = Path.Combine(
+                Path.GetTempPath(),
+                "fuse-prefab-index-trailing-properties-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                File.WriteAllText(
+                    path,
+                    "{\"objects\":[{\"identifier\":\"kept\"}]," +
+                    "\"metadata\":{\"identifier\":\"ignored\",\"nested\":{\"version\":1}}," +
+                    "\"version\":\"1.5\"}");
+
+                var success =
+                    FusePrefabStoreAssetPackContainingIdentifierTracePatch
+                        .TryReadCompleteTopLevelObjectIdentifiers(
+                            path,
+                            out var identifiers,
+                            out var jsonException);
+
+                Assert.True(success);
+                Assert.Equal(new[] { "kept" }, identifiers);
+                Assert.Null(jsonException);
+            }
+            finally
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+        }
+
+        [Fact]
         public void TryReadCompleteTopLevelObjectIdentifiers_PropagatesNonJsonFailures()
         {
             var missingPath = Path.Combine(
