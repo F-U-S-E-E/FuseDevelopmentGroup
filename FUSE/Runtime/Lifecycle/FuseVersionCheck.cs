@@ -325,7 +325,10 @@ namespace FUSE.Runtime.Lifecycle
                 StartCoroutine(Run(currentVersion));
             }
 
-            private IEnumerator Run(string currentVersion)
+            // Static: the coroutine touches only static state (unlike a Unity
+            // message such as Update, which must stay an instance method). Keeps
+            // CA1822 quiet without a suppression.
+            private static IEnumerator Run(string currentVersion)
             {
                 // `using` compiles to try/finally (no catch), which is the only
                 // shape C# allows a `yield return` to live inside. The request is
