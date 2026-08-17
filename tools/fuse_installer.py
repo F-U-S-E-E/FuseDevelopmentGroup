@@ -397,7 +397,10 @@ def install_package(package: ZipPackage, mods_dir: Path, replace: bool, dry_run:
         return InstallResult(package, "installed", destination, "dry run", None)
 
     mods_dir.mkdir(parents=True, exist_ok=True)
-    staging_root = mods_dir / "FUSEInstaller" / "staging"
+    # A hidden staging root that safe_folder_name() can never produce (it strips
+    # leading dots), so it can never equal a package's own install destination —
+    # e.g. a package whose id is "FUSEInstaller".
+    staging_root = mods_dir / ".fuse-installer-staging"
     staging_root.mkdir(parents=True, exist_ok=True)
     staging = unique_path(staging_root / package.install_name)
 

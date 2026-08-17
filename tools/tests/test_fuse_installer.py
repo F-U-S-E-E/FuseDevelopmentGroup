@@ -214,6 +214,20 @@ def test_replace_backs_up_then_installs(tmp_path):
     assert (result.backup / "old.txt").read_text() == "old content"
 
 
+def test_install_name_colliding_with_staging_dir(tmp_path):
+    # A package whose id is "FUSEInstaller" must still install to Mods/FUSEInstaller
+    # and not collide with the installer's internal staging directory.
+    mods = tmp_path / "Mods"
+    zip_path = make_zip(
+        tmp_path / "z.zip",
+        {"FUSEInstaller/Info.json": info(Id="FUSEInstaller"), "FUSEInstaller/x.txt": "x"},
+    )
+    result = install_one(zip_path, mods)
+    assert result.status == "installed"
+    assert (mods / "FUSEInstaller" / "Info.json").exists()
+    assert (mods / "FUSEInstaller" / "x.txt").read_text() == "x"
+
+
 def test_dry_run_writes_nothing(tmp_path):
     mods = tmp_path / "Mods"
     zip_path = make_zip(tmp_path / "z.zip", {"MyMod/Info.json": info(Id="MyMod")})

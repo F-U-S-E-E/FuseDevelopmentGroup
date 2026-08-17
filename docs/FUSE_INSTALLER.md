@@ -15,8 +15,9 @@ works two ways:
 
 A no-argument run also installs any loose `.zip` files sitting beside the exe (in
 addition to FUSE), so the "drop several zips in the folder and run once" workflow
-still works. FUSE is skipped if it is already installed. Pass `--no-fuse` to
-process only the loose zips without (re)installing FUSE.
+still works. FUSE is skipped by default if it is already installed; pass
+`--replace` to back up and reinstall it. Pass `--no-fuse` to process only the
+loose zips without (re)installing FUSE.
 
 ## Download
 

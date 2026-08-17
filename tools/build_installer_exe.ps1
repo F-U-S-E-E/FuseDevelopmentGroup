@@ -156,8 +156,11 @@ if (-not [string]::IsNullOrWhiteSpace($BundledFuse)) {
     if ($selfExit -ne 0) {
         throw "Self-check failed (exit=$selfExit): bundled FUSE dry-run did not succeed."
     }
-    if ("$selfOutput" -notmatch 'FUSE') {
-        throw "Self-check failed: bundled FUSE was not detected in the dry-run output."
+    # Match the inspected package id, not just the word FUSE (which also appears
+    # in the static "bundled FUSE:" / "FUSE:" output labels), so a non-FUSE
+    # payload can't silently pass the self-check.
+    if ("$selfOutput" -notmatch 'id=FUSE(\s|$)') {
+        throw "Self-check failed: bundled package is not FUSE (id=FUSE missing from dry-run output)."
     }
     Write-Host "Self-check passed: a manual run will install FUSE."
 }
