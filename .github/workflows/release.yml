@@ -140,7 +140,11 @@ jobs:
             Remove-Item $archivePath -Force
           }
 
-          Compress-Archive -Path $modFolder -DestinationPath $archivePath -CompressionLevel Optimal
+          # Deliberately NOT Compress-Archive: under Windows PowerShell 5.1 (the
+          # `shell: powershell` default on this runner) it writes entry names with
+          # backslashes, which makes UMM fail to UPDATE an already-installed copy of
+          # the mod. See scripts/New-ModArchive.ps1 and issue #209.
+          .\scripts\New-ModArchive.ps1 -Path $modFolder -DestinationPath $archivePath
 
           "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
           "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
@@ -212,7 +216,9 @@ jobs:
           Copy-Item "LICENSE" $modFolder
           $zip = "FUSE.LiveBridge-v$version.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
-          Compress-Archive -Path $modFolder -DestinationPath $zip -CompressionLevel Optimal
+          # Same forward-slash requirement as the core mod zip; the Live Bridge is
+          # installed and updated through UMM too. See issue #209.
+          .\scripts\New-ModArchive.ps1 -Path $modFolder -DestinationPath $zip
 
       - name: Install PyInstaller
         run: python -m pip install --upgrade pip pyinstaller
@@ -262,7 +268,8 @@ jobs:
           if (Test-Path $archivePath) { Remove-Item $archivePath -Force }
           # Zip the CONTENTS so Mods/ sits at the archive root, which is the
           # multi-package layout FUSE-Installer.exe already understands.
-          Compress-Archive -Path (Join-Path $stagingRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal
+          # -ContentsOnly is the New-ModArchive equivalent of `Compress-Archive -Path dir\*`.
+          .\scripts\New-ModArchive.ps1 -Path $stagingRoot -DestinationPath $archivePath -ContentsOnly
 
           "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
           "archive_path=$archivePath" >> $env:GITHUB_OUTPUT

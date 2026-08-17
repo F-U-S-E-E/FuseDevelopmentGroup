@@ -73,7 +73,10 @@ if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
 
-Compress-Archive -Path $PackageRoot -DestinationPath $zipPath -CompressionLevel Optimal
+# Not Compress-Archive: under Windows PowerShell 5.1 it writes backslash entry
+# names, and a debug zip dropped on UMM would then fail to update an existing
+# install exactly the way the shipped ones did. See issue #209.
+& (Join-Path $RepoRoot 'scripts\New-ModArchive.ps1') -Path $PackageRoot -DestinationPath $zipPath
 
 $resolvedZip = [System.IO.Path]::GetFullPath($zipPath)
 Write-Host "Packaged: $resolvedZip"
