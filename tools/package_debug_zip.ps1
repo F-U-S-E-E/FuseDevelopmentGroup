@@ -45,7 +45,7 @@ if (-not $NoBuild) {
 
 $dllPath = Join-Path $BuildOutput 'FUSE.dll'
 $pdbPath = Join-Path $BuildOutput 'FUSE.pdb'
-$infoPath = Join-Path $ProjectRoot 'Info.json'
+$infoPath = Join-Path $BuildOutput 'Info.json'
 $schemasPath = Join-Path $RepoRoot 'schemas'
 $iconPath = Join-Path $ToolsRoot 'assets\fuse_converter_icon.png'
 
