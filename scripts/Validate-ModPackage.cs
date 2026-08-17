@@ -14,6 +14,9 @@
 // Run with: dotnet run scripts/Validate-ModPackage.cs -- <zip> <expected-version> [mod-id] [ref-dir]
 //
 // Checks:
+//   - Entry-name separators: every archive entry uses '/', never '\'. This is the
+//     check that catches issue #209 — extraction tolerates backslashes, but UMM's
+//     UPDATE path does not (see the block below for the mechanism).
 //   - Archive layout: exactly one top-level folder named <mod-id> containing the
 //     runtime DLL (FUSE.dll), Info.json, a non-empty schemas/ tree and
 //     assets/fuse_icon.png. No stray files, no *.pdb.
@@ -114,6 +117,52 @@ Directory.CreateDirectory(tempRoot);
 
 try
 {
+    // 0. Entry-name separators. ZIP APPNOTE 4.4.17.1 requires '/', but
+    // Compress-Archive under Windows PowerShell 5.1 writes '\'. Every consumer that
+    // merely EXTRACTS the archive tolerates that on Windows — including
+    // ZipFile.ExtractToDirectory a few lines below, which is why this validator was
+    // blind to it for three releases.
+    //
+    // UMM does not merely extract. When the mod is already installed, its installer
+    // rewrites every entry name (UnityModManagerApp/Mods.cs, InstallMod):
+    //
+    //     var pos = filename.IndexOf(Path.AltDirectorySeparatorChar);   // '/'
+    //     filename = replaceModDir + filename.Substring(pos, filename.Length - pos);
+    //
+    // With backslash entries pos is -1, Substring throws, and UMM aborts the unpack
+    // with "Error when unpacking '<zip>'" having written nothing. A fresh install
+    // skips the rewrite, so the archive installs but can never be UPDATED. Simulate
+    // the rewrite rather than just grepping for '\', so this check keeps testing the
+    // behaviour that actually matters. See issue #209.
+    using (var raw = ZipFile.OpenRead(zipPath))
+    {
+        var backslashed = raw.Entries
+            .Where(e => e.FullName.Contains('\\'))
+            .Select(e => e.FullName)
+            .ToList();
+        if (backslashed.Count > 0)
+        {
+            Fail($"Archive entries use '\\' separators, which breaks updating the mod through UMM: " +
+                 string.Join(", ", backslashed.Take(5)) +
+                 (backslashed.Count > 5 ? $", +{backslashed.Count - 5} more" : "") +
+                 ". Package with scripts/New-ModArchive.ps1, not Compress-Archive.");
+        }
+
+        // One aggregated finding, not one per entry: a separator regression trips
+        // every entry at once and a wall of identical failures buries the rest of
+        // the report.
+        var unrewritable = raw.Entries
+            .Where(e => e.FullName.IndexOf('/') < 0)
+            .Select(e => e.FullName)
+            .ToList();
+        if (unrewritable.Count > 0)
+        {
+            Fail($"{unrewritable.Count} archive entr{(unrewritable.Count == 1 ? "y has" : "ies have")} no '/' " +
+                 $"separator (first: '{unrewritable[0]}'), so UMM's update-path rewrite would throw " +
+                 "ArgumentOutOfRangeException and extract nothing.");
+        }
+    }
+
     ZipFile.ExtractToDirectory(zipPath, tempRoot);
 
     // 1. Layout: exactly one top-level folder, named <mod-id>.

@@ -86,7 +86,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "publish failed for $rid" }
             $zip = "FUSE.ExternalEditor-v$version-$rid.zip"
             if (Test-Path $zip) { Remove-Item $zip -Force }
-            Compress-Archive -Path "$out/*" -DestinationPath $zip -CompressionLevel Optimal
+            # This lane runs on pwsh, where Compress-Archive already emits forward
+            # slashes, but route it through the shared packer anyway so archive
+            # layout does not depend on which shell a workflow happens to use.
+            # See issue #209.
+            ./scripts/New-ModArchive.ps1 -Path $out -DestinationPath $zip -ContentsOnly
           }
 
       - name: Create GitHub release
