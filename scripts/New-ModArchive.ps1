@@ -84,6 +84,16 @@ function ConvertTo-EntryName([string]$fullName, [string]$base) {
 }
 
 $destination = Resolve-OutputPath $DestinationPath
+
+# Refuse to write the archive inside the tree being archived. Otherwise creating
+# the destination's parent (below) could add an empty directory that the source
+# enumeration then picks up, and the growing archive would sit in its own input.
+# No shipping call site does this; reject it plainly rather than half-handle it.
+$rootPrefix = $root.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+if ($destination.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw "DestinationPath '$destination' is inside the source directory '$root'; write the archive somewhere outside it."
+}
+
 $destinationDir = Split-Path -Parent $destination
 if ($destinationDir -and -not (Test-Path -LiteralPath $destinationDir)) {
   New-Item -ItemType Directory -Force -Path $destinationDir | Out-Null
@@ -178,13 +188,26 @@ finally {
 }
 
 # Self-check. Cheap, and it turns "we shipped a broken zip" into "packaging failed".
-$verify = [System.IO.Compression.ZipFile]::OpenRead($destination)
+# Same shape as the archive-writing block above: open inside the try and delete the
+# output on any failure, so a failed verification never leaves an unverified zip.
+$verify = $null
 try {
+  $verify = [System.IO.Compression.ZipFile]::OpenRead($destination)
   $bad = @($verify.Entries | Where-Object { $_.FullName.Contains('\') })
   $count = $verify.Entries.Count
 }
+catch {
+  if ($verify) {
+    try { $verify.Dispose() } catch { }
+    $verify = $null
+  }
+  if (Test-Path -LiteralPath $destination) {
+    Remove-Item -LiteralPath $destination -Force
+  }
+  throw
+}
 finally {
-  $verify.Dispose()
+  if ($verify) { $verify.Dispose() }
 }
 if ($bad.Count -gt 0) {
   Remove-Item -LiteralPath $destination -Force
