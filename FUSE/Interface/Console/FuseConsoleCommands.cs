@@ -9,10 +9,12 @@ using FUSE.Runtime.Cache;
 using FUSE.Infrastructure;
 using FUSE.Loading;
 using FUSE.Patches;
+using FUSE.Runtime.Lifecycle;
 using FUSE.Runtime.Registry;
 using FUSE.Authoring.Data;
 using FUSE.Authoring.Validation;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 using Track;
 using UnityEngine;
@@ -29,6 +31,7 @@ namespace FUSE.Interface.Console
             {
                 new FuseReportCommand(),
                 new FuseLoadedCommand(),
+                new FuseUpdateCommand(),
                 new FuseMapsCommand(),
                 new FuseMapLaunchCommand(),
                 new FuseAssetsCommand(),
@@ -703,6 +706,74 @@ namespace FUSE.Interface.Console
             }
 
             return FuseLoadReport.GetLastDetailReport();
+        }
+    }
+
+    [ConsoleCommand("/fuse.update", "Report FUSE update status and re-check GitHub for a newer stable release.")]
+    public sealed class FuseUpdateCommand : IConsoleCommand
+    {
+        public string Execute(string[] components)
+        {
+            var modPath = FusePlugin.ModEntry?.Path ?? string.Empty;
+            var version = ReadInfoVersion(modPath);
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"FUSE version: {version}");
+            sb.AppendLine($"Install source: {FuseInstallSource.DescribeChannel(FuseVersionCheck.Channel)}");
+
+            if (string.IsNullOrWhiteSpace(version) || string.Equals(version, "0.0.0", StringComparison.Ordinal))
+            {
+                sb.AppendLine("This is a local/development build (0.0.0); the update check does not run for it.");
+                return sb.ToString().TrimEnd();
+            }
+
+            if (!FuseSettings.EnableUpdateCheck)
+            {
+                sb.AppendLine("The update check is turned off (FUSE window > Settings > Updates > Check for Updates).");
+            }
+
+            if (FuseVersionCheck.CheckComplete)
+            {
+                if (FuseVersionCheck.UpdateAvailable)
+                {
+                    sb.AppendLine($"Update available: FUSE {FuseVersionCheck.LatestVersionText} is out.");
+                    sb.AppendLine($"Get it from: {FuseVersionCheck.ResolveUpdateUrl()}");
+                }
+                else
+                {
+                    sb.AppendLine($"Up to date (latest stable is {FuseVersionCheck.LatestVersionText}).");
+                }
+            }
+            else
+            {
+                sb.AppendLine("No completed check this session yet.");
+            }
+
+            // Kick a fresh check; its result lands in FUSE.log and the FUSE Status page.
+            FuseVersionCheck.RequestRecheck(modPath, version);
+            sb.AppendLine("Re-checking now — run /fuse.update again shortly, or open the FUSE window for the result.");
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private static string ReadInfoVersion(string modPath)
+        {
+            try
+            {
+                var infoPath = Path.Combine(modPath ?? string.Empty, "Info.json");
+                if (!File.Exists(infoPath))
+                {
+                    return "unknown";
+                }
+
+                var info = JObject.Parse(File.ReadAllText(infoPath));
+                var value = info["Version"]?.ToString();
+                return string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
+            }
+            catch
+            {
+                return "unknown";
+            }
         }
     }
 

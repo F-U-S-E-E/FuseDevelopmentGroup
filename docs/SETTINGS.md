@@ -1,6 +1,6 @@
 # Settings Reference
 
-FUSE has 28 settings. Most players never need to change any of them — the
+FUSE has 29 settings. Most players never need to change any of them — the
 defaults are the supported configuration, and the majority of these switches are
 diagnostic tools rather than features.
 
@@ -11,7 +11,7 @@ Settings resolve from three layers, each overriding the one before it:
 1. **Built-in defaults** — compiled into FUSE. Used when nothing else specifies a
    value.
 2. **`Info.json`** — the `Settings` object in `Railroader/Mods/FUSE/Info.json`.
-   The shipped file lists 13 of the 28; any setting absent from the file falls back
+   The shipped file lists 14 of the 29; any setting absent from the file falls back
    to its built-in default, and you can add a missing one by name to set it.
 3. **User settings** — `settings.json`, written by the in-game FUSE menu.
 
@@ -74,6 +74,27 @@ Adds a synthetic UMM row for every legacy data package, putting them in UMM's
 global mod list. Kept opt-in for a performance reason: UMM walks that list from
 several per-frame callbacks. FUSE's own Mods page is the primary place to inspect
 legacy packages.
+
+## Update Check
+
+### `EnableUpdateCheck`
+
+**Default: `true`**
+
+On startup, FUSE asks GitHub — which holds the canonical versioning — whether a
+newer *stable* release exists. If one does, it shows a non-blocking notice: a
+one-time toast on the next map load, plus an "Update available" line with a
+download button on the FUSE window's Status page. It never blocks play, and a
+build is only ever flagged when a newer stable release is confirmed.
+
+Only a public list of release versions is fetched; nothing about you or your game
+is sent. Release candidates do not trigger the notice, and a local or development
+build (version `0.0.0`) skips the check entirely. The download link points at
+Nexus for a Nexus-installed copy and at GitHub otherwise.
+
+Turn this off to stop the automatic startup check from making any network
+request. The manual `/fuse.update` command still checks on demand — run it to see
+the current status or force a re-check.
 
 ## Multiplayer
 

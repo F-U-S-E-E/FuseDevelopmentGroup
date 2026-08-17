@@ -1,4 +1,5 @@
 ﻿using FUSE.Infrastructure;
+using FUSE.Runtime.Lifecycle;
 using Helpers;
 using System;
 using System.Collections.Generic;
@@ -76,6 +77,22 @@ namespace FUSE.Interface.MenuWindow
                 }));
 
             builder.AddLabel("Staged progress and current-step labels during loading; takes effect on the next load.");
+
+            builder.AddSection("Updates");
+
+            builder.AddField("Check for Updates", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableUpdateCheck,
+                () =>
+                {
+                    FuseSettings.SetEnableUpdateCheck(!FuseSettings.EnableUpdateCheck);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel(
+                FuseVersionCheck.UpdateAvailable
+                    ? $"Update available: FUSE {FuseVersionCheck.LatestVersionText} (you have {FuseVersionCheck.CurrentVersionText}). See the Status page for the download link."
+                    : "On startup, asks GitHub whether a newer stable FUSE release exists and shows a notice if so. Only a version list is fetched; no data about you is sent. Takes effect on the next game start.");
 
             builder.AddSection("Reporting");
 

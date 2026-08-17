@@ -1,5 +1,6 @@
 ﻿using FUSE.Infrastructure;
 using FUSE.Loading;
+using FUSE.Runtime.Lifecycle;
 using FUSE.Authoring.Migrations;
 using Newtonsoft.Json.Linq;
 using System;
@@ -59,6 +60,7 @@ namespace FUSE.Interface.MenuWindow
 
             builder.AddField("Version", "FUSE " + ReadVersion() + " - Schema " + FuseMigration.CurrentVersion + " - Converter 0.2.0");
 
+            AddUpdateNotice(builder);
 
             builder.AddSection("Checklist");
             AddReadinessRow(builder, "Packages", data.FaultCount == 0, $"{data.AppliedPackagesCount}/{data.LoadedPackagesCount} applied", data.FaultCount + " fault(s)");
@@ -168,6 +170,32 @@ namespace FUSE.Interface.MenuWindow
                     var message = ExportActiveModManifest(openFolder: true);
                     Toast.Present(message);
                     builder.Rebuild();
+                });
+            }, 6f).Height(32f);
+        }
+
+        // Renders the "an update is available" row when the startup check found a
+        // newer stable release. Silent otherwise (up to date, disabled, offline,
+        // or still checking), so the Status page never nags a current install.
+        private static void AddUpdateNotice(UIPanelBuilder builder)
+        {
+            if (!FuseVersionCheck.UpdateAvailable)
+            {
+                return;
+            }
+
+            var where = FuseInstallSource.DescribeChannel(FuseVersionCheck.Channel);
+            builder.AddField(
+                "Update",
+                builder.AddLabelMarkup(
+                    $"<color=\"yellow\">Available</color> - FUSE {FuseVersionCheck.LatestVersionText} is out " +
+                    $"(you have {FuseVersionCheck.CurrentVersionText})."));
+            builder.HStack(row =>
+            {
+                row.AddButtonCompact($"Get it from {where}", () =>
+                {
+                    Application.OpenURL(FuseVersionCheck.ResolveUpdateUrl());
+                    Toast.Present($"Opening the FUSE {where} download page in your browser.");
                 });
             }, 6f).Height(32f);
         }

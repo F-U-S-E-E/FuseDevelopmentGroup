@@ -52,6 +52,12 @@
     "Repository": {
       "type": "string"
     },
+    "Source": {
+      "type": "string",
+      "enum": ["github", "nexus", "local"],
+      "default": "github",
+      "description": "FUSE-specific provenance stamp used by the in-game update check to point an out-of-date player at the place they installed. The committed manifest ships \"github\"; the release flow re-stamps only the Nexus upload to \"nexus\". GitHub remains canonical for versioning."
+    },
     "Requirements": {
       "type": "array",
       "items": {
@@ -146,6 +152,11 @@
           "type": "boolean",
           "default": false,
           "description": "Shows advanced diagnostics across the FUSE menu pages such as asset duplicate winners, full asset store paths, registry internals, and advanced mod settings. Disabled by default to keep the public UI curated."
+        },
+        "EnableUpdateCheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "On startup, asks GitHub whether a newer stable FUSE release exists and shows a non-blocking notice if so. Only a public list of release versions is fetched. Turn off to disable all network access for the check."
         }
       }
     }

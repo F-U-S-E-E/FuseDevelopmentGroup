@@ -88,6 +88,17 @@ namespace FUSE.Runtime.Lifecycle
                 {
                     FuseLog.Exception("FUSE enhanced loading screen pipeline-complete signal failed", ex);
                 }
+
+                // A loaded map is the first point the toast UI is guaranteed
+                // alive, so flush any pending "you're outdated" notice here.
+                try
+                {
+                    FuseVersionCheck.NotifyMapDidLoad();
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception("FUSE update-notice map-load flush failed", ex);
+                }
             }
         }
 
