@@ -24,6 +24,29 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
   Nexus-only copy of the core zip with the flipped stamp
   (`scripts/stamp-info-source.ps1`); the two zips are otherwise identical.
 
+### Changed
+
+- `scripts/Validate-ModPackage.cs` now fails the build if a packaged archive
+  contains a backslash entry name, simulating UMM's update-path rewrite rather
+  than only extracting the archive. Plain extraction tolerates backslashes on
+  Windows, which is why the release gate passed all three broken releases.
+
+### Fixed
+
+- Updating FUSE through Unity Mod Manager failed with "Error when unpacking"
+  and installed nothing, for every release from 1.0.0 through 1.0.2. The
+  published zips stored entry names with backslashes, because
+  `Compress-Archive` under Windows PowerShell 5.1 writes them that way. UMM
+  rewrites entry names when the mod is already installed, slicing each name at
+  its first forward slash; with backslashes there is none, so the unpack threw
+  and aborted. A *fresh* install skips that rewrite, which is why installing
+  worked and only updating broke. Archives are now built by
+  `scripts/New-ModArchive.ps1`, which always emits forward slashes.
+
+  Until a release carries the fix, update by deleting `Railroader/Mods/FUSE`
+  first (which makes UMM treat it as a fresh install) or by extracting the zip
+  by hand.
+
 ## [1.0.2]
 
 ### Added
