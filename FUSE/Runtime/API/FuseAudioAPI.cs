@@ -97,6 +97,7 @@ namespace FUSE.Runtime.API
             FuseLog.Info(
                 $"FUSE audio package='{packageId}' operation='register audio' " +
                 $"whistles={CountPackage(Whistles, packageId)} horns={CountPackage(Horns, packageId)} bells={CountPackage(Bells, packageId)}.");
+            FuseWhistleDefinitionStore.Sync(SnapshotWhistleStoreEntries());
         }
 
         public static void ReleasePackage(string packageId)
@@ -114,6 +115,11 @@ namespace FUSE.Runtime.API
                 FuseLog.Info(
                     $"FUSE audio package='{packageId}' operation='release audio definitions' " +
                     $"whistles={whistles} horns={horns} bells={bells}.");
+            }
+
+            if (whistles > 0)
+            {
+                FuseWhistleDefinitionStore.Sync(SnapshotWhistleStoreEntries());
             }
         }
 
@@ -133,72 +139,25 @@ namespace FUSE.Runtime.API
                 .ToArray();
         }
 
-        public static IEnumerable<TypedContainerItem<WhistleDefinition>> GetWhistleDefinitionItems()
-        {
-            foreach (var whistle in Whistles.Values.OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase))
-            {
-                yield return new TypedContainerItem<WhistleDefinition>
-                {
-                    Identifier = whistle.Id,
-                    Metadata = BuildWhistleMetadata(whistle),
-                    Definition = BuildWhistleDefinition(whistle)
-                };
-            }
-        }
-
         /// <summary>
-        /// Try to fetch a FUSE-registered whistle by its in-save identifier
-        /// (the same key vanilla passes to
-        /// <see cref="Model.Database.PrefabStore.DefinitionForIdentifier{T}"/>).
-        /// Used by the <see cref="FUSE.Patches.FusePrefabStoreDefinitionForIdentifierWhistlePatch"/>
-        /// Prefix to short-circuit vanilla's asset-pack lookup, which would
-        /// otherwise throw <c>UnknownIdentifierException</c> for FUSE whistle
-        /// ids and abort the whole <c>WhistleController.Configure</c> async
-        /// method — taking the 3D model spawn down with it.
+        /// Snapshot of the registered whistles in picker order, carrying the
+        /// facts <see cref="FuseWhistleDefinitionStore"/> serializes into the
+        /// generated direct store that vanilla's whistle dropdown enumerates.
+        /// The generated definitions keep the audio reference empty on
+        /// purpose — see <see cref="FuseWhistleDefinitionStore"/> — so
+        /// vanilla never races <see cref="TryConfigureWhistle"/> +
+        /// <see cref="LoadClip"/> on the clip.
         /// </summary>
-        public static bool TryBuildWhistleDefinition(string whistleId, out WhistleDefinition definition, out ObjectMetadata metadata)
+        internal static IReadOnlyList<FuseWhistleStoreEntry> SnapshotWhistleStoreEntries()
         {
-            definition = null;
-            metadata = null;
-            if (string.IsNullOrWhiteSpace(whistleId))
-            {
-                return false;
-            }
-            if (!Whistles.TryGetValue(whistleId, out var whistle))
-            {
-                return false;
-            }
-            definition = BuildWhistleDefinition(whistle);
-            metadata = BuildWhistleMetadata(whistle);
-            return true;
-        }
-
-        private static WhistleDefinition BuildWhistleDefinition(RegisteredWhistle whistle)
-        {
-            return new WhistleDefinition
-            {
-                // Leave Audio with an empty AssetIdentifier on purpose.
-                // <see cref="Model.Definition.Data.AssetReference.IsEmpty"/>
-                // is <c>string.IsNullOrEmpty(AssetIdentifier)</c>, and
-                // <see cref="RollingStock.Steam.WhistleController.Configure"/>
-                // skips its async <c>LoadAssetAsync&lt;AudioClip&gt;</c> branch
-                // when <c>!whistleDefinition.Audio.IsEmpty</c> is false.
-                // FUSE serves the actual clip from disk via
-                // <see cref="TryConfigureWhistle"/> + <see cref="LoadClip"/>,
-                // so we want vanilla to not race against us on the audio side
-                // while still running its Model branch to spawn the 3D whistle.
-                Audio = new AssetReference(),
-                Model = ToAssetReference(whistle.Model)
-            };
-        }
-
-        private static ObjectMetadata BuildWhistleMetadata(RegisteredWhistle whistle)
-        {
-            return new ObjectMetadata
-            {
-                Name = string.IsNullOrWhiteSpace(whistle.Name) ? whistle.Id : whistle.Name,
-                Description = "FUSE loose-file whistle"
-            };
+            return Whistles.Values
+                .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(entry => new FuseWhistleStoreEntry(
+                    entry.Id,
+                    entry.Name,
+                    entry.Model?.AssetPackIdentifier,
+                    entry.Model?.AssetIdentifier))
+                .ToArray();
         }
 
         public static bool TryConfigureWhistle(WhistleController controller, string whistleId)
@@ -733,15 +692,6 @@ namespace FUSE.Runtime.API
             UnityEngine.Object.DontDestroyOnLoad(go);
             _host = go.AddComponent<FuseAudioRuntimeHost>();
             return _host;
-        }
-
-        private static AssetReference ToAssetReference(FuseAudioAssetReference reference)
-        {
-            return new AssetReference
-            {
-                AssetPackIdentifier = reference?.AssetPackIdentifier ?? string.Empty,
-                AssetIdentifier = reference?.AssetIdentifier ?? string.Empty
-            };
         }
 
         private static string ResolveAudioPath(string packageFolder, string value)

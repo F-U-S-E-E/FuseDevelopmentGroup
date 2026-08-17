@@ -1,35 +1,90 @@
 # Known Issues
 
-## Deferred Systems
+Current limitations, unsupported content, and known interactions. For debugging a
+specific symptom, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
-- The public in-game editor workflow is not a beta blocker yet.
-- Rolling stock and locomotive/car mods are out of beta scope unless they are audio-only horn, whistle, or bell packs.
+## Out Of Scope
+
+Not defects — content FUSE does not aim to support in this release.
+
+- **The full public in-game editor workflow.** The standalone external editor
+  ships instead — see [EXTERNAL_EDITOR.md](EXTERNAL_EDITOR.md).
+- **Rolling stock, locomotive, and car mods**, except audio-only horn, whistle, and
+  bell packs, which convert.
+- **Arbitrary legacy script mods.** Only data, asset, audio, and supported runtime
+  component packages convert.
+- **Signals.**
+- **Mid-session scene-path suppression re-enable.** Once a map is loaded, the
+  setting cannot be turned back on for that session.
 
 ## Game Limitations
 
-- Railroader does not support normal three-way switches. Legacy content that authors a three-way switch shape should be treated as an authoring issue, not a FUSE graph bug.
-- Some legacy packages contain broken passenger stop or depot definitions even under the original legacy stack. FUSE should report those clearly and avoid making them worse.
+Constraints from Railroader itself, not from FUSE.
+
+- **Three-way switches are not supported.** Railroader does not treat them as
+  normal graph switches. Legacy content authoring a three-way switch shape has an
+  authoring problem that predates FUSE, and should be reported as such rather than
+  as a FUSE graph bug.
+- **Some legacy packages ship broken passenger stop or depot definitions** that
+  were already broken under the original legacy stack. FUSE reports these clearly
+  and avoids making them worse, but it cannot invent the missing data.
 
 ## Experimental Features
 
-- Early scene-path suppression is experimental and disabled by default.
-- Runtime authoring mutations are experimental.
-- `/fuse.reapply` and `/fuse.restore` are experimental recovery/testing commands.
+Off by default. Enabling one is a testing decision — back up your save first. See
+[SETTINGS.md](SETTINGS.md#experimental).
+
+- **Early scene-path suppression** (`EnableExperimentalEarlyScenePathSuppression`).
+- **Targeted terrain invalidation** (`EnableTargetedTerrainInvalidation`) — a
+  significant load-time win, but timing-sensitive because masks load
+  asynchronously. Falls back to a full rebuild when no footprint was captured.
+- **Runtime authoring mutations.**
+- **`/fuse.reapply` and `/fuse.restore`** — recovery and testing commands that
+  refuse to run mid-session without `--force`.
 
 ## External Mod Conflicts
 
-- Do not load a legacy route and its converted FUSE route at the same time unless testing conflicts.
-- Legacy loaders, AMM, Strange Customs, and RailLoader may create duplicate objects when used with converted packages for the same route.
-- FUSE can load custom industry components only when the owning component assembly is installed and loaded.
+- **Do not load a legacy route and its converted FUSE route at the same time**
+  unless you are deliberately testing conflicts. Both claim the same object ids.
+  `/fuse.conflicts` reports the collision.
+- **Legacy loaders, AMM, Strange Customs, and RailLoader can create duplicate
+  objects** when used alongside converted packages for the same route. FUSE warns
+  when it finds a leftover `Railloader.dll` or `Railloader.Interchange.dll`.
+- **Custom industry components load only when the owning assembly is installed.**
+  A package referencing a component type from an assembly you do not have reports
+  the missing dependency rather than silently dropping the component.
+
+See [MIGRATION_FROM_LEGACY.md](MIGRATION_FROM_LEGACY.md) for the migration order
+that avoids most of this.
 
 ## Multiplayer
 
-- FUSE beta uses legacy-style multiplayer compatibility mode: every player must have the same FUSE build, enabled package list, and load order installed locally.
-- FUSE does not negotiate host/client package mismatches. A mismatched client can desync visually or operationally even though FUSE will warn on first non-host runtime apply.
-- Strict non-host client blocking is available through `Settings.BlockNonHostMultiplayerClientWorldApply`, but it is disabled by default so private multiplayer tests can behave like RailLoader.
+FUSE uses legacy-style multiplayer compatibility mode.
 
-## Current Verification Notes
+- **Every player needs the same FUSE build, enabled package list, and load
+  order**, installed locally. FUSE does not sync package contents over the
+  network.
+- **Mismatches are not negotiated.** A mismatched client can desync visually or
+  operationally. Non-host clients log a warning on their first runtime world
+  apply.
+- **Strict client blocking is available** through
+  `BlockNonHostMultiplayerClientWorldApply`, disabled by default so private tests
+  behave like RailLoader.
 
-- The current supported beta test stack reaches `73 loaded | faults 0 | conflicts 0 | assets 0 | graph 0 | transfers 0 | suppressions 0` in `FUSE.log`.
-- Asset packs should be installed as real asset packs; FUSE should not alias missing assets to unrelated names when the correct asset pack exists.
-- Location ordering, progression visibility, and map mask visuals still need repeated human visual checks across the full route stack before beta sign-off.
+## Areas Needing Visual Verification
+
+These apply correctly by every automated check available, but their *appearance*
+depends on interactions that only a human looking at the map can confirm. If
+something looks wrong here, it is worth reporting even when the load report is
+clean:
+
+- Location and area ordering in the company window, which depends on both
+  converted area order data and base-game runtime ordering
+- Progression visibility timing
+- Map mask visuals — terrain flattening, tree cutting, and height masks
+
+## Reporting
+
+Include `FUSE.log`, `Player.log`, `/fuse.report json`, and the conversion report
+for the affected package. Full checklist in
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md).

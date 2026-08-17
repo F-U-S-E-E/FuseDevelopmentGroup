@@ -7,7 +7,7 @@ drop zip files beside the executable and run it from the base folder.
 ## Download
 
 The published `FUSE-Installer.exe` is distributed via GitHub Releases:
-<https://github.com/Hrogers-Rog/Rail/releases>. The `dist/` folder is gitignored,
+<https://github.com/F-U-S-E-E/FuseDevelopmentGroup/releases>. The `dist/` folder is gitignored,
 so building locally produces a private copy at `dist\FUSE-Installer.exe`.
 
 The installer inspects zip structure and manifest JSON only. It does not import,

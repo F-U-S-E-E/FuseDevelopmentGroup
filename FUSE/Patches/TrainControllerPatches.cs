@@ -70,17 +70,44 @@ namespace FUSE.Patches
                     codes[i - 1].Calls(getCenterPos) &&
                     codes[i].opcode == OpCodes.Stloc_3)
                 {
+                    // Harvest the loop's real continue target from the radius
+                    // early-out that immediately follows (a bgt-family branch:
+                    // "sqrMagnitude > radius*radius -> skip this car"). The
+                    // method's only brtrue is the foreach loop-back test, whose
+                    // TARGET is the loop head — branching there re-enters the
+                    // iteration without advancing the enumerator and hangs the
+                    // main thread, so brtrue must never be harvested here.
                     Label continueLabel = default;
-
-                    // Find the existing continue target (IL_010d)
-                    for (int j = i; j < codes.Count; j++)
+                    var foundContinue = false;
+                    for (int j = i + 1; j < codes.Count; j++)
                     {
-                        if (codes[j].opcode == OpCodes.Brtrue ||
-                            codes[j].opcode == OpCodes.Brtrue_S)
+                        var op = codes[j].opcode;
+                        // Bind to the radius early-out specifically: it is the
+                        // FIRST branch after the stloc, so any other branch
+                        // opcode appearing first means the loop shape changed
+                        // and we must not guess.
+                        if (op.FlowControl != FlowControl.Cond_Branch &&
+                            op.FlowControl != FlowControl.Branch)
+                        {
+                            continue;
+                        }
+
+                        if (op == OpCodes.Bgt || op == OpCodes.Bgt_S ||
+                            op == OpCodes.Bgt_Un || op == OpCodes.Bgt_Un_S)
                         {
                             continueLabel = (Label)codes[j].operand;
-                            break;
+                            foundContinue = true;
                         }
+                        break;
+                    }
+
+                    if (!foundContinue)
+                    {
+                        // Fail open: no injection beats a wrong branch target.
+                        FuseLog.Warning(
+                            "FUSE CheckForCarsAtPoint height-skip not installed: the radius early-out " +
+                            "branch was not found after GetCenterPosition (game loop shape changed).");
+                        continue;
                     }
 
                     yield return new CodeInstruction(OpCodes.Ldarg_1); // point

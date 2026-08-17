@@ -105,6 +105,16 @@ namespace FUSE.Loading
             ApplyActiveAreaSuppressions(reason, transaction);
         }
 
+        /// <summary>
+        /// Applies claimed track-group state immediately before a caller-owned full
+        /// graph rebuild. The rebuild is intentionally not requested here: the
+        /// caller's imminent rebuild consumes the final enabled/available group sets.
+        /// </summary>
+        internal static void ApplyActiveTrackGroupSuppressionsBeforeGraphRebuild(string reason)
+        {
+            ApplyActiveTrackGroupSuppressions(reason ?? "pre-rebuild apply", false);
+        }
+
         public static void RegisterEarlyScenePathSuppressionsFromLoadedDefinitions(string reason)
         {
             if (!FuseSettings.EnableExperimentalEarlyScenePathSuppression)
@@ -416,7 +426,10 @@ namespace FUSE.Loading
 
                 if (setInactive || changes.HasChanges)
                 {
-                    FuseLog.Info($"FUSE suppressed base scene path '{path}' for '{reason}' owners={FuseRegistry.GetSharedOwners(FuseClaimKind.SuppressedScenePath, path).Count} inactive={setInactive} renderers={changes.Renderers} cullers={changes.CullingBehaviours}.");
+                    if (FuseSettings.VerboseApplyReportDetails)
+                    {
+                        FuseLog.Info($"FUSE suppressed base scene path '{path}' for '{reason}' owners={FuseRegistry.GetSharedOwners(FuseClaimKind.SuppressedScenePath, path).Count} inactive={setInactive} renderers={changes.Renderers} cullers={changes.CullingBehaviours}.");
+                    }
                     transaction?.PostBind("suppressed scene path", path, $"set inactive={setInactive} renderers={changes.Renderers} cullers={changes.CullingBehaviours}");
                 }
 

@@ -220,6 +220,27 @@ namespace FUSE.Runtime.API
                         }
                     }
 
+                    // PassengerStop is not an IndustryComponent, so the loop
+                    // above never reaches it — and the game's own feature pass
+                    // cannot either, because the orphaned industry's area
+                    // wiring was severed by the same track replacement that
+                    // orphaned it. Left enabled, the stop keeps appearing in
+                    // the destination picker and keeps being generated FOR by
+                    // every other station (seen in the field: 'almond' and
+                    // 'nantahala' on the EWH map). Everything downstream —
+                    // picker filter, ActiveAvailableDestinations, the spawn
+                    // loop — keys off ProgressionDisabled, so setting it here
+                    // retires the stop everywhere at once.
+                    foreach (var stop in industry.GetComponentsInChildren<PassengerStop>(true))
+                    {
+                        if (stop != null && !stop.ProgressionDisabled)
+                        {
+                            stop.ProgressionDisabled = true;
+                            FuseLog.Info(
+                                $"FUSE disabled passenger stop '{stop.identifier}' with orphaned base-game industry '{id}'.");
+                        }
+                    }
+
                     industry.gameObject.SetActive(false);
                     FuseIndustryRuntimeIndex.Instance.Remove(id);
                     disabled++;
@@ -261,7 +282,22 @@ namespace FUSE.Runtime.API
                 return 0;
             }
 
-            if (cachedComponents == null || cachedComponents.All(IsLiveIndustryComponent))
+            if (cachedComponents == null)
+            {
+                return 0;
+            }
+
+            var hasStaleComponent = false;
+            for (var i = 0; i < cachedComponents.Length; i++)
+            {
+                if (!IsLiveIndustryComponent(cachedComponents[i]))
+                {
+                    hasStaleComponent = true;
+                    break;
+                }
+            }
+
+            if (!hasStaleComponent)
             {
                 return 0;
             }
@@ -347,16 +383,22 @@ namespace FUSE.Runtime.API
 
                 component.trackSpans = retained.ToArray();
                 pruned += removed;
-                FuseLog.Warning(
-                    $"FUSE removed industry component reference(s) to removed TrackSpan component='{DescribeComponent(component)}' " +
-                    $"spanId='{removedSpanId}' removed={removed} reason='{source ?? "unspecified"}'.");
+                if (FuseSettings.VerboseApplyReportDetails)
+                {
+                    FuseLog.Warning(
+                        $"FUSE removed industry component reference(s) to removed TrackSpan component='{DescribeComponent(component)}' " +
+                        $"spanId='{removedSpanId}' removed={removed} reason='{source ?? "unspecified"}'.");
+                }
             }
 
             if (pruned > 0)
             {
-                FuseLog.Warning(
-                    $"FUSE removed {pruned} industry component reference(s) to removed TrackSpan " +
-                    $"spanId='{removedSpanId}' after '{source ?? "unspecified"}'.");
+                if (FuseSettings.VerboseApplyReportDetails)
+                {
+                    FuseLog.Warning(
+                        $"FUSE removed {pruned} industry component reference(s) to removed TrackSpan " +
+                        $"spanId='{removedSpanId}' after '{source ?? "unspecified"}'.");
+                }
             }
 
             return pruned;

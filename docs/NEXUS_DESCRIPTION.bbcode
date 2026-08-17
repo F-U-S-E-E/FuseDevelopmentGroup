@@ -1,0 +1,119 @@
+[size=5][b]FUSE[/b][/size]
+
+FUSE is a modding layer for Railroader. It loads FUSE packages — custom maps, routes, scenery, industries, and audio — and runs your existing legacy mods through a built-in compatibility layer.
+
+[line]
+
+[size=4][b]What it adds[/b][/size]
+
+[list]
+[*][b]Custom maps[/b] — whole replacement worlds, picked from a map dropdown on the New Game screen
+[*][b]Routes and track[/b] — extensions, new segments, switches, turntables
+[*][b]World scenery[/b] — buildings, map labels, speed signs, telegraph poles
+[*][b]Operations[/b] — industries, loads, stations, passenger stops, team tracks, interchanges
+[*][b]Progression[/b] — sections, delivery phases, and unlock-gated map features
+[*][b]Audio[/b] — whistles, horns, and bells
+[/list]
+
+FUSE itself adds no content. It is the layer that loads content packages.
+
+[line]
+
+[size=4][b]Your existing mods keep working[/b][/size]
+
+Packages built for [b]Railloader[/b], [b]Strange Customs[/b], [b]ConfusingSupplements[/b], [b]For Your Convenience[/b], and [b]Alina's Map Mod[/b] load through FUSE's compatibility layer. Package authors can also convert them to the FUSE format with the [url=https://github.com/F-U-S-E-E/FuseDevelopmentGroup/releases]converter tool on GitHub[/url].
+
+[line]
+
+[size=4][b]Requirements[/b][/size]
+
+[list]
+[*]Railroader [b]2025.1.x[/b]
+[*][url=https://www.nexusmods.com/site/mods/21]Unity Mod Manager[/url]
+[/list]
+
+[line]
+
+[size=4][b]Installation[/b][/size]
+
+[list=1]
+[*]Install Unity Mod Manager and point it at your Railroader install.
+[*]Download the FUSE zip from the [b]Files[/b] tab.
+[*]Drag the zip onto Unity Mod Manager's [b]Mods[/b] tab. To do it by hand instead, extract the zip so the [b]FUSE[/b] folder inside it lands at [i]Railroader/Mods/FUSE[/i].
+[*]Start Railroader and load a map.
+[/list]
+
+Open the console and run [b]/fuse.report[/b] to confirm it loaded. The FUSE icon also appears in the top bar.
+
+[b]Do not nest the folder.[/b] [i]Railroader/Mods/FUSE/FUSE/FUSE.dll[/i] is wrong and FUSE will not load.
+
+[line]
+
+[size=4][b]Installing content packages[/b][/size]
+
+Each FUSE package is its own folder under [i]Railroader/Mods[/i], installed exactly like FUSE itself. Install any asset packs a package lists as required, then run [b]/fuse.loaded[/b] to confirm FUSE picked them up.
+
+FUSE respects Unity Mod Manager's enabled checkbox — a package you disable in UMM is not loaded.
+
+[line]
+
+[size=4][b]Updating[/b][/size]
+
+[list=1]
+[*]Back up your saves and your current [i]Railroader/Mods/FUSE[/i] folder.
+[*]Replace [i]Railroader/Mods/FUSE[/i] with the new version.
+[*]Start the game and run [b]/fuse.report[/b].
+[/list]
+
+Do not leave a second copy of FUSE anywhere under [i]Railroader/Mods[/i].
+
+[line]
+
+[size=4][b]Uninstalling[/b][/size]
+
+[list=1]
+[*]Exit Railroader.
+[*]Remove or disable your FUSE packages first.
+[*]Remove or disable [i]Railroader/Mods/FUSE[/i].
+[*]Start the game and confirm it loads normally.
+[/list]
+
+Removing FUSE while packages that depend on it are still installed will leave those packages inert.
+
+[line]
+
+[size=4][b]Good to know[/b][/size]
+
+[list]
+[*][b]Multiplayer is compatibility mode only.[/b] FUSE does not sync package contents over the network. Every host and client applies its own local package stack, so everyone needs the same packages installed — the same expectation legacy Railloader had.
+[*]FUSE does not add rolling stock or locomotive mods, apart from audio definitions it can import.
+[*]FUSE loads data, asset, and audio packages. Legacy script mods that are not data packages are not supported.
+[*]The in-game editor was retired in 1.0. Authoring happens in the standalone external editor.
+[/list]
+
+[line]
+
+[size=4][b]Having trouble?[/b][/size]
+
+Post a bug report with:
+
+[list]
+[*][b]FUSE.log[/b] (written next to Railroader's Player.log)
+[*][b]Player.log[/b]
+[*]The output of [b]/fuse.report[/b]
+[*]The output of [b]/fuse.loaded[/b] if package state matters, and [b]/fuse.conflicts[/b] if conflicts are reported
+[/list]
+
+[line]
+
+[size=4][b]Source and license[/b][/size]
+
+FUSE is free software, released under the [b]GNU Affero General Public License v3.0[/b].
+
+Source code, the converter, the bulk installer, and the complete toolchain bundle all live on GitHub:
+
+[list]
+[*][url=https://github.com/F-U-S-E-E/FuseDevelopmentGroup]Repository[/url] — source, documentation, and the issue tracker
+[*][url=https://github.com/F-U-S-E-E/FuseDevelopmentGroup/releases]Releases[/url] — the tools, and [b]FUSE-Complete[/b] with everything in one download
+[*][url=https://github.com/F-U-S-E-E/FuseDevelopmentGroup/issues/new/choose]Report a bug[/url] — please include the logs listed above
+[/list]

@@ -18,7 +18,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -108,6 +108,10 @@
          method signatures that reference these types. -->
     <Reference Include="Assembly-CSharp" Condition="Exists('$(UnityManagedDir)\Assembly-CSharp.dll')">
       <HintPath>$(UnityManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="AssetPack.Common" Condition="Exists('$(UnityManagedDir)\AssetPack.Common.dll')">
+      <HintPath>$(UnityManagedDir)\AssetPack.Common.dll</HintPath>
       <Private>true</Private>
     </Reference>
     <Reference Include="UnityEngine.AssetBundleModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll')">

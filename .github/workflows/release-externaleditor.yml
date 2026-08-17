@@ -4,7 +4,7 @@ name: Release External Editor
 # net10, game-free). Triggered by externaleditor-v<semver> tags so the external
 # editor ships on its own cadence, decoupled from the mod's mod-v<semver>
 # release (release.yml). The prefix is externaleditor- (not editor-) to keep it
-# distinct from the in-game editor, which ships inside the mod.
+# distinct from the retired in-game editor.
 on:
   push:
     tags:
@@ -33,14 +33,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # This lane never pushes back to the repo, so don't leave the
           # checkout token persisted in .git/config on the runner.
           persist-credentials: false
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
 
@@ -90,7 +90,7 @@ jobs:
           }
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ github.ref_name }}
           name: FUSE External Editor v${{ steps.version.outputs.version }}

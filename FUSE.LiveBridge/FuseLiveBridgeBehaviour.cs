@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using Fuse.Core.Bridge;
 using FUSE.Loading;
 using UnityEngine;
@@ -25,6 +26,8 @@ namespace FUSE.LiveBridge
         private DateTime _lastEventUtc;
         private string _lastCommandPath;
         private float _heartbeatTimer;
+        private int _heartbeatWriteInFlight;
+        private string _heartbeatWriteError;
 
         private string _lastRequestId;
         private string _lastReloadUtc;
@@ -106,6 +109,12 @@ namespace FUSE.LiveBridge
 
         private void Update()
         {
+            var heartbeatError = Interlocked.Exchange(ref _heartbeatWriteError, null);
+            if (!string.IsNullOrEmpty(heartbeatError))
+            {
+                Main.ModEntry?.Logger.Warning("FUSE.LiveBridge heartbeat write failed: " + heartbeatError);
+            }
+
             var reload = false;
             string commandPath = null;
             lock (_lock)
@@ -173,7 +182,28 @@ namespace FUSE.LiveBridge
                     Ok = _lastOk,
                     Error = _lastError,
                 };
-                BridgeIo.WriteAtomic(Path.Combine(_ownDir, BridgeProtocol.StateFileName), state);
+                var path = Path.Combine(_ownDir, BridgeProtocol.StateFileName);
+                if (Interlocked.CompareExchange(ref _heartbeatWriteInFlight, 1, 0) != 0)
+                {
+                    return;
+                }
+
+                ThreadPool.QueueUserWorkItem(
+                    _ =>
+                    {
+                        try
+                        {
+                            BridgeIo.WriteAtomic(path, state);
+                        }
+                        catch (Exception ex)
+                        {
+                            Interlocked.Exchange(ref _heartbeatWriteError, ex.GetBaseException().Message);
+                        }
+                        finally
+                        {
+                            Volatile.Write(ref _heartbeatWriteInFlight, 0);
+                        }
+                    });
             }
             catch (Exception ex)
             {

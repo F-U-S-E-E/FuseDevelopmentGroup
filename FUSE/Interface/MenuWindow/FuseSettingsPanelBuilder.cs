@@ -15,7 +15,7 @@ namespace FUSE.Interface.MenuWindow
             General,
         }
 
-        private class Page(PageId id)
+        private sealed class Page(PageId id)
         {
             public PageId Id { get; } = id;
         }
@@ -88,6 +88,117 @@ namespace FUSE.Interface.MenuWindow
                     builder.Rebuild();
                 }));
 
+            builder.AddField("Advanced Details", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.ShowAdvancedHealthDetails,
+                () =>
+                {
+                    FuseSettings.SetShowAdvancedHealthDetails(!FuseSettings.ShowAdvancedHealthDetails);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel("Shows deeper diagnostics across FUSE pages: advanced mod settings, dependency-graph and asset internals. Combined with Verbose Reporting it also logs per-object progression diagnostics to FUSE.log.");
+
+            builder.AddSection("Performance Diagnostics");
+
+            // Migrated from the retired Health window's Advanced page: this
+            // menu window is the "FUSE" surface most users actually open, and a
+            // stutter-report toggle nobody can find produces no stutter reports.
+            builder.AddField("Frame Spike Log", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableFrameSpikeDiagnostics,
+                () =>
+                {
+                    FuseSettings.SetEnableFrameSpikeDiagnostics(!FuseSettings.EnableFrameSpikeDiagnostics);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel(
+                FuseSettings.EnableFrameSpikeDiagnostics
+                    ? $"Logging adaptive hitches to FUSE.log (absolute floor {FuseSettings.FrameSpikeThresholdMs:F0}ms; spikes so far: {FuseRuntimeGuardCounters.FrameSpikes}, worst {FuseRuntimeGuardCounters.FrameSpikeWorstMs:F0}ms)."
+                    : "For stutter reports: logs frames that exceed both the configured floor and the rolling frame-time baseline, with memory and queue context. Takes effect immediately.");
+
+            builder.AddField("Force 8 GB VRAM Mode", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.ForceConstrainedVramMode,
+                () =>
+                {
+                    FuseSettings.SetForceConstrainedVramMode(!FuseSettings.ForceConstrainedVramMode);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel(
+                "For comparison testing on larger GPUs: applies the constrained-card " +
+                "one-level texture mip cap while preserving normal scenery distance. " +
+                "Restart before capturing results.");
+
+            builder.AddField("Spike Floor", control: builder.AddSliderQuantized(
+                () => FuseSettings.FrameSpikeThresholdMs,
+                () => $"{FuseSettings.FrameSpikeThresholdMs:F0}ms",
+                FuseSettings.PreviewFrameSpikeThresholdMs,
+                5f,
+                FuseSettings.MinFrameSpikeThresholdMs,
+                FuseSettings.MaxFrameSpikeThresholdMs,
+                value =>
+                {
+                    FuseSettings.SetFrameSpikeThresholdMs(value);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel(
+                "Frames shorter than the floor never log as spikes, even when they exceed the rolling " +
+                "baseline. 50ms suits subtle-stutter hunts; the 100ms default keeps only severe hitches. " +
+                "Takes effect immediately.");
+
+            builder.AddField("Native Allocation Stacks", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableNativeLeakStackTraces,
+                () =>
+                {
+                    FuseSettings.SetEnableNativeLeakStackTraces(!FuseSettings.EnableNativeLeakStackTraces);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel(
+                FuseSettings.EnableNativeLeakStackTraces
+                    ? $"Unity mode: {FuseNativeLeakDiagnostic.ModeLabel}. Process-wide and expensive; reproduce briefly, then disable. Restart before capture for the cleanest history."
+                    : $"Unity mode: {FuseNativeLeakDiagnostic.ModeLabel}. Enables process-wide native-allocation stack traces for leak hunts; substantial CPU and memory overhead.");
+
+            builder.AddField("Scenery Cull Log", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableSceneryCullingDiagnostics,
+                () =>
+                {
+                    FuseSettings.SetEnableSceneryCullingDiagnostics(!FuseSettings.EnableSceneryCullingDiagnostics);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel("Logs every scenery load/unload flip to FUSE.log ('scenery-cull'). Session-only and resets when the game restarts; verbose while moving.");
+
+            builder.AddSection("Experimental");
+
+            builder.AddField("Targeted Terrain Rebuild", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableTargetedTerrainInvalidation,
+                () =>
+                {
+                    FuseSettings.SetEnableTargetedTerrainInvalidation(!FuseSettings.EnableTargetedTerrainInvalidation);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel("After applying packages, re-bake only the terrain tiles FUSE touched instead of a full rebuild. Falls back to the full rebuild when a mask can't be bounded. Takes effect on the next map load.");
+
+            builder.AddField("Early Scene-Path Suppression", control: BuildToggleBoxWithButton(
+                builder,
+                FuseSettings.EnableExperimentalEarlyScenePathSuppression,
+                () =>
+                {
+                    FuseSettings.SetEnableExperimentalEarlyScenePathSuppression(!FuseSettings.EnableExperimentalEarlyScenePathSuppression);
+                    builder.Rebuild();
+                }));
+
+            builder.AddLabel("Applies scene-path suppressions during the load itself instead of after. Takes effect on the next map load.");
+
             builder.AddSection("Debug Overlays");
 
             builder.AddField("Track Probe", control: BuildToggleBoxWithButton(
@@ -123,15 +234,6 @@ namespace FUSE.Interface.MenuWindow
                 () =>
                 {
                     FuseSettings.SetShowSceneryDebugAdvanced(!FuseSettings.ShowSceneryDebugAdvanced);
-                    builder.Rebuild();
-                }));
-
-            builder.AddField("Track Span Paths", control: BuildToggleBoxWithButton(
-                builder,
-                FuseSettings.ShowTrackDebugSpanPaths,
-                () =>
-                {
-                    FuseSettings.SetShowTrackDebugSpanPaths(!FuseSettings.ShowTrackDebugSpanPaths);
                     builder.Rebuild();
                 }));
 
@@ -171,7 +273,7 @@ namespace FUSE.Interface.MenuWindow
 
             builder.AddField("", $"<color={FuseWorldLabelsOverlay.SceneCloneColor.HexString()}>Scene Clone");
 
-            builder.AddField("Scenery Labels", control: BuildToggleBoxWithButton(
+            builder.AddField("Industry Labels", control: BuildToggleBoxWithButton(
                 builder,
                 FuseSettings.WorldLabelsShowIndustries,
                 () =>
@@ -203,17 +305,6 @@ namespace FUSE.Interface.MenuWindow
                 }));
 
             builder.AddField("", $"<color={FuseWorldLabelsOverlay.TrackSegmentColor.HexString()}>Track Segments");
-
-            builder.AddSection("Experimental");
-
-            builder.AddField("Early Suppression", control: BuildToggleBoxWithButton(
-                builder,
-                FuseSettings.EnableExperimentalEarlyScenePathSuppression,
-                () =>
-                {
-                    FuseSettings.SetEnableExperimentalEarlyScenePathSuppression(!FuseSettings.EnableExperimentalEarlyScenePathSuppression);
-                    builder.Rebuild();
-                }));
 
             builder.Spacer(32f);
         }

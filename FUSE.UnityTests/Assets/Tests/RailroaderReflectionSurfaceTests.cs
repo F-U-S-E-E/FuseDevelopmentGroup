@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using NUnit.Framework;
@@ -547,6 +548,17 @@ namespace FUSE.UnityTests
         }
 
         [Test]
+        public void ProgressionManager_OnEnableWithProperties_Method()
+        {
+            // FuseProgressionManagerNoProgressionHookPatch postfixes this
+            // restore handler to learn when a load settled WITHOUT a
+            // configured progression (sandbox saves, unresolvable progression
+            // ids) — the point where the deferred progression refresh must be
+            // replayed because Progression.Configure will never fire.
+            AssertMethod("Game.Progression.ProgressionManager", "OnEnableWithProperties", InstanceNonPublic);
+        }
+
+        [Test]
         public void Progression_Sections_AutoPropertyBackingField()
         {
             // Compiler-generated backing field for an auto-property.
@@ -650,12 +662,203 @@ namespace FUSE.UnityTests
         }
 
         [Test]
+        public void Car_MaterialPerformancePatch_Surface()
+        {
+            var carType = RequireType("Model.Car");
+            var ownedMaterials = AccessTools.Field(carType, "_ownedMaterials");
+            Assert.That(
+                ownedMaterials,
+                Is.Not.Null,
+                "Car._ownedMaterials not found; the material optimization will fall back to the stock path.");
+
+            var makeMaterialsUnique = AccessTools.Method(carType, "MakeMaterialsUnique");
+            Assert.That(
+                makeMaterialsUnique,
+                Is.Not.Null,
+                "Car.MakeMaterialsUnique not found; the material optimization patch cannot bind.");
+
+            var getRenderers = AccessTools.Method(carType, "GetRenderers");
+            Assert.That(
+                getRenderers,
+                Is.Not.Null,
+                "Car.GetRenderers not found; the renderer collection optimization patch cannot bind.");
+        }
+
+        [Test]
+        public void MapFeatureManager_SnapshotTrackRebuildCoalescing_Surface()
+        {
+            AssertField(
+                "Game.Progression.MapFeatureManager",
+                "_scheduledRebuildTrack",
+                InstanceNonPublic);
+            AssertMethod(
+                "Game.Progression.MapFeatureManager",
+                "HandleFeatureEnablesChanged",
+                InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_modelLoadTask_InstanceField()
+        {
+            AssertField("Helpers.SceneryAssetInstance", "_modelLoadTask", InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_cullRenderers_InstanceField()
+        {
+            AssertField("Helpers.SceneryAssetInstance", "_cullRenderers", InstanceNonPublic);
+        }
+
+        [Test]
         public void SceneryAssetInstance_SetLoaded_InstanceMethod()
         {
             // FuseSceneryLoadThrottlePatch both Harmony-patches and reflectively
             // re-invokes this private method to release deferred loads from its
             // pump; a rename detaches the patch AND breaks the pump's re-drive.
             AssertMethod("Helpers.SceneryAssetInstance", "SetLoaded", InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_DidLoadModel_InstanceMethod()
+        {
+            AssertMethod("Helpers.SceneryAssetInstance", "DidLoadModel", InstanceNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetInstance_WillUnloadModel_InstanceMethod()
+        {
+            AssertMethod("Helpers.SceneryAssetInstance", "WillUnloadModel", InstanceNonPublic);
+        }
+
+        // -----------------------------------------------------------------
+        // DecalCullingManager / DecalProjectorHelper — FuseDecalCullingGuardPatches
+        // prunes destroyed projectors from the private registry (a destroyed
+        // registered decal otherwise NREs the visibility job every frame and
+        // leaks its TempJob arrays each time), and guarantees unregistration
+        // when the helper's OnDisable throws.
+        // -----------------------------------------------------------------
+
+        [Test]
+        public void DecalCullingManager_decalProjectors_InstanceField()
+        {
+            AssertField("Effects.Decals.DecalCullingManager", "_decalProjectors", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalCullingManager_UpdateDecalVisibilityJob_InstanceMethod()
+        {
+            // Patch target for the scrub prefix, callback-containment transpiler,
+            // and storm-breaker finalizer.
+            AssertMethod("Effects.Decals.DecalCullingManager", "UpdateDecalVisibilityJob", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalCullingManager_RegisterDecal_PublicInstanceMethod()
+        {
+            // Patch target: null/destroyed projectors are rejected before they can
+            // poison the registry that UpdateDecalVisibilityJob consumes.
+            AssertMethod("Effects.Decals.DecalCullingManager", "RegisterDecal", InstancePublic);
+        }
+
+        [Test]
+        public void DecalCullingManager_Entry_DecalProjector_Field()
+        {
+            // The registry is a List<Entry> of a private nested class; the scrub
+            // reads each entry's DecalProjector field to test for destroyed objects.
+            var entryType = AccessTools.Inner(RequireType("Effects.Decals.DecalCullingManager"), "Entry");
+            Assert.NotNull(entryType,
+                "DecalCullingManager.Entry nested type not found — the decal scrub cannot inspect registry entries.");
+            var field = AccessTools.Field(entryType, "DecalProjector");
+            Assert.NotNull(field,
+                "DecalCullingManager.Entry.DecalProjector not found — the decal scrub cannot detect destroyed projectors.");
+        }
+
+        [Test]
+        public void DecalProjectorHelper_OnEnable_InstanceMethod()
+        {
+            // Patch target: skipped cleanly when the helper has no Car ancestor.
+            AssertMethod("Effects.Decals.DecalProjectorHelper", "OnEnable", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalProjectorHelper_OnDisable_InstanceMethod()
+        {
+            // Patch target: prefix unregisters before vanilla touches _car; the
+            // finalizer remains as the exception-suppression fallback.
+            AssertMethod("Effects.Decals.DecalProjectorHelper", "OnDisable", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalProjectorHelper_SetDecalRegistered_InstanceMethod()
+        {
+            // Invoked reflectively by the disable guard to force the unregister.
+            AssertMethod("Effects.Decals.DecalProjectorHelper", "SetDecalRegistered", InstanceNonPublic);
+        }
+
+        [Test]
+        public void DecalCullingManager_shared_StaticField()
+        {
+            // The disable guard reads the private singleton backing field to test
+            // whether a manager exists WITHOUT touching the public Shared getter,
+            // which would lazily create a replacement GameObject mid scene-teardown.
+            AssertField("Effects.Decals.DecalCullingManager", "_shared", StaticNonPublic);
+        }
+
+        [Test]
+        public void SceneryAssetManager_LoadScenery_PublicInstanceMethod()
+        {
+            // FuseSceneryLoadFailurePatch postfixes this to watch for permanently
+            // failing scenery asset loads (pack bundle/catalog mismatch) and bubble
+            // them up to the health report.
+            AssertMethod("Helpers.SceneryAssetManager", "LoadScenery", InstancePublic);
+        }
+
+        [Test]
+        public void CullingManager_SceneryReconciliationSurface()
+        {
+            // The destination reconciliation reads the live token registry and
+            // postfixes the world-shift callback that vanilla uses to move spheres.
+            AssertField("Helpers.Culling.CullingManager", "_tokens", InstanceNonPublic);
+            AssertField("Helpers.Culling.CullingManager", "_cullingGroup", InstanceNonPublic);
+            AssertField("Helpers.Culling.CullingManager", "_spheres", InstanceNonPublic);
+            AssertField("Helpers.Culling.CullingManager", "_distances", InstanceNonPublic);
+            AssertField("Helpers.Culling.CullingManager", "_needsUpdate", InstanceNonPublic);
+            AssertMethod("Helpers.Culling.CullingManager", "OnWorldDidMove", InstanceNonPublic);
+        }
+
+        [Test]
+        public void FlareManager_HandleAddUpdateFlare_InstanceMethod()
+        {
+            // FuseFlareDeadTrackGuardPatch finalizes this to suppress (and surface
+            // via the load report) the Track.InvalidLocationException thrown when a
+            // saved flare stands on a segment a track mod has since removed. A
+            // rename detaches the guard and stale flares go back to silent
+            // observer-exception spam.
+            var method = RequireType("Game.FlareManager").GetMethod("HandleAddUpdateFlare", InstanceNonPublic);
+            Assert.NotNull(method,
+                "Game.FlareManager.HandleAddUpdateFlare not found — the stale-flare guard cannot bind.");
+
+            // The guard's Finalizer takes a 'key' parameter that Harmony binds to
+            // the original's argument strictly by name; a parameter rename would
+            // otherwise surface as a patch-apply failure at runtime, not in CI.
+            var hasKeyParameter = method.GetParameters()
+                .Any(parameter => parameter.Name == "key" && parameter.ParameterType == typeof(string));
+            Assert.IsTrue(hasKeyParameter,
+                "Game.FlareManager.HandleAddUpdateFlare has no string parameter named 'key' — " +
+                "FuseFlareDeadTrackGuardPatch.Finalizer's 'key' injection would fail to bind at patch time.");
+        }
+
+        [Test]
+        public void UrpDecalProjector_TypeResolvesByAssemblyQualifiedName()
+        {
+            // The scenery decal scrub disables URP DecalProjector components by
+            // resolving the type by name (URP is not a compile-time reference).
+            // A game/URP upgrade that renames the assembly must fail here, not
+            // silently leave scenery decals rendering uncontrolled.
+            Assert.NotNull(
+                Type.GetType("UnityEngine.Rendering.Universal.DecalProjector, Unity.RenderPipelines.Universal.Runtime"),
+                "UnityEngine.Rendering.Universal.DecalProjector no longer resolves by assembly-qualified name — " +
+                "the scenery decal scrub cannot disable projectors.");
         }
 
         // -----------------------------------------------------------------

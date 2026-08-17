@@ -2,6 +2,7 @@
 using FUSE.Infrastructure;
 using FUSE.Loading;
 using Newtonsoft.Json.Linq;
+using Railloader;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -18,7 +19,9 @@ namespace FUSE.Interface.MenuWindow
     {
         public static void Build(UIPanelBuilder builder, UIState<string> selectedItem)
         {
-            var manifests = FuseDataPackageDiscovery.GetPackageManifestSnapshots();
+            var manifests = MergeHostedLegacyPackageSnapshots(
+                FuseDataPackageDiscovery.GetPackageManifestSnapshots(),
+                FuseLegacyAssemblyHost.EnumerateAllHostedPlugins().Select(info => info.Manifest));
 
             List<UIPanelBuilder.ListItem<FusePackageManifestSnapshot>> list = manifests
                 .OrderBy(m => m.DisplayName)
@@ -29,6 +32,9 @@ namespace FUSE.Interface.MenuWindow
             {
                 if (manifest == null)
                 {
+                    // With nothing selected there is no visible legacy tab; a
+                    // previously selected mod's handler must not stay open.
+                    CloseAllLegacyModTabs("mods selection cleared");
                     builder.AddExpandingVerticalSpacer();
                     builder.AddLabelEmptyState(manifests.Count == 0 ? "No mods found through UMM." : "Select a mod");
                     builder.AddExpandingVerticalSpacer();
@@ -38,6 +44,74 @@ namespace FUSE.Interface.MenuWindow
                     builder.VScrollView(b => BuildModDetail(b, manifest));
                 }
             });
+        }
+
+        internal static IReadOnlyList<FusePackageManifestSnapshot> MergeHostedLegacyPackageSnapshots(
+            IEnumerable<FusePackageManifestSnapshot> dataPackageSnapshots,
+            IEnumerable<FuseLegacyAssemblyManifest> hostedLegacyManifests)
+        {
+            var manifests = (dataPackageSnapshots ?? Enumerable.Empty<FusePackageManifestSnapshot>())
+                .Where(manifest => manifest != null)
+                .ToList();
+            var knownFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var knownIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var manifest in manifests)
+            {
+                AddPackageIdentity(knownFolders, knownIds, manifest.FolderPath, manifest.Id);
+            }
+
+            foreach (var hosted in hostedLegacyManifests ?? Enumerable.Empty<FuseLegacyAssemblyManifest>())
+            {
+                if (hosted == null)
+                {
+                    continue;
+                }
+
+                var normalizedFolder = NormalizePath(hosted.FolderPath);
+                var folderName = normalizedFolder.Length == 0 ? string.Empty : Path.GetFileName(normalizedFolder);
+                var id = string.IsNullOrWhiteSpace(hosted.Id) ? folderName : hosted.Id.Trim();
+                if ((normalizedFolder.Length > 0 && knownFolders.Contains(normalizedFolder)) ||
+                    (id.Length > 0 && knownIds.Contains(id)) ||
+                    (normalizedFolder.Length == 0 && id.Length == 0))
+                {
+                    continue;
+                }
+
+                var folderPath = hosted.FolderPath ?? string.Empty;
+                manifests.Add(new FusePackageManifestSnapshot
+                {
+                    Order = manifests.Count + 1,
+                    Id = id,
+                    DisplayName = string.IsNullOrWhiteSpace(hosted.Name) ? id : hosted.Name.Trim(),
+                    Version = hosted.Version ?? string.Empty,
+                    FolderName = folderName,
+                    FolderPath = folderPath,
+                    IsLegacyHosted = true
+                });
+                AddPackageIdentity(knownFolders, knownIds, folderPath, id);
+            }
+
+            return manifests;
+        }
+
+        private static void AddPackageIdentity(
+            ISet<string> knownFolders,
+            ISet<string> knownIds,
+            string folderPath,
+            string id)
+        {
+            var normalizedFolder = NormalizePath(folderPath);
+            if (normalizedFolder.Length > 0)
+            {
+                knownFolders.Add(normalizedFolder);
+            }
+
+            var normalizedId = (id ?? string.Empty).Trim();
+            if (normalizedId.Length > 0)
+            {
+                knownIds.Add(normalizedId);
+            }
         }
 
         private static void BuildModDetail(UIPanelBuilder builder, FusePackageManifestSnapshot manifest)
@@ -82,6 +156,12 @@ namespace FUSE.Interface.MenuWindow
                 });
             });
 
+            BuildFuseDeclaredSettings(builder, definitions);
+            BuildLegacyModTabSection(builder, manifest);
+        }
+
+        private static void BuildFuseDeclaredSettings(UIPanelBuilder builder, FuseLoadedMod[] definitions)
+        {
             builder.AddSection("Mod Settings");
             if (definitions.Length == 0)
             {
@@ -119,6 +199,114 @@ namespace FUSE.Interface.MenuWindow
                         ? "This mod does not declare FUSE settings."
                         : "Only advanced settings are declared. Enable Advanced Details to show them.");
             }
+        }
+
+        // Tracks legacy IModTabHandler plugin instances whose settings tab is
+        // currently rendered in the Mods detail. Key is
+        // "{packageId}|{pluginTypeFullName}"; the plugin reference is held until
+        // we call ModTabDidClose on it. This honours the Railloader contract:
+        // ModTabDidOpen runs on every rebuild while the tab is visible, and
+        // ModTabDidClose runs exactly once when the tab stops being visible —
+        // plugins like NotEnoughRosters persist their settings from that hook.
+        private static readonly Dictionary<string, IModTabHandler> _openLegacyTabHandlers =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        internal static bool HasOpenLegacyModTabs => _openLegacyTabHandlers.Count > 0;
+
+        /// <summary>
+        /// Renders the selected mod's legacy Railloader settings tab(s), if any
+        /// of its hosted plugins declare one, and closes handlers that belonged
+        /// to a previously selected mod. <see cref="FuseMenuWindow"/> closes the
+        /// remainder when the Mods detail stops being visible entirely.
+        /// </summary>
+        private static void BuildLegacyModTabSection(UIPanelBuilder builder, FusePackageManifestSnapshot manifest)
+        {
+            var handlers = FuseLegacyAssemblyHost
+                .EnumerateHostedPlugins(manifest.FolderPath, manifest.Id)
+                .Where(info => info.Plugin is IModTabHandler)
+                .OrderBy(info => info.PluginType?.FullName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            // Selecting a different mod is a navigate-away for whatever was open.
+            var keepSignatures = new HashSet<string>(
+                handlers.Select(info => BuildLegacyTabHandlerSignature(info.Manifest, info.PluginType)),
+                StringComparer.OrdinalIgnoreCase);
+            CloseLegacyModTabsExcept(keepSignatures, "mods selection changed");
+
+            if (handlers.Length == 0)
+            {
+                return;
+            }
+
+            builder.AddSection("Legacy Settings");
+            foreach (var info in handlers)
+            {
+                if (handlers.Length > 1)
+                {
+                    builder.AddLabel(info.PluginType?.Name ?? "(unnamed plugin)");
+                }
+
+                var handler = (IModTabHandler)info.Plugin;
+                _openLegacyTabHandlers[BuildLegacyTabHandlerSignature(info.Manifest, info.PluginType)] = handler;
+                try
+                {
+                    handler.ModTabDidOpen(builder);
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception(
+                        $"Legacy plugin '{info.PluginType?.FullName}' threw from ModTabDidOpen while FUSE was rendering its settings tab",
+                        ex);
+                    builder.AddField("Plugin Error",
+                        $"{info.PluginType?.Name ?? "(unnamed plugin)"} threw {ex.GetType().Name} from ModTabDidOpen: {ex.GetBaseException().Message}");
+                }
+            }
+        }
+
+        internal static void CloseAllLegacyModTabs(string reason)
+        {
+            CloseLegacyModTabsExcept(null, reason);
+        }
+
+        /// <summary>
+        /// Calls ModTabDidClose on any tracked handler whose signature is NOT in
+        /// <paramref name="keepSignatures"/>, and forgets it. Exceptions are
+        /// logged but never bubble — a misbehaving plugin must not break FUSE's
+        /// UI teardown.
+        /// </summary>
+        private static void CloseLegacyModTabsExcept(HashSet<string> keepSignatures, string reason)
+        {
+            if (_openLegacyTabHandlers.Count == 0)
+            {
+                return;
+            }
+
+            var toClose = _openLegacyTabHandlers
+                .Where(pair => keepSignatures == null || !keepSignatures.Contains(pair.Key))
+                .ToArray();
+            foreach (var entry in toClose)
+            {
+                _openLegacyTabHandlers.Remove(entry.Key);
+                try
+                {
+                    entry.Value?.ModTabDidClose();
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception(
+                        $"Legacy plugin handler '{entry.Key}' threw from ModTabDidClose ({reason})",
+                        ex);
+                }
+            }
+        }
+
+        private static string BuildLegacyTabHandlerSignature(FuseLegacyAssemblyManifest manifest, Type pluginType)
+        {
+            var packageKey = manifest == null
+                ? string.Empty
+                : (manifest.Id ?? manifest.FolderPath ?? string.Empty);
+            var typeKey = pluginType == null ? string.Empty : (pluginType.FullName ?? pluginType.Name ?? string.Empty);
+            return packageKey + "|" + typeKey;
         }
 
         private static FuseLoadedMod[] GetLoadedDefinitionsForPackage(FusePackageManifestSnapshot manifest)
@@ -162,7 +350,20 @@ namespace FUSE.Interface.MenuWindow
 
         private static string NormalizePath(string value)
         {
-            return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return Path.GetFullPath(value.Trim())
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch
+            {
+                return value.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
         }
 
         private static string BuildSelectedPackageReport(FusePackageManifestSnapshot manifest, IReadOnlyList<FuseLoadedMod> definitions)
@@ -221,7 +422,7 @@ namespace FUSE.Interface.MenuWindow
                 return manifest.Faults.Length + " fault(s)";
             }
 
-            return manifest.IsLegacyConverted ? "ready | legacy" : "ready";
+            return manifest.IsLegacyConverted || manifest.IsLegacyHosted ? "ready | legacy" : "ready";
         }
 
         private static string PackageStatusTextMarkup(FusePackageManifestSnapshot manifest)
@@ -241,7 +442,7 @@ namespace FUSE.Interface.MenuWindow
                 return "<color=\"red\">Error: " + manifest.Faults.Length + " fault(s)";
             }
 
-            return manifest.IsLegacyConverted
+            return manifest.IsLegacyConverted || manifest.IsLegacyHosted
                 ? "<color=\"green\">Ready</color> - Legacy"
                 : "<color=\"green\"Ready";
         }

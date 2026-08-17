@@ -1,0 +1,27 @@
+{
+  "identifier": "WoodShed",
+  "name": "Wood Shed",
+  "shared": false,
+  "assets": {
+    "wood-shed": {
+      "name": "wood-shed",
+      "type": "prefab",
+      "filename": "wood-shed.prefab"
+    },
+    "Wood Fuel Shed": {
+      "name": "Wood Fuel Shed",
+      "type": "prefab",
+      "filename": "wood-shed.prefab"
+    },
+    "Wood Shed": {
+      "name": "Wood Shed",
+      "type": "prefab",
+      "filename": "wood-shed.prefab"
+    },
+    "wood_fuel_shedp": {
+      "name": "wood_fuel_shedp",
+      "type": "prefab",
+      "filename": "wood-shed.prefab"
+    }
+  }
+}

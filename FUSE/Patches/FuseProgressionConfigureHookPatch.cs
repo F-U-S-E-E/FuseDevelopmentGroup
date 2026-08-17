@@ -71,4 +71,50 @@ namespace FUSE.Patches
             }
         }
     }
+
+    /// <summary>
+    /// The sandbox-side counterpart of <see cref="FuseProgressionConfigureHookPatch"/>.
+    ///
+    /// The game decides once per load — inside ProgressionManager's
+    /// properties-restore handler — whether a Progression gets configured at
+    /// all. Sandbox saves discard their progression blob ("Game is sandbox but
+    /// has progression … Ignoring.") and take the "No progression specified."
+    /// branch; a company save whose progression id resolves to nothing ends up
+    /// the same way. On those loads <c>Progression.Configure</c> NEVER runs, so
+    /// a FUSE refresh parked on the Configure postfix waits forever — observed
+    /// in the field as a whole sandbox session where the transiently
+    /// pre-enabled track groups were never re-finalized (orphan mod sidings
+    /// stayed player-routable) and live-reference rebinding never ran.
+    ///
+    /// This postfix fires when that restore handler returns. By then the
+    /// save's GameMode has been deserialized (the handler runs after the
+    /// snapshot's properties are restored), so <c>StateManager.IsSandbox</c>
+    /// carries the same trust Configure gives on company loads. If the handler
+    /// finished WITHOUT configuring a current progression, we notify
+    /// ProgressionAPI to replay any parked refresh under the reduced
+    /// no-progression profile. When Configure DID run, its own postfix (which
+    /// fires first, from inside the same handler) has already notified, and
+    /// both the current-progression check here and the configured-flag check
+    /// inside the notify keep this hook from demoting that.
+    /// </summary>
+    [HarmonyPatch(typeof(ProgressionManager), "OnEnableWithProperties")]
+    internal static class FuseProgressionManagerNoProgressionHookPatch
+    {
+        private static void Postfix(ProgressionManager __instance)
+        {
+            try
+            {
+                if (FUSE.Runtime.API.ProgressionAPI.HasConfiguredCurrentProgression(__instance))
+                {
+                    return;
+                }
+
+                FUSE.Runtime.API.ProgressionAPI.NotifyGameProgressionSettledWithoutProgression();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE progression no-progression settle postfix failed", ex);
+            }
+        }
+    }
 }

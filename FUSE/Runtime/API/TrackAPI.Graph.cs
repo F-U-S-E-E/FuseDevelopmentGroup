@@ -179,10 +179,13 @@ namespace FUSE.Runtime.API
                 // alone is not a suppression signal.
 
                 disabled++;
-                FuseLog.Info(
-                    $"FUSE disabled invalid TrackMarker operation='track marker cleanup' " +
-                    $"id='{marker.id ?? string.Empty}' name='{marker.name ?? string.Empty}' " +
-                    $"reason='{reason ?? "unspecified"}' (marker behaviour disabled; GameObject kept active so attached scenery animators still work).");
+                if (FuseSettings.VerboseApplyReportDetails)
+                {
+                    FuseLog.Info(
+                        $"FUSE disabled invalid TrackMarker operation='track marker cleanup' " +
+                        $"id='{marker.id ?? string.Empty}' name='{marker.name ?? string.Empty}' " +
+                        $"reason='{reason ?? "unspecified"}' (marker behaviour disabled; GameObject kept active so attached scenery animators still work).");
+                }
             }
 
             if (disabled > 0)
@@ -483,9 +486,12 @@ namespace FUSE.Runtime.API
             }
 
             RequestRebuild();
-            FuseLog.Warning(
-                $"FUSE removed TrackSpan operation='{operation ?? "track span cleanup"}' " +
-                $"id='{id}' name='{displayName}' reason='{reason ?? "unspecified"}' detail='{detail ?? string.Empty}'.");
+            if (FuseSettings.VerboseApplyReportDetails)
+            {
+                FuseLog.Warning(
+                    $"FUSE removed TrackSpan operation='{operation ?? "track span cleanup"}' " +
+                    $"id='{id}' name='{displayName}' reason='{reason ?? "unspecified"}' detail='{detail ?? string.Empty}'.");
+            }
         }
 
         private static bool IsTrackSpanRuntimeUsable(TrackSpan span, out string detail)

@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # This lane only builds and publishes release assets (via the
           # GITHUB_TOKEN env the release action receives directly); nothing
@@ -33,12 +33,18 @@ jobs:
           persist-credentials: false
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
+        env:
+          # See the matching note in ci.yml: the default install root is not
+          # writable by the self-hosted runner service account, so pin the SDK
+          # install to the runner-owned tool cache. Without this the release
+          # lane fails at SDK setup before it ever builds an artifact.
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
 
       - name: Setup Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
@@ -59,21 +65,42 @@ jobs:
           $version = $Matches.version
           "version=$version" >> $env:GITHUB_OUTPUT
 
-          # Treat anything in the 0.x series or with a pre-release suffix as a
-          # GitHub pre-release. FUSE is still in beta so 0.10.0 ships as a
-          # pre-release until a 1.0.0 GA tag.
-          if ($version -match '^0\.' -or $version -match '-') {
+          # Release candidates publish as FULL releases, not GitHub prereleases.
+          # GitHub defines the "Latest" badge and /releases/latest as the newest
+          # non-draft, non-prerelease release, so a tag flagged prerelease can
+          # never hold it — and we want testers landing on the repo front page
+          # to get the current RC. Plain x.y.z tags publish as full releases for
+          # the same reason (when everything is a prerelease GitHub hides the
+          # Latest card entirely and shows only a bare tag count).
+          #
+          # Any OTHER prerelease suffix (-beta.2, -alpha.1) still publishes as a
+          # GitHub prerelease. Both -rc.1 and -rc2 spellings are accepted.
+          #
+          # Note this does not affect the source FUSE/Info.json, which stays
+          # pinned at 0.0.0 so an unstamped local build is recognizable as such
+          # in UMM. See Directory.Build.targets.
+          if (($version -match '-') -and ($version -notmatch '-rc\.?[0-9]+$')) {
             "is_prerelease=true" >> $env:GITHUB_OUTPUT
           }
           else {
             "is_prerelease=false" >> $env:GITHUB_OUTPUT
           }
 
+          # Separate from is_prerelease on purpose. Since RCs now publish as full
+          # GitHub releases, is_prerelease is false for them, and gating Nexus on
+          # it would push every release candidate to the public mod page. is_ga is
+          # true only for a plain x.y.z tag, so Nexus only ever sees stable
+          # releases.
+          if ($version -match '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            "is_ga=true" >> $env:GITHUB_OUTPUT
+          }
+          else {
+            "is_ga=false" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Build FUSE mod (Release)
         shell: powershell
-        # Build FUSE.Editor.csproj: it ProjectReferences FUSE.csproj, so
-        # MSBuild builds FUSE.dll first and FUSE.Editor.dll second.
-        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Release -p:ModVersion=${{ steps.version.outputs.version }}
+        run: dotnet build FUSE/FUSE.csproj -c Release -p:ModVersion=${{ steps.version.outputs.version }}
 
       - name: Package UMM mod zip
         id: package
@@ -97,14 +124,6 @@ jobs:
           # rewrite is what ships.
           Copy-Item "FUSE\bin\Release\net48\FUSE.dll" $modFolder
           Copy-Item "FUSE\bin\Release\net48\Info.json" $modFolder
-          # FUSE.Editor.dll ships side-by-side with FUSE.dll; FUSE loads it
-          # lazily from this folder via Assembly.LoadFrom after UMM boots.
-          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Editor.dll" $modFolder
-          # FUSE.Converter.dll is referenced by the editor's Convert
-          # button. Project-reference flows it to FUSE.Editor's output
-          # naturally; the release step explicitly copies it so the
-          # release zip is self-contained.
-          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Converter.dll" $modFolder
 
           # Schemas are referenced by FUSE.csproj and copied into bin. We re-copy
           # from source to avoid picking up any stale files left over in bin
@@ -112,6 +131,10 @@ jobs:
           Copy-Item -Recurse "schemas" $modFolder
 
           Copy-Item "tools\assets\fuse_converter_icon.png" (Join-Path $modFolder 'assets\fuse_icon.png')
+
+          # FUSE ships under the AGPL-3.0, which requires conveying the license
+          # text with the binary. Validate-ModPackage.cs enforces its presence.
+          Copy-Item "LICENSE" $modFolder
 
           if (Test-Path $archivePath) {
             Remove-Item $archivePath -Force
@@ -142,11 +165,26 @@ jobs:
           $ummDir = (dotnet msbuild FUSE/FUSE.csproj -getProperty:UnityModManagerDir -nologo 2>$null | Select-Object -Last 1)
           if ($ummDir) { $ummDir = $ummDir.Trim() }
           Write-Host "UnityModManager reference dir: $ummDir"
+          # `dotnet run <file>.cs` caches the compiled file-based app under
+          # %TEMP%\dotnet\runfile, in a directory keyed by the script's PATH rather
+          # than its contents. On this long-lived self-hosted runner that path never
+          # changes, and the up-to-date check failed to notice the edited script:
+          # every mod-v1.0.0-rc.* dry run rejected the newly-shipped LICENSE using a
+          # cached build of the validator's own pre-LICENSE allow-list, and --no-cache
+          # alone did not defeat it. Purging the cache is what forces a cold build.
+          # A release gate that silently validates stale code is worse than none.
+          $runfileCache = Join-Path $env:TEMP 'dotnet\runfile'
+          if (Test-Path $runfileCache) {
+            Write-Host "Purging file-based app cache: $runfileCache"
+            Remove-Item $runfileCache -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Write-Host "validator sha256: $((Get-FileHash 'scripts/Validate-ModPackage.cs' -Algorithm SHA256).Hash)"
+
           if ($ummDir -and (Test-Path $ummDir)) {
-            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
+            dotnet run --no-cache scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
           } else {
             Write-Host "UnityModManagerDir unresolved; falling back to validator env-based resolution."
-            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION"
+            dotnet run --no-cache scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION"
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -170,6 +208,8 @@ jobs:
           # FUSE.Core.dll is a runtime dependency of the bridge (ProjectReference); ship it too.
           Copy-Item "FUSE.LiveBridge\bin\Release\net48\FUSE.Core.dll" $modFolder
           Copy-Item "FUSE.LiveBridge\bin\Release\net48\Info.json" $modFolder
+          # Same AGPL conveyance requirement as the main mod zip.
+          Copy-Item "LICENSE" $modFolder
           $zip = "FUSE.LiveBridge-v$version.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path $modFolder -DestinationPath $zip -CompressionLevel Optimal
@@ -188,27 +228,82 @@ jobs:
       - name: Build FUSEConvertFolder.pyz
         run: python tools/build_folder_converter_pyz.py
 
+      # Everything in one download, for GitHub only. Nexus deliberately receives
+      # just the core mod zip (see the Nexus step at the bottom): a player there
+      # needs FUSE.dll and nothing else, and a Files tab listing a converter, an
+      # installer, a folder-converter and a dev bridge is exactly the confusion
+      # we are avoiding. This bundle serves package authors who want the whole
+      # toolchain in one file.
+      - name: Package complete bundle zip
+        id: bundle
+        shell: powershell
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $stagingRoot = Join-Path $PWD "staging-complete"
+          $archiveName = "FUSE-Complete-v$version.zip"
+          $archivePath = Join-Path $PWD $archiveName
+
+          if (Test-Path $stagingRoot) { Remove-Item $stagingRoot -Recurse -Force }
+          $modsDir  = New-Item -ItemType Directory -Path (Join-Path $stagingRoot 'Mods') -Force
+          $toolsDir = New-Item -ItemType Directory -Path (Join-Path $stagingRoot 'Tools') -Force
+
+          # Reuse the exact staging folders the two mod zips were built from, so
+          # the bundle can never drift from the individually published zips.
+          Copy-Item -Recurse "staging\FUSE" $modsDir.FullName
+          Copy-Item -Recurse "staging-livebridge\FUSE.LiveBridge" $modsDir.FullName
+
+          Copy-Item "dist\FUSE-Converter.exe" $toolsDir.FullName
+          Copy-Item "dist\FUSE-Installer.exe" $toolsDir.FullName
+          Copy-Item "dist\FUSEConvertFolder.pyz" $toolsDir.FullName
+
+          Copy-Item "LICENSE" $stagingRoot
+          Copy-Item "docs\INSTALL.md" $stagingRoot
+
+          if (Test-Path $archivePath) { Remove-Item $archivePath -Force }
+          # Zip the CONTENTS so Mods/ sits at the archive root, which is the
+          # multi-package layout FUSE-Installer.exe already understands.
+          Compress-Archive -Path (Join-Path $stagingRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal
+
+          "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
+          "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
+
       - name: Create GitHub release
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ github.ref_name }}
           name: FUSE v${{ steps.version.outputs.version }}
           prerelease: ${{ steps.version.outputs.is_prerelease }}
           generate_release_notes: true
+          # GitHub gets both: the same core-only zip Nexus receives, plus the
+          # complete bundle and the individual tools.
           files: |
             ${{ steps.package.outputs.archive_path }}
+            ${{ steps.bundle.outputs.archive_path }}
             dist/FUSE-Converter.exe
             dist/FUSE-Installer.exe
             dist/FUSEConvertFolder.pyz
             FUSE.LiveBridge-v${{ steps.version.outputs.version }}.zip
 
-      # Uploads the same archive to the mod's Nexus Mods page.
+      # Uploads ONLY the core mod zip to the mod's Nexus Mods page — deliberately
+      # not the complete bundle, the tools, or the Live Bridge. Players installing
+      # from Nexus need exactly one file; keep the Files tab that way.
+      #
+      # GA tags only. Release candidates publish as full GitHub releases, so
+      # is_prerelease is false for them and gating on it would push every RC to
+      # the public mod page (and archive_existing_file below would churn the
+      # previous file each time). Nexus tracks stable releases only.
+      #
       # Skipped automatically until the repo variable NEXUS_FILE_GROUP_ID is set.
       # Requires:
-      #   - secret  NEXUSMODS_API_KEY    (https://www.nexusmods.com/settings/api-keys)
       #   - variable NEXUS_FILE_GROUP_ID (from "API Info" on the mod's Files tab)
+      #   - secret  NEXUSMODS_API_KEY    (https://www.nexusmods.com/settings/api-keys)
+      # The secret is NOT checked in this condition: `secrets` is not an
+      # available context in a step-level `if`, and referencing it there is a
+      # parse error that breaks the whole workflow. With the variable set but the
+      # key missing, this step fails auth and fails the release job after the
+      # GitHub release has already been published — so set both together.
       - name: Upload to Nexus Mods
-        if: ${{ vars.NEXUS_FILE_GROUP_ID != '' }}
+        if: ${{ vars.NEXUS_FILE_GROUP_ID != '' && steps.version.outputs.is_ga == 'true' }}
         uses: Nexus-Mods/upload-action@0bf670d75d46988c176c9bfacc94ca0144e0fe3f # v1.0.0-beta.7
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}

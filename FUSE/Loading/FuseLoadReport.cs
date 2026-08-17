@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using FUSE.Authoring.Data;
@@ -18,6 +19,8 @@ namespace FUSE.Loading
         private static readonly List<string> Notices = new List<string>();
         private static readonly List<string> GraphPostBindIssues = new List<string>();
         private static readonly List<string> ProgressionTransferSkips = new List<string>();
+        private static readonly Dictionary<string, SceneryLoadFailure> SceneryLoadFailures =
+            new Dictionary<string, SceneryLoadFailure>(StringComparer.OrdinalIgnoreCase);
 
         private static string _lastSummary = "FUSE load report has not been generated yet.";
         private static string _lastDetails = "FUSE load report has not been generated yet.";
@@ -72,6 +75,7 @@ namespace FUSE.Loading
                 Notices.Clear();
                 GraphPostBindIssues.Clear();
                 ProgressionTransferSkips.Clear();
+                SceneryLoadFailures.Clear();
                 _lastSummary = "FUSE load report is pending.";
                 _lastDetails = "FUSE load report is pending.";
                 _lastJson = "{ \"status\": \"FUSE load report is pending.\" }";
@@ -97,6 +101,34 @@ namespace FUSE.Loading
                     normalizedSceneryId,
                     assetIdentifier ?? string.Empty,
                     model ?? string.Empty);
+            }
+        }
+
+        /// <summary>
+        /// Records a scenery asset whose runtime load faulted (e.g. the asset is
+        /// listed in a pack's catalog but missing from its bundle — the game keeps
+        /// retrying such loads on every culling-band transition without ever telling
+        /// the user which pack is broken). Deduped per asset identifier; returns true
+        /// only for the first record so the caller can decide about an immediate
+        /// alert. Surfaces via the health report the next time it renders — the
+        /// report re-snapshots on demand, so post-load recording needs no republish.
+        /// </summary>
+        public static bool RecordSceneryLoadFailure(string assetIdentifier, string assetPackIdentifier, string ownerPackageId, string message)
+        {
+            var key = Normalize(assetIdentifier, "<unknown>");
+            lock (Sync)
+            {
+                if (SceneryLoadFailures.ContainsKey(key))
+                {
+                    return false;
+                }
+
+                SceneryLoadFailures[key] = new SceneryLoadFailure(
+                    key,
+                    Normalize(assetPackIdentifier, "<unknown>"),
+                    Normalize(ownerPackageId, "<unknown>"),
+                    Normalize(message, "asset load failed"));
+                return true;
             }
         }
 
@@ -322,10 +354,17 @@ namespace FUSE.Loading
 
         private static ReportSnapshot CaptureSnapshot(string reason, int loadedFromDiskThisPass, int appliedToRuntimeThisPass)
         {
+            // Stops may have been refreshed since the last validation pass (graph
+            // rebuilds re-run every FUSE stop); revalidate before reading the
+            // post-bind issue registry so on-demand report renders stay current.
+            // No-ops unless a refresh marked the validator dirty.
+            FUSE.Runtime.API.FusePassengerStopValidation.RunIfDirty(reason ?? "report snapshot");
+
             UnknownSceneryAsset[] unknownScenery;
             string[] notices;
             string[] graphPostBindIssues;
             string[] progressionTransferSkips;
+            SceneryLoadFailure[] sceneryLoadFailures;
             lock (Sync)
             {
                 unknownScenery = UnknownSceneryAssets.Values
@@ -335,7 +374,19 @@ namespace FUSE.Loading
                 notices = Notices.ToArray();
                 graphPostBindIssues = GraphPostBindIssues.ToArray();
                 progressionTransferSkips = ProgressionTransferSkips.ToArray();
+                sceneryLoadFailures = SceneryLoadFailures.Values
+                    .OrderBy(item => item.AssetPackIdentifier, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(item => item.AssetIdentifier, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
             }
+
+            // Catalog inspection failures live with the asset-pack mount state (built
+            // lazily once per mount, so a later map load in the same session would
+            // otherwise lose them when Notices is cleared) — fold them in per snapshot.
+            notices = notices
+                .Concat(FuseAssetPackRegistry.GetCatalogInspectionFailures())
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
 
             var sceneSuppressions = FuseWorldSuppressor.GetActiveScenePathSuppressions().ToArray();
             var trackGroupSuppressions = FuseWorldSuppressor.GetActiveTrackGroupSuppressions().ToArray();
@@ -349,6 +400,16 @@ namespace FUSE.Loading
             var conflicts = FuseRegistry.Conflicts.ToArray();
             var legacyConvertedPackageIds = FuseDataPackageDiscovery.GetLegacyConvertedPackageIds().ToArray();
             var orphanedCars = FuseSaveCarFaultRegistry.GetAll().ToArray();
+
+            // Session-cumulative third-party exception observations. One
+            // atomic capture (rows + totals under the registry's lock) so the
+            // summary line, details section, JSON block, and HasProblems all
+            // describe the same instant even while the log hook keeps
+            // recording on other threads.
+            var modExceptionState = FuseModExceptionRegistry.CaptureReportState();
+            var modExceptions = modExceptionState.Mods;
+            var modExceptionTotal = modExceptionState.Total;
+            var modExceptionUnattributed = modExceptionState.Unattributed;
 
             return new ReportSnapshot
             {
@@ -370,7 +431,11 @@ namespace FUSE.Loading
                 GraphPostBindIssues = graphPostBindIssues,
                 ProgressionTransferSkips = progressionTransferSkips,
                 Notices = notices,
-                OrphanedCars = orphanedCars
+                SceneryLoadFailures = sceneryLoadFailures,
+                OrphanedCars = orphanedCars,
+                ModExceptions = modExceptions,
+                ModExceptionTotal = modExceptionTotal,
+                ModExceptionUnattributed = modExceptionUnattributed
             };
         }
 
@@ -385,8 +450,10 @@ namespace FUSE.Loading
             return
                 $"FUSE: {loadedCount} loaded | faults {snapshot.FaultedPackageCount} | " +
                 $"conflicts {snapshot.Conflicts.Length} | assets {snapshot.UnknownSceneryAssets.Length} | " +
+                $"brokenAssets {snapshot.SceneryLoadFailureCount} | " +
                 $"graph {snapshot.GraphPostBindIssues.Length} | transfers {snapshot.ProgressionTransferSkips.Length} | " +
-                $"suppressions {suppressionCount} | orphans {snapshot.OrphanedCarCount} | /fuse.report";
+                $"suppressions {suppressionCount} | orphans {snapshot.OrphanedCarCount} | " +
+                $"modErrors {snapshot.ModExceptionTotal} | /fuse.report";
         }
 
         private static string BuildDetails(ReportSnapshot snapshot, string summary)
@@ -421,6 +488,13 @@ namespace FUSE.Loading
 
             sb.AppendLine($"Conflicts recorded: {snapshot.Conflicts.Length} (details: /fuse.conflicts).");
 
+            // Live session counters, not part of the load snapshot: every guard FUSE
+            // keeps around broken content, so a pasted report answers "did the guards
+            // fire?" without the reporter having to open the Health window at all.
+            sb.AppendLine("Runtime guards (session): " + FuseRuntimeGuardCounters.FormatSummary() + ".");
+
+            AppendModExceptions(sb, snapshot);
+
             sb.AppendLine(
                 $"Suppressions active: scenePaths={snapshot.SceneSuppressions.Length}; " +
                 $"trackGroups={snapshot.TrackGroupSuppressions.Length}; areas={snapshot.AreaSuppressions.Length}.");
@@ -443,6 +517,17 @@ namespace FUSE.Loading
             AppendList(sb, "Progression transfer skips", snapshot.ProgressionTransferSkips);
             AppendList(sb, "Notices", snapshot.Notices);
 
+            if (snapshot.SceneryLoadFailureCount > 0)
+            {
+                sb.AppendLine("Scenery assets failing to load at runtime (pack bundle/catalog mismatch):");
+                foreach (var item in snapshot.SceneryLoadFailures)
+                {
+                    sb.AppendLine(
+                        $"  {item.AssetIdentifier}: pack='{item.AssetPackIdentifier}' " +
+                        $"package='{item.OwnerPackageId}' reason='{item.Message}'");
+                }
+            }
+
             if (snapshot.OrphanedCarCount > 0)
             {
                 sb.AppendLine($"Orphaned cars (save references prototype FUSE filtered or game cannot resolve): {snapshot.OrphanedCarCount}");
@@ -455,6 +540,52 @@ namespace FUSE.Loading
             }
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Renders the session-cumulative third-party exception observations
+        /// (see <see cref="FuseModExceptionRegistry"/>). One row per mod,
+        /// worst first — the row itself answers "which mod, how often, since
+        /// when, what kind" so a pasted report needs no log spelunking.
+        /// Omitted entirely while the registry is idle.
+        /// </summary>
+        private static void AppendModExceptions(StringBuilder sb, ReportSnapshot snapshot)
+        {
+            // The registry's snapshot already carries the "(unattributed)" and
+            // "(other mods)" sentinel buckets as records of their own, so the
+            // per-record rows below are the complete story — no separate
+            // unattributed footer, or the bucket would be mentioned twice.
+            var records = snapshot.ModExceptions ?? Array.Empty<FuseModExceptionSnapshot>();
+            if (records.Length == 0)
+            {
+                return;
+            }
+
+            sb.AppendLine("Third-party mod exceptions observed this session:");
+            foreach (var record in records.OrderByDescending(item => item.Count))
+            {
+                var signatures = record.Signatures;
+                var signatureCount = signatures == null ? 0 : signatures.Length;
+                var display = string.IsNullOrWhiteSpace(record.DisplayName) ? record.ModId : record.DisplayName;
+                var line =
+                    $"  {display}: {record.Count} exception(s) over {record.Episodes} episode(s), " +
+                    $"{signatureCount} signature(s), " +
+                    $"first {FormatSessionTime(record.FirstSeenUtc)} last {FormatSessionTime(record.LastSeenUtc)}";
+                if (signatureCount > 0)
+                {
+                    var top = signatures.OrderByDescending(item => item.Count).First();
+                    line += $" — top: {top.ExceptionType} @ {top.TopOwnedFrame}";
+                }
+
+                sb.AppendLine(line);
+            }
+        }
+
+        private static string FormatSessionTime(DateTime timestampUtc)
+        {
+            // Sortable date + explicit UTC marker: a session spanning midnight
+            // must not render a later event as an earlier time-of-day.
+            return timestampUtc.ToString("u", CultureInfo.InvariantCulture);
         }
 
         private static string BuildJson(ReportSnapshot snapshot, string summary)
@@ -486,6 +617,7 @@ namespace FUSE.Loading
                     ["progressionTransferSkips"] = snapshot.ProgressionTransferSkips.Length,
                     ["suppressions"] = suppressionCount,
                     ["notices"] = snapshot.Notices.Length,
+                    ["sceneryLoadFailures"] = snapshot.SceneryLoadFailureCount,
                     ["orphanedCars"] = snapshot.OrphanedCarCount
                 },
                 ["packages"] = new JObject
@@ -511,6 +643,25 @@ namespace FUSE.Loading
                     ["attemptedPackageId"] = conflict.AttemptedPackageId ?? string.Empty,
                     ["resolution"] = conflict.Resolution ?? string.Empty
                 })),
+                // Live session counters (see BuildDetails); intentionally outside
+                // "counts" so they do not read as load-snapshot state.
+                ["runtimeGuards"] = new JObject
+                {
+                    ["guardTotal"] = FuseRuntimeGuardCounters.GuardTotal,
+                    ["decalRegistryScrubbed"] = FuseRuntimeGuardCounters.DecalRegistryScrubbed,
+                    ["decalVisibilitySuppressed"] = FuseRuntimeGuardCounters.DecalVisibilitySuppressed,
+                    ["decalHelperEnableSuppressed"] = FuseRuntimeGuardCounters.DecalHelperEnableSuppressed,
+                    ["decalHelperDisableSuppressed"] = FuseRuntimeGuardCounters.DecalHelperDisableSuppressed,
+                    ["curveMeshSuppressed"] = FuseRuntimeGuardCounters.CurveMeshSuppressed,
+                    ["sceneryCarDecalsDisabled"] = FuseRuntimeGuardCounters.SceneryDecalComponentsDisabled,
+                    ["sceneryLoadFailures"] = FuseRuntimeGuardCounters.SceneryLoadFailures,
+                    ["flaresSuppressed"] = FuseRuntimeGuardCounters.FlareSuppressed,
+                    ["frameSpikes"] = FuseRuntimeGuardCounters.FrameSpikes,
+                    ["frameSpikeWorstMs"] = FuseRuntimeGuardCounters.FrameSpikeWorstMs
+                },
+                // Session-cumulative like runtimeGuards above, sourced from the
+                // third-party exception registry snapshot taken with this capture.
+                ["modExceptions"] = BuildModExceptionsJson(snapshot),
                 ["suppressions"] = new JObject
                 {
                     ["scenePaths"] = ToArray(snapshot.SceneSuppressions),
@@ -527,6 +678,13 @@ namespace FUSE.Loading
                 ["graphPostBindIssues"] = ToArray(snapshot.GraphPostBindIssues),
                 ["progressionTransferSkips"] = ToArray(snapshot.ProgressionTransferSkips),
                 ["notices"] = ToArray(snapshot.Notices),
+                ["sceneryLoadFailures"] = new JArray((snapshot.SceneryLoadFailures ?? Array.Empty<SceneryLoadFailure>()).Select(item => new JObject
+                {
+                    ["assetIdentifier"] = item.AssetIdentifier ?? string.Empty,
+                    ["assetPackIdentifier"] = item.AssetPackIdentifier ?? string.Empty,
+                    ["ownerPackageId"] = item.OwnerPackageId ?? string.Empty,
+                    ["message"] = item.Message ?? string.Empty
+                })),
                 ["orphanedCars"] = new JArray((snapshot.OrphanedCars ?? Array.Empty<FuseSaveCarFault>()).Select(fault => new JObject
                 {
                     ["carId"] = fault.CarId ?? string.Empty,
@@ -542,6 +700,48 @@ namespace FUSE.Loading
             };
 
             return root.ToString(Newtonsoft.Json.Formatting.Indented);
+        }
+
+        private static JObject BuildModExceptionsJson(ReportSnapshot snapshot)
+        {
+            var records = snapshot.ModExceptions ?? Array.Empty<FuseModExceptionSnapshot>();
+            var mods = new JArray();
+            foreach (var record in records.OrderByDescending(item => item.Count))
+            {
+                var signatures = new JArray();
+                if (record.Signatures != null)
+                {
+                    foreach (var signature in record.Signatures.OrderByDescending(item => item.Count))
+                    {
+                        signatures.Add(new JObject
+                        {
+                            ["type"] = signature.ExceptionType ?? string.Empty,
+                            ["frame"] = signature.TopOwnedFrame ?? string.Empty,
+                            ["count"] = signature.Count,
+                            ["episodes"] = signature.Episodes,
+                            ["source"] = $"{signature.Source}"
+                        });
+                    }
+                }
+
+                mods.Add(new JObject
+                {
+                    ["modId"] = record.ModId ?? string.Empty,
+                    ["displayName"] = record.DisplayName ?? string.Empty,
+                    ["count"] = record.Count,
+                    ["episodes"] = record.Episodes,
+                    ["firstSeen"] = record.FirstSeenUtc.ToString("o", CultureInfo.InvariantCulture),
+                    ["lastSeen"] = record.LastSeenUtc.ToString("o", CultureInfo.InvariantCulture),
+                    ["signatures"] = signatures
+                });
+            }
+
+            return new JObject
+            {
+                ["total"] = snapshot.ModExceptionTotal,
+                ["unattributed"] = snapshot.ModExceptionUnattributed,
+                ["mods"] = mods
+            };
         }
 
         private static void AppendList(StringBuilder sb, string label, IEnumerable<string> values)
@@ -576,6 +776,14 @@ namespace FUSE.Loading
             }
         }
 
+        // Test seams (InternalsVisibleTo): the string/JSON builders stay
+        // private because production callers must come through the capture
+        // pipeline; tests exercise the composition against a hand-built
+        // snapshot without touching the live registries CaptureSnapshot reads.
+        internal static string BuildSummaryForTests(ReportSnapshot snapshot) => BuildSummary(snapshot);
+        internal static string BuildDetailsForTests(ReportSnapshot snapshot) => BuildDetails(snapshot, BuildSummary(snapshot));
+        internal static string BuildJsonForTests(ReportSnapshot snapshot) => BuildJson(snapshot, BuildSummary(snapshot));
+
         private static void PresentToast(string summary, bool hasProblems)
         {
             try
@@ -609,6 +817,22 @@ namespace FUSE.Loading
             public string Model { get; }
         }
 
+        internal sealed class SceneryLoadFailure
+        {
+            public SceneryLoadFailure(string assetIdentifier, string assetPackIdentifier, string ownerPackageId, string message)
+            {
+                AssetIdentifier = assetIdentifier;
+                AssetPackIdentifier = assetPackIdentifier;
+                OwnerPackageId = ownerPackageId;
+                Message = message;
+            }
+
+            public string AssetIdentifier { get; }
+            public string AssetPackIdentifier { get; }
+            public string OwnerPackageId { get; }
+            public string Message { get; }
+        }
+
         internal sealed class ReportSnapshot
         {
             public string Reason { get; set; }
@@ -629,7 +853,11 @@ namespace FUSE.Loading
             public string[] GraphPostBindIssues { get; set; }
             public string[] ProgressionTransferSkips { get; set; }
             public string[] Notices { get; set; }
+            public SceneryLoadFailure[] SceneryLoadFailures { get; set; }
             public FuseSaveCarFault[] OrphanedCars { get; set; }
+            public FuseModExceptionSnapshot[] ModExceptions { get; set; }
+            public long ModExceptionTotal { get; set; }
+            public long ModExceptionUnattributed { get; set; }
 
             public int FaultedPackageCount =>
                 Faults == null
@@ -637,6 +865,8 @@ namespace FUSE.Loading
                     : Faults.Select(fault => fault.PackageId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
 
             public int OrphanedCarCount => OrphanedCars?.Length ?? 0;
+
+            public int SceneryLoadFailureCount => SceneryLoadFailures?.Length ?? 0;
 
             public bool HasProblems =>
                 FaultedPackageCount > 0 ||
@@ -646,7 +876,16 @@ namespace FUSE.Loading
                 (ProgressionTransferSkips != null && ProgressionTransferSkips.Length > 0) ||
                 (SkippedPackages != null && SkippedPackages.Any(item => !FusePackageFaultRegistry.IsOptionalSkipReason(item.Value))) ||
                 (Notices != null && Notices.Length > 0) ||
-                OrphanedCarCount > 0;
+                SceneryLoadFailureCount > 0 ||
+                OrphanedCarCount > 0 ||
+                HasModExceptionProblem;
+
+            // A single one-off third-party exception must not flip the report
+            // red, but a per-cycle thrower (world moves, update ticks) crosses
+            // these thresholds within seconds of the fault starting.
+            public bool HasModExceptionProblem =>
+                ModExceptions != null &&
+                ModExceptions.Any(record => record.Episodes >= 3 || record.Count >= 10);
         }
 
         private static JArray ToArray(IEnumerable<string> values)

@@ -16,8 +16,17 @@ namespace FUSE.Loading
 {
     internal static partial class FuseAssetPackRegistry
     {
+        private static int ExactIdentifierLookupFailureLogged;
 
         internal static bool TryResolveLegacyAssetPackIdentifier(string identifier, out string resolvedIdentifier)
+        {
+            return TryResolveLegacyAssetPackIdentifier(null, identifier, out resolvedIdentifier);
+        }
+
+        internal static bool TryResolveLegacyAssetPackIdentifier(
+            PrefabStore prefabStore,
+            string identifier,
+            out string resolvedIdentifier)
         {
             resolvedIdentifier = null;
             var normalized = NormalizeLegacyAssetPackIdentifier(identifier);
@@ -28,8 +37,65 @@ namespace FUSE.Loading
 
             var aliases = GetLegacyAssetPackAliases();
             return aliases.TryGetValue(normalized, out resolvedIdentifier) &&
+                   ShouldApplyLegacyAssetPackAlias(
+                       identifier,
+                       resolvedIdentifier,
+                       HasExactRegisteredAssetPackIdentifier(prefabStore, identifier));
+        }
+
+        internal static bool ShouldApplyLegacyAssetPackAlias(
+            string identifier,
+            string resolvedIdentifier,
+            bool hasExactRegisteredStore)
+        {
+            return !hasExactRegisteredStore &&
                    !string.IsNullOrWhiteSpace(resolvedIdentifier) &&
                    !string.Equals(resolvedIdentifier, identifier, StringComparison.Ordinal);
+        }
+
+        private static bool HasExactRegisteredAssetPackIdentifier(
+            PrefabStore prefabStore,
+            string identifier)
+        {
+            if (prefabStore == null ||
+                string.IsNullOrWhiteSpace(identifier) ||
+                PrefabStoreStoresField == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!(PrefabStoreStoresField.GetValue(prefabStore) is System.Collections.IEnumerable stores))
+                {
+                    return false;
+                }
+
+                foreach (var item in stores)
+                {
+                    if (item is AssetPackRuntimeStore store &&
+                        string.Equals(store.Identifier, identifier, StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Alias resolution is best-effort. If the host changes the
+                // backing store shape, retain the prior behavior instead of
+                // breaking every AssetPackForIdentifier call.
+                if (System.Threading.Interlocked.Exchange(
+                        ref ExactIdentifierLookupFailureLogged,
+                        1) == 0)
+                {
+                    FuseLog.Warning(
+                        "FUSE could not inspect PrefabStore identifiers before applying a legacy " +
+                        $"asset-pack alias; falling back to legacy alias behavior: {ex.GetBaseException().Message}");
+                }
+            }
+
+            return false;
         }
 
         internal static string ResolveLegacyAssetPackIdentifier(string identifier)
@@ -83,7 +149,12 @@ namespace FUSE.Loading
                 return;
             }
 
-            var resolved = ToDirectStoreIdentifier(assetPackFolder);
+            var directIdentifier = ToDirectStoreIdentifier(assetPackFolder);
+            var resolved = ResolveStoreIdentifierForAssetPackFolder(assetPackFolder);
+            // Preserve FUSE's URI as an alias even when AssetLoader already
+            // owns this folder. Existing converted content may contain that URI,
+            // but the lookup target must be the reused store's real identifier.
+            AddLegacyAssetPackAlias(aliases, directIdentifier, resolved);
             AddLegacyAssetPackAlias(aliases, resolved, resolved);
             AddLegacyAssetPackAlias(aliases, Path.GetFileName(assetPackFolder), resolved);
 
@@ -103,11 +174,13 @@ namespace FUSE.Loading
                 AddLegacyAssetPackAlias(aliases, $"{Path.GetFileName(packagePath)}/{relative}", resolved);
             }
 
-            RegisterCatalogAliases(aliases, assetPackFolder, resolved);
+            RegisterCatalogAliases(aliases, packagePath, packageId, assetPackFolder, resolved);
         }
 
         private static void RegisterCatalogAliases(
             IDictionary<string, string> aliases,
+            string packagePath,
+            string packageId,
             string assetPackFolder,
             string resolved)
         {
@@ -131,6 +204,17 @@ namespace FUSE.Loading
                 // the optional catalog-declared aliases are lost when the file is unreadable.
                 FuseLog.Warning(
                     $"FUSE could not inspect asset pack Catalog.json '{catalogPath}' for legacy aliases: {ex.Message}");
+
+                // Bubble up to the user via the load report: content referencing the
+                // catalog-declared aliases may silently fail to resolve, and the pack
+                // author needs the file name to fix it.
+                var package = !string.IsNullOrWhiteSpace(packageId)
+                    ? packageId
+                    : Path.GetFileName(packagePath);
+                RecordCatalogInspectionFailure(
+                    $"Asset pack Catalog.json could not be read: package='{package}' " +
+                    $"pack='{Path.GetFileName(assetPackFolder)}' reason='{ex.Message}' — " +
+                    "catalog-declared aliases were skipped; content referencing them may not resolve.");
             }
         }
 

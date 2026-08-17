@@ -4,6 +4,7 @@ using FUSE.Authoring.Migrations;
 using Newtonsoft.Json.Linq;
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using UI.Builder;
 using UI.Common;
@@ -27,6 +28,15 @@ namespace FUSE.Interface.MenuWindow
         }
 
         public static void Build(UIPanelBuilder builder)
+        {
+            // The status page can grow substantially when runtime guards or
+            // third-party mods report problems. Give the complete page its own
+            // viewport so diagnostics never spill into the action rows or out
+            // of the window.
+            builder.VScrollView(BuildScrollableContent, new RectOffset(0, 8, 0, 0));
+        }
+
+        private static void BuildScrollableContent(UIPanelBuilder builder)
         {
             builder.AddTitle("FUSE Status", "");
 
@@ -57,6 +67,73 @@ namespace FUSE.Interface.MenuWindow
             AddReadinessRow(builder, "Progression", data.ProgressionTransferSkipCount == 0, "0 transfer skips", data.ProgressionTransferSkipCount + " skip(s)");
             AddReadinessRow(builder, "Registry", data.ConflictCount == 0, "0 conflicts", data.ConflictCount + " conflict(s)");
             AddReadinessRow(builder, "Notices", data.NoticesCount == 0, "0 notices", data.NoticesCount + " notice(s)");
+            // Live session counters, not snapshot state.
+            AddReadinessRow(
+                builder,
+                "Guards",
+                FuseRuntimeGuardCounters.AllIdle,
+                "idle",
+                FuseRuntimeGuardCounters.GuardTotal + " contained event(s)");
+            // Session-cumulative third-party exception observations — same
+            // live-counter semantics as Guards, sourced from the exception
+            // registry rather than the load snapshot. One atomic capture here
+            // (rows + totals + summary line under the registry's lock), reused
+            // by the readiness row and the breakdown section below so a
+            // concurrent log event can never render contradictory rows.
+            var modExceptionState = FuseModExceptionRegistry.CaptureReportState();
+            var modExceptions = modExceptionState.Mods;
+            AddReadinessRow(
+                builder,
+                "Mod Health",
+                modExceptionState.Total == 0,
+                "0 exceptions observed",
+                $"{modExceptionState.Total} exception(s) across {modExceptions.Length} mod(s)");
+            builder.Spacer(6f);
+
+            // Full per-guard breakdown (this window is the only UI surface, so
+            // the counters must be readable here, not just in copied reports).
+            builder.AddSection("Runtime Guards");
+            InterfaceUtils.AddWrappedLabel(builder, FuseRuntimeGuardCounters.FormatSummary(), 76f);
+            builder.AddField(
+                "Native leak stacks",
+                $"{FuseNativeLeakDiagnostic.ModeLabel} (FUSE setting: {(FuseSettings.EnableNativeLeakStackTraces ? "enabled" : "disabled")})");
+            InterfaceUtils.AddWrappedLabel(
+                builder,
+                FuseRuntimeGuardCounters.AllIdle
+                    ? "All idle — no broken content needed containing this session."
+                    : "Non-zero counters are content problems FUSE is containing; offenders are named in FUSE.log and the health report.",
+                48f);
+            builder.Spacer(6f);
+
+            // Per-mod breakdown for the third-party exception registry,
+            // mirroring the Runtime Guards treatment above (this window is
+            // the only UI surface, so the observations must be readable
+            // here, not just in copied reports).
+            builder.AddSection("Mod Health");
+            builder.AddLabel(modExceptionState.SummaryLine);
+            if (modExceptions.Length > 0)
+            {
+                foreach (var record in modExceptions.OrderByDescending(item => item.Count).Take(5))
+                {
+                    var display = string.IsNullOrWhiteSpace(record.DisplayName) ? record.ModId : record.DisplayName;
+                    InterfaceUtils.AddWrappedField(builder, display, DescribeModExceptionRecord(record), 52f);
+                }
+
+                if (modExceptions.Length > 5)
+                {
+                    InterfaceUtils.AddWrappedLabel(
+                        builder,
+                        $"...and {modExceptions.Length - 5} more mod(s) — full list in the health report.",
+                        28f);
+                }
+            }
+
+            InterfaceUtils.AddWrappedLabel(
+                builder,
+                modExceptionState.Total == 0
+                    ? "All idle — no third-party mod exceptions were observed this session."
+                    : "Non-zero counts are third-party mod faults FUSE observed or contained; offenders are named in FUSE.log and the health report.",
+                48f);
             builder.Spacer(6f);
 
             builder.AddSection("Actions");
@@ -130,6 +207,24 @@ namespace FUSE.Interface.MenuWindow
             return token != null && bool.TryParse(token.ToString(), out var value) ? value : fallback;
         }
 
+        /// <summary>
+        /// One-line per-mod value for the Mod Health breakdown: counts plus
+        /// the mod's top signature (by count), matching the per-mod row the
+        /// health report renders so the two surfaces read the same.
+        /// </summary>
+        private static string DescribeModExceptionRecord(FuseModExceptionSnapshot record)
+        {
+            var text = $"{record.Count} exception(s) over {record.Episodes} episode(s)";
+            var signatures = record.Signatures;
+            if (signatures != null && signatures.Length > 0)
+            {
+                var top = signatures.OrderByDescending(item => item.Count).First();
+                text += $" — top: {top.ExceptionType} @ {top.TopOwnedFrame}";
+            }
+
+            return text;
+        }
+
         private static void AddReadinessRow(UIPanelBuilder builder, string label, bool ok, string okText, string problemText)
         {
             var value = ok
@@ -196,6 +291,10 @@ namespace FUSE.Interface.MenuWindow
             builder.AppendLine("Graph Issues: " + ReadInt(counts["graphIssues"]));
             builder.AppendLine("Transfer Skips: " + ReadInt(counts["progressionTransferSkips"]));
             builder.AppendLine("Suppressions: " + ReadInt(counts["suppressions"]));
+            builder.AppendLine("Runtime Guards: " + FuseRuntimeGuardCounters.FormatSummary());
+            builder.AppendLine(
+                "Native Leak Detection: " + FuseNativeLeakDiagnostic.ModeLabel +
+                " (FUSE stack setting " + (FuseSettings.EnableNativeLeakStackTraces ? "enabled" : "disabled") + ")");
             builder.AppendLine("Map Load: " + FusePerformanceMetrics.FormatTiming("map load total"));
             builder.AppendLine("Runtime Apply: " + FusePerformanceMetrics.FormatTiming("apply resident definitions"));
             return builder.ToString().TrimEnd();

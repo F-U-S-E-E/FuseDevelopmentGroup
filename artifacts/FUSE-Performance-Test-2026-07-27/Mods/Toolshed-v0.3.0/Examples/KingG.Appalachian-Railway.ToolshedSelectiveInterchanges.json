@@ -1,0 +1,256 @@
+{
+  "interchanges": [
+    {
+      "id": "kingg-ocona-lufty-smokemont",
+      "componentId": "toolshed-ocona-lufty-selective",
+      "displayName": "Ocona-Lufty RR Co Interchange",
+      "interchangeIndustryId": "Oconalufty-RR-INT",
+      "trackSpanIds": [
+        "Smokemont-INT"
+      ],
+      "carTypeFilterQuery": "*",
+      "configurePurchases": true,
+      "disableUnlistedPurchaseLoaders": true,
+      "enableOutboundTraffic": true,
+      "enableProductionAccounting": true,
+      "excludeFromGenericInterchangeSelection": true,
+      "initialCounters": [
+        {
+          "key": "flat-equipment",
+          "value": 5,
+          "maxValue": 24
+        },
+        {
+          "key": "boxcar-equipment",
+          "value": 2,
+          "maxValue": 10
+        },
+        {
+          "key": "mill-supplies",
+          "value": 8,
+          "maxValue": 24
+        }
+      ],
+      "emptyCarRequests": [
+        {
+          "carTypeFilterQuery": "FL",
+          "carModelIdentifier": "fl-alw40logging",
+          "minCarsPerService": 6,
+          "maxCarsPerService": 12,
+          "originWeights": [
+            {
+              "originIndustryId": "sylva-interchange",
+              "weight": 70
+            },
+            {
+              "originIndustryId": "ewh-interchange",
+              "weight": 25
+            },
+            {
+              "originIndustryId": "andrews-interchange",
+              "weight": 5
+            }
+          ],
+          "allowInactiveOriginFallback": true,
+          "equipmentCounterKey": "flat-equipment",
+          "equipmentCreditsPerCar": 1,
+          "maxEquipmentCredits": 24,
+          "orderTag": "smokemont-empty-flats"
+        },
+        {
+          "carTypeFilterQuery": "XM",
+          "minCarsPerService": 1,
+          "maxCarsPerService": 3,
+          "originWeights": [
+            {
+              "originIndustryId": "sylva-interchange",
+              "weight": 70
+            },
+            {
+              "originIndustryId": "ewh-interchange",
+              "weight": 25
+            },
+            {
+              "originIndustryId": "andrews-interchange",
+              "weight": 5
+            }
+          ],
+          "allowInactiveOriginFallback": true,
+          "equipmentCounterKey": "boxcar-equipment",
+          "equipmentCreditsPerCar": 1,
+          "maxEquipmentCredits": 10,
+          "orderTag": "smokemont-empty-boxcars"
+        }
+      ],
+      "inboundLoads": [
+        {
+          "loadId": "building-supplies",
+          "componentId": "smokemont-building-supplies-in",
+          "displayName": "Smokemont Mill Building Supplies",
+          "carTypeFilterQuery": "XM",
+          "orderLoadedCars": true,
+          "orderAwayEmpties": true,
+          "supplyCounterKey": "mill-supplies",
+          "supplyCreditsPerCar": 12,
+          "maxSupplyCredits": 24,
+          "storageConsumptionRate": 3000,
+          "maxStorage": 80000,
+          "carTransferRate": 80000
+        }
+      ],
+      "purchaseLoads": [
+        {
+          "loadId": "logs",
+          "componentId": "logs-e",
+          "displayName": "Ocona-Lufty Logs for Ravensford",
+          "carTypeFilterQuery": "FL",
+          "createIfMissing": false
+        }
+      ],
+      "outboundRoutes": [
+        {
+          "loadId": "lumber-dimensional",
+          "destinationWeights": [
+            {
+              "destinationIndustryId": "sylva-interchange",
+              "weight": 70
+            },
+            {
+              "destinationIndustryId": "ewh-interchange",
+              "weight": 25
+            },
+            {
+              "destinationIndustryId": "andrews-interchange",
+              "weight": 5
+            }
+          ],
+          "allowInactiveDestinationFallback": true,
+          "carTypeFilterQuery": "FM*",
+          "carModelIdentifier": "fm-alw40",
+          "minCarsPerService": 4,
+          "maxCarsPerService": 8,
+          "equipmentCounterKey": "flat-equipment",
+          "equipmentCreditsPerCar": 1,
+          "supplyCounterKey": "mill-supplies",
+          "supplyCreditsPerCar": 0.15,
+          "minReturnDelayDays": 0.75,
+          "maxReturnDelayDays": 1.75,
+          "weekdaysOnly": true,
+          "slowDayChance": 0.15,
+          "slowDayMultiplier": 0.5,
+          "orderTag": "smokemont-flat-lumber-to-southern"
+        },
+        {
+          "loadId": "lumber-dimensional",
+          "destinationWeights": [
+            {
+              "destinationIndustryId": "sylva-interchange",
+              "weight": 70
+            },
+            {
+              "destinationIndustryId": "ewh-interchange",
+              "weight": 25
+            },
+            {
+              "destinationIndustryId": "andrews-interchange",
+              "weight": 5
+            }
+          ],
+          "allowInactiveDestinationFallback": true,
+          "carTypeFilterQuery": "XM",
+          "minCarsPerService": 1,
+          "maxCarsPerService": 3,
+          "equipmentCounterKey": "boxcar-equipment",
+          "equipmentCreditsPerCar": 1,
+          "supplyCounterKey": "mill-supplies",
+          "supplyCreditsPerCar": 0.12,
+          "minReturnDelayDays": 1,
+          "maxReturnDelayDays": 2,
+          "weekdaysOnly": true,
+          "slowDayChance": 0.25,
+          "slowDayMultiplier": 0.5,
+          "orderTag": "smokemont-box-lumber-to-southern"
+        },
+        {
+          "loadId": "poles",
+          "destinationWeights": [
+            {
+              "destinationIndustryId": "sylva-interchange",
+              "weight": 70
+            },
+            {
+              "destinationIndustryId": "ewh-interchange",
+              "weight": 25
+            },
+            {
+              "destinationIndustryId": "andrews-interchange",
+              "weight": 5
+            }
+          ],
+          "allowInactiveDestinationFallback": true,
+          "carTypeFilterQuery": "FM*",
+          "carModelIdentifier": "fm-alw40",
+          "minCarsPerService": 0,
+          "maxCarsPerService": 2,
+          "equipmentCounterKey": "flat-equipment",
+          "equipmentCreditsPerCar": 1,
+          "supplyCounterKey": "mill-supplies",
+          "supplyCreditsPerCar": 0.05,
+          "minReturnDelayDays": 1.5,
+          "maxReturnDelayDays": 3,
+          "weekdaysOnly": true,
+          "slowDayChance": 0.35,
+          "slowDayMultiplier": 0,
+          "orderTag": "smokemont-poles-to-southern"
+        },
+        {
+          "loadId": "pulpwood",
+          "destinationWeights": [
+            {
+              "destinationIndustryId": "sylva-interchange",
+              "weight": 70
+            },
+            {
+              "destinationIndustryId": "ewh-interchange",
+              "weight": 25
+            },
+            {
+              "destinationIndustryId": "andrews-interchange",
+              "weight": 5
+            }
+          ],
+          "allowInactiveDestinationFallback": true,
+          "carTypeFilterQuery": "XM",
+          "minCarsPerService": 0,
+          "maxCarsPerService": 2,
+          "equipmentCounterKey": "boxcar-equipment",
+          "equipmentCreditsPerCar": 1,
+          "supplyCounterKey": "mill-supplies",
+          "supplyCreditsPerCar": 0.05,
+          "minReturnDelayDays": 2,
+          "maxReturnDelayDays": 4,
+          "weekdaysOnly": true,
+          "slowDayChance": 0.45,
+          "slowDayMultiplier": 0,
+          "orderTag": "smokemont-pulpwood-to-southern"
+        },
+        {
+          "loadId": "logs",
+          "destinationIndustryId": "Ravensford-Sawmill",
+          "destinationComponentId": "logs",
+          "carTypeFilterQuery": "FL",
+          "carModelIdentifier": "fl-alw40logging",
+          "minCarsPerService": 1,
+          "maxCarsPerService": 3,
+          "minReturnDelayDays": 2,
+          "maxReturnDelayDays": 4,
+          "slowDayChance": 0.25,
+          "slowDayMultiplier": 0,
+          "noPayment": true,
+          "orderTag": "ocona-lufty-logs-to-ravensford"
+        }
+      ],
+      "requireEnabledInterchange": true
+    }
+  ]
+}

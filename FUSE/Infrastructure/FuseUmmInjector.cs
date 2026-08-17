@@ -14,6 +14,8 @@ namespace FUSE.Infrastructure
         public const string LegacySupportId = "FUSE-LegacySupport";
         public const string LegacySupportDisplayName = "FUSE Legacy Support";
         public const string LegacySupportAuthor = "FUSE";
+        internal const bool SyntheticEntriesAreActive = false;
+        internal const bool SyntheticLegacyPackagesAreEnabled = true;
         // Synthetic rows have no real assembly. Leaving Info.AssemblyName / Info.EntryMethod
         // empty makes ModEntry.HasAssembly return false; combined with pre-setting mStarted,
         // ModEntry.Loaded short-circuits to true so UMM's Load() returns at its first line
@@ -53,6 +55,12 @@ namespace FUSE.Infrastructure
             _pendingFuseModEntryPath = null;
             _pendingFuseVersion = null;
             InjectLegacyEntries(path, version);
+
+            // The flush runs after UMM's _Start finished loading every real mod
+            // entry, i.e. the moment the UMM mod population is complete — drop
+            // the exception-attribution cache so its next lazy rebuild sees
+            // them all.
+            FuseModAttributionMap.Invalidate();
         }
 
         public static void InjectLegacyEntries(string fuseModEntryPath, string fuseVersion)
@@ -95,7 +103,8 @@ namespace FUSE.Infrastructure
                 author: LegacySupportAuthor,
                 version: string.IsNullOrWhiteSpace(fuseVersion) ? "0.0.0" : fuseVersion,
                 requirements: LegacySupportRequirements,
-                folderPath: fuseModEntryPath ?? string.Empty);
+                folderPath: fuseModEntryPath ?? string.Empty,
+                enabled: true);
             if (entry == null)
             {
                 return false;
@@ -148,7 +157,8 @@ namespace FUSE.Infrastructure
                     author: manifest.Author ?? string.Empty,
                     version: manifest.Version ?? string.Empty,
                     requirements: new[] { LegacySupportId },
-                    folderPath: folder);
+                    folderPath: folder,
+                    enabled: SyntheticLegacyPackagesAreEnabled);
                 if (entry == null)
                 {
                     continue;
@@ -171,7 +181,8 @@ namespace FUSE.Infrastructure
             string author,
             string version,
             string[] requirements,
-            string folderPath)
+            string folderPath,
+            bool enabled)
         {
             try
             {
@@ -193,9 +204,18 @@ namespace FUSE.Infrastructure
                 };
 
                 var entry = new UnityModManager.ModEntry(info, folderPath ?? string.Empty);
-                entry.Enabled = true;
+                // Keep the row enabled so UMM does not persist a false value for this package id;
+                // that persisted state could later disable a real UMM mod installed under the
+                // same id. Package rows are still inactive metadata (below), so UMM dispatches no
+                // frame callbacks. If AssetLoader inspects enabled rows, FUSE's physical-path
+                // store reuse prevents it from mounting the same folder a second time.
+                entry.Enabled = enabled;
                 SetPrivateBool(entry, "mStarted", true);
-                SetPrivateBool(entry, "mActive", true);
+                // These rows are display metadata, not executable UMM mods. Keeping
+                // them inactive prevents UMM from dispatching Update/FixedUpdate/
+                // LateUpdate/hotkey work to every synthetic package when visibility
+                // is explicitly enabled.
+                SetPrivateBool(entry, "mActive", SyntheticEntriesAreActive);
                 SetPrivateBool(entry, "mFirstLoading", false);
                 SetPrivateBool(entry, "mErrorOnLoading", false);
                 return entry;

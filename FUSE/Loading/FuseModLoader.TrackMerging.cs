@@ -238,6 +238,21 @@ namespace FUSE.Loading
                     // matching apply pass.
                     var mergedRemovalPlan = BuildMergedRemovalPlan(active);
 
+                    // Register suppression claims before the one merged graph
+                    // rebuild, then apply track-group state without requesting a
+                    // second rebuild. The merged rebuild below now consumes the
+                    // final enabled/available group sets directly.
+                    foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
+                    {
+                        var definition = candidate.Loaded.Definition;
+                        var transaction = candidate.Transaction;
+                        transaction.RunPhase(
+                            "register-world-suppressions",
+                            () => FuseWorldSuppressor.RegisterDefinition(definition, transaction));
+                    }
+                    FuseWorldSuppressor.ApplyActiveTrackGroupSuppressionsBeforeGraphRebuild(
+                        "merged graph pre-apply");
+
                     ApplyMergedTrackGraph(mergedTrackPlan, reason);
 
                     foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
@@ -328,15 +343,19 @@ namespace FUSE.Loading
                     // remove of the same id (and vice versa).
                     ApplyMergedRemovalPlan(mergedRemovalPlan);
 
-                    foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
+                    ProgressionAPI.BeginScenePathResolutionBatch();
+                    try
                     {
-                        var definition = candidate.Loaded.Definition;
-                        var transaction = candidate.Transaction;
-                        transaction.RunPhase("apply-progression", () => ApplyProgressionDefinition(definition, transaction));
-                        // Registration only — claims must land in load order for
-                        // precedence, but the apply pass walks the full claimed
-                        // set, so it runs once after the loop instead of N times.
-                        transaction.RunPhase("register-world-suppressions", () => FuseWorldSuppressor.RegisterDefinition(definition, transaction));
+                        foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
+                        {
+                            var definition = candidate.Loaded.Definition;
+                            var transaction = candidate.Transaction;
+                            transaction.RunPhase("apply-progression", () => ApplyProgressionDefinition(definition, transaction));
+                        }
+                    }
+                    finally
+                    {
+                        ProgressionAPI.EndScenePathResolutionBatch();
                     }
 
                     // One merged suppression apply for all packages. Must run
@@ -345,6 +364,16 @@ namespace FUSE.Loading
                     // The batch folds the per-group RequestRebuild calls from
                     // track-group suppression into a single rebuild.
                     var suppressionTransaction = new FuseApplyTransaction("__merged-world-suppressions__", reason, false);
+                    // A full graph rebuild and a collections refresh have
+                    // already consumed all structural work above. Clear a stale
+                    // request raised by object-disable callbacks before opening
+                    // the suppression batch, otherwise it is misattributed to
+                    // suppression and triggers a redundant second full rebuild.
+                    if (!TrackAPI.IsBatching &&
+                        TrackAPI.ConsumePendingRebuildRequest())
+                    {
+                        TrackAPI.RebuildCollectionsOnly();
+                    }
                     TrackAPI.BeginBatch();
                     try
                     {
@@ -992,10 +1021,19 @@ namespace FUSE.Loading
                 TrackAPI.EndBatch(false);
             }
 
-            if (plan.HasStructuralChanges)
+            var trackAssemblySummary = ApplyMergedTrackAssemblyPackages(plan, reason);
+            var shouldRebuildBeforeFinalSpans =
+                plan.HasStructuralChanges
+                || trackAssemblySummary.NativeGraphMutationsApplied
+                || trackAssemblySummary.HasFailures;
+
+            if (shouldRebuildBeforeFinalSpans)
             {
                 var graphTransaction = new FuseApplyTransaction("__merged-graph-rebuild__", reason, false);
-                graphTransaction.RunPhase("merged-single-graph-rebuild", () => TrackAPI.RebuildGraph());
+                graphTransaction.RunPhase(
+                    "merged-single-graph-rebuild",
+                    () => TrackAPI.RebuildGraphWithFreshCurves(
+                        "staged graph apply after track-graph subscribers"));
                 if (graphTransaction.Report.IsFatal || graphTransaction.Report.HasErrors)
                 {
                     var failure = FormatMergedGraphRebuildFailure(graphTransaction.Report);
@@ -1021,13 +1059,14 @@ namespace FUSE.Loading
             {
                 FuseLog.Info(
                     "FUSE merged graph apply operation='merged-single-graph-rebuild' skipped: " +
-                    "no final structural track mutations in active definitions.");
+                    "no final structural track mutations in active definitions or TrackAssembly source packages.");
             }
 
-            // Apply spans and the post-span cleanup inside one batch so the
-            // rebuild RemoveInvalidTrackSpans requests folds into a single
-            // post-cleanup rebuild rather than firing separately after the
-            // merged-graph-rebuild phase above.
+            // Spans do not affect TrackObjectManager's rail/switch/bumper
+            // descriptors. Apply and scrub them in one batch, then refresh only
+            // Graph's collections if cleanup requested it. Rebuilding every track
+            // mesh/culling descriptor here was redundant and also re-ran every
+            // TrackGraphApplying companion subscriber.
             TrackAPI.BeginBatch();
             try
             {
@@ -1042,8 +1081,51 @@ namespace FUSE.Loading
             }
             finally
             {
-                TrackAPI.EndBatch(true);
+                TrackAPI.EndBatch(false);
             }
+
+            if (!TrackAPI.IsBatching &&
+                TrackAPI.ConsumePendingRebuildRequest())
+            {
+                TrackAPI.RebuildCollectionsOnly();
+            }
+        }
+
+        private static FuseTrackAssemblyBridgeApplySummary ApplyMergedTrackAssemblyPackages(
+            FuseMergedTrackPlan plan,
+            string reason)
+        {
+            if (plan == null)
+            {
+                return FuseTrackAssemblyBridgeApplySummary.Empty;
+            }
+
+            var packageIds = plan.OrderedCandidates
+                .Where(item => item?.Transaction != null && !item.Transaction.Report.IsFatal)
+                .Select(item => item.Loaded?.Definition?.Id)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToArray();
+            var summary = FuseTrackAssemblyBridgeHost.ApplyLoadedPackages(packageIds, reason);
+            if (!summary.HasFailures)
+            {
+                return summary;
+            }
+
+            foreach (var failure in summary.Failures)
+            {
+                var candidate = plan.OrderedCandidates.FirstOrDefault(item =>
+                    item?.Transaction != null
+                    && !item.Transaction.Report.IsFatal
+                    && string.Equals(
+                        item.Loaded?.Definition?.Id,
+                        failure.Key,
+                        StringComparison.OrdinalIgnoreCase));
+                candidate?.Transaction.RunPhase(
+                    "staged-apply-trackassembly-source",
+                    () => candidate.Transaction.Fatal("trackAssembly source", failure.Key, failure.Value));
+            }
+
+            return summary;
         }
 
         private static string FormatMergedGraphRebuildFailure(FuseApplyReport report)

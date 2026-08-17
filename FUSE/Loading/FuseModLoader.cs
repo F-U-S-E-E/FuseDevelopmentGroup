@@ -113,8 +113,16 @@ namespace FUSE.Loading
         public static int ApplyLoadedDefinitions(string reason)
         {
             var ids = GetLoadedDefinitionIdsInOrder();
-            ApplyGlobalLoadCatalog(ids, reason);
-            PreEnableInitialTrackGroups(ids);
+            // Map packages participate in the shared load catalog and initial
+            // track groups only while their map is the active session map;
+            // otherwise their content must leave the stock map untouched.
+            var applicableIds = ids
+                .Where(id => !LoadedMods.TryGetValue(id, out var mod) ||
+                             mod?.Definition == null ||
+                             FuseMapSession.ShouldApplyDefinition(mod.Definition))
+                .ToArray();
+            ApplyGlobalLoadCatalog(applicableIds, reason);
+            PreEnableInitialTrackGroups(applicableIds);
 
             var candidates = new List<FuseStagedApplyCandidate>();
             var outcomes = new List<PackageApplyOutcome>();
@@ -139,6 +147,18 @@ namespace FUSE.Loading
                         continue;
                     }
 
+                    if (!FuseMapSession.ShouldApplyDefinition(loaded.Definition))
+                    {
+                        var mapSkipReason = FuseMapSession.InactiveSkipReason(FuseMapSession.ActiveMapId);
+                        ReleaseInactiveMapPackageClaims(id);
+                        FusePackageFaultRegistry.MarkSkipped(id, mapSkipReason);
+                        outcomes.Add(PackageApplyOutcome.ForSkipped(id, mapSkipReason));
+                        FuseLog.Info(
+                            $"FUSE skipped map package='{id}' operation='runtime apply' " +
+                            $"id='{id}' reason='{mapSkipReason}'.");
+                        continue;
+                    }
+
                     candidates.Add(new FuseStagedApplyCandidate(loaded, AppliedDefinitionIds.Contains(id)));
                 }
                 catch (Exception ex)
@@ -159,6 +179,35 @@ namespace FUSE.Loading
         public static int ReapplyLoadedDefinitions(string reason)
         {
             return ApplyLoadedDefinitions(reason);
+        }
+
+        /// <summary>
+        /// A map package that was applied in an earlier session but is inactive
+        /// for this one still holds registry claims from that apply. Release
+        /// them (same set the definition-replacement path releases) so the
+        /// claims don't shadow other packages while the map sits dormant.
+        /// </summary>
+        private static void ReleaseInactiveMapPackageClaims(string id)
+        {
+            if (!AppliedDefinitionIds.Contains(id))
+            {
+                return;
+            }
+
+            try
+            {
+                FuseAudioAPI.ReleasePackage(id);
+                FuseWorldSuppressor.ReleasePackage(id);
+                var released = FuseRegistry.ReleaseAllForPackage(id);
+                AppliedDefinitionIds.Remove(id);
+                FuseLog.Info(
+                    $"FUSE released claims for inactive map package='{id}' operation='runtime apply' " +
+                    $"id='{id}' releasedClaims={released}.");
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FUSE failed to release claims for inactive map package '{id}'", ex);
+            }
         }
 
         private static void RegisterLoadedDefinition(FuseModDefinition definition, string folderPath, string definitionPath)
@@ -186,6 +235,15 @@ namespace FUSE.Loading
             if (firstLoad && !LoadedOrder.Contains(definition.Id, StringComparer.OrdinalIgnoreCase))
             {
                 LoadedOrder.Add(definition.Id);
+            }
+
+            try
+            {
+                FuseMapPackageRegistry.RegisterFromDefinition(LoadedMods[definition.Id]);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FUSE failed to register map declaration for '{definition.Id}'", ex);
             }
 
             FuseLog.Info($"FUSE loaded definition package='{definition.Id}' operation='load definition' id='{definition.Id}' definitionPath='{definitionPath ?? string.Empty}' folderPath='{folderPath ?? string.Empty}'.");
@@ -461,6 +519,8 @@ namespace FUSE.Loading
                     FuseLog.Exception($"FUSE failed to unregister map tile sources for unloaded mod '{modId}'", ex);
                 }
 
+                FuseMapPackageRegistry.Unregister(modId);
+
                 try
                 {
                     FuseEvents.RaiseModUnloaded(modId);
@@ -511,6 +571,7 @@ namespace FUSE.Loading
             {
                 FuseWorldSuppressor.RestoreAll("unload all");
             }
+            FuseMapPackageRegistry.Clear();
             // Per-mod claims were released in UnloadMod; reset registry to drop
             // any orphaned shared claims and the conflict history.
             FuseRegistry.Reset();
@@ -540,6 +601,11 @@ namespace FUSE.Loading
             foreach (var loaded in GetLoadedModsInOrder())
             {
                 var definition = loaded?.Definition;
+                if (!FuseMapSession.ShouldApplyDefinition(definition))
+                {
+                    continue;
+                }
+
                 var industryIds = definition?.Operations?.Removals?.Industries;
                 if (industryIds == null || industryIds.Length == 0)
                 {

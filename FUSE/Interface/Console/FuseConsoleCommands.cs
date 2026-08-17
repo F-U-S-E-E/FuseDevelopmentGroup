@@ -29,6 +29,8 @@ namespace FUSE.Interface.Console
             {
                 new FuseReportCommand(),
                 new FuseLoadedCommand(),
+                new FuseMapsCommand(),
+                new FuseMapLaunchCommand(),
                 new FuseAssetsCommand(),
                 new FuseGraphCommand(),
                 new FuseProgressionsCommand(),
@@ -730,6 +732,63 @@ namespace FUSE.Interface.Console
             }
 
             return sb.ToString();
+        }
+    }
+
+    [ConsoleCommand("/fuse.maps", "List maps registered by FUSE map packages and the active session map.")]
+    public sealed class FuseMapsCommand : IConsoleCommand
+    {
+        public string Execute(string[] components)
+        {
+            var maps = FuseMapPackageRegistry.GetRegisteredMaps();
+            var sb = new StringBuilder();
+            var active = FuseMapSession.ActiveMapId;
+            sb.AppendLine($"FUSE registered maps: {maps.Count} (active session map: {(string.IsNullOrEmpty(active) ? "stock map" : active)})");
+            foreach (var map in maps)
+            {
+                var status = map.IsValid ? "ok" : $"faulted: {map.FaultReason}";
+                sb.AppendLine($"  {map.MapId}  '{map.DisplayName}'  [{status}]");
+            }
+
+            if (maps.Count == 0)
+            {
+                sb.AppendLine("  (no loaded package declares a map)");
+            }
+
+            return sb.ToString();
+        }
+    }
+
+    [ConsoleCommand("/fuse.map.launch", "Launch a new sandbox session on a registered FUSE map: /fuse.map.launch <mapId> [railroadName] [reportingMark]. Main menu only.")]
+    public sealed class FuseMapLaunchCommand : IConsoleCommand
+    {
+        public string Execute(string[] components)
+        {
+            var mapId = components != null && components.Length > 0 ? components[0] : null;
+            if (string.IsNullOrWhiteSpace(mapId))
+            {
+                return "Usage: /fuse.map.launch <mapId> [railroadName] [reportingMark]";
+            }
+
+            if (FuseConsoleCommands.IsInSession())
+            {
+                return "fuse.map.launch refused: a session is already running. Return to the main menu first.";
+            }
+
+            var railroadName = components.Length > 1 ? components[1] : null;
+            var reportingMark = components.Length > 2 ? components[2] : null;
+
+            try
+            {
+                return FuseMapLauncher.TryLaunchMap(mapId, railroadName, reportingMark, out var error)
+                    ? $"FUSE map launch dispatched for '{mapId}'."
+                    : $"FUSE map launch failed: {error}";
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FUSE map launch threw for '{mapId}'", ex);
+                return $"FUSE map launch threw: {ex.GetBaseException().Message}";
+            }
         }
     }
 

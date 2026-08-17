@@ -126,5 +126,6 @@ namespace FUSE.Tests.API
         {
             Assert.False(FuseProgressionGateEvaluator.IsHiddenByLockedGate(new object(), System.Array.Empty<FuseProgressionGateEvaluator.Gate>()));
         }
+
     }
 }

@@ -163,6 +163,13 @@ namespace FUSE.Patches
             _suppressed++;
             try
             {
+                // Suppression means Unity never logs this exception, so the mod
+                // health log hook cannot see it — feed the registry directly, and
+                // BEFORE the throttle decision so every containment is counted
+                // even when its log line below is suppressed.
+                FuseModExceptionRegistry.RecordContained(
+                    __exception, ResolveRecipientType(__instance), "map lifecycle listener");
+
                 // First few individually, every previously-unseen offender once, then
                 // heartbeat only — a permanently-broken listener re-throws on every
                 // map load/unload it survives to see. Logged with the full exception
@@ -185,6 +192,39 @@ namespace FUSE.Patches
                 // nothing thrown here may leak back into the dispatch loop. Count the
                 // abandoned log attempt so the readout can reveal a broken log path.
                 _diagnosticFailures++;
+            }
+
+            return null;
+        }
+
+        // The Type the health registry attributes by: the recipient passed to
+        // Messenger.Register when it is still alive, else the handler delegate's
+        // declaring type (same fallback order as DescribeListener, but yielding
+        // the Type itself so attribution is exact — no string parsing). May
+        // return null (collected recipient AND unresolvable delegate); the
+        // registry treats that as unattributed.
+        private static Type ResolveRecipientType(object weakAction)
+        {
+            try
+            {
+                var recipientType = (weakAction as WeakAction)?.Target?.GetType();
+                if (recipientType != null)
+                {
+                    return recipientType;
+                }
+
+                if (weakAction != null &&
+                    AccessTools.DeclaredProperty(weakAction.GetType(), "Action")?.GetValue(weakAction, null)
+                        is Delegate action)
+                {
+                    return action.Method?.DeclaringType;
+                }
+            }
+            catch
+            {
+                // Best-effort, mirroring DescribeListener: the containment must
+                // never throw over a diagnostics lookup.
+                FUSE.Infrastructure.FuseModExceptionRegistry.CountSelfFault();
             }
 
             return null;

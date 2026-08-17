@@ -18,6 +18,7 @@ namespace FUSE.Authoring.Data
         public string Description { get; set; }
         public string[] Tags { get; set; } = Array.Empty<string>();
         public string CoordinateSpace { get; set; } = "world";
+        public FuseMapDeclaration Map { get; set; }
         public FuseMixintoDefinition Mixinto { get; set; }
         public FuseTrackDefinition Tracks { get; set; } = new FuseTrackDefinition();
         public FuseOperationsDefinition Operations { get; set; } = new FuseOperationsDefinition();

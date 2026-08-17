@@ -8,6 +8,8 @@ namespace FUSE.Infrastructure
 {
     public static class FuseSettings
     {
+        private static readonly object UserSettingsCommitGate = new object();
+
         public const bool DefaultEnableExperimentalEarlyScenePathSuppression = false;
         public const bool DefaultMirrorInfoToPlayerLog = false;
         public const bool DefaultMirrorAssetPacksToLocalLow = false;
@@ -31,7 +33,10 @@ namespace FUSE.Infrastructure
         public const bool DefaultWorldLabelsShowIndustries = true;
         public const bool DefaultWorldLabelsShowTrackNodes = false;
         public const bool DefaultWorldLabelsShowTrackSegments = false;
-        public const bool DefaultShowLegacyModsInUmm = true;
+        // Synthetic UMM rows add every legacy data package to UMM's global mod list.
+        // UMM walks that list from several per-frame callbacks, so keep the rows opt-in;
+        // FUSE's own Mods page remains the primary place to inspect legacy packages.
+        public const bool DefaultShowLegacyModsInUmm = false;
         // FUSE-owned enhanced loading screen (issue #83): replaces the bare stock
         // "Loading…" screen with staged progress + a current-step label that stays
         // up until FUSE's own post-load pipeline finishes. On by default; one switch
@@ -47,6 +52,18 @@ namespace FUSE.Infrastructure
         public const bool DefaultRandomizeVisualConditionOnSpawn = false;
         public const float DefaultRandomVisualConditionMin = 0.6f;
         public const float DefaultRandomVisualConditionMax = 1f;
+        // Frame-spike diagnostic (stutter attribution): off by default — it is a
+        // measurement tool, not a fix. The threshold marks the frame duration at
+        // which a frame is logged as a spike; 100 ms ≈ a clearly felt hitch at
+        // any refresh rate without flagging ordinary frame-time noise.
+        public const bool DefaultEnableFrameSpikeDiagnostics = false;
+        public const float DefaultFrameSpikeThresholdMs = 100f;
+        // Test override for reproducing the constrained-card scenery policy on
+        // higher-VRAM hardware. Off by default and persisted as a user setting.
+        public const bool DefaultForceConstrainedVramMode = false;
+        // Unity's native-allocation leak stacks are process-wide and expensive.
+        // Keep them opt-in and restore the host's prior mode when FUSE unloads.
+        public const bool DefaultEnableNativeLeakStackTraces = false;
         public const float ExperimentalEarlyScenePathSuppressionTimeoutSeconds = 8f;
 
         public static bool EnableExperimentalEarlyScenePathSuppression { get; private set; } =
@@ -104,6 +121,15 @@ namespace FUSE.Infrastructure
 
         public static float RandomVisualConditionMax { get; private set; } = DefaultRandomVisualConditionMax;
 
+        public static bool EnableFrameSpikeDiagnostics { get; private set; } = DefaultEnableFrameSpikeDiagnostics;
+
+        public static float FrameSpikeThresholdMs { get; private set; } = DefaultFrameSpikeThresholdMs;
+
+        public static bool ForceConstrainedVramMode { get; private set; } =
+            DefaultForceConstrainedVramMode;
+
+        public static bool EnableNativeLeakStackTraces { get; private set; } = DefaultEnableNativeLeakStackTraces;
+
         public static void Load(UnityModManager.ModEntry modEntry)
         {
             EnableExperimentalEarlyScenePathSuppression = DefaultEnableExperimentalEarlyScenePathSuppression;
@@ -130,6 +156,10 @@ namespace FUSE.Infrastructure
             RandomizeVisualConditionOnSpawn = DefaultRandomizeVisualConditionOnSpawn;
             RandomVisualConditionMin = DefaultRandomVisualConditionMin;
             RandomVisualConditionMax = DefaultRandomVisualConditionMax;
+            EnableFrameSpikeDiagnostics = DefaultEnableFrameSpikeDiagnostics;
+            FrameSpikeThresholdMs = DefaultFrameSpikeThresholdMs;
+            ForceConstrainedVramMode = DefaultForceConstrainedVramMode;
+            EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
             var infoPath = Path.Combine(modEntry?.Path ?? string.Empty, "Info.json");
@@ -191,6 +221,14 @@ namespace FUSE.Infrastructure
                     ReadFloat(settings, "RandomVisualConditionMin", DefaultRandomVisualConditionMin));
                 RandomVisualConditionMax = Mathf.Clamp01(
                     ReadFloat(settings, "RandomVisualConditionMax", DefaultRandomVisualConditionMax));
+                EnableFrameSpikeDiagnostics =
+                    ReadBool(settings, "EnableFrameSpikeDiagnostics", DefaultEnableFrameSpikeDiagnostics);
+                FrameSpikeThresholdMs = ClampFrameSpikeThresholdMs(
+                    ReadFloat(settings, "FrameSpikeThresholdMs", DefaultFrameSpikeThresholdMs));
+                ForceConstrainedVramMode =
+                    ReadBool(settings, "ForceConstrainedVramMode", DefaultForceConstrainedVramMode);
+                EnableNativeLeakStackTraces =
+                    ReadBool(settings, "EnableNativeLeakStackTraces", DefaultEnableNativeLeakStackTraces);
                 ApplyUserOverrides();
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -220,6 +258,10 @@ namespace FUSE.Infrastructure
                     $"RandomizeVisualConditionOnSpawn={RandomizeVisualConditionOnSpawn} " +
                     $"RandomVisualConditionMin={RandomVisualConditionMin} " +
                     $"RandomVisualConditionMax={RandomVisualConditionMax} " +
+                    $"EnableFrameSpikeDiagnostics={EnableFrameSpikeDiagnostics} " +
+                    $"FrameSpikeThresholdMs={FrameSpikeThresholdMs} " +
+                    $"ForceConstrainedVramMode={ForceConstrainedVramMode} " +
+                    $"EnableNativeLeakStackTraces={EnableNativeLeakStackTraces} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
             catch (Exception ex)
@@ -248,6 +290,10 @@ namespace FUSE.Infrastructure
                 RandomizeVisualConditionOnSpawn = DefaultRandomizeVisualConditionOnSpawn;
                 RandomVisualConditionMin = DefaultRandomVisualConditionMin;
                 RandomVisualConditionMax = DefaultRandomVisualConditionMax;
+                EnableFrameSpikeDiagnostics = DefaultEnableFrameSpikeDiagnostics;
+                FrameSpikeThresholdMs = DefaultFrameSpikeThresholdMs;
+                ForceConstrainedVramMode = DefaultForceConstrainedVramMode;
+                EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Exception($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled", ex);
             }
@@ -263,8 +309,10 @@ namespace FUSE.Infrastructure
         public static void SetEnableSceneryCullingDiagnostics(bool enabled)
         {
             EnableSceneryCullingDiagnostics = enabled;
-            SaveUserOverride(nameof(EnableSceneryCullingDiagnostics), enabled);
-            FuseLog.Info($"FUSE setting changed: {nameof(EnableSceneryCullingDiagnostics)}={enabled}.");
+            RemoveUserOverride(nameof(EnableSceneryCullingDiagnostics));
+            FuseLog.Info(
+                $"FUSE session diagnostic changed: {nameof(EnableSceneryCullingDiagnostics)}={enabled}. " +
+                "This diagnostic resets when the game restarts.");
         }
 
         // Transient (non-persisting) toggle used by FuseSceneryBenchmark to capture
@@ -412,6 +460,74 @@ namespace FUSE.Infrastructure
             FuseLog.Info($"FUSE setting changed: {nameof(RandomVisualConditionMax)}={RandomVisualConditionMax}.");
         }
 
+        public static void SetEnableFrameSpikeDiagnostics(bool enabled)
+        {
+            EnableFrameSpikeDiagnostics = enabled;
+            SaveUserOverride(nameof(EnableFrameSpikeDiagnostics), enabled);
+            FuseLog.Info(
+                $"FUSE setting changed: {nameof(EnableFrameSpikeDiagnostics)}={enabled} " +
+                $"(threshold {FrameSpikeThresholdMs:F0}ms). Takes effect immediately.");
+        }
+
+        public static void SetForceConstrainedVramMode(bool enabled)
+        {
+            ForceConstrainedVramMode = enabled;
+            SaveUserOverride(nameof(ForceConstrainedVramMode), enabled);
+            FuseLog.Info(
+                $"FUSE setting changed: {nameof(ForceConstrainedVramMode)}={enabled}. " +
+                "Restart the game before collecting a comparison capture.");
+        }
+
+        // The spike-floor clamp: 20ms matches the read-time floor applied to
+        // Info.json values (below that, ordinary frames at low fps would log
+        // as spikes); 500ms is far past anything worth calling a "spike"
+        // rather than a stall.
+        internal const float MinFrameSpikeThresholdMs = 20f;
+        internal const float MaxFrameSpikeThresholdMs = 500f;
+
+        // Every path that writes FrameSpikeThresholdMs — Info.json load, user
+        // override apply, slider preview, and persist — funnels through this
+        // clamp so no source can smuggle a value outside the documented range.
+        // NaN would sail through Mathf.Clamp (ReadFloat accepts the string
+        // "NaN"), so it degrades to the default; infinities clamp normally.
+        private static float ClampFrameSpikeThresholdMs(float thresholdMs)
+        {
+            if (float.IsNaN(thresholdMs))
+            {
+                return DefaultFrameSpikeThresholdMs;
+            }
+
+            return Mathf.Clamp(thresholdMs, MinFrameSpikeThresholdMs, MaxFrameSpikeThresholdMs);
+        }
+
+        /// <summary>
+        /// Live preview while the settings slider is being dragged: updates
+        /// the running value (the spike logger reads it per frame) without
+        /// persisting, so a drag does not write the override file once per
+        /// slider tick. <see cref="SetFrameSpikeThresholdMs"/> persists on
+        /// release.
+        /// </summary>
+        internal static void PreviewFrameSpikeThresholdMs(float thresholdMs)
+        {
+            FrameSpikeThresholdMs = ClampFrameSpikeThresholdMs(thresholdMs);
+        }
+
+        public static void SetFrameSpikeThresholdMs(float thresholdMs)
+        {
+            FrameSpikeThresholdMs = ClampFrameSpikeThresholdMs(thresholdMs);
+            SaveUserOverride(nameof(FrameSpikeThresholdMs), FrameSpikeThresholdMs);
+            FuseLog.Info(
+                $"FUSE setting changed: {nameof(FrameSpikeThresholdMs)}={FrameSpikeThresholdMs:F0}ms. " +
+                "Takes effect immediately.");
+        }
+
+        public static void SetEnableNativeLeakStackTraces(bool enabled)
+        {
+            EnableNativeLeakStackTraces = enabled;
+            SaveUserOverride(nameof(EnableNativeLeakStackTraces), enabled);
+            FuseNativeLeakDiagnostic.Apply(enabled);
+        }
+
         public static string GetUserSettingsPath()
         {
             return Path.Combine(Application.persistentDataPath, "FUSE", "settings.json");
@@ -467,23 +583,122 @@ namespace FUSE.Infrastructure
                 : defaultValue;
         }
 
-        private static void ApplyUserOverrides()
+        internal static bool IsSessionOnlyUserSetting(string key)
         {
-            var path = GetUserSettingsPath();
-            if (!File.Exists(path))
-            {
-                return;
-            }
+            return string.Equals(
+                key,
+                nameof(EnableSceneryCullingDiagnostics),
+                StringComparison.Ordinal);
+        }
+
+        private static JObject LoadUserSettingsJson(string path)
+        {
+            return File.Exists(path)
+                ? JObject.Parse(File.ReadAllText(path))
+                : null;
+        }
+
+        // Caller holds UserSettingsCommitGate across the complete
+        // load -> mutate -> write transaction.
+        private static void WriteUserSettingsJsonUnderLock(string path, JObject root)
+        {
+            var directory = Path.GetDirectoryName(path) ?? string.Empty;
+            Directory.CreateDirectory(directory);
+            var temporaryPath = Path.Combine(
+                directory,
+                "." + Path.GetFileName(path) + "." + Guid.NewGuid().ToString("N") + ".tmp");
 
             try
             {
-                var settings = JObject.Parse(File.ReadAllText(path));
+                // Write beside the destination, then publish the complete JSON
+                // atomically. Readers therefore never observe a truncated live
+                // settings file if serialization or I/O is interrupted.
+                File.WriteAllText(
+                    temporaryPath,
+                    root.ToString(Newtonsoft.Json.Formatting.Indented));
+                if (File.Exists(path))
+                {
+                    File.Replace(temporaryPath, path, null);
+                }
+                else
+                {
+                    File.Move(temporaryPath, path);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(temporaryPath))
+                    {
+                        File.Delete(temporaryPath);
+                    }
+                }
+                catch (Exception cleanupException)
+                {
+                    FuseLog.Warning(
+                        $"FUSE could not clean up temporary user settings file '{temporaryPath}': " +
+                        cleanupException.GetBaseException().Message);
+                }
+            }
+        }
+
+        private static void ApplyUserOverrides()
+        {
+            var path = GetUserSettingsPath();
+            try
+            {
+                JObject settings;
+                var removedLegacyOverride = false;
+                string legacyCleanupError = null;
+                lock (UserSettingsCommitGate)
+                {
+                    settings = LoadUserSettingsJson(path);
+                    if (settings == null)
+                    {
+                        return;
+                    }
+
+                    // High-volume culling diagnostics are deliberately session-only.
+                    // Remove an older persisted value in the same transaction that
+                    // loaded it, so a concurrent UI save cannot be overwritten.
+                    removedLegacyOverride = settings.Remove(nameof(EnableSceneryCullingDiagnostics));
+                    if (removedLegacyOverride)
+                    {
+                        try
+                        {
+                            WriteUserSettingsJsonUnderLock(path, settings);
+                        }
+                        catch (Exception cleanupException)
+                        {
+                            // Cleanup is best-effort. Continue applying the already-loaded
+                            // overrides so one unwritable legacy key cannot discard every
+                            // valid setting that follows it.
+                            legacyCleanupError = cleanupException.GetBaseException().Message;
+                        }
+                    }
+                }
+
+                if (removedLegacyOverride)
+                {
+                    if (legacyCleanupError == null)
+                    {
+                        FuseLog.Info(
+                            "FUSE removed the legacy persisted scenery-culling diagnostic override; " +
+                            "enable it explicitly for each diagnostic session.");
+                    }
+                    else
+                    {
+                        FuseLog.Warning(
+                            "FUSE could not remove the legacy persisted scenery-culling diagnostic override; " +
+                            $"continuing with the remaining user settings: {legacyCleanupError}");
+                    }
+                }
+
                 EnableExperimentalEarlyScenePathSuppression =
                     ReadBool(settings, nameof(EnableExperimentalEarlyScenePathSuppression), EnableExperimentalEarlyScenePathSuppression);
                 VerboseApplyReportDetails =
                     ReadBool(settings, nameof(VerboseApplyReportDetails), VerboseApplyReportDetails);
-                EnableSceneryCullingDiagnostics =
-                    ReadBool(settings, nameof(EnableSceneryCullingDiagnostics), EnableSceneryCullingDiagnostics);
                 EnableTargetedTerrainInvalidation =
                     ReadBool(settings, nameof(EnableTargetedTerrainInvalidation), EnableTargetedTerrainInvalidation);
                 BlockNonHostMultiplayerClientWorldApply =
@@ -522,6 +737,14 @@ namespace FUSE.Infrastructure
                     ReadFloat(settings, nameof(RandomVisualConditionMin), RandomVisualConditionMin));
                 RandomVisualConditionMax = Mathf.Clamp01(
                     ReadFloat(settings, nameof(RandomVisualConditionMax), RandomVisualConditionMax));
+                EnableFrameSpikeDiagnostics =
+                    ReadBool(settings, nameof(EnableFrameSpikeDiagnostics), EnableFrameSpikeDiagnostics);
+                FrameSpikeThresholdMs = ClampFrameSpikeThresholdMs(
+                    ReadFloat(settings, nameof(FrameSpikeThresholdMs), FrameSpikeThresholdMs));
+                ForceConstrainedVramMode =
+                    ReadBool(settings, nameof(ForceConstrainedVramMode), ForceConstrainedVramMode);
+                EnableNativeLeakStackTraces =
+                    ReadBool(settings, nameof(EnableNativeLeakStackTraces), EnableNativeLeakStackTraces);
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
             }
             catch (Exception ex)
@@ -542,19 +765,52 @@ namespace FUSE.Infrastructure
 
         private static void SaveUserOverride(string key, JValue value)
         {
+            if (IsSessionOnlyUserSetting(key))
+            {
+                RemoveUserOverride(key);
+                return;
+            }
+
             try
             {
                 var path = GetUserSettingsPath();
-                Directory.CreateDirectory(Path.GetDirectoryName(path) ?? string.Empty);
-                var root = File.Exists(path)
-                    ? JObject.Parse(File.ReadAllText(path))
-                    : new JObject();
-                root[key] = value;
-                File.WriteAllText(path, root.ToString(Newtonsoft.Json.Formatting.Indented));
+                lock (UserSettingsCommitGate)
+                {
+                    var root = LoadUserSettingsJson(path) ?? new JObject();
+                    root[key] = value;
+                    WriteUserSettingsJsonUnderLock(path, root);
+                }
             }
             catch (Exception ex)
             {
                 FuseLog.Warning($"FUSE could not save user setting override '{key}': {ex.GetBaseException().Message}");
+            }
+        }
+
+        private static void RemoveUserOverride(string key)
+        {
+            try
+            {
+                var path = GetUserSettingsPath();
+                lock (UserSettingsCommitGate)
+                {
+                    var root = LoadUserSettingsJson(path);
+                    if (root == null)
+                    {
+                        return;
+                    }
+
+                    if (!root.Remove(key))
+                    {
+                        return;
+                    }
+
+                    WriteUserSettingsJsonUnderLock(path, root);
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning($"FUSE could not remove user setting override '{key}': {ex.GetBaseException().Message}");
             }
         }
     }

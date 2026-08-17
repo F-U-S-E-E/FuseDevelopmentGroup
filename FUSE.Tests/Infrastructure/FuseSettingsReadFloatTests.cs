@@ -62,4 +62,33 @@ namespace FUSE.Tests.Infrastructure
             Assert.Equal(0.6f, FuseSettings.ReadFloat(settings, null, 0.6f));
         }
     }
+
+    /// <summary>
+    /// Clamp contract for the spike-floor slider preview (visible via
+    /// InternalsVisibleTo). Preview mutates the live static value without
+    /// persisting, so each test restores the default afterwards.
+    /// </summary>
+    public class FuseSettingsFrameSpikeThresholdTests
+    {
+        [Theory]
+        [InlineData(5f, FuseSettings.MinFrameSpikeThresholdMs)]     // below floor clamps up
+        [InlineData(50f, 50f)]                                       // in-range passes through
+        [InlineData(9999f, FuseSettings.MaxFrameSpikeThresholdMs)]   // above ceiling clamps down
+        [InlineData(float.NaN, FuseSettings.DefaultFrameSpikeThresholdMs)]           // NaN degrades to default
+        [InlineData(float.PositiveInfinity, FuseSettings.MaxFrameSpikeThresholdMs)]  // +Inf clamps down
+        [InlineData(float.NegativeInfinity, FuseSettings.MinFrameSpikeThresholdMs)]  // -Inf clamps up
+        public void PreviewFrameSpikeThresholdMs_ClampsToDocumentedRange(float input, float expected)
+        {
+            var original = FuseSettings.FrameSpikeThresholdMs;
+            try
+            {
+                FuseSettings.PreviewFrameSpikeThresholdMs(input);
+                Assert.Equal(expected, FuseSettings.FrameSpikeThresholdMs);
+            }
+            finally
+            {
+                FuseSettings.PreviewFrameSpikeThresholdMs(original);
+            }
+        }
+    }
 }

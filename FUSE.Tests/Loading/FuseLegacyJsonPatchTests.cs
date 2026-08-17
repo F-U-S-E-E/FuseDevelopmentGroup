@@ -237,6 +237,61 @@ namespace FUSE.Tests.Loading
             }
         }
 
+        public class PlainArrayReplacement
+        {
+            // The field shape behind the five 'legacy game-graph
+            // compatibility' faults: a spliney's directive-free "points"
+            // array re-applied while the spliney already exists in the
+            // runtime state. The literal array is the author's complete
+            // value and must replace, not fault.
+            [Fact]
+            public void PlainObjectArray_OnExistingArray_ReplacesWholesale()
+            {
+                var target = Obj(
+                    "{\"points\":[{\"x\":1,\"width\":7.0},{\"x\":2,\"width\":7.0},{\"x\":3,\"width\":7.0}]}");
+                var patch = Obj("{\"points\":[{\"x\":10,\"width\":5.0},{\"x\":20,\"width\":5.0}]}");
+
+                FuseLegacyJsonPatch.Apply(target, patch, "source");
+
+                Assert.Equal(2, target["points"].Count());
+                Assert.Equal(10, (int)target["points"][0]["x"]);
+                Assert.Equal(5.0, (double)target["points"][1]["width"]);
+            }
+
+            [Fact]
+            public void PlainObjectArray_OnMissingKey_SetsTheArray()
+            {
+                var target = Obj("{}");
+                var patch = Obj("{\"points\":[{\"x\":1},{\"x\":2}]}");
+
+                FuseLegacyJsonPatch.Apply(target, patch, "source");
+
+                Assert.Equal(2, target["points"].Count());
+            }
+
+            [Fact]
+            public void PrimitiveOnlyArray_KeepsAppendSemantics()
+            {
+                var target = Obj("{\"tags\":[\"a\",\"b\"]}");
+                var patch = Obj("{\"tags\":[\"c\"]}");
+
+                FuseLegacyJsonPatch.Apply(target, patch, "source");
+
+                Assert.Equal(3, target["tags"].Count());
+                Assert.Equal("c", (string)target["tags"][2]);
+            }
+
+            [Fact]
+            public void MixedArray_WithADirective_KeepsStrictMergeAndStillRejectsPlainObjects()
+            {
+                var target = Obj("{\"items\":[{\"id\":\"a\"}]}");
+                var patch = Obj("{\"items\":[{\"$append\":[{\"id\":\"b\"}]},{\"id\":\"plain\"}]}");
+
+                Assert.Throws<InvalidOperationException>(
+                    () => FuseLegacyJsonPatch.Apply(target, patch, "source"));
+            }
+        }
+
         public class ArrayElementDirectives
         {
             [Fact]

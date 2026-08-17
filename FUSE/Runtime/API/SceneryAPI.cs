@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using HarmonyLib;
 using Helpers;
+using Model.Database;
 using Model.Definition.Data;
 using FUSE.Runtime.Cache;
 using FUSE.Authoring.Data;
@@ -88,6 +90,11 @@ namespace FUSE.Runtime.API
             // behind. The building MODEL itself culls like any other scenery — only its
             // terrain contribution is permanent.
             marker.IsMaskBearing = FuseSceneryDeferralClassifier.HasMaskComponent(assetIdentifier);
+            marker.IsPriorityStructure =
+                marker.IsMaskBearing ||
+                FuseSceneryPriorityClassifier.IsPriorityStructure(
+                    id,
+                    assetIdentifier);
             if (marker.IsMaskBearing)
             {
                 var sceneryRoot = gameObject;
@@ -144,6 +151,10 @@ namespace FUSE.Runtime.API
             // other scenery; only its terrain contribution is permanent. Set once at
             // AddScenery time.
             public bool IsMaskBearing;
+
+            // Structures use a separate, still-bounded destination lane on
+            // teleport so they cannot wait behind a vegetation backlog.
+            public bool IsPriorityStructure;
         }
 
         public static void UpdateScenery(string id, FuseScenery definition)
@@ -178,6 +189,15 @@ namespace FUSE.Runtime.API
             // masks so the flatten follows the scenery. If the model isn't currently streamed
             // in, the re-decouple is a no-op and OnDidLoadModels redoes it on the next load.
             var marker = scenery.GetComponent<FuseSceneryMarker>();
+            if (marker != null)
+            {
+                marker.IsPriorityStructure =
+                    marker.IsMaskBearing ||
+                    FuseSceneryPriorityClassifier.IsPriorityStructure(
+                        id,
+                        assetIdentifier);
+            }
+
             if (marker != null && marker.IsMaskBearing)
             {
                 MapAPI.RemoveDecoupledMasksFor(id);
@@ -339,12 +359,64 @@ namespace FUSE.Runtime.API
                 return false;
             }
 
+            if (TryGetCachedIdentifierResolution(candidate, out resolvedIdentifier))
+            {
+                return resolvedIdentifier != null;
+            }
+
+            // These aliases are intentional migrations, not a generic
+            // case-insensitive fallback. Resolve the canonical identifier
+            // first so a known legacy name does not force PrefabStore to walk
+            // and deserialize every cold store just to prove the old name is
+            // absent.
+            if (allowLegacyAlias &&
+                LegacySceneryAssetAliases.TryGetValue(NormalizeLegacyAssetKey(candidate), out var alias) &&
+                !string.Equals(alias, candidate, StringComparison.OrdinalIgnoreCase) &&
+                TryResolveKnownSceneryAssetIdentifier(alias, out resolvedIdentifier, false))
+            {
+                CacheIdentifierResolution(candidate, resolvedIdentifier);
+                FuseLog.Info($"FUSE resolved legacy scenery asset alias '{candidate}' -> '{resolvedIdentifier}'.");
+                return true;
+            }
+
+            // These four names are explicit optional references emitted by the
+            // legacy EFA data. Prove their absence from the complete on-disk
+            // source index before entering TryGetSceneryDefinition: a miss in
+            // that game API walks and deserializes every mounted store. This
+            // narrowly scoped early-out is safe for runtime-injected equipment
+            // because it applies only to the known optional scenery allow-list.
+            if (IsKnownOptionalLegacyAssetReference(candidate))
+            {
+                try
+                {
+                    var prefabStore = SceneryPrefabStoreProperty?.GetValue(manager, null) as PrefabStore;
+                    var foundInSource = FUSE.Patches.FusePrefabStoreAssetPackContainingIdentifierTracePatch
+                        .TryResolveCanonicalSourceIdentifier(
+                            prefabStore,
+                            candidate,
+                            out _,
+                            out var sourceIndexComplete);
+                    if (sourceIndexComplete && !foundInSource)
+                    {
+                        CacheIdentifierResolution(candidate, null);
+                        return false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Warning(
+                        $"FUSE optional scenery source-index lookup failed softly for '{candidate}': " +
+                        ex.GetBaseException().Message);
+                }
+            }
+
             try
             {
                 SceneryDefinition definition;
                 if (manager.TryGetSceneryDefinition(candidate, out definition) && definition != null)
                 {
                     resolvedIdentifier = candidate;
+                    CacheIdentifierResolution(candidate, resolvedIdentifier);
                     return true;
                 }
             }
@@ -353,16 +425,9 @@ namespace FUSE.Runtime.API
                 FuseLog.Exception($"FUSE scenery asset direct lookup failed for '{candidate}'", ex);
             }
 
-            if (allowLegacyAlias &&
-                LegacySceneryAssetAliases.TryGetValue(NormalizeLegacyAssetKey(candidate), out var alias) &&
-                !string.Equals(alias, candidate, StringComparison.OrdinalIgnoreCase) &&
-                TryResolveKnownSceneryAssetIdentifier(alias, out resolvedIdentifier, false))
-            {
-                FuseLog.Info($"FUSE resolved legacy scenery asset alias '{candidate}' -> '{resolvedIdentifier}'.");
-                return true;
-            }
-
-            return TryResolveFromKnownIdentifierIndex(manager, candidate, out resolvedIdentifier);
+            var found = TryResolveFromKnownIdentifierIndex(manager, candidate, out resolvedIdentifier);
+            CacheIdentifierResolution(candidate, found ? resolvedIdentifier : null);
+            return found;
         }
 
         // Case-insensitive identifier -> canonical identifier, built lazily from one
@@ -376,7 +441,11 @@ namespace FUSE.Runtime.API
         // keeps the patched direct-only filtering applied. The index must never be
         // consulted before the exact-case probe and legacy-alias steps above.
         private static readonly object KnownSceneryIdentifierIndexLock = new object();
+        private static readonly System.Reflection.PropertyInfo SceneryPrefabStoreProperty =
+            AccessTools.Property(typeof(SceneryAssetManager), "PrefabStore");
         private static Dictionary<string, string> _knownSceneryIdentifierIndex;
+        private static readonly Dictionary<string, string> ResolvedSceneryIdentifierCache =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static int _knownSceneryIdentifierIndexGeneration;
 
         // The identifier population changes outside this class: direct-store
@@ -388,13 +457,76 @@ namespace FUSE.Runtime.API
             lock (KnownSceneryIdentifierIndexLock)
             {
                 _knownSceneryIdentifierIndex = null;
+                ResolvedSceneryIdentifierCache.Clear();
                 _knownSceneryIdentifierIndexGeneration++;
+            }
+
+            FuseSceneryDeferralClassifier.InvalidateCache();
+        }
+
+        private static bool TryGetCachedIdentifierResolution(
+            string candidate,
+            out string resolvedIdentifier)
+        {
+            lock (KnownSceneryIdentifierIndexLock)
+            {
+                return ResolvedSceneryIdentifierCache.TryGetValue(
+                    candidate,
+                    out resolvedIdentifier);
+            }
+        }
+
+        private static void CacheIdentifierResolution(
+            string candidate,
+            string resolvedIdentifier)
+        {
+            lock (KnownSceneryIdentifierIndexLock)
+            {
+                ResolvedSceneryIdentifierCache[candidate] = resolvedIdentifier;
             }
         }
 
         private static bool TryResolveFromKnownIdentifierIndex(SceneryAssetManager manager, string candidate, out string resolvedIdentifier)
         {
             resolvedIdentifier = null;
+
+            // Prefer FUSE's streaming source index. It is already built for the
+            // PrefabStore lookup above and reads only objects[].identifier tokens.
+            // A complete-index miss is authoritative, avoiding
+            // GetSceneryDefinitionIdentifiers(), whose editor-menu postfix forces
+            // every one of the hundreds of cold stores to deserialize.
+            try
+            {
+                var prefabStore = SceneryPrefabStoreProperty?.GetValue(manager, null) as PrefabStore;
+                if (FUSE.Patches.FusePrefabStoreAssetPackContainingIdentifierTracePatch
+                    .TryResolveCanonicalSourceIdentifier(
+                        prefabStore,
+                        candidate,
+                        out resolvedIdentifier,
+                        out var sourceIndexComplete))
+                {
+                    return true;
+                }
+
+                // The source files are not the whole runtime catalog: legacy
+                // container mixintos can inject equipment/scenery identifiers
+                // after this index is built. Only the explicit optional legacy
+                // scenery list is allowed to treat a complete source-index miss
+                // as authoritative. All other identifiers retain the runtime
+                // manager enumeration fallback.
+                if (sourceIndexComplete &&
+                    IsKnownOptionalLegacyAssetReference(candidate))
+                {
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE scenery source-index lookup failed softly for '{candidate}': " +
+                    ex.GetBaseException().Message);
+            }
+
             Dictionary<string, string> index;
             lock (KnownSceneryIdentifierIndexLock)
             {

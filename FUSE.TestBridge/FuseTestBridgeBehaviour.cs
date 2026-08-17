@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using Fuse.Core.Bridge;
 using FUSE.Infrastructure;
 using FUSE.Loading;
@@ -16,7 +17,9 @@ namespace FUSE.TestBridge
     /// <see cref="Update"/> (the only place FUSE/Unity calls are legal), then a
     /// <c>test_result_&lt;id&gt;.json</c> is written and the request file deleted. Per-request files mean a
     /// slow or aborted request never clobbers the next. A ~1s heartbeat to <c>test_state.json</c> lets the
-    /// driver see liveness/readiness (and the FUSE.log path) without a round trip.
+    /// driver see liveness/readiness (and the FUSE.log path) without a round trip; the heartbeat
+    /// payload is sampled on the Unity main thread, then the atomic file write is serialized on a
+    /// background worker so disk/antivirus latency cannot hitch the frame loop.
     ///
     /// The watcher fires on a thread-pool thread and only flags work; all execution is on the main
     /// thread. The <c>screenshot</c> verb is deferred — Unity writes the PNG a frame later, so its result
@@ -30,9 +33,13 @@ namespace FUSE.TestBridge
         private string _statePath;
         private FileSystemWatcher _watcher;
         private readonly object _lock = new object();
+        private readonly object _heartbeatLock = new object();
         private bool _pending;
         private float _heartbeatTimer;
         private int _pid;
+        private BridgeState _pendingHeartbeatState;
+        private bool _heartbeatWriteInFlight;
+        private string _heartbeatWriteError;
 
         private string _lastRequestId;
         private string _lastCompletedUtc;
@@ -155,6 +162,8 @@ namespace FUSE.TestBridge
                 _heartbeatTimer = 0f;
                 WriteHeartbeat();
             }
+
+            ReportHeartbeatWriteError();
         }
 
         private void ProcessOldestRequest()
@@ -380,11 +389,73 @@ namespace FUSE.TestBridge
                     Error = _lastError,
                     LogPath = FuseLog.LogFilePath,
                 };
-                BridgeIo.WriteAtomic(_statePath, state);
+
+                QueueHeartbeatWrite(state);
             }
             catch (Exception ex)
             {
-                Main.ModEntry?.Logger.Warning("FUSE.TestBridge heartbeat write failed: " + ex.Message);
+                Main.ModEntry?.Logger.Warning("FUSE.TestBridge heartbeat sample failed: " + ex.Message);
+            }
+        }
+
+        private void QueueHeartbeatWrite(BridgeState state)
+        {
+            lock (_heartbeatLock)
+            {
+                _pendingHeartbeatState = state;
+                if (_heartbeatWriteInFlight)
+                {
+                    return;
+                }
+
+                _heartbeatWriteInFlight = true;
+            }
+
+            ThreadPool.QueueUserWorkItem(_ => DrainHeartbeatWrites());
+        }
+
+        private void DrainHeartbeatWrites()
+        {
+            while (true)
+            {
+                BridgeState state;
+                lock (_heartbeatLock)
+                {
+                    state = _pendingHeartbeatState;
+                    _pendingHeartbeatState = null;
+                    if (state == null)
+                    {
+                        _heartbeatWriteInFlight = false;
+                        return;
+                    }
+                }
+
+                try
+                {
+                    BridgeIo.WriteAtomic(_statePath, state);
+                }
+                catch (Exception ex)
+                {
+                    lock (_heartbeatLock)
+                    {
+                        _heartbeatWriteError = ex.Message;
+                    }
+                }
+            }
+        }
+
+        private void ReportHeartbeatWriteError()
+        {
+            string error;
+            lock (_heartbeatLock)
+            {
+                error = _heartbeatWriteError;
+                _heartbeatWriteError = null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                Main.ModEntry?.Logger.Warning("FUSE.TestBridge heartbeat write failed: " + error);
             }
         }
 

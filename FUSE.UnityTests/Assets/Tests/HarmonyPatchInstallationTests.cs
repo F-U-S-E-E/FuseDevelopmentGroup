@@ -1,12 +1,17 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Effects.Decals;
 using FUSE.Patches;
 using HarmonyLib;
+using Helpers;
 using Model.Definition;
+using Model.Definition.Components;
 using Model.Definition.Data;
 using NUnit.Framework;
+using UnityEngine;
 
 namespace FUSE.UnityTests
 {
@@ -156,6 +161,142 @@ namespace FUSE.UnityTests
                 "Patched TryGetField on a null-Fields definition must return false (our prefix's fallback).");
             Assert.IsNull(args[2],
                 "Patched TryGetField on a null-Fields definition must produce a null out value.");
+        }
+
+        [Test]
+        public void DecalRegisterGuard_RejectsNullAndDestroyedUnityObjects()
+        {
+            Assert.False(FuseDecalCullingRegisterGuardPatch.ShouldRegister(null));
+
+            var gameObject = new GameObject("FUSE decal register guard test");
+            try
+            {
+                Assert.True(FuseDecalCullingRegisterGuardPatch.ShouldRegister(gameObject));
+                UnityEngine.Object.DestroyImmediate(gameObject);
+                Assert.False(FuseDecalCullingRegisterGuardPatch.ShouldRegister(gameObject),
+                    "Unity fake-null must reject a destroyed projector before registration.");
+            }
+            finally
+            {
+                if (gameObject != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(gameObject);
+                }
+            }
+        }
+
+        [Test]
+        public void DecalCullingPreflight_RemovesDestroyedProjectorBeforeVisibilityJob()
+        {
+            var managerObject = new GameObject("FUSE decal culling manager test");
+            var projectorObject = new GameObject("FUSE destroyed decal projector test");
+            managerObject.SetActive(false);
+            projectorObject.SetActive(false);
+
+            try
+            {
+                var manager = managerObject.AddComponent<DecalCullingManager>();
+                var managerType = typeof(DecalCullingManager);
+                var entryType = AccessTools.Inner(managerType, "Entry");
+                var registryField = AccessTools.Field(managerType, "_decalProjectors");
+                var projectorField = AccessTools.Field(entryType, "DecalProjector");
+                var projectorType = Type.GetType(
+                    "UnityEngine.Rendering.Universal.DecalProjector, Unity.RenderPipelines.Universal.Runtime");
+
+                Assert.NotNull(entryType);
+                Assert.NotNull(registryField);
+                Assert.NotNull(projectorField);
+                Assert.NotNull(projectorType);
+
+                var registry = (IList)registryField.GetValue(manager);
+                var entry = Activator.CreateInstance(entryType, nonPublic: true);
+                var projector = projectorObject.AddComponent(projectorType);
+                projectorField.SetValue(entry, projector);
+                registry.Add(entry);
+
+                Assert.AreEqual(0, FuseDecalCullingScrubPatch.ScrubDestroyedEntries(manager));
+                Assert.AreEqual(1, registry.Count, "A live projector must stay registered.");
+
+                UnityEngine.Object.DestroyImmediate(projectorObject);
+
+                Assert.AreEqual(1, FuseDecalCullingScrubPatch.ScrubDestroyedEntries(manager));
+                Assert.AreEqual(0, registry.Count,
+                    "A destroyed projector must be removed before vanilla allocates TempJob arrays.");
+            }
+            finally
+            {
+                if (projectorObject != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(projectorObject);
+                }
+
+                UnityEngine.Object.DestroyImmediate(managerObject);
+            }
+        }
+
+        [Test]
+        public void DecalVisibilityCallbackGuard_RewritesLiveGameMethod()
+        {
+            _harmony.PatchAll(typeof(FuseAssetPackPatchHelpers).Assembly);
+
+            var target = AccessTools.Method(
+                typeof(DecalCullingManager),
+                "UpdateDecalVisibilityJob");
+            Assert.NotNull(target,
+                "DecalCullingManager.UpdateDecalVisibilityJob was renamed or removed.");
+
+            var patchInfo = Harmony.GetPatchInfo(target);
+            Assert.NotNull(patchInfo,
+                "Harmony has no patch info for the decal visibility job.");
+            Assert.True(
+                patchInfo.Transpilers.Any(patch => patch.owner == TestHarmonyId),
+                "The FUSE test Harmony id did not install the callback-containment transpiler.");
+            Assert.True(
+                FuseDecalVisibilityCallbackGuardPatch.RewriteInstalled,
+                "The transpiler attached but did not find the one Action<bool>.Invoke call that " +
+                "must be replaced before vanilla's NativeArray disposal instructions.");
+        }
+
+        [Test]
+        public void SceneryComponentFilter_SkipsOnlyCarDecalDefinitions()
+        {
+            Assert.True(
+                FuseSceneryAnimationSetupComponentsPatch.ShouldSkipSceneryComponent(new DecalComponent()));
+            Assert.False(FuseSceneryAnimationSetupComponentsPatch.ShouldSkipSceneryComponent(null));
+        }
+
+        [Test]
+        public void SceneryDecalBackstop_LeavesPlainProjectorEnabled()
+        {
+            var sceneryObject = new GameObject("FUSE plain scenery decal test");
+            var projectorObject = new GameObject("Plain scenery projector");
+            sceneryObject.SetActive(false);
+            projectorObject.SetActive(false);
+            projectorObject.transform.SetParent(sceneryObject.transform, false);
+
+            try
+            {
+                var instance = sceneryObject.AddComponent<SceneryAssetInstance>();
+                var projectorType = Type.GetType(
+                    "UnityEngine.Rendering.Universal.DecalProjector, Unity.RenderPipelines.Universal.Runtime");
+                Assert.NotNull(projectorType);
+
+                var projector = projectorObject.AddComponent(projectorType) as Behaviour;
+                Assert.NotNull(projector);
+                projector.enabled = true;
+
+                FuseSceneryAnimationSetupComponentsPatch.ScrubCarOnlyDecalMachinery(
+                    instance,
+                    ComponentLifetime.Static,
+                    null);
+
+                Assert.True(projector.enabled,
+                    "A plain scenery DecalProjector without a car-only helper must remain enabled.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(sceneryObject);
+            }
         }
 
         [Test]

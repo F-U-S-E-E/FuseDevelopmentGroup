@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using FUSE.Authoring.Validation;
 using FUSE.Infrastructure;
 using Model.Ops;
@@ -144,6 +145,7 @@ namespace FUSE.Runtime.Events
             var context = new FuseTrackGraphApplyingContext(graph);
             foreach (Action<FuseTrackGraphApplyingContext> handler in handlers.GetInvocationList())
             {
+                var started = Stopwatch.GetTimestamp();
                 try
                 {
                     handler(context);
@@ -153,6 +155,19 @@ namespace FUSE.Runtime.Events
                     FuseLog.Exception(
                         $"FUSE track-graph applying subscriber '{handler.Method?.DeclaringType?.FullName ?? "<unknown>"}.{handler.Method?.Name ?? "<unknown>"}' failed",
                         ex);
+                }
+                finally
+                {
+                    var elapsedMs =
+                        (Stopwatch.GetTimestamp() - started) * 1000L /
+                        Stopwatch.Frequency;
+                    if (elapsedMs >= 25L)
+                    {
+                        FuseLog.Info(
+                            "FUSE track-graph subscriber timing: " +
+                            $"handler='{handler.Method?.DeclaringType?.FullName ?? "<unknown>"}." +
+                            $"{handler.Method?.Name ?? "<unknown>"}' elapsedMs={elapsedMs}.");
+                    }
                 }
             }
         }

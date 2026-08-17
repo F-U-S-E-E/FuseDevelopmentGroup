@@ -22,9 +22,9 @@ namespace FUSE.Interface
     /// generic runner wraps any scenario: it resets the FUSE churn counters, runs the
     /// movement (sampling peak in-flight loads), then records one JSON row of churn +
     /// timing to FUSE-scenery-benchmark.json. "A/B" runs the scenario twice, forcing
-    /// the debounce off then on via
-    /// <see cref="FuseSceneryCullingDebouncePatch.BenchmarkDebounceOverride"/> (a
-    /// benchmark-only override, not a user setting) — the churn delta is the signal.
+    /// the load throttle off then on via
+    /// <see cref="FuseSceneryLoadThrottlePatch.BenchmarkThrottleOverride"/> (a
+    /// benchmark-only override, not a user setting) — the delta is the signal.
     ///
     /// Built-in scenarios:
     ///  - "sweep": jump to your current view, then oscillate the camera across the
@@ -75,9 +75,7 @@ namespace FUSE.Interface
 
         internal static string RunCorridor() => StartScenario(BuildCorridorScenario(), AbMode.Single);
 
-        internal static string RunCorridorAb() => StartScenario(BuildCorridorScenario(), AbMode.Debounce);
-
-        internal static string RunSweepAb() => StartScenario(BuildSweepScenario(), AbMode.Debounce);
+        internal static string RunSweep() => StartScenario(BuildSweepScenario(), AbMode.Single);
 
         internal static string RunCorridorThrottleAb() => StartScenario(BuildCorridorScenario(), AbMode.Throttle);
 
@@ -87,7 +85,6 @@ namespace FUSE.Interface
         private enum AbMode
         {
             Single,
-            Debounce,
             Throttle
         }
 
@@ -113,10 +110,9 @@ namespace FUSE.Interface
                 return _status = "No camera available — load a map first.";
             }
 
-            var routine = mode == AbMode.Single ? RunSingleRoutine(scenario) : RunAbRoutine(scenario, mode);
+            var routine = mode == AbMode.Single ? RunSingleRoutine(scenario) : RunAbRoutine(scenario);
             BenchmarkRunner.Instance.StartCoroutine(routine);
-            var suffix = mode == AbMode.Single ? string.Empty
-                : mode == AbMode.Throttle ? "throttle A/B " : "A/B ";
+            var suffix = mode == AbMode.Single ? string.Empty : "throttle A/B ";
             return _status = $"{scenario.Name} {suffix}started — watch the status line / FUSE.log.";
         }
 
@@ -153,50 +149,27 @@ namespace FUSE.Interface
         private static IEnumerator RunSingleRoutine(Scenario scenario)
         {
             _running = true;
-            yield return RunScenarioOnce(scenario, null, null, "single", null);
+            yield return RunScenarioOnce(scenario, null, "single", null);
             _running = false;
         }
 
-        private static IEnumerator RunAbRoutine(Scenario scenario, AbMode mode)
+        private static IEnumerator RunAbRoutine(Scenario scenario)
         {
             _running = true;
             JObject baseline = null;
             JObject fixedRun = null;
-            if (mode == AbMode.Throttle)
-            {
-                // Debounce stays default-on; toggle only the load throttle so the delta
-                // isolates batch-load throughput from churn.
-                yield return RunScenarioOnce(scenario, null, false, "baseline-no-throttle", r => baseline = r);
-                yield return RunScenarioOnce(scenario, null, true, "fix-throttle", r => fixedRun = r);
-            }
-            else
-            {
-                yield return RunScenarioOnce(scenario, false, null, "baseline-no-debounce", r => baseline = r);
-                yield return RunScenarioOnce(scenario, true, null, "fix-debounce", r => fixedRun = r);
-            }
-
+            yield return RunScenarioOnce(scenario, false, "baseline-no-throttle", r => baseline = r);
+            yield return RunScenarioOnce(scenario, true, "fix-throttle", r => fixedRun = r);
             _running = false;
 
             if (baseline != null && fixedRun != null)
             {
-                if (mode == AbMode.Throttle)
-                {
-                    _status =
-                        $"{scenario.Name} throttle A/B — minFps base={baseline.Value<double>("minFps"):0} fix={fixedRun.Value<double>("minFps"):0}; " +
-                        $"peakInFlight base={baseline.Value<long>("peakInFlight")} fix={fixedRun.Value<long>("peakInFlight")}; " +
-                        $"maxLoadMs base={baseline.Value<double>("maxLoadMs"):0} fix={fixedRun.Value<double>("maxLoadMs"):0} " +
-                        $"(deferred {fixedRun.Value<long>("deferredLoads")}, peakQueue {fixedRun.Value<int>("peakQueueDepth")}). " +
-                        $"duration base={baseline.Value<double>("durationMs"):0}ms fix={fixedRun.Value<double>("durationMs"):0}ms.";
-                }
-                else
-                {
-                    _status =
-                        $"{scenario.Name} A/B — churn base {baseline.Value<long>("fuseLoads")}L/{baseline.Value<long>("fuseUnloads")}U " +
-                        $"vs fix {fixedRun.Value<long>("fuseLoads")}L/{fixedRun.Value<long>("fuseUnloads")}U " +
-                        $"(held {fixedRun.Value<long>("suppressedUnloads")}). " +
-                        $"minFps base={baseline.Value<double>("minFps"):0} fix={fixedRun.Value<double>("minFps"):0}. " +
-                        $"duration base={baseline.Value<double>("durationMs"):0}ms fix={fixedRun.Value<double>("durationMs"):0}ms.";
-                }
+                _status =
+                    $"{scenario.Name} throttle A/B — minFps base={baseline.Value<double>("minFps"):0} fix={fixedRun.Value<double>("minFps"):0}; " +
+                    $"peakInFlight base={baseline.Value<long>("peakInFlight")} fix={fixedRun.Value<long>("peakInFlight")}; " +
+                    $"maxLoadMs base={baseline.Value<double>("maxLoadMs"):0} fix={fixedRun.Value<double>("maxLoadMs"):0} " +
+                    $"(deferred {fixedRun.Value<long>("deferredLoads")}, peakQueue {fixedRun.Value<int>("peakQueueDepth")}). " +
+                    $"duration base={baseline.Value<double>("durationMs"):0}ms fix={fixedRun.Value<double>("durationMs"):0}ms.";
 
                 if (baseline.Value<bool>("inconclusive") || fixedRun.Value<bool>("inconclusive"))
                 {
@@ -210,7 +183,7 @@ namespace FUSE.Interface
 
         // try/finally (no catch around yields) guarantees the overrides are cleared.
         private static IEnumerator RunScenarioOnce(
-            Scenario scenario, bool? debounceOverride, bool? throttleOverride, string label, Action<JObject> onResult)
+            Scenario scenario, bool? throttleOverride, string label, Action<JObject> onResult)
         {
             var prevDiagnostics = FuseSettings.EnableSceneryCullingDiagnostics;
             JObject result = null;
@@ -218,10 +191,8 @@ namespace FUSE.Interface
             try
             {
                 FuseSettings.SetSceneryCullingDiagnosticsTransient(true);
-                FuseSceneryCullingDebouncePatch.BenchmarkDebounceOverride = debounceOverride;
                 FuseSceneryLoadThrottlePatch.BenchmarkThrottleOverride = throttleOverride;
                 FuseSceneryCullingDiagnosticPatch.ResetCounters();
-                FuseSceneryCullingDebouncePatch.ResetSuppressedUnloads();
                 FuseSceneryLoadThrottlePatch.ResetStats();
 
                 // Parallel per-frame sampler -> time-series CSV (FPS, counts, churn,
@@ -261,10 +232,6 @@ namespace FUSE.Interface
                     ["scenario"] = scenario.Name,
                     ["label"] = label,
                     ["buildConfiguration"] = BuildConfiguration,
-                    ["debounce"] = debounceOverride.HasValue
-                        ? (debounceOverride.Value ? "forced-on" : "forced-off")
-                        : "default-on",
-                    ["deadbandMeters"] = FuseSceneryCullingDebouncePatch.UnloadDistance,
                     ["durationMs"] = durationMs,
                     ["peakInFlight"] = sampler.PeakInFlight,
                     ["avgFps"] = Math.Round(sampler.AvgFps, 1),
@@ -273,15 +240,16 @@ namespace FUSE.Interface
                     ["fuseUnloads"] = FuseSceneryCullingDiagnosticPatch.FuseUnloads,
                     ["vanillaLoads"] = FuseSceneryCullingDiagnosticPatch.VanillaLoads,
                     ["vanillaUnloads"] = FuseSceneryCullingDiagnosticPatch.VanillaUnloads,
-                    ["suppressedUnloads"] = FuseSceneryCullingDebouncePatch.SuppressedUnloads,
                     ["throttle"] = throttleOverride.HasValue
                         ? (throttleOverride.Value ? "forced-on" : "forced-off")
                         : "default-on",
                     ["maxLoadsPerFrame"] = FuseSceneryLoadThrottlePatch.MaxLoadsPerFrame,
+                    ["maxConcurrentLoads"] = FuseSceneryLoadThrottlePatch.MaxConcurrentLoads,
                     ["deferredLoads"] = FuseSceneryLoadThrottlePatch.DeferredLoads,
                     ["releasedLoads"] = FuseSceneryLoadThrottlePatch.ReleasedLoads,
                     ["droppedStaleLoads"] = FuseSceneryLoadThrottlePatch.DroppedStaleLoads,
                     ["peakQueueDepth"] = FuseSceneryLoadThrottlePatch.PeakQueueDepth,
+                    ["trackedPeakInFlight"] = FuseSceneryLoadThrottlePatch.PeakInFlightLoads,
                     ["avgLoadMs"] = Math.Round(sampler.AvgLoadMs, 0),
                     ["maxLoadMs"] = Math.Round(sampler.MaxLoadMs, 0),
                     ["csv"] = sampler.FileName
@@ -292,7 +260,7 @@ namespace FUSE.Interface
                 // counters) is not mistaken for a passing regression guard.
                 var engaged = FuseSceneryBenchmarkEngagement.Engaged(
                     FuseSceneryCullingDiagnosticPatch.FuseLoads,
-                    FuseSceneryCullingDebouncePatch.SuppressedUnloads,
+                    FuseSceneryCullingDiagnosticPatch.FuseUnloads,
                     FuseSceneryLoadThrottlePatch.DeferredLoads,
                     FuseSceneryLoadThrottlePatch.PeakQueueDepth);
                 result["engaged"] = engaged;
@@ -301,14 +269,14 @@ namespace FUSE.Interface
                 {
                     FuseLog.Warning(
                         $"FUSE benchmark [{scenario.Name}/{label}] is INCONCLUSIVE: the scenario never engaged FUSE " +
-                        "scenery culling (0 FUSE loads, 0 debounce suppressions, 0 throttle deferrals/queue). Run a " +
+                        "scenery culling (0 FUSE loads/unloads, 0 throttle deferrals/queue). Run a " +
                         "denser area or teleport into heavily-modded scenery so the load path is actually exercised.");
                 }
 
                 AppendResult(result);
                 _status =
                     $"[{scenario.Name}/{label}] done {durationMs:0}ms; loads={FuseSceneryCullingDiagnosticPatch.FuseLoads} " +
-                    $"unloads={FuseSceneryCullingDiagnosticPatch.FuseUnloads} suppressed={FuseSceneryCullingDebouncePatch.SuppressedUnloads} " +
+                    $"unloads={FuseSceneryCullingDiagnosticPatch.FuseUnloads} " +
                     $"deferred={FuseSceneryLoadThrottlePatch.DeferredLoads} peakQueue={FuseSceneryLoadThrottlePatch.PeakQueueDepth} " +
                     $"minFps={sampler.MinFps:0} peak={sampler.PeakInFlight} maxLoadMs={sampler.MaxLoadMs:0}. CSV: {sampler.FileName}";
                 FuseLog.Info("FUSE benchmark " + _status);
@@ -317,7 +285,6 @@ namespace FUSE.Interface
             {
                 sampler?.Finish();
                 _activeSampler = null;
-                FuseSceneryCullingDebouncePatch.BenchmarkDebounceOverride = null;
                 FuseSceneryLoadThrottlePatch.BenchmarkThrottleOverride = null;
                 FuseSettings.SetSceneryCullingDiagnosticsTransient(prevDiagnostics);
                 onResult?.Invoke(result);
@@ -345,7 +312,6 @@ namespace FUSE.Interface
             // load window — so the end-snapshot and CSV reflect boundary churn, not the
             // one-time cold load that just finished.
             FuseSceneryCullingDiagnosticPatch.ResetCounters();
-            FuseSceneryCullingDebouncePatch.ResetSuppressedUnloads();
             FuseSceneryLoadThrottlePatch.ResetStats();
             _activeSampler?.ResetLatencyWindow();
 
@@ -773,7 +739,6 @@ namespace FUSE.Interface
             private int _framesSinceSample;
             private long _lastLoads;
             private long _lastUnloads;
-            private long _lastSuppressed;
             private long _lastDeferred;
             private long _lastReleased;
             private float _fpsSum;
@@ -802,7 +767,7 @@ namespace FUSE.Interface
                     var path = Path.Combine(Application.persistentDataPath, _fileName);
                     _writer = new StreamWriter(path, false) { AutoFlush = true };
                     _writer.WriteLine(
-                        "elapsedSec,fps,frameMs,inFlight,loaded,loadsDelta,unloadsDelta,suppressedDelta," +
+                        "elapsedSec,fps,frameMs,inFlight,loaded,loadsDelta,unloadsDelta," +
                         "deferredDelta,releasedDelta,queueDepth,loadsCompleted,avgLoadMs,maxLoadMs,managedMB,unityMB,phase");
                 }
                 catch (Exception ex)
@@ -862,7 +827,6 @@ namespace FUSE.Interface
                 // (small post-reset counter minus the stale pre-reset baseline).
                 _lastLoads = FuseSceneryCullingDiagnosticPatch.FuseLoads + FuseSceneryCullingDiagnosticPatch.VanillaLoads;
                 _lastUnloads = FuseSceneryCullingDiagnosticPatch.FuseUnloads + FuseSceneryCullingDiagnosticPatch.VanillaUnloads;
-                _lastSuppressed = FuseSceneryCullingDebouncePatch.SuppressedUnloads;
                 _lastDeferred = FuseSceneryLoadThrottlePatch.DeferredLoads;
                 _lastReleased = FuseSceneryLoadThrottlePatch.ReleasedLoads;
             }
@@ -938,17 +902,14 @@ namespace FUSE.Interface
 
                 var totalLoads = FuseSceneryCullingDiagnosticPatch.FuseLoads + FuseSceneryCullingDiagnosticPatch.VanillaLoads;
                 var totalUnloads = FuseSceneryCullingDiagnosticPatch.FuseUnloads + FuseSceneryCullingDiagnosticPatch.VanillaUnloads;
-                var suppressed = FuseSceneryCullingDebouncePatch.SuppressedUnloads;
                 var deferred = FuseSceneryLoadThrottlePatch.DeferredLoads;
                 var released = FuseSceneryLoadThrottlePatch.ReleasedLoads;
                 var loadsDelta = totalLoads - _lastLoads;
                 var unloadsDelta = totalUnloads - _lastUnloads;
-                var suppressedDelta = suppressed - _lastSuppressed;
                 var deferredDelta = deferred - _lastDeferred;
                 var releasedDelta = released - _lastReleased;
                 _lastLoads = totalLoads;
                 _lastUnloads = totalUnloads;
-                _lastSuppressed = suppressed;
                 _lastDeferred = deferred;
                 _lastReleased = released;
 
@@ -958,7 +919,7 @@ namespace FUSE.Interface
 
                 _writer?.WriteLine(
                     $"{now - _startTime:0.00},{fps:0.0},{frameMs:0.0},{inFlight},{loaded}," +
-                    $"{loadsDelta},{unloadsDelta},{suppressedDelta},{deferredDelta},{releasedDelta}," +
+                    $"{loadsDelta},{unloadsDelta},{deferredDelta},{releasedDelta}," +
                     $"{FuseSceneryLoadThrottlePatch.QueueDepth},{completed},{avgLoadMs:0},{latencyMax:0}," +
                     $"{managedMb:0.0},{unityMb:0.0},\"{CsvPhase()}\"");
 

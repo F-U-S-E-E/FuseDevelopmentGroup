@@ -27,6 +27,10 @@ namespace FUSE
     {
         private const string HarmonyId = "FUSE";
         private const string ConverterVersion = "0.2.0";
+
+        // The retired in-game editor is intentionally disconnected from FUSE
+        // startup. Custom map discovery and launching do not depend on it.
+        internal static bool InGameEditorEnabled => false;
 #if DEBUG
         private const string BuildConfiguration = "Debug";
 #else
@@ -64,10 +68,13 @@ namespace FUSE
                 WarnIfLegacyRailloaderInstallPresent();
                 LogStartupVersions(modEntry);
                 FuseSettings.Load(modEntry);
+                FuseConstrainedTextureMemoryPolicy.ApplyIfNeeded();
+                FuseNativeLeakDiagnostic.Initialize(FuseSettings.EnableNativeLeakStackTraces);
                 FuseAssetPackRegistry.MountAllAvailableAssetPacks();
 
                 _harmony = new Harmony(HarmonyId);
                 FusePatchResilience.ApplyAll(_harmony, Assembly.GetExecutingAssembly());
+                FuseNarrowGaugePerformanceCompatibility.Initialize(_harmony);
                 FuseEarlyLoader.SetPatchAvailable(FusePatchResilience.Applied.Any(patch =>
                     string.Equals(patch.TypeName, "FUSE.Patches.FuseEarlyLoaderSceneManagerPatch", StringComparison.Ordinal)));
                 _lifecycle = new FuseLifecycle();
@@ -76,14 +83,22 @@ namespace FUSE
                 // re-attempts registration on the first map load.
                 FuseConsoleRegistrar.TryRegisterAll();
 
-                FuseEditorAssemblyLoader.TryInitialize(modEntry.Path);
-                FuseEditorBridge.NotifyFuseLoaded();
+                if (InGameEditorEnabled)
+                {
+                    FuseEditorAssemblyLoader.TryInitialize(modEntry.Path);
+                    FuseEditorBridge.NotifyFuseLoaded();
+                }
                 FuseOrphanedCarWindow.Ensure();
                 FuseMenuWindow.Ensure();
                 FuseTrackDebugOverlay.Ensure();
                 FuseSceneryDebugOverlay.Ensure();
                 FuseWorldLabelsOverlay.Ensure();
                 FuseLoadingScreen.Ensure();
+                FuseFrameSpikeDiagnostic.EnsureStarted();
+                FuseRuntimePump.EnsureStarted();
+                FuseSceneryLoadFailurePatch.EnsureGameLogHook();
+                FuseModExceptionLogHook.Install();
+                FuseThirdPartyGuardInstaller.EnsureInstalled();
                 FuseUmmInjector.ScheduleInjection(modEntry.Path, ReadInfoJsonString(Path.Combine(modEntry.Path ?? string.Empty, "Info.json"), "Version"));
                 FuseLegacyAssemblyHost.EnsureStartupHost();
 
@@ -192,6 +207,8 @@ namespace FUSE
 
         private static void Shutdown()
         {
+            FuseNarrowGaugePerformanceCompatibility.Shutdown();
+
             if (_harmony != null)
             {
                 try
@@ -221,6 +238,13 @@ namespace FUSE
             }
 
             FuseSceneryLoadThrottlePatch.Shutdown();
+            FuseCullingManagerUpdateRacePatch.ResetStats();
+            FuseTrackRebuilderQueueProcessor.Shutdown();
+            FuseCarCullerPendingProcessor.Shutdown();
+            FuseCarModelCompletionScheduler.Shutdown();
+            FuseDeferredAssetReferenceReleaseQueue.Shutdown();
+            FuseSceneryLoadFailurePatch.Shutdown();
+            FuseModExceptionLogHook.Shutdown();
             FuseLegacyAssemblyHost.Shutdown();
             FuseLegacySupportAssemblyShim.Shutdown();
             FuseRuntimeRebindService.Shutdown();
@@ -229,10 +253,19 @@ namespace FUSE
             FuseSceneryDebugOverlay.Shutdown();
             FuseWorldLabelsOverlay.Shutdown();
             FuseLoadingScreen.Shutdown();
+            FuseFrameSpikeDiagnostic.Shutdown();
+            FuseRuntimePump.Shutdown();
+            FuseNativeLeakDiagnostic.Shutdown();
+            FuseUnusedAssetReclaimer.Reset();
+            FuseConstrainedTextureMemoryPolicy.Restore();
+
+            if (_isLoaded && InGameEditorEnabled)
+            {
+                FuseEditorBridge.NotifyFuseUnloaded();
+            }
 
             if (_isLoaded)
             {
-                FuseEditorBridge.NotifyFuseUnloaded();
                 FuseEvents.RaiseFuseUnloaded();
                 FuseLog.Info("FUSE unloaded.");
             }

@@ -22,6 +22,7 @@ namespace FUSE.Runtime.Lifecycle
                 Messenger.Default.Register<MapDidLoadEvent>(this, OnMapDidLoad);
                 Messenger.Default.Register<GraphDidRebuildCollections>(this, OnGraphDidRebuildCollections);
                 Messenger.Default.Register<MapWillUnloadEvent>(this, OnMapWillUnload);
+                Messenger.Default.Register<GameModeDidChange>(this, OnGameModeDidChange);
                 FuseEarlyLoader.Initialize();
                 FuseLog.Info("FUSE lifecycle registered.");
             }
@@ -51,6 +52,12 @@ namespace FUSE.Runtime.Lifecycle
         // enhanced loading screen so it owns the visuals for the whole load.
         private void OnMapWillLoad(MapWillLoadEvent message)
         {
+            // Advance the generation before any work for this map can start.
+            // Resetting in MapDidLoad erased failures observed during scene load
+            // and also made current-load tasks look like late previous-map work.
+            FUSE.Patches.FuseSceneryLoadFailurePatch.ResetForNewMap();
+            FuseLoadReport.ResetMapLoad();
+
             try
             {
                 FuseLoadingScreen.BeginLoad("map load");
@@ -91,7 +98,6 @@ namespace FUSE.Runtime.Lifecycle
             var appliedCount = 0;
             var pipelineCompleted = false;
             var canMutateWorld = FuseMultiplayerGuard.CanApplyWorldMutations("map load");
-            FuseLoadReport.ResetMapLoad();
 
             // Defer per-object map-mask refresh across the whole apply: the single
             // trailing terrain rebuild (below) re-evaluates every live mask at once,
@@ -104,6 +110,11 @@ namespace FUSE.Runtime.Lifecycle
             {
                 terrainScope = FuseTerrainRefreshScope.Begin();
                 FuseLegacyAssemblyHost.LoadAllAvailableAssemblies("map load fallback");
+                if (canMutateWorld)
+                {
+                    FuseLoadingScreen.SetStep("Preparing map", "Removing the stock world");
+                    FuseBaseWorldIsolation.ApplyForActiveMap("map load before cache rebuild");
+                }
                 var cacheStopwatch = Stopwatch.StartNew();
                 FuseCacheRegistry.RebuildAll();
                 FusePerformanceMetrics.RecordTiming("cache rebuild before map load apply", cacheStopwatch.ElapsedMilliseconds);
@@ -119,11 +130,10 @@ namespace FUSE.Runtime.Lifecycle
                     FuseDeferredSceneryActivator.OpenInitialMapLoadWave();
                     FuseLoadingScreen.SetStep("Applying mods", "Applying definitions");
                     appliedCount = FuseDataPackageDiscovery.ApplyLoadedPackages("map load");
-                    // Run the cleanup cluster inside one batch so the rebuild
-                    // RemoveInvalidTrackSpans requests folds together with any
-                    // rebuild industry/marker cleanup may also request. Without
-                    // this, RemoveInvalidTrackSpans fires its own full rebuild
-                    // while the rest of the cleanup is still running.
+                    // Run the cleanup cluster inside one batch. The only
+                    // structural mutation here is invalid-span removal; spans
+                    // do not change TrackObjectManager's rail/switch/bumper
+                    // descriptors, so a collections refresh is sufficient.
                     FuseLoadingScreen.SetStep("Rebuilding track graph");
                     TrackAPI.BeginBatch();
                     try
@@ -133,25 +143,19 @@ namespace FUSE.Runtime.Lifecycle
                         IndustryAPI.ScrubIndustryComponentCaches("map load after FUSE package apply");
                         IndustryAPI.DisableOrphanedBaseGameIndustries("map load after FUSE package apply");
                         TrackAPI.DisableInvalidTrackMarkers("map load after FUSE package apply");
-                        // Wholesale invalidate every segment's cached
-                        // BezierCurve so the rebuild that EndBatch(true)
-                        // fires below computes fresh curves against the
-                        // post-migration node transforms. Without this,
-                        // segments whose endpoint node positions or
-                        // rotations were mutated by a later legacy
-                        // mixinto migration (e.g. Foxy's KaterRepair-migration
-                        // moving a Bryson Tweaks switch node) keep the
-                        // stale curve baked in at first-access, and
-                        // <c>SwitchGeometry.Calculate</c> in
-                        // <c>TrackObjectManager.BuildDescriptors</c>
-                        // throws "Switch tracks do not intersect" —
-                        // silently dropping the switch and every segment
-                        // attached to it from the mesh build.
-                        TrackAPI.InvalidateAllCurves("map load after FUSE package apply");
+                        // Curve invalidation now occurs immediately before the
+                        // staged merged graph rebuild, after all final node
+                        // transforms have landed. Repeating it here forced a
+                        // redundant full TrackObjectManager rebuild.
                     }
                     finally
                     {
-                        TrackAPI.EndBatch(true);
+                        TrackAPI.EndBatch(false);
+                    }
+                    if (!TrackAPI.IsBatching &&
+                        TrackAPI.ConsumePendingRebuildRequest())
+                    {
+                        TrackAPI.RebuildCollectionsOnly();
                     }
                     var earlyLoaderStopwatch = Stopwatch.StartNew();
                     FuseEarlyLoader.ApplyFallbackAfterMapLoad();
@@ -222,8 +226,8 @@ namespace FUSE.Runtime.Lifecycle
             }
 
             // Replay FUSE's industrial-segment push to Map Enhancer now that the
-            // load-time apply AND the trailing track-graph rebuild (EndBatch(true)
-            // above) have settled. The inline RefreshIndustry in
+            // load-time apply and the trailing graph-collection refresh above
+            // have settled. The inline RefreshIndustry in
             // AddOrUpdateComponents runs DURING apply — before that rebuild — so a
             // FUSE-created industry's TrackSpans have no resolvable cached segments
             // yet and nothing lands in Map Enhancer's industrial-segment cache
@@ -265,6 +269,23 @@ namespace FUSE.Runtime.Lifecycle
                 FuseLog.Exception("FUSE console registration on map-load failed.", ex);
             }
 
+            // Second attempt for the third-party guards: FUSE loads before
+            // MapEnhancer and the rebill mod in UMM's order, so the
+            // plugin-load attempt resolves neither ("idle (not present)")
+            // and the guards never engaged in the field. By map load every
+            // mod assembly is up; the installer re-resolves absent targets
+            // and latches anything already installed. Guarded separately so
+            // an installer fault can neither abort nor mislabel console
+            // registration.
+            try
+            {
+                FUSE.Patches.FuseThirdPartyGuardInstaller.EnsureInstalled();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE third-party guard install retry on map load failed.", ex);
+            }
+
             // Defer the actual publish (toast + log summary +
             // cached strings) until the game's
             // TrainController.HandleSnapshotCars Postfix flushes it.
@@ -274,6 +295,10 @@ namespace FUSE.Runtime.Lifecycle
             // published inline here the toast would say "orphans 0"
             // even when broken legacy car instances are about to be
             // recorded a few seconds later.
+            // Stops were refreshed during the apply above; validate the resulting
+            // stop graph (shared spans, isolated stops) before the report goes out
+            // so the toast's "graph" count reflects this load.
+            FusePassengerStopValidation.Run(pipelineCompleted ? "map load" : "map load failed");
             FuseLoadReport.ScheduleMapLoadReport(
                 pipelineCompleted ? "map load" : "map load failed",
                 loadedCount,
@@ -303,6 +328,34 @@ namespace FUSE.Runtime.Lifecycle
             }
         }
 
+        // A mid-session game-mode change (the host-only '/mode' console
+        // command) does not reload progression: the game keeps the session
+        // exactly as it loaded — a progression-less session stays
+        // progression-less, feature gating and track-group state stay put —
+        // until the save is reloaded. FUSE deliberately matches that. No
+        // correct target state is even computable here (after a
+        // sandbox→company flip there is no Progression object to derive
+        // section state from), and re-gating mod content alone would
+        // desynchronize it from the vanilla content beside it. Surface the
+        // situation instead of mutating world state.
+        private void OnGameModeDidChange(GameModeDidChange message)
+        {
+            try
+            {
+                var mode = Game.State.StateManager.Shared?.GameMode.ToString() ?? "<unknown>";
+                var text =
+                    $"Game mode changed mid-session (now {mode}). Progression and track gating keep their " +
+                    "as-loaded state until the save is reloaded — this matches the game's own behavior. " +
+                    $"Save and reload to apply {mode}-mode gating.";
+                FuseLog.Warning("FUSE observed a mid-session game-mode change: " + text);
+                FuseLoadReport.RecordNotice(text);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE game-mode-change handling failed", ex);
+            }
+        }
+
         private void OnMapWillUnload(MapWillUnloadEvent message)
         {
             try
@@ -322,9 +375,16 @@ namespace FUSE.Runtime.Lifecycle
                 FuseWorldSuppressor.RestoreAll("map unload");
                 FuseEarlyLoader.RestoreOnMapUnload();
                 FuseModLoader.UnloadAll(resetDiscovery: true, restoreTrackSnapshots: false);
+                FuseBaseWorldIsolation.Reset();
                 FuseMapTileRegistry.ClearAll();
                 TrackAPI.ClearBaseGraphSnapshot();
                 ProgressionAPI.ClearRememberedReferenceIds();
+                // Unconditional settle-state reset: sandbox sessions never
+                // configure a Progression, so the Unconfigure postfix never
+                // fires for them — without this, a sandbox session's settled
+                // flag would leak into the next load and let its staged
+                // refresh run inside the stale-IsSandbox window.
+                ProgressionAPI.NotifyMapUnloading();
                 FuseCacheRegistry.ClearAll();
                 FuseRuntimeRebindService.ResetUnknownKindLog();
                 FuseSplineyPluginHost.Reset();

@@ -15,7 +15,9 @@ namespace FUSE.Interface.MenuWindow
             DependencyGraph,
             Assets,
             Audits,
-            Stats
+            Stats,
+            Actions,
+            Benchmark
         }
 
         private class Page
@@ -41,6 +43,8 @@ namespace FUSE.Interface.MenuWindow
             list.Add(new UIPanelBuilder.ListItem<Page>("assets", new Page(PageId.Assets), "Tools", "Assets Report"));
             list.Add(new UIPanelBuilder.ListItem<Page>("audits", new Page(PageId.Audits), "Tools", "Diagnostics Report"));
             list.Add(new UIPanelBuilder.ListItem<Page>("stats", new Page(PageId.Stats), "Tools", "World Stats"));
+            list.Add(new UIPanelBuilder.ListItem<Page>("actions", new Page(PageId.Actions), "Tools", "Runtime Actions"));
+            list.Add(new UIPanelBuilder.ListItem<Page>("benchmark", new Page(PageId.Benchmark), "Tools", "Scenery Benchmark"));
 
             builder.AddListDetail(list, selectedItem, delegate (UIPanelBuilder builder, Page page)
             {
@@ -70,6 +74,12 @@ namespace FUSE.Interface.MenuWindow
                                 break;
                             case PageId.Stats:
                                 BuildStatsPage(builder);
+                                break;
+                            case PageId.Actions:
+                                RuntimeActionsToolPage.Build(builder);
+                                break;
+                            case PageId.Benchmark:
+                                SceneryBenchmarkToolPage.Build(builder);
                                 break;
                             default:
                                 builder.AddLabel("Unknown page.");
@@ -108,6 +118,7 @@ namespace FUSE.Interface.MenuWindow
             builder.AddField("Exclusive Claims", FUSE.Runtime.Registry.FuseRegistry.ExclusiveClaimCount.ToString());
             builder.AddField("Shared Claims", FUSE.Runtime.Registry.FuseRegistry.SharedClaimCount.ToString());
             builder.AddField("Conflicts", FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count.ToString());
+            builder.AddField("Asset Stores", FUSE.Infrastructure.FusePerformanceMetrics.FormatCount("direct asset pack store count"));
         }
     }
 }

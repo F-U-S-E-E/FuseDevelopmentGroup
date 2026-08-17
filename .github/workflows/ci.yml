@@ -39,16 +39,26 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No step in this job pushes back to the repo, so don't leave the
           # checkout token persisted in .git/config on the runner.
           persist-credentials: false
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
+        env:
+          # setup-dotnet installs into C:\Program Files\dotnet by default,
+          # which the self-hosted runner service account cannot write to — the
+          # install fails and every downstream step skips. The tool cache lives
+          # under the runner's own _work tree: always writable, and persistent
+          # between runs so the SDK is not re-downloaded per build. Set here
+          # rather than on the job because the runner context is only in scope
+          # for steps; the action exports DOTNET_ROOT and PATH from it, so the
+          # later build/test steps resolve this SDK.
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
 
       # JSON lint and .NET format checks are split out into dedicated
       # workflows (.github/workflows/json-lint.yml and dotnet-lint.yml)
@@ -58,13 +68,11 @@ jobs:
       # Pass a non-default ModVersion so the InjectModVersionIntoInfoJson
       # target runs (it is gated on '$(ModVersion)' != '0.0.0'). This catches
       # regressions in the post-build PowerShell that stamps Info.json.
-      # Build FUSE.Editor.csproj since it ProjectReferences FUSE.csproj —
-      # MSBuild builds FUSE.dll first, FUSE.Editor.dll second.
       - name: Build (Debug)
-        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Debug -p:ModVersion=0.0.1-ci
+        run: dotnet build FUSE/FUSE.csproj -c Debug -p:ModVersion=0.0.1-ci
 
       - name: Build (Release)
-        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Release -p:ModVersion=0.0.1-ci
+        run: dotnet build FUSE/FUSE.csproj -c Release -p:ModVersion=0.0.1-ci
 
       - name: Verify Info.json stamped with version
         shell: powershell
@@ -270,7 +278,7 @@ jobs:
           # Read the computed version from the environment rather than ${{ }}
           # template expansion. Mirrors the TAG_NAME hardening in release.yml.
           MOD_VERSION: ${{ steps.build_id.outputs.version }}
-        run: dotnet build FUSE.Editor/FUSE.Editor.csproj -c Release "-p:ModVersion=$env:MOD_VERSION"
+        run: dotnet build FUSE/FUSE.csproj -c Release --no-restore "-p:ModVersion=$env:MOD_VERSION"
 
       - name: Package mod zip
         shell: powershell
@@ -291,16 +299,11 @@ jobs:
 
           Copy-Item "FUSE\bin\Release\net48\FUSE.dll" $modFolder
           Copy-Item "FUSE\bin\Release\net48\Info.json" $modFolder
-          # FUSE.Editor.dll ships side-by-side with FUSE.dll; FUSE loads it
-          # lazily from this folder via Assembly.LoadFrom after UMM boots.
-          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Editor.dll" $modFolder
-          # FUSE.Converter.dll is referenced by the editor's Convert
-          # button. Project-reference flows it to FUSE.Editor's output
-          # naturally; the deploy step explicitly copies it so the
-          # zipped mod folder is self-contained.
-          Copy-Item "FUSE.Editor\bin\Release\net48\FUSE.Converter.dll" $modFolder
+          Copy-Item "LICENSE" $modFolder
           Copy-Item -Recurse "schemas" $modFolder
           Copy-Item "tools\assets\fuse_converter_icon.png" (Join-Path $modFolder 'assets\fuse_icon.png')
+
+          Copy-Item 'LICENSE' $modFolder
 
           Compress-Archive -Path $modFolder -DestinationPath $archivePath -CompressionLevel Optimal
 
@@ -327,11 +330,22 @@ jobs:
           $ummDir = (dotnet msbuild FUSE/FUSE.csproj -getProperty:UnityModManagerDir -nologo 2>$null | Select-Object -Last 1)
           if ($ummDir) { $ummDir = $ummDir.Trim() }
           Write-Host "UnityModManager reference dir: $ummDir"
+          # Same stale-build hazard as release.yml: `dotnet run <file>.cs` caches the
+          # compiled app under %TEMP%\dotnet\runfile keyed by path, and on a
+          # long-lived self-hosted runner it can re-run a previous build of an edited
+          # script. --no-cache alone did not defeat it, so purge the cache too;
+          # otherwise this gate can report green against code that is not under test.
+          $runfileCache = Join-Path $env:TEMP 'dotnet\runfile'
+          if (Test-Path $runfileCache) {
+            Write-Host "Purging file-based app cache: $runfileCache"
+            Remove-Item $runfileCache -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
           if ($ummDir -and (Test-Path $ummDir)) {
-            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
+            dotnet run --no-cache scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION" "FUSE" "$ummDir"
           } else {
             Write-Host "UnityModManagerDir unresolved; falling back to validator env-based resolution."
-            dotnet run scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION"
+            dotnet run --no-cache scripts/Validate-ModPackage.cs -- "$env:ARCHIVE_PATH" "$env:MOD_VERSION"
           }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -390,14 +404,14 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # No step in this job pushes back to the repo, so don't leave the
           # checkout token persisted in .git/config on the runner.
           persist-credentials: false
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
 

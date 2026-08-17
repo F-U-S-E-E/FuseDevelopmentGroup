@@ -1,0 +1,15 @@
+# Without this, "Open a blank issue" appears alongside the templates and every
+# required field in them becomes optional in practice. The forms only enforce
+# the reporting process if this is false.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Troubleshooting guide
+    url: https://github.com/F-U-S-E-E/FuseDevelopmentGroup/blob/main/docs/TROUBLESHOOTING.md
+    about: Work through this first — it resolves most reports.
+  - name: Installation help
+    url: https://github.com/F-U-S-E-E/FuseDevelopmentGroup/blob/main/docs/INSTALL.md
+    about: Installing FUSE, or installing a FUSE package.
+  - name: Package authoring guide
+    url: https://github.com/F-U-S-E-E/FuseDevelopmentGroup/blob/main/docs/PACKAGE_AUTHOR_GUIDE.md
+    about: Writing, converting, or debugging your own FUSE package.
