@@ -1,8 +1,8 @@
 #requires -Version 5
 # Creates a .zip whose entry names always use forward slashes.
 #
-# This exists because `Compress-Archive` under Windows PowerShell 5.1 — the
-# `shell: powershell` default on the self-hosted runner — writes entry names with
+# This exists because `Compress-Archive` under Windows PowerShell 5.1 -- the
+# `shell: powershell` default on the self-hosted runner -- writes entry names with
 # BACKSLASHES, which violates ZIP APPNOTE 4.4.17.1. Nothing noticed for three
 # releases, because backslashes happen to work everywhere the archive is merely
 # extracted: .NET's ZipFile.ExtractToDirectory and Windows Explorer both accept
@@ -17,7 +17,7 @@
 # With backslash entries there is no '/', so pos is -1, Substring throws
 # ArgumentOutOfRangeException, and UMM aborts the whole unpack with
 # "Error when unpacking '<zip>'" having extracted nothing. A FRESH install skips
-# that rewrite entirely, so it succeeds — which is why FUSE 1.0.0-1.0.2 installed
+# that rewrite entirely, so it succeeds -- which is why FUSE 1.0.0-1.0.2 installed
 # fine for new users and could not be UPDATED by anyone. See issue #209.
 #
 # scripts/Validate-ModPackage.cs fails the build if a packaged archive ever
@@ -50,7 +50,7 @@ if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
 
 # Trim trailing separators so Split-Path/Substring below behave, but NOT off a
 # filesystem root: 'C:\'.TrimEnd('\') is 'C:', which PowerShell treats as
-# DRIVE-RELATIVE — Get-ChildItem -LiteralPath 'C:' enumerates the current
+# DRIVE-RELATIVE -- Get-ChildItem -LiteralPath 'C:' enumerates the current
 # directory on C:, not the drive root. No shipping call site passes a drive root,
 # but this packer is reusable, so keep it honest.
 $resolvedRoot = (Resolve-Path -LiteralPath $Path).ProviderPath
@@ -69,12 +69,13 @@ if ([string]::IsNullOrEmpty($baseDir)) {
 }
 
 function Resolve-OutputPath([string]$value) {
-  if ([System.IO.Path]::IsPathRooted($value)) {
-    return [System.IO.Path]::GetFullPath($value)
-  }
-  # .NET resolves relative paths against the process working directory, which is
-  # not necessarily PowerShell's current location. Anchor explicitly.
-  return [System.IO.Path]::GetFullPath((Join-Path (Get-Location).ProviderPath $value))
+  # Provider-aware resolution of a path that need not exist yet. [Path]::GetFullPath
+  # has two traps this avoids: it anchors a relative path to the process working
+  # directory rather than PowerShell's current location, and it treats a
+  # drive-relative value like 'C:out.zip' (for which IsPathRooted returns true) as
+  # relative to drive C:'s own current directory. GetUnresolvedProviderPathFromPSPath
+  # resolves both against the PowerShell location instead.
+  return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($value)
 }
 
 function ConvertTo-EntryName([string]$fullName, [string]$base) {
@@ -91,41 +92,72 @@ if (Test-Path -LiteralPath $destination) {
   Remove-Item -LiteralPath $destination -Force
 }
 
-$files = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force |
-  Sort-Object -Property FullName)
+$files = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force)
 
 # Compress-Archive records empty directories; preserve that so this stays a
 # drop-in replacement rather than a subtly lossy one.
 $emptyDirs = @(Get-ChildItem -LiteralPath $root -Recurse -Directory -Force |
-  Where-Object { -not (Get-ChildItem -LiteralPath $_.FullName -Force | Select-Object -First 1) } |
-  Sort-Object -Property FullName)
+  Where-Object { -not (Get-ChildItem -LiteralPath $_.FullName -Force | Select-Object -First 1) })
 
 if ($files.Count -eq 0 -and $emptyDirs.Count -eq 0) {
   throw "Refusing to write an empty archive: '$root' contains no files."
 }
 
-$archive = [System.IO.Compression.ZipFile]::Open(
-  $destination, [System.IO.Compression.ZipArchiveMode]::Create)
+# Build one ordered plan -- empty directories and files together -- sorted by the
+# final forward-slash entry name, so ordering is byte-stable across repackages no
+# matter how the filesystem enumerated. Sorting the two kinds separately would
+# emit every directory before every file, letting 'z/' precede 'a.txt'.
+$plan = New-Object System.Collections.Generic.List[object]
+foreach ($dir in $emptyDirs) {
+  $plan.Add([pscustomobject]@{
+      Name          = (ConvertTo-EntryName $dir.FullName $baseDir) + '/'
+      IsDirectory   = $true
+      FullName      = $dir.FullName
+      LastWriteTime = $dir.LastWriteTime
+    })
+}
+foreach ($file in $files) {
+  $plan.Add([pscustomobject]@{
+      Name          = (ConvertTo-EntryName $file.FullName $baseDir)
+      IsDirectory   = $false
+      FullName      = $file.FullName
+      LastWriteTime = $file.LastWriteTime
+    })
+}
+$plan = @($plan | Sort-Object -Property Name)
+
+$archive = $null
 try {
-  foreach ($dir in $emptyDirs) {
-    $archive.CreateEntry((ConvertTo-EntryName $dir.FullName $baseDir) + '/') | Out-Null
-  }
-  foreach ($file in $files) {
-    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-      $archive,
-      $file.FullName,
-      (ConvertTo-EntryName $file.FullName $baseDir),
-      [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+  $archive = [System.IO.Compression.ZipFile]::Open(
+    $destination, [System.IO.Compression.ZipArchiveMode]::Create)
+  foreach ($item in $plan) {
+    if ($item.IsDirectory) {
+      # CreateEntry stamps DateTime.Now, which would make an otherwise-untouched
+      # repackage differ byte-for-byte. Use the directory's own mtime, mirroring
+      # how CreateEntryFromFile carries each file's mtime.
+      $entry = $archive.CreateEntry($item.Name)
+      $entry.LastWriteTime = [System.DateTimeOffset]$item.LastWriteTime
+    }
+    else {
+      [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+        $archive,
+        $item.FullName,
+        $item.Name,
+        [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+    }
   }
 }
 catch {
-  # Dispose before deleting, to release the file handle. In Create mode Dispose()
-  # writes a valid central directory for whatever was added before the fault, so
-  # an undeleted partial is a well-formed but TRUNCATED archive that looks
-  # complete — the worst possible artifact to leave in dist/. Compress-Archive
-  # removed its partial output on failure; match that.
-  $archive.Dispose()
-  $archive = $null
+  # Never leave a partial behind: in Create mode Dispose() finalizes a valid
+  # central directory over whatever was written, so a survivor is a well-formed
+  # but TRUNCATED archive that looks complete -- the worst artifact to ship.
+  # Compress-Archive deletes its partial on failure; match that. Disposal and
+  # deletion are kept independent so a Dispose() that throws cannot skip the
+  # delete, and Open() itself is inside the try so its failures clean up too.
+  if ($archive) {
+    try { $archive.Dispose() } catch { }
+    $archive = $null
+  }
   if (Test-Path -LiteralPath $destination) {
     Remove-Item -LiteralPath $destination -Force
   }
