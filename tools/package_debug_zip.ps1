@@ -10,8 +10,13 @@ $ErrorActionPreference = 'Stop'
 
 $ToolsRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ToolsRoot
-$ProjectPath = Join-Path $RepoRoot 'FUSE.csproj'
-$BuildOutput = Join-Path $RepoRoot 'bin\Debug\net48'
+# The mod project (csproj, Info.json, bin) lives in FUSE/ under the
+# .NET-conventional layout. schemas/ and tools/assets/ stay at the repo root
+# as the canonical copies shared with the JSON lint and the release workflow,
+# so those two keep resolving from $RepoRoot / $ToolsRoot below.
+$ProjectRoot = Join-Path $RepoRoot 'FUSE'
+$ProjectPath = Join-Path $ProjectRoot 'FUSE.csproj'
+$BuildOutput = Join-Path $ProjectRoot 'bin\Debug\net48'
 $StageRoot = Join-Path $RepoRoot '_work\package-fuse-debug'
 $PackageRoot = Join-Path $StageRoot 'FUSE'
 
@@ -40,7 +45,7 @@ if (-not $NoBuild) {
 
 $dllPath = Join-Path $BuildOutput 'FUSE.dll'
 $pdbPath = Join-Path $BuildOutput 'FUSE.pdb'
-$infoPath = Join-Path $RepoRoot 'Info.json'
+$infoPath = Join-Path $ProjectRoot 'Info.json'
 $schemasPath = Join-Path $RepoRoot 'schemas'
 $iconPath = Join-Path $ToolsRoot 'assets\fuse_converter_icon.png'
 
