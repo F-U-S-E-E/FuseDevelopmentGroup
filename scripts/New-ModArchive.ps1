@@ -83,6 +83,20 @@ function ConvertTo-EntryName([string]$fullName, [string]$base) {
   return $relative -replace '\\', '/'
 }
 
+function Remove-OutputBestEffort([string]$path) {
+  # Cleanup used on error paths. It must NEVER throw: with
+  # $ErrorActionPreference = 'Stop' a Remove-Item failure would otherwise replace
+  # the original packaging error (the real cause) with a misleading "could not
+  # remove" error, or suppress the intended bad-entry error. Downgrade a cleanup
+  # failure to a warning so the original failure is what surfaces.
+  try {
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+  }
+  catch {
+    Write-Warning "Failed to remove '$path' during cleanup: $($_.Exception.Message)"
+  }
+}
+
 $destination = Resolve-OutputPath $DestinationPath
 
 # Refuse to write the archive inside the tree being archived. Otherwise creating
@@ -134,7 +148,10 @@ foreach ($file in $files) {
       LastWriteTime = $file.LastWriteTime
     })
 }
-$plan = @($plan | Sort-Object -Property Name)
+# Sort by the final entry name with an ORDINAL comparer rather than Sort-Object's
+# culture-sensitive default, so entry order is identical on every runner whatever
+# its locale. Entry names are unique full paths, so no tie-breaker is needed.
+$plan.Sort([System.Comparison[object]] { param($x, $y) [string]::CompareOrdinal($x.Name, $y.Name) })
 
 $archive = $null
 try {
@@ -171,20 +188,20 @@ catch {
   # Compress-Archive deletes its partial on failure; match that. Disposal and
   # deletion are kept independent so a Dispose() that throws cannot skip the
   # delete, and both Open() and the finalize above are inside the try so their
-  # failures clean up too.
+  # failures clean up too. Capture and rethrow the ORIGINAL error so a cleanup
+  # failure can never mask the real cause.
+  $original = $_
   if ($archive) {
     try { $archive.Dispose() } catch { }
     $archive = $null
   }
-  if (Test-Path -LiteralPath $destination) {
-    Remove-Item -LiteralPath $destination -Force
-  }
-  throw
+  Remove-OutputBestEffort $destination
+  throw $original
 }
 finally {
   # Defensive net for any path that still holds an open handle (the success and
   # catch paths both null $archive, so this is normally a no-op).
-  if ($archive) { $archive.Dispose() }
+  if ($archive) { try { $archive.Dispose() } catch { } }
 }
 
 # Self-check. Cheap, and it turns "we shipped a broken zip" into "packaging failed".
@@ -197,20 +214,24 @@ try {
   $count = $verify.Entries.Count
 }
 catch {
+  $original = $_
   if ($verify) {
-    try { $verify.Dispose() } catch { }
+    try { $verify.Dispose() }
+    catch { Write-Warning "Failed to dispose the verification handle: $($_.Exception.Message)" }
     $verify = $null
   }
-  if (Test-Path -LiteralPath $destination) {
-    Remove-Item -LiteralPath $destination -Force
-  }
-  throw
+  Remove-OutputBestEffort $destination
+  throw $original
 }
 finally {
-  if ($verify) { $verify.Dispose() }
+  if ($verify) {
+    try { $verify.Dispose() }
+    catch { Write-Warning "Failed to dispose the verification handle: $($_.Exception.Message)" }
+  }
 }
 if ($bad.Count -gt 0) {
-  Remove-Item -LiteralPath $destination -Force
+  # Best-effort so a delete failure can't mask the bad-entry error below.
+  Remove-OutputBestEffort $destination
   throw "Archive contained backslash entry names: $(($bad | ForEach-Object { $_.FullName }) -join ', ')"
 }
 
