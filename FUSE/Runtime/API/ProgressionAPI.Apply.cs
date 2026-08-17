@@ -171,6 +171,7 @@ namespace FUSE.Runtime.API
                     gameObject.transform.SetParent(progression.transform, false);
                     section = gameObject.AddComponent<Section>();
                     section.identifier = sectionDefinition.Key;
+                    EnsureSectionCollectionsInitialized(section);
                 }
 
                 FuseSectionRuntimeIndex.Instance.Set(section.identifier, section);
@@ -197,6 +198,16 @@ namespace FUSE.Runtime.API
             {
                 throw new ArgumentNullException(nameof(definition));
             }
+
+            // Resolve every phase before mutating the live Section. A missing
+            // component or load can throw here. In that case an existing
+            // section retains its last valid state, while a section created by
+            // ApplyProgressionDefinition remains safely initialized with empty
+            // collections instead of poisoning Progression.Configure with a
+            // null deliveryPhases array.
+            var deliveryPhases = (definition.DeliveryPhases ?? Array.Empty<FuseDeliveryPhase>())
+                .Select(CreateDeliveryPhase)
+                .ToArray();
 
             section.displayName = string.IsNullOrWhiteSpace(definition.DisplayName) ? section.identifier : definition.DisplayName;
             section.description = definition.Description ?? string.Empty;
@@ -239,23 +250,10 @@ namespace FUSE.Runtime.API
                 section.disableFeaturesOnUnlock = ResolveMapFeatures(definition.DisableFeaturesOnUnlock.ApplyTo(existingIds));
             }
 
-            section.deliveryPhases = (definition.DeliveryPhases ?? Array.Empty<FuseDeliveryPhase>()).Select(CreateDeliveryPhase).ToArray();
+            section.deliveryPhases = deliveryPhases;
             ApplyInterchangeTransfers(section, definition.InterchangeTransfers, packageId);
 
-            // Null-safety: a freshly-created Section MonoBehaviour starts with
-            // every array field null. If the mod's patch leaves a field as
-            // "no change" (definition.X null OR HasValue false), our
-            // conditional assignment above leaves the runtime field null
-            // too. The game's Progression.PrerequisitesMet calls
-            // section.prerequisiteSections.All(...) without a null check, so
-            // a null array crashes Configure with ArgumentNullException.
-            // Same exposure for every other Section[] / MapFeature[] field
-            // the game iterates. Default them to empty arrays so the game's
-            // existing null-naive .All / foreach calls survive.
-            section.prerequisiteSections = section.prerequisiteSections ?? Array.Empty<Section>();
-            section.enableFeaturesOnUnlock = section.enableFeaturesOnUnlock ?? Array.Empty<MapFeature>();
-            section.enableFeaturesOnAvailable = section.enableFeaturesOnAvailable ?? Array.Empty<MapFeature>();
-            section.disableFeaturesOnUnlock = section.disableFeaturesOnUnlock ?? Array.Empty<MapFeature>();
+            EnsureSectionCollectionsInitialized(section);
 
             if (FuseSettings.VerboseApplyReportDetails)
             {
@@ -271,6 +269,23 @@ namespace FUSE.Runtime.API
                     $"deliveryPhases={section.deliveryPhases?.Length ?? 0} " +
                     $"hasSectionUnlockFeature={(sectionUnlockFeature != null)}.");
             }
+        }
+
+        internal static void EnsureSectionCollectionsInitialized(Section section)
+        {
+            if (ReferenceEquals(section, null))
+            {
+                throw new ArgumentNullException(nameof(section));
+            }
+
+            // Railroader enumerates these fields without null checks during
+            // Progression.Configure. Keep a newly-created Section safe even
+            // when a later phase reference fails and aborts package apply.
+            section.deliveryPhases = section.deliveryPhases ?? Array.Empty<Section.DeliveryPhase>();
+            section.prerequisiteSections = section.prerequisiteSections ?? Array.Empty<Section>();
+            section.enableFeaturesOnUnlock = section.enableFeaturesOnUnlock ?? Array.Empty<MapFeature>();
+            section.enableFeaturesOnAvailable = section.enableFeaturesOnAvailable ?? Array.Empty<MapFeature>();
+            section.disableFeaturesOnUnlock = section.disableFeaturesOnUnlock ?? Array.Empty<MapFeature>();
         }
 
         private static void ApplyInterchangeTransfers(Section section, Dictionary<string, string> transfers, string packageId)
