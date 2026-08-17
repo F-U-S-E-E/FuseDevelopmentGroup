@@ -146,6 +146,13 @@ try {
         [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
     }
   }
+  # Finalize INSIDE the try. Dispose() is what writes the ZIP central directory,
+  # so a failure there (e.g. the disk fills as the directory is flushed) must be
+  # caught and cleaned up -- if it ran only in the finally below, that failure
+  # would bypass the catch and leave a partial at $destination. Null only after a
+  # clean finalize, so the finally stays a no-op on the success path.
+  $archive.Dispose()
+  $archive = $null
 }
 catch {
   # Never leave a partial behind: in Create mode Dispose() finalizes a valid
@@ -153,7 +160,8 @@ catch {
   # but TRUNCATED archive that looks complete -- the worst artifact to ship.
   # Compress-Archive deletes its partial on failure; match that. Disposal and
   # deletion are kept independent so a Dispose() that throws cannot skip the
-  # delete, and Open() itself is inside the try so its failures clean up too.
+  # delete, and both Open() and the finalize above are inside the try so their
+  # failures clean up too.
   if ($archive) {
     try { $archive.Dispose() } catch { }
     $archive = $null
@@ -164,6 +172,8 @@ catch {
   throw
 }
 finally {
+  # Defensive net for any path that still holds an open handle (the success and
+  # catch paths both null $archive, so this is normally a no-op).
   if ($archive) { $archive.Dispose() }
 }
 
