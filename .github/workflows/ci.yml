@@ -305,7 +305,11 @@ jobs:
 
           Copy-Item 'LICENSE' $modFolder
 
-          Compress-Archive -Path $modFolder -DestinationPath $archivePath -CompressionLevel Optimal
+          # Not Compress-Archive — it writes backslash entry names under Windows
+          # PowerShell 5.1, which breaks updating through UMM. Packaging the CI zip
+          # the same way as the release zip is what lets the validation step below
+          # act as the regression gate for issue #209.
+          .\scripts\New-ModArchive.ps1 -Path $modFolder -DestinationPath $archivePath
 
       # Prove the freshly-packaged zip is actually loadable by Unity Mod Manager
       # before publishing it as an artifact. scripts/Validate-ModPackage.cs resolves
