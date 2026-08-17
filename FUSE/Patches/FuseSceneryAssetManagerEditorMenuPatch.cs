@@ -117,10 +117,13 @@ namespace FUSE.Patches
             Action<TStore, JsonException> quarantine)
             where TStore : class
         {
-            // PrefabStore.AllDefinitionInfosOfType<T> first collects matching
-            // identifiers in a case-sensitive HashSet, then the manager applies
-            // comparer-less OrderBy. Keep that contract, including null/empty
-            // values and the current-culture sort, while isolating JSON failures.
+            // Stock PrefabStore.AllDefinitionInfosOfType<T> collects into a
+            // case-sensitive HashSet then applies a comparer-less OrderBy,
+            // keeping null/empty values and sorting by current culture. We
+            // intentionally diverge for determinism (per CodeRabbit review):
+            // drop null/empty identifiers and sort with StringComparer.Ordinal
+            // so the editor menu and identifier resolver are locale-independent,
+            // while still isolating JSON failures per store.
             var identifiers = new HashSet<string>(StringComparer.Ordinal);
             if (stores == null)
             {
@@ -141,7 +144,10 @@ namespace FUSE.Patches
                     {
                         foreach (var identifier in storeIdentifiers)
                         {
-                            identifiers.Add(identifier);
+                            if (!string.IsNullOrEmpty(identifier))
+                            {
+                                identifiers.Add(identifier);
+                            }
                         }
                     }
                 }
@@ -151,7 +157,7 @@ namespace FUSE.Patches
                 }
             }
 
-            return identifiers.OrderBy(identifier => identifier).ToList();
+            return identifiers.OrderBy(identifier => identifier, StringComparer.Ordinal).ToList();
         }
 
         private static IEnumerable<string> ReadSceneryIdentifiers(AssetPackRuntimeStore store)

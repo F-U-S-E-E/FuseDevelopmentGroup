@@ -74,7 +74,7 @@ namespace FUSE.Tests.Patches
         }
 
         [Fact]
-        public void CollectSceneryIdentifiersSafely_MatchesStockDeduplicationAndSorting()
+        public void CollectSceneryIdentifiersSafely_DedupesDropsBlanksAndSortsOrdinal()
         {
             string[] sourceIdentifiers =
             {
@@ -94,14 +94,12 @@ namespace FUSE.Tests.Patches
                     _ => sourceIdentifiers,
                     (_, __) => { });
 
-            var expected = new HashSet<string>(sourceIdentifiers, StringComparer.Ordinal)
-                .OrderBy(identifier => identifier)
-                .ToList();
+            var expected = new[] { "Duplicate", "a-scenery", "duplicate", "z-scenery" };
             Assert.Equal(expected, identifiers);
             Assert.Single(identifiers, identifier => identifier == "duplicate");
             Assert.Contains("Duplicate", identifiers);
-            Assert.Contains(null, identifiers);
-            Assert.Contains(string.Empty, identifiers);
+            Assert.DoesNotContain(null, identifiers);
+            Assert.DoesNotContain(string.Empty, identifiers);
         }
     }
 }
