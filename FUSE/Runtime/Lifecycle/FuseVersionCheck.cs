@@ -44,6 +44,14 @@ namespace FUSE.Runtime.Lifecycle
 
         private static readonly object Gate = new object();
 
+        // Supersession guard: each check gets a generation token; a response only
+        // commits its result while its generation is still the newest. This makes
+        // overlapping checks (a slow startup check plus a manual /fuse.update, or
+        // repeated /fuse.update calls) safe — an older response that finishes out
+        // of order is discarded instead of clobbering the newer result. Touched
+        // only on the Unity main thread, always while holding Gate.
+        private static readonly FuseGenerationGate Generation = new FuseGenerationGate();
+
         private static GameObject _host;
         private static bool _started;
         private static bool _checkComplete;
@@ -118,9 +126,15 @@ namespace FUSE.Runtime.Lifecycle
             }
 
             _started = true;
+            int generation;
+            string versionToCheck;
             lock (Gate)
             {
+                // Bump the generation so any check still in flight is superseded:
+                // its response will be discarded when it lands.
+                generation = Generation.Begin();
                 _currentVersionText = currentVersion.Trim();
+                versionToCheck = _currentVersionText;
                 _channel = FuseInstallSource.ReadChannel(modPath);
                 if (force)
                 {
@@ -140,7 +154,7 @@ namespace FUSE.Runtime.Lifecycle
             }
 
             FuseLog.Info($"FUSE update check started against {ReleasesApiUrl}.");
-            runner.Begin(_currentVersionText);
+            runner.Begin(versionToCheck, generation);
         }
 
         /// <summary>
@@ -199,6 +213,7 @@ namespace FUSE.Runtime.Lifecycle
                 _latestVersionText = null;
                 _latestTag = null;
                 _channel = FuseInstallChannel.Unknown;
+                Generation.Reset();
             }
         }
 
@@ -232,8 +247,9 @@ namespace FUSE.Runtime.Lifecycle
         }
 
         // Parses the check result (no coroutine/yield here, so it can guard
-        // everything in a try/catch) and records the outcome.
-        private static void Evaluate(string currentVersion, string body)
+        // everything in a try/catch) and records the outcome — unless a newer
+        // check has superseded this one, in which case the result is discarded.
+        private static void Evaluate(string currentVersion, string body, int generation)
         {
             try
             {
@@ -262,13 +278,30 @@ namespace FUSE.Runtime.Lifecycle
                 }
 
                 var outdated = FuseReleaseSelection.IsOutdated(current, latest);
+                bool committed;
                 lock (Gate)
                 {
-                    _checkComplete = true;
-                    _latestVersionText = latest.ToString();
-                    _latestTag = latestTag;
-                    _outdated = outdated;
-                    _toastPending = outdated;
+                    // Discard the result if a newer check started while this
+                    // request was in flight — its response is the authority now.
+                    if (!Generation.IsCurrent(generation))
+                    {
+                        committed = false;
+                    }
+                    else
+                    {
+                        _checkComplete = true;
+                        _latestVersionText = latest.ToString();
+                        _latestTag = latestTag;
+                        _outdated = outdated;
+                        _toastPending = outdated;
+                        committed = true;
+                    }
+                }
+
+                if (!committed)
+                {
+                    FuseLog.Info("FUSE update check: a newer check superseded this response; discarding it.");
+                    return;
                 }
 
                 if (outdated)
@@ -334,15 +367,15 @@ namespace FUSE.Runtime.Lifecycle
 
         private sealed class FuseVersionCheckRunner : MonoBehaviour
         {
-            internal void Begin(string currentVersion)
+            internal void Begin(string currentVersion, int generation)
             {
-                StartCoroutine(Run(currentVersion));
+                StartCoroutine(Run(currentVersion, generation));
             }
 
             // Static: the coroutine touches only static state (unlike a Unity
             // message such as Update, which must stay an instance method). Keeps
             // CA1822 quiet without a suppression.
-            private static IEnumerator Run(string currentVersion)
+            private static IEnumerator Run(string currentVersion, int generation)
             {
                 // `using` compiles to try/finally (no catch), which is the only
                 // shape C# allows a `yield return` to live inside. The request is
@@ -375,7 +408,7 @@ namespace FUSE.Runtime.Lifecycle
                             FuseLog.Warning($"FUSE update check could not read the GitHub response: {ex.GetBaseException().Message}");
                         }
 
-                        Evaluate(currentVersion, body);
+                        Evaluate(currentVersion, body, generation);
                     }
                 }
             }

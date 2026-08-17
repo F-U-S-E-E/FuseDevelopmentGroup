@@ -172,6 +172,9 @@
     <Compile Include="..\FUSE.Core\Versioning\FuseGitHubReleaseParser.cs">
       <Link>Versioning\FuseGitHubReleaseParser.cs</Link>
     </Compile>
+    <Compile Include="..\FUSE.Core\Versioning\FuseGenerationGate.cs">
+      <Link>Versioning\FuseGenerationGate.cs</Link>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>
