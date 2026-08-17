@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FUSE.Patches;
 using Newtonsoft.Json;
 using Xunit;
@@ -70,6 +71,37 @@ namespace FUSE.Tests.Patches
                     _ => true,
                     _ => throw new InvalidOperationException("opaque failure"),
                     (_, __) => { }));
+        }
+
+        [Fact]
+        public void CollectSceneryIdentifiersSafely_MatchesStockDeduplicationAndSorting()
+        {
+            string[] sourceIdentifiers =
+            {
+                "duplicate",
+                null,
+                string.Empty,
+                "Duplicate",
+                "duplicate",
+                "z-scenery",
+                "a-scenery"
+            };
+
+            var identifiers =
+                FuseSceneryAssetManagerEditorMenuPatch.CollectSceneryIdentifiersSafely(
+                    new[] { "store" },
+                    _ => true,
+                    _ => sourceIdentifiers,
+                    (_, __) => { });
+
+            var expected = new HashSet<string>(sourceIdentifiers, StringComparer.Ordinal)
+                .OrderBy(identifier => identifier)
+                .ToList();
+            Assert.Equal(expected, identifiers);
+            Assert.Single(identifiers, identifier => identifier == "duplicate");
+            Assert.Contains("Duplicate", identifiers);
+            Assert.Contains(null, identifiers);
+            Assert.Contains(string.Empty, identifiers);
         }
     }
 }

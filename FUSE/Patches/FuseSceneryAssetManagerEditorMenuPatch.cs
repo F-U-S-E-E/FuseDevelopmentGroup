@@ -27,9 +27,10 @@ namespace FUSE.Patches
         }
 
         // The stock method enumerates every PrefabStore container before our
-        // editor-menu Postfix can run. Build the same registration-order list
-        // here so one quarantined Definitions.json cannot abort the entire
-        // scenery catalog; the Postfix still applies the direct-only filter.
+        // editor-menu Postfix can run. Build the same exact-deduplicated,
+        // default-sorted list here so one quarantined Definitions.json cannot
+        // abort the entire scenery catalog; the Postfix still applies the
+        // direct-only filter.
         private static bool Prefix(SceneryAssetManager __instance, ref List<string> __result)
         {
             PrefabStore prefabStore;
@@ -116,10 +117,14 @@ namespace FUSE.Patches
             Action<TStore, JsonException> quarantine)
             where TStore : class
         {
-            var identifiers = new List<string>();
+            // PrefabStore.AllDefinitionInfosOfType<T> first collects matching
+            // identifiers in a case-sensitive HashSet, then the manager applies
+            // comparer-less OrderBy. Keep that contract, including null/empty
+            // values and the current-culture sort, while isolating JSON failures.
+            var identifiers = new HashSet<string>(StringComparer.Ordinal);
             if (stores == null)
             {
-                return identifiers;
+                return new List<string>();
             }
 
             foreach (var store in stores)
@@ -134,7 +139,10 @@ namespace FUSE.Patches
                     var storeIdentifiers = readIdentifiers(store);
                     if (storeIdentifiers != null)
                     {
-                        identifiers.AddRange(storeIdentifiers);
+                        foreach (var identifier in storeIdentifiers)
+                        {
+                            identifiers.Add(identifier);
+                        }
                     }
                 }
                 catch (JsonException ex)
