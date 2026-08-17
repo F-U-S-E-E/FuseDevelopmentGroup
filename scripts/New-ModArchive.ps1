@@ -48,7 +48,17 @@ if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
   throw "Source directory not found: $Path"
 }
 
-$root = (Resolve-Path -LiteralPath $Path).ProviderPath.TrimEnd('\', '/')
+# Trim trailing separators so Split-Path/Substring below behave, but NOT off a
+# filesystem root: 'C:\'.TrimEnd('\') is 'C:', which PowerShell treats as
+# DRIVE-RELATIVE — Get-ChildItem -LiteralPath 'C:' enumerates the current
+# directory on C:, not the drive root. No shipping call site passes a drive root,
+# but this packer is reusable, so keep it honest.
+$resolvedRoot = (Resolve-Path -LiteralPath $Path).ProviderPath
+$root = if ($resolvedRoot -eq [System.IO.Path]::GetPathRoot($resolvedRoot)) {
+  $resolvedRoot
+} else {
+  $resolvedRoot.TrimEnd('\', '/')
+}
 
 # Entry names are relative to this. Including the source folder itself (the
 # default) yields 'FUSE/FUSE.dll'; -ContentsOnly yields 'Mods/FUSE/FUSE.dll'
