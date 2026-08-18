@@ -849,10 +849,14 @@ namespace FUSE.Loading
                             return native;
                         }
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
                         // Still not stock-deserializable (e.g. object-shaped structs);
                         // the tolerant retry below is the last resort.
+                        FuseLog.Info(
+                            $"FUSE direct asset pack '{storeIdentifier ?? "<unknown>"}' still failed the native " +
+                            $"deserialize path after filtering ({ex.GetBaseException().GetType().Name}: " +
+                            $"{ex.GetBaseException().Message}); using the tolerant loader.");
                     }
                 }
 
