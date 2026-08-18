@@ -17,5 +17,18 @@ namespace FUSE.Tests.Patches
                 FuseRealisticRerailCraneGuardPatches.ShouldRunCountCoupledMowCars(
                     hasCraneCar));
         }
+
+        [Theory]
+        [InlineData(false, false)]
+        [InlineData(true, true)]
+        public void InitialPopulate_WaitsForBuilderAssets(
+            bool hasBuilderAssets,
+            bool expected)
+        {
+            Assert.Equal(
+                expected,
+                FuseRealisticRerailCraneGuardPatches.ShouldPopulateOnEnable(
+                    hasBuilderAssets));
+        }
     }
 }

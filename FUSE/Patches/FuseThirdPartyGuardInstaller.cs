@@ -9,8 +9,9 @@ namespace FUSE.Patches
     /// third-party mods it has no compile-time reference to (currently the
     /// Map Enhancer culling guard, the Rebill Industry Cars config-load
     /// guard, the BRSS mod-menu startup guard, the TimeSync main-thread
-    /// guard, the RR Utilities query-tool compatibility fix, and the Realistic
-    /// Rerail startup guard). Each guard resolves its target by name and idles
+    /// guard, the RR Utilities compatibility fixes, the Memory Leak &amp; FPS
+    /// Enviro compatibility fix, and the Realistic Rerail startup guard).
+    /// Each guard resolves its target by name and idles
     /// silently when the mod — or the exact member surface the guard understands
     /// — is absent.
     ///
@@ -115,6 +116,17 @@ namespace FUSE.Patches
                 utilitiesQueryStatus = "failed";
             }
 
+            string utilitiesMapLoadStatus;
+            try
+            {
+                utilitiesMapLoadStatus = FuseUtilitiesMapLoadCompatibility.EnsureInstalled(_harmony);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE RR Utilities map-load compatibility failed to install", ex);
+                utilitiesMapLoadStatus = "failed";
+            }
+
             string realisticRerailStatus;
             try
             {
@@ -126,12 +138,25 @@ namespace FUSE.Patches
                 realisticRerailStatus = "failed";
             }
 
+            string memoryLeakFpsStatus;
+            try
+            {
+                memoryLeakFpsStatus = FuseMemoryLeakFpsCompatibility.EnsureInstalled(_harmony);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE Memory Leak & FPS compatibility failed to install", ex);
+                memoryLeakFpsStatus = "failed";
+            }
+
             var summary =
                 $"FUSE third-party guards: mapEnhancerCulling='{mapEnhancerStatus}' " +
                 $"rebillIndustryCars='{rebillStatus}' brssModMenu='{brssStatus}' " +
                 $"timeSyncMainThread='{timeSyncStatus}' " +
                 $"utilitiesQuery='{utilitiesQueryStatus}' " +
-                $"realisticRerail='{realisticRerailStatus}'.";
+                $"utilitiesMapLoad='{utilitiesMapLoadStatus}' " +
+                $"realisticRerail='{realisticRerailStatus}' " +
+                $"memoryLeakFps='{memoryLeakFpsStatus}'.";
             if (!string.Equals(summary, _lastSummary, StringComparison.Ordinal))
             {
                 _lastSummary = summary;
@@ -142,19 +167,45 @@ namespace FUSE.Patches
         private static void OnAssemblyLoad(object sender, AssemblyLoadEventArgs args)
         {
             var assemblyName = args?.LoadedAssembly?.GetName()?.Name;
-            if (!string.Equals(assemblyName, "CraneRerailing", StringComparison.Ordinal))
+            var isRealisticRerail = string.Equals(
+                assemblyName,
+                "CraneRerailing",
+                StringComparison.Ordinal);
+            var isUtilities = string.Equals(
+                assemblyName,
+                "Utilities",
+                StringComparison.Ordinal);
+            var isMemoryLeakFps = string.Equals(
+                assemblyName,
+                "MemoryLeakFPSfix",
+                StringComparison.Ordinal);
+            if (!isRealisticRerail && !isUtilities && !isMemoryLeakFps)
             {
                 return;
             }
 
             try
             {
-                FuseRealisticRerailCraneGuardPatches.EnsureInstalled(_harmony);
+                if (isRealisticRerail)
+                {
+                    FuseRealisticRerailCraneGuardPatches.EnsureInstalled(_harmony);
+                }
+
+                if (isUtilities)
+                {
+                    FuseUtilitiesQueryTooltipCompatibility.EnsureInstalled(_harmony);
+                    FuseUtilitiesMapLoadCompatibility.EnsureInstalled(_harmony);
+                }
+
+                if (isMemoryLeakFps)
+                {
+                    FuseMemoryLeakFpsCompatibility.EnsureInstalled(_harmony);
+                }
             }
             catch (Exception ex)
             {
                 FuseLog.Exception(
-                    "FUSE Realistic Rerail startup guard failed during assembly-load retry",
+                    $"FUSE third-party compatibility failed during '{assemblyName}' assembly-load retry",
                     ex);
             }
         }
