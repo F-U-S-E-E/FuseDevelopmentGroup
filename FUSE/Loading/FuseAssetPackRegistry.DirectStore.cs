@@ -757,6 +757,9 @@ namespace FUSE.Loading
         private static readonly HashSet<string> DeserializeBypassFallbackWarnings =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        private static readonly HashSet<string> NativeDeserializeFallbackNotices =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         private static Container LoadResilientDirectContainer(string sourceText, string storeIdentifier, IDictionary<string, int> droppedByKind)
         {
             // No reflection-based strict bypass available (rare): defer to the legacy
@@ -766,9 +769,51 @@ namespace FUSE.Loading
                 return DeserializeContainerBypassingPostfix(sourceText, storeIdentifier);
             }
 
+            // Cold load of a direct (fuseasset://) store. The game's own
+            // AssetPackRuntimeStore.Container() never runs for these stores — the
+            // FuseAssetPackRuntimeStoreContainerPatch prefix replaces it — so this is
+            // the ONLY deserialization the pack ever gets. Route it through the public
+            // ContainerSerialization.Deserialize entry point exactly like the native
+            // loader would, so old-loader Harmony postfixes on that method fire once
+            // per pack: LegosLibraryOfStuff injects its clone definitions (repaint
+            // liveries, LLW tender swaps) there, and without this call clones of
+            // mod-pack cars never exist, which orphans every saved car that references
+            // one (issues #224, #222). Clones of vanilla cars were unaffected because
+            // vanilla stores still load natively.
+            //
+            // The double-apply concern that motivated the bypass (per-car
+            // ComponentGroup toggles going dead) applied when packs were also loaded
+            // natively via the LocalLow mirror; the bypass stays in force for every
+            // RE-deserialize path (sanitize, per-item mixinto re-deserialize, generated
+            // store refresh), which is where a second postfix pass would double-apply.
             try
             {
-                // Happy path: with the defining library mods loaded, the game's
+                var native = ContainerSerialization.Deserialize(sourceText);
+                if (native != null)
+                {
+                    return native;
+                }
+            }
+            catch (Exception ex)
+            {
+                // The stock serializer rejected the pack (unbindable component kind,
+                // object-shaped Unity structs, ...). Fall through to the tolerant
+                // bypass path below; note once so a pack that loses old-loader clones
+                // for this reason is visible in the log.
+                var key = storeIdentifier ?? "<unknown>";
+                if (NativeDeserializeFallbackNotices.Add(key))
+                {
+                    FuseLog.Info(
+                        $"FUSE direct asset pack '{key}' did not deserialize through the game's native path " +
+                        $"({ex.GetBaseException().GetType().Name}: {ex.GetBaseException().Message}); " +
+                        "using FUSE's tolerant loader instead. Old-loader definition edits (e.g. LegosLibraryOfStuff clones) " +
+                        "will not apply to this pack.");
+                }
+            }
+
+            try
+            {
+                // Tolerant path: with the defining library mods loaded, the game's
                 // JsonSubtypes converter binds every component kind — including the
                 // runtime-registered customization kinds (MaterialColorizerComponent,
                 // DefaultLivelryComponent, ComponentGroup, ...) the old static

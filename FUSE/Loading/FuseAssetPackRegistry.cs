@@ -103,15 +103,18 @@ namespace FUSE.Loading
         private static readonly FieldInfo RuntimeStoreContainerField =
             AccessTools.Field(typeof(AssetPackRuntimeStore), "_container");
 
-        // The direct-mount sanitize path used to call ContainerSerialization.Deserialize,
-        // but old-loader plugins (notably LegosLibraryOfStuff) install a Harmony postfix
-        // on that public entry point and mutate shared component instances on every call.
-        // The game already deserializes each pack once via its native path, so re-entering
-        // the public method here re-fires the postfix on the same identifiers and breaks
-        // per-car ComponentGroup toggles (e.g. ERIE LOGO going dead). We deserialize
-        // through Newtonsoft directly using the same settings the public method would have
-        // used. See FuseLegacyContainerMixintoRegistry for the same bypass on the per-item
-        // mixinto re-deserialize.
+        // Old-loader plugins (notably LegosLibraryOfStuff) install a Harmony postfix on
+        // the public ContainerSerialization.Deserialize entry point and mutate shared
+        // component instances on every call. A pack must therefore pass through that
+        // method exactly ONCE per load: the cold load of a direct store does so on
+        // purpose (see LoadResilientDirectContainer — the game's native path never runs
+        // for fuseasset:// stores, so that is the pack's only deserialization), while every
+        // RE-deserialize (sanitize, per-item mixinto re-deserialize, generated store
+        // refresh) goes through Newtonsoft directly using the same settings the public
+        // method would have used, so the postfix does not re-fire on the same identifiers
+        // and break per-car ComponentGroup toggles (e.g. ERIE LOGO going dead). See
+        // FuseLegacyContainerMixintoRegistry for the same bypass on the per-item mixinto
+        // re-deserialize.
         private static readonly MethodInfo ContainerSerializerSettingsMethod =
             AccessTools.Method(typeof(ContainerSerialization), "JsonSerializerSettings");
 
