@@ -119,6 +119,24 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
   `NOT INSTALLED (optional hint)` in grey, and only real missing requirements
   stay red. The matching "ignored legacy order reference" log lines are now
   informational instead of warnings. (#207, #223)
+- Saves lost cars to "orphaned car" prompts (`PrefabStore UnknownIdentifierException`)
+  and LLW tender swaps were missing for LLW locomotives, whenever the missing
+  definitions were LegosLibraryOfStuff clones (repaint liveries, tender-swap
+  variants) of cars that live in *mod* asset packs. FUSE mounts mod packs
+  directly and loaded them through its own Newtonsoft path, which never passed
+  through the game's `ContainerSerialization.Deserialize` entry point — the
+  method LegosLibraryOfStuff hooks to inject its clones — so clones of vanilla
+  cars existed but clones of mod-pack cars never did. The first load of each
+  directly mounted pack per map load now goes through the game's entry point,
+  exactly like a natively loaded pack; every re-deserialize FUSE does afterwards
+  still bypasses it, so old-loader edits are applied once and per-car component
+  toggles are unaffected. A pack whose only problem is a component kind from a
+  missing library mod is retried through the entry point with just that
+  component dropped, so it keeps its clones. As a consequence, LegosLibraryOfStuff
+  in-place edits (and any other mod's `Deserialize` patch, e.g. BellsAndWhistles'
+  connector extraction) now apply to mod asset packs the same way they do with
+  AssetLoader-native loading. New `DirectStoreNativeDeserialize` setting (default
+  on) restores the old behaviour if ever needed. (#224, #222)
 
 ## [1.0.2]
 

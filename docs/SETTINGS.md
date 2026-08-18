@@ -100,6 +100,23 @@ the current status or force a re-check.
 
 ## Multiplayer
 
+### `DirectStoreNativeDeserialize`
+
+**Default: `true`**
+
+Advanced. When FUSE mounts a mod asset pack directly (the normal case without
+AssetLoader), the pack's first deserialization each map load goes through the
+game's own `ContainerSerialization.Deserialize` entry point — exactly what the
+game does for a natively loaded pack — so old-loader Harmony patches on that
+method apply to mod packs too. LegosLibraryOfStuff injects its clone
+definitions (repaint liveries, LLW tender swaps) there; without this, clones of
+mod-pack cars never existed and saves referencing them showed "orphaned cars".
+
+Set to `false` to fall back to FUSE's Newtonsoft-only loader for the cold load
+(the pre-1.1 behaviour). Only useful as a diagnostic escape hatch if an
+old-loader patch misbehaves; expect LegosLibraryOfStuff variants of mod cars to
+disappear while it is off.
+
 ### `BlockNonHostMultiplayerClientWorldApply`
 
 **Default: `false`**

@@ -662,6 +662,8 @@ namespace FUSE.Loading
         private static readonly MethodInfo ContainerSerializerSettingsMethod =
             AccessTools.Method(typeof(ContainerSerialization), "JsonSerializerSettings");
 
+        private static readonly HashSet<string> PublicDeserializeFallbackWarned = new HashSet<string>();
+
         private static ContainerItem DeserializeItem(JObject item)
         {
             var wrapper = new JObject
@@ -673,21 +675,28 @@ namespace FUSE.Loading
 
             if (ContainerSerializerSettingsMethod != null)
             {
-                try
-                {
-                    var settings = (JsonSerializerSettings)ContainerSerializerSettingsMethod.Invoke(null, null);
-                    var container = JsonConvert.DeserializeObject<Container>(text, settings);
-                    container?.Awake();
-                    return container?.Objects?.FirstOrDefault();
-                }
-                catch (Exception ex)
-                {
-                    FuseLog.Warning(
-                        "FUSE legacy container mixinto fell back to ContainerSerialization.Deserialize " +
-                        $"because the reflection-based bypass failed: {ex.GetBaseException().Message}. " +
-                        "Old-loader Deserialize postfixes will re-fire for this item, which may double-apply " +
-                        "their edits.");
-                }
+                // Same serializer settings as the public entry point, without the
+                // entry point: this is a RE-deserialize of an item whose container
+                // already went through ContainerSerialization.Deserialize once on its
+                // cold load, so re-entering it here would re-fire old-loader postfixes
+                // on the same identifiers (the c188ad1 double-apply). If this throws,
+                // let it propagate — the caller warns once and skips the mixinto
+                // object, which is strictly better than a second postfix pass.
+                var settings = (JsonSerializerSettings)ContainerSerializerSettingsMethod.Invoke(null, null);
+                var container = JsonConvert.DeserializeObject<Container>(text, settings);
+                container?.Awake();
+                return container?.Objects?.FirstOrDefault();
+            }
+
+            // No reflected settings (a game update renamed the factory): the public
+            // entry point is the only deserializer left. Rare, and logged once so a
+            // double-apply report can be traced back here.
+            if (PublicDeserializeFallbackWarned.Add(string.Empty))
+            {
+                FuseLog.Warning(
+                    "FUSE legacy container mixinto is deserializing through ContainerSerialization.Deserialize " +
+                    "because ContainerSerialization.JsonSerializerSettings could not be resolved; old-loader " +
+                    "Deserialize postfixes will re-fire for patched items, which may double-apply their edits.");
             }
 
             return ContainerSerialization.Deserialize(text)?.Objects?.FirstOrDefault();

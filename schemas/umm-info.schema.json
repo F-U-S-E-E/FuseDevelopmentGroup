@@ -157,6 +157,11 @@
           "type": "boolean",
           "default": true,
           "description": "On startup, asks GitHub whether a newer stable FUSE release exists and shows a non-blocking notice if so. Only a public list of release versions is fetched. Turning it off disables the automatic startup check; the manual /fuse.update console command still checks on demand."
+        },
+        "DirectStoreNativeDeserialize": {
+          "type": "boolean",
+          "default": true,
+          "description": "Advanced. Route the first deserialization of each directly mounted mod asset pack through the game's ContainerSerialization.Deserialize entry point so old-loader Harmony patches (e.g. LegosLibraryOfStuff clone definitions for repaint liveries and tender swaps) apply to mod packs as they do to natively loaded packs. Set to false only as a diagnostic escape hatch; LegosLibraryOfStuff variants of mod cars will not exist while it is off."
         }
       }
     }

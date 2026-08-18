@@ -757,6 +757,9 @@ namespace FUSE.Loading
         private static readonly HashSet<string> DeserializeBypassFallbackWarnings =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        private static readonly HashSet<string> NativeDeserializeFallbackNotices =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         private static Container LoadResilientDirectContainer(string sourceText, string storeIdentifier, IDictionary<string, int> droppedByKind)
         {
             // No reflection-based strict bypass available (rare): defer to the legacy
@@ -766,9 +769,55 @@ namespace FUSE.Loading
                 return DeserializeContainerBypassingPostfix(sourceText, storeIdentifier);
             }
 
+            // Cold load of a direct (fuseasset://) store. The game's own
+            // AssetPackRuntimeStore.Container() body never runs for these stores — the
+            // FuseAssetPackRuntimeStoreContainerPatch prefix replaces it — so this is
+            // the ONLY deserialization the pack ever gets in this PrefabStore
+            // generation. Route it through the public ContainerSerialization.Deserialize
+            // entry point exactly like the native loader would, so old-loader Harmony
+            // patches on that method fire once per pack: LegosLibraryOfStuff's postfix
+            // injects its clone definitions (repaint liveries, LLW tender swaps) into
+            // the returned container, and without this call clones of mod-pack cars
+            // never exist, which orphans every saved car that references one (issues
+            // #224, #222). Clones of vanilla cars were unaffected because vanilla stores
+            // still load natively.
+            //
+            // The double-apply that motivated the bypass (commit c188ad1: per-car
+            // ComponentGroup toggles going dead) came from a SECOND pass over the same
+            // pack inside one PrefabStore generation — at the time AssetLoader's native
+            // store and FUSE's direct store both existed for one folder (physical-path
+            // reuse arrived later in 12d3f80) and the sanitize path re-entered
+            // Deserialize. The public entry point is now called exactly once per cold
+            // load; every RE-deserialize (per-item mixinto re-deserialize, whistle store
+            // refresh is itself a fresh cold load) stays on the Newtonsoft bypass.
+            // DirectStoreNativeDeserialize=false restores the old bypass-only cold load.
+            var nativeThrew = false;
+            if (FuseSettings.DirectStoreNativeDeserialize)
+            {
+                try
+                {
+                    var native = ContainerSerialization.Deserialize(sourceText);
+                    if (native != null)
+                    {
+                        return native;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // The stock serializer rejected the pack — almost always an
+                    // unbindable component kind whose defining library mod is absent,
+                    // occasionally object-shaped Unity structs the game's Vec3Conv
+                    // rejects. Harmony runs no postfix for a throwing original, so
+                    // nothing was applied. Fall through to the tolerant path; a pack
+                    // that ends up losing old-loader clones is called out below.
+                    nativeThrew = true;
+                    NoteNativeDeserializeFallback(storeIdentifier, ex);
+                }
+            }
+
             try
             {
-                // Happy path: with the defining library mods loaded, the game's
+                // Tolerant path: with the defining library mods loaded, the game's
                 // JsonSubtypes converter binds every component kind — including the
                 // runtime-registered customization kinds (MaterialColorizerComponent,
                 // DefaultLivelryComponent, ComponentGroup, ...) the old static
@@ -784,8 +833,47 @@ namespace FUSE.Loading
                 // kind (so nothing is dropped), the retry throws again and the caller
                 // falls through to the game's native loader.
                 var filtered = FilterUnbindableComponents(sourceText, droppedByKind, CanBindComponent);
+                if (nativeThrew && droppedByKind.Count > 0)
+                {
+                    // The only thing wrong with the pack was one or more unbindable
+                    // kinds. Retry the FILTERED text through the public entry point so
+                    // the pack still gets its old-loader edits (a pack missing one
+                    // unrelated library must not forfeit its LegosLibraryOfStuff
+                    // clones). The first native call threw, so no postfix pass has run
+                    // yet and this cannot double-apply.
+                    try
+                    {
+                        var native = ContainerSerialization.Deserialize(filtered);
+                        if (native != null)
+                        {
+                            return native;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // Still not stock-deserializable (e.g. object-shaped structs);
+                        // the tolerant retry below is the last resort.
+                    }
+                }
+
                 return BypassDeserialize(filtered);
             }
+        }
+
+        private static void NoteNativeDeserializeFallback(string storeIdentifier, Exception ex)
+        {
+            var key = storeIdentifier ?? "<unknown>";
+            if (!NativeDeserializeFallbackNotices.Add(key))
+            {
+                return;
+            }
+
+            FuseLog.Warning(
+                $"FUSE direct asset pack '{key}' did not deserialize through the game's native path " +
+                $"({ex.GetBaseException().GetType().Name}: {ex.GetBaseException().Message}); " +
+                "retrying with unbindable components dropped, then FUSE's tolerant loader. If the tolerant " +
+                "loader ends up handling it, old-loader definition edits (e.g. LegosLibraryOfStuff clones) " +
+                "will not apply to this pack.");
         }
 
         /// <summary>
