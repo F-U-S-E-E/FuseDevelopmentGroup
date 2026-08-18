@@ -17,6 +17,7 @@ namespace FUSE.Loading
         private static readonly Dictionary<string, UnknownSceneryAsset> UnknownSceneryAssets =
             new Dictionary<string, UnknownSceneryAsset>(StringComparer.OrdinalIgnoreCase);
         private static readonly List<string> Notices = new List<string>();
+        private static readonly List<string> BlockingNotices = new List<string>();
         private static readonly List<string> GraphPostBindIssues = new List<string>();
         private static readonly List<string> ProgressionTransferSkips = new List<string>();
         private static readonly Dictionary<string, SceneryLoadFailure> SceneryLoadFailures =
@@ -73,6 +74,7 @@ namespace FUSE.Loading
             {
                 UnknownSceneryAssets.Clear();
                 Notices.Clear();
+                BlockingNotices.Clear();
                 GraphPostBindIssues.Clear();
                 ProgressionTransferSkips.Clear();
                 SceneryLoadFailures.Clear();
@@ -144,6 +146,10 @@ namespace FUSE.Loading
                 if (!Notices.Contains(message))
                 {
                     Notices.Add(message);
+                }
+                if (!BlockingNotices.Contains(message))
+                {
+                    BlockingNotices.Add(message);
                 }
             }
         }
@@ -362,6 +368,7 @@ namespace FUSE.Loading
 
             UnknownSceneryAsset[] unknownScenery;
             string[] notices;
+            string[] blockingNotices;
             string[] graphPostBindIssues;
             string[] progressionTransferSkips;
             SceneryLoadFailure[] sceneryLoadFailures;
@@ -372,6 +379,7 @@ namespace FUSE.Loading
                     .ThenBy(item => item.SceneryId, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
                 notices = Notices.ToArray();
+                blockingNotices = BlockingNotices.ToArray();
                 graphPostBindIssues = GraphPostBindIssues.ToArray();
                 progressionTransferSkips = ProgressionTransferSkips.ToArray();
                 sceneryLoadFailures = SceneryLoadFailures.Values
@@ -431,6 +439,7 @@ namespace FUSE.Loading
                 GraphPostBindIssues = graphPostBindIssues,
                 ProgressionTransferSkips = progressionTransferSkips,
                 Notices = notices,
+                BlockingNotices = blockingNotices,
                 SceneryLoadFailures = sceneryLoadFailures,
                 OrphanedCars = orphanedCars,
                 ModExceptions = modExceptions,
@@ -515,7 +524,11 @@ namespace FUSE.Loading
 
             AppendList(sb, "Graph post-bind issues", snapshot.GraphPostBindIssues);
             AppendList(sb, "Progression transfer skips", snapshot.ProgressionTransferSkips);
-            AppendList(sb, "Notices", snapshot.Notices);
+            AppendList(sb, "Readiness notices", snapshot.BlockingNotices);
+            AppendList(
+                sb,
+                "Notices",
+                snapshot.Notices.Except(snapshot.BlockingNotices ?? Array.Empty<string>(), StringComparer.Ordinal));
 
             if (snapshot.SceneryLoadFailureCount > 0)
             {
@@ -600,6 +613,7 @@ namespace FUSE.Loading
                 ["summary"] = summary ?? string.Empty,
                 ["reason"] = snapshot.Reason ?? string.Empty,
                 ["hasProblems"] = snapshot.HasProblems,
+                ["hasAdvisories"] = snapshot.HasAdvisories,
                 ["counts"] = new JObject
                 {
                     ["loadedFromDiskThisPass"] = snapshot.LoadedFromDiskThisPass,
@@ -617,6 +631,7 @@ namespace FUSE.Loading
                     ["progressionTransferSkips"] = snapshot.ProgressionTransferSkips.Length,
                     ["suppressions"] = suppressionCount,
                     ["notices"] = snapshot.Notices.Length,
+                    ["blockingNotices"] = snapshot.BlockingNoticeCount,
                     ["sceneryLoadFailures"] = snapshot.SceneryLoadFailureCount,
                     ["orphanedCars"] = snapshot.OrphanedCarCount
                 },
@@ -678,6 +693,7 @@ namespace FUSE.Loading
                 ["graphPostBindIssues"] = ToArray(snapshot.GraphPostBindIssues),
                 ["progressionTransferSkips"] = ToArray(snapshot.ProgressionTransferSkips),
                 ["notices"] = ToArray(snapshot.Notices),
+                ["blockingNotices"] = ToArray(snapshot.BlockingNotices),
                 ["sceneryLoadFailures"] = new JArray((snapshot.SceneryLoadFailures ?? Array.Empty<SceneryLoadFailure>()).Select(item => new JObject
                 {
                     ["assetIdentifier"] = item.AssetIdentifier ?? string.Empty,
@@ -853,6 +869,7 @@ namespace FUSE.Loading
             public string[] GraphPostBindIssues { get; set; }
             public string[] ProgressionTransferSkips { get; set; }
             public string[] Notices { get; set; }
+            public string[] BlockingNotices { get; set; }
             public SceneryLoadFailure[] SceneryLoadFailures { get; set; }
             public FuseSaveCarFault[] OrphanedCars { get; set; }
             public FuseModExceptionSnapshot[] ModExceptions { get; set; }
@@ -868,6 +885,10 @@ namespace FUSE.Loading
 
             public int SceneryLoadFailureCount => SceneryLoadFailures?.Length ?? 0;
 
+            public int BlockingNoticeCount => BlockingNotices?.Length ?? 0;
+
+            public int AdvisoryNoticeCount => Math.Max(0, (Notices?.Length ?? 0) - BlockingNoticeCount);
+
             public bool HasProblems =>
                 FaultedPackageCount > 0 ||
                 (Conflicts != null && Conflicts.Length > 0) ||
@@ -875,10 +896,18 @@ namespace FUSE.Loading
                 (GraphPostBindIssues != null && GraphPostBindIssues.Length > 0) ||
                 (ProgressionTransferSkips != null && ProgressionTransferSkips.Length > 0) ||
                 (SkippedPackages != null && SkippedPackages.Any(item => !FusePackageFaultRegistry.IsOptionalSkipReason(item.Value))) ||
-                (Notices != null && Notices.Length > 0) ||
+                BlockingNoticeCount > 0 ||
                 SceneryLoadFailureCount > 0 ||
                 OrphanedCarCount > 0 ||
                 HasModExceptionProblem;
+
+            // Notices preserve useful diagnostics (for example, a malformed
+            // optional alias catalog) but do not by themselves mean the
+            // running stack is unhealthy. If a notice has a runtime impact,
+            // the resulting fault, unknown asset, load failure, graph issue,
+            // or transfer skip is already represented by a blocking bucket
+            // above.
+            public bool HasAdvisories => AdvisoryNoticeCount > 0;
 
             // A single one-off third-party exception must not flip the report
             // red, but a per-cycle thrower (world moves, update ticks) crosses

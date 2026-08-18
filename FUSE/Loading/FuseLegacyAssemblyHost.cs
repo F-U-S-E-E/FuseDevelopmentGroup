@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.Remoting.Messaging;
 using System.Runtime.Remoting.Proxies;
+using FUSE.Compatibility;
 using FUSE.Infrastructure;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -727,6 +728,14 @@ namespace FUSE.Loading
                 FuseLog.Info(
                     $"FUSE legacy support skipped old-loader package '{manifest.Id}' " +
                     "because native FUSE compatibility replaces it.");
+                return false;
+            }
+
+            if (FuseLegacyUmmRecovery.WasRecovered(manifest.FolderPath, manifest.Id))
+            {
+                FuseLog.Info(
+                    $"FUSE legacy support skipped old-loader plugin hosting for '{manifest.Id}' " +
+                    "because FUSE already recovered and activated its UMM entry.");
                 return false;
             }
 

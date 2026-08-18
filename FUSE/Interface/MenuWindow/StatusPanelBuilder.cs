@@ -26,6 +26,7 @@ namespace FUSE.Interface.MenuWindow
             public int GraphIssueCount;
             public int ProgressionTransferSkipCount;
             public int NoticesCount;
+            public int BlockingNoticesCount;
         }
 
         public static void Build(UIPanelBuilder builder)
@@ -50,13 +51,16 @@ namespace FUSE.Interface.MenuWindow
                 return;
             }
             var data = checklistData.Value;
+            var hasAdvisories = data.NoticesCount > data.BlockingNoticesCount || !FuseRuntimeGuardCounters.AllIdle;
 
             builder.AddSection("Overview");
 
             builder.AddField("Status",
                 builder.AddLabelMarkup(data.HasProblems
                 ? "<color=\"red\">Needs Attention</color> - FUSE found items that need review before a clean session."
-                : "<color=\"green\">OK</color> - Full stack loaded cleanly. No package faults, asset misses, graph issues, or transfer skips are reported."));
+                : hasAdvisories
+                    ? "<color=\"green\">Ready</color> - No blocking problems. Informational notices and contained compatibility events are listed below."
+                    : "<color=\"green\">Ready</color> - Full stack loaded cleanly. No package faults, asset misses, graph issues, or transfer skips are reported."));
 
             builder.AddField("Version", "FUSE " + ReadVersion() + " - Schema " + FuseMigration.CurrentVersion + " - Converter 0.2.0");
 
@@ -68,14 +72,14 @@ namespace FUSE.Interface.MenuWindow
             AddReadinessRow(builder, "Track Graph", data.GraphIssueCount == 0, "0 graph issues", data.GraphIssueCount + " issue(s)");
             AddReadinessRow(builder, "Progression", data.ProgressionTransferSkipCount == 0, "0 transfer skips", data.ProgressionTransferSkipCount + " skip(s)");
             AddReadinessRow(builder, "Registry", data.ConflictCount == 0, "0 conflicts", data.ConflictCount + " conflict(s)");
-            AddReadinessRow(builder, "Notices", data.NoticesCount == 0, "0 notices", data.NoticesCount + " notice(s)");
+            AddNoticeRow(builder, data.NoticesCount, data.BlockingNoticesCount);
             // Live session counters, not snapshot state.
-            AddReadinessRow(
+            AddAdvisoryRow(
                 builder,
                 "Guards",
                 FuseRuntimeGuardCounters.AllIdle,
                 "idle",
-                FuseRuntimeGuardCounters.GuardTotal + " contained event(s)");
+                FuseRuntimeGuardCounters.GuardTotal + " compatibility event(s) contained");
             // Session-cumulative third-party exception observations — same
             // live-counter semantics as Guards, sourced from the exception
             // registry rather than the load snapshot. One atomic capture here
@@ -110,7 +114,7 @@ namespace FUSE.Interface.MenuWindow
                 builder,
                 FuseRuntimeGuardCounters.AllIdle
                     ? "All idle — no broken content needed containing this session."
-                    : "Non-zero counters are content problems FUSE is containing; offenders are named in FUSE.log and the health report.",
+                    : "Non-zero counters show compatibility events FUSE handled successfully. They remain visible for troubleshooting but do not make the session unhealthy by themselves.",
                 48f);
             builder.Spacer(6f);
 
@@ -272,6 +276,33 @@ namespace FUSE.Interface.MenuWindow
             builder.AddField(label, builder.AddLabelMarkup(value));
         }
 
+        private static void AddAdvisoryRow(UIPanelBuilder builder, string label, bool idle, string idleText, string advisoryText)
+        {
+            var value = idle
+                ? $"<color=\"green\">OK</color> - {idleText}"
+                : $"<color=\"yellow\">Info</color> - {advisoryText}";
+            builder.AddField(label, builder.AddLabelMarkup(value));
+        }
+
+        private static void AddNoticeRow(UIPanelBuilder builder, int total, int blocking)
+        {
+            if (total == 0)
+            {
+                AddReadinessRow(builder, "Notices", true, "0 notices", string.Empty);
+                return;
+            }
+
+            if (blocking > 0)
+            {
+                var informational = Math.Max(0, total - blocking);
+                var suffix = informational == 0 ? string.Empty : $"; {informational} informational";
+                AddReadinessRow(builder, "Notices", false, string.Empty, $"{blocking} readiness issue(s){suffix}");
+                return;
+            }
+
+            AddAdvisoryRow(builder, "Notices", false, string.Empty, total + " informational notice(s)");
+        }
+
         private static StatusChecklistData? GetStatusChecklistData(FuseLoadReport.ReportSnapshot reportSnapshot)
         {
             if (reportSnapshot == null)
@@ -289,6 +320,7 @@ namespace FUSE.Interface.MenuWindow
                     GraphIssueCount = reportSnapshot.GraphPostBindIssues.Length,
                     LoadedPackagesCount = reportSnapshot.LoadedPackageIds.Length,
                     NoticesCount = reportSnapshot.Notices.Length,
+                    BlockingNoticesCount = reportSnapshot.BlockingNoticeCount,
                     ProgressionTransferSkipCount = reportSnapshot.ProgressionTransferSkips.Length,
                     UnknownAssetCount = reportSnapshot.UnknownSceneryAssets.Length
                 };
