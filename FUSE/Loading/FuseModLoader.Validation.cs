@@ -439,8 +439,9 @@ namespace FUSE.Loading
                         continue;
                     }
 
-                    FuseLoadReport.RecordGraphPostBindIssue(definition.Id, "track segment", segmentId, "missing after apply");
-                    transaction.Warning("track segment", segmentId, "missing after apply");
+                    var missingReason = DescribeMissingSegmentAfterApply(segmentDefinition, mergedTrackPlan);
+                    FuseLoadReport.RecordGraphPostBindIssue(definition.Id, "track segment", segmentId, missingReason);
+                    transaction.Warning("track segment", segmentId, missingReason);
                 }
             }
 
@@ -460,8 +461,9 @@ namespace FUSE.Loading
                         continue;
                     }
 
-                    FuseLoadReport.RecordGraphPostBindIssue(definition.Id, "track span", spanId, "missing after apply");
-                    transaction.Warning("track span", spanId, "missing after apply");
+                    var missingReason = DescribeMissingSpanAfterApply(spanEntry.Value, mergedTrackPlan);
+                    FuseLoadReport.RecordGraphPostBindIssue(definition.Id, "track span", spanId, missingReason);
+                    transaction.Warning("track span", spanId, missingReason);
                 }
             }
 
@@ -552,6 +554,62 @@ namespace FUSE.Loading
             }
 
             transaction.PostBind("scene", definition.Id, $"industries={IndustryAPI.GetAllIndustries().Count()} components={UnityEngine.Object.FindObjectsOfType<IndustryComponent>(true).Length}");
+        }
+
+        private static string DescribeMissingSegmentAfterApply(
+            FuseSegment segment,
+            FuseMergedTrackPlan mergedTrackPlan)
+        {
+            if (segment == null || mergedTrackPlan == null)
+            {
+                return "missing after apply";
+            }
+
+            var causes = new List<string>();
+            AddRemovalCause(causes, "endpoint node", segment.StartNodeId, mergedTrackPlan.RemovedNodes);
+            AddRemovalCause(causes, "endpoint node", segment.EndNodeId, mergedTrackPlan.RemovedNodes);
+            return causes.Count == 0
+                ? "missing after apply"
+                : "missing after apply; " + string.Join("; ", causes);
+        }
+
+        private static string DescribeMissingSpanAfterApply(
+            FuseSpan span,
+            FuseMergedTrackPlan mergedTrackPlan)
+        {
+            if (span == null || mergedTrackPlan == null)
+            {
+                return "missing after apply";
+            }
+
+            var causes = new List<string>();
+            AddRemovalCause(causes, "endpoint segment", span.Upper?.SegmentId, mergedTrackPlan.RemovedSegments);
+            AddRemovalCause(causes, "endpoint segment", span.Lower?.SegmentId, mergedTrackPlan.RemovedSegments);
+            return causes.Count == 0
+                ? "missing after apply"
+                : "missing after apply; " + string.Join("; ", causes);
+        }
+
+        private static void AddRemovalCause(
+            List<string> causes,
+            string kind,
+            string id,
+            IReadOnlyDictionary<string, FuseMergedTrackRemoval> removals)
+        {
+            if (causes == null || removals == null || string.IsNullOrWhiteSpace(id) ||
+                !removals.TryGetValue(id, out var removal))
+            {
+                return;
+            }
+
+            var removingPackage = removal.Owner?.Loaded?.Definition?.Id;
+            var cause = string.IsNullOrWhiteSpace(removingPackage)
+                ? $"{kind} '{id}' was removed by another package"
+                : $"{kind} '{id}' was removed by '{removingPackage}'";
+            if (!causes.Contains(cause))
+            {
+                causes.Add(cause);
+            }
         }
 
         private static FuseSegment GetPostBindSegmentDefinition(

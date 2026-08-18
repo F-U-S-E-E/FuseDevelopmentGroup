@@ -377,6 +377,11 @@ namespace FUSE.Runtime.API
             var points = span.GetPoints();
             if (points == null || points.Count < 2 || span.Length <= SpanDistanceTolerance)
             {
+                if (TryRepairSpanEndpointFacing(spanId, span))
+                {
+                    return;
+                }
+
                 var upper = span.upper.HasValue ? DescribeLocation(span.upper.Value) : "missing";
                 var lower = span.lower.HasValue ? DescribeLocation(span.lower.Value) : "missing";
                 throw new InvalidOperationException(
@@ -384,6 +389,91 @@ namespace FUSE.Runtime.API
                     $"upper=({upper}) lower=({lower}). Check that upper/lower arrows face each other, " +
                     "distances are inside segment length, and endpoint segments are connected.");
             }
+        }
+
+        /// <summary>
+        /// Some legacy AlinasMapMod spans store the correct physical points but
+        /// face one or both endpoint arrows away from the connecting route. The
+        /// legacy loader tolerated that data. Preserve each endpoint's physical
+        /// position and try only the three possible facing corrections; select
+        /// the shortest valid route so a nearby switch cannot send the span
+        /// around an unrelated branch.
+        /// </summary>
+        private static bool TryRepairSpanEndpointFacing(string spanId, TrackSpan span)
+        {
+            if (span == null || !span.upper.HasValue || !span.lower.HasValue)
+            {
+                return false;
+            }
+
+            var originalUpper = span.upper.Value;
+            var originalLower = span.lower.Value;
+            Location? bestUpper = null;
+            Location? bestLower = null;
+            var bestLength = float.PositiveInfinity;
+            var bestFacing = string.Empty;
+
+            for (var trial = 1; trial <= 3; trial++)
+            {
+                var trialFacing = trial == 1
+                    ? "upper"
+                    : trial == 2
+                        ? "lower"
+                        : "upper+lower";
+                try
+                {
+                    span.upper = (trial & 1) != 0
+                        ? FlipLocationEndPreservingPosition(originalUpper)
+                        : originalUpper;
+                    span.lower = (trial & 2) != 0
+                        ? FlipLocationEndPreservingPosition(originalLower)
+                        : originalLower;
+                    span.NormalizeUpperLower();
+
+                    var points = span.GetPoints();
+                    var length = span.Length;
+                    if (points == null || points.Count < 2 ||
+                        length <= SpanDistanceTolerance || length >= bestLength)
+                    {
+                        continue;
+                    }
+
+                    bestUpper = span.upper;
+                    bestLower = span.lower;
+                    bestLength = length;
+                    bestFacing = trialFacing;
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Info(
+                        $"FUSE track span '{spanId}' endpoint-facing trial '{trialFacing}' was rejected: " +
+                        ex.GetBaseException().Message);
+                }
+            }
+
+            if (!bestUpper.HasValue || !bestLower.HasValue)
+            {
+                span.upper = originalUpper;
+                span.lower = originalLower;
+                return false;
+            }
+
+            span.upper = bestUpper;
+            span.lower = bestLower;
+            FuseLog.Info(
+                $"FUSE auto-repaired track span '{spanId}': reversed {bestFacing} endpoint facing " +
+                $"without moving either physical endpoint; resolvedLength={bestLength:0.###}. " +
+                "Legacy AlinasMapMod tolerated this facing pattern.");
+            return true;
+        }
+
+        private static Location FlipLocationEndPreservingPosition(Location location)
+        {
+            var length = location.segment.GetLength();
+            var distanceFromA = DistanceFromSegmentA(location);
+            var flippedEnd = location.EndIsA ? TrackSegment.End.B : TrackSegment.End.A;
+            var flippedDistance = location.EndIsA ? length - distanceFromA : distanceFromA;
+            return new Location(location.segment, Mathf.Clamp(flippedDistance, 0f, length), flippedEnd);
         }
 
         private static string DescribeLocation(Location location)

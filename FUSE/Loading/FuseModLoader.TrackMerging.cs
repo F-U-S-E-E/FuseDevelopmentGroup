@@ -49,6 +49,7 @@ namespace FUSE.Loading
             public T Value { get; }
             public FuseStagedApplyCandidate Owner { get; }
             public int Sequence { get; }
+            public bool ApplyFailed { get; set; }
         }
 
         private sealed class FuseMergedTrackRemoval
@@ -1116,6 +1117,15 @@ namespace FUSE.Loading
             {
                 foreach (var entry in plan.Spans.Values.OrderBy(item => item.Sequence))
                 {
+                    // Reconciliation recovers spans that were successfully
+                    // created and then lost during the collection refresh. It
+                    // must not retry a definition that already failed to apply;
+                    // doing so reports the same content error twice.
+                    if (entry.ApplyFailed)
+                    {
+                        continue;
+                    }
+
                     var packageId = entry.Owner?.Loaded?.Definition?.Id;
                     if (!ShouldReconcileMergedSpan(
                             packageId,
@@ -1463,7 +1473,7 @@ namespace FUSE.Loading
                 ShouldRecreateMergedSpanRuntime(
                     TrackAPI.GetDefinition(runtimeSpan),
                     entry.Value);
-            transaction.TryApply("track span", entry.Id, exists, () =>
+            entry.ApplyFailed = !transaction.TryApply("track span", entry.Id, exists, () =>
             {
                 if (recreateForTopologyChange)
                 {

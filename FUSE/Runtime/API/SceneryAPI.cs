@@ -24,7 +24,20 @@ namespace FUSE.Runtime.API
                 { "CitySignDeep", "ALW_Sign_CitySignDeep" },
                 { "CitySignEverett", "ALW_Sign_CitySignEverett" },
                 { "CitySignWalkerWoody", "ALW_Sign_CitySignWalkerWoody" },
-                { "TurntableMeasurementTool", "ALW_ModRes_TurntableMeasurementTool" }
+                { "FullServiceMailboxBlack", "ALW_SA_FullServiceMailboxBlack" },
+                { "FullServiceMailboxGreen", "ALW_SA_FullServiceMailboxGreen" },
+                { "FullServiceMailboxWhite", "ALW_SA_FullServiceMailboxWhite" },
+                { "MultiMailbox", "ALW_SA_MultiMailbox" },
+                { "RampBrick", "ALW_IndScenery_RampBrick" },
+                { "RampWood", "ALW_IndScenery_RampWood" },
+                { "RegMailboxBlack", "ALW_SA_RegMailboxBlack" },
+                { "RegMailboxGreen", "ALW_SA_RegMailboxGreen" },
+                { "RegMailboxWhite", "ALW_SA_RegMailboxWhite" },
+                { "Stockyard4Pen", "ALW_StockY_Stockyard4Pen" },
+                { "TurntableMeasurementTool", "ALW_ModRes_TurntableMeasurementTool" },
+                { "WoodDock10M", "ALW_IndScenery_WoodDock10M" },
+                { "WoodDock20M", "ALW_IndScenery_WoodDock20M" },
+                { "WoodDock50M", "ALW_IndScenery_WoodDock50M" }
             };
 
         private static readonly HashSet<string> OptionalLegacySceneryAssets =
