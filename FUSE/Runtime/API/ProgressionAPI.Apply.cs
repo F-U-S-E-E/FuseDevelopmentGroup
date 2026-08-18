@@ -190,6 +190,49 @@ namespace FUSE.Runtime.API
             }
 
             ProgressionSectionsField?.SetValue(progression, progression.GetComponentsInChildren<Section>());
+            ApplyEnableFeaturesAtStart(progression, definition, packageId);
+        }
+
+        /// <summary>
+        /// Patches the game's private Progression.enableFeaturesAtStart array.
+        /// Progression.Configure walks that array on every Company load and calls
+        /// SetFeatureEnabled(feature, true) for each entry, persisting the enable
+        /// into the save's feature KVO — the same mechanism the base 'ewh' career
+        /// uses for wh-el / ewh-intch. That makes it the correct lever for a map
+        /// mod that patches the base career progression and needs its trunk
+        /// features on at career start (and healed on existing saves), without
+        /// touching sandbox (Configure never runs there).
+        ///
+        /// Patch semantics follow FuseStringPatch: omitted = no change, array =
+        /// replace, object = per-id merge. Mods patching a base-game progression
+        /// should use the object form so the base progression's own start
+        /// features survive the merge. Unresolved ids warn-skip via
+        /// ResolveMapFeatures. The field is always written as a non-null array:
+        /// the game's Configure foreach has no null guard.
+        /// </summary>
+        private static void ApplyEnableFeaturesAtStart(Progression progression, FuseProgression definition, string packageId)
+        {
+            if (definition.EnableFeaturesAtStart == null || !definition.EnableFeaturesAtStart.HasValue)
+            {
+                return;
+            }
+
+            if (ProgressionEnableFeaturesAtStartField == null)
+            {
+                FuseLog.Warning($"FUSE progression '{progression.identifier}' declares enableFeaturesAtStart but Progression.enableFeaturesAtStart was not found on this game version; start features were not applied. package='{packageId}'");
+                return;
+            }
+
+            var existingIds = (ProgressionEnableFeaturesAtStartField.GetValue(progression) as MapFeature[] ?? Array.Empty<MapFeature>())
+                .Where(feature => feature != null)
+                .Select(feature => feature.identifier)
+                .ToArray();
+            var resolved = ResolveMapFeatures(definition.EnableFeaturesAtStart.ApplyTo(existingIds)) ?? Array.Empty<MapFeature>();
+            ProgressionEnableFeaturesAtStartField.SetValue(progression, resolved);
+
+            FuseLog.Info(
+                $"FUSE progression '{progression.identifier}' enableFeaturesAtStart=[{FormatFeatureIds(resolved)}] " +
+                $"(was [{string.Join(",", existingIds)}]) package='{packageId}'.");
         }
 
         private static void ApplySectionDefinition(Section section, FuseSection definition, string packageId)

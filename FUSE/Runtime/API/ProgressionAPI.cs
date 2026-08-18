@@ -31,6 +31,11 @@ namespace FUSE.Runtime.API
         private static readonly PropertyInfo ManagerFeatureEnablesProperty = typeof(MapFeatureManager).GetProperty("FeatureEnables", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly MethodInfo ManagerHandleFeatureEnablesChangedMethod = typeof(MapFeatureManager).GetMethod("HandleFeatureEnablesChanged", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ProgressionSectionsField = typeof(Progression).GetField("<Sections>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+        // Progression.enableFeaturesAtStart is a private [SerializeField] MapFeature[]
+        // (FormerlySerializedAs "enableAtStart"). Progression.Configure calls
+        // mapFeatureManager.SetFeatureEnabled(feature, true) for each entry when
+        // hosting, on every load — the base career's own start-feature lever.
+        private static readonly FieldInfo ProgressionEnableFeaturesAtStartField = typeof(Progression).GetField("enableFeaturesAtStart", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly MethodInfo ProgressionUpdateSectionStatesMethod = typeof(Progression).GetMethod("UpdateSectionStates", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo SectionInterchangeTransfersField = typeof(Section).GetField("<InterchangeTransfers>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo InterchangeTransferFromField = typeof(InterchangeTransfer).GetField("from", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -260,6 +265,16 @@ namespace FUSE.Runtime.API
             FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.Progression, progression.identifier, out FuseProgression definition);
             definition = definition ?? new FuseProgression();
             definition.Sections = definition.Sections ?? new Dictionary<string, FuseSection>();
+
+            // Snapshot the live start-feature list the same way the section
+            // fields below are snapshotted: FromSet, because the snapshot is
+            // the exact current runtime state, not a merge patch. Guarded so
+            // a game build without the field simply leaves the cached value.
+            if (ProgressionEnableFeaturesAtStartField != null)
+            {
+                var startFeatures = ProgressionEnableFeaturesAtStartField.GetValue(progression) as MapFeature[];
+                definition.EnableFeaturesAtStart = FuseStringPatch.FromSet(ToFeatureIds(startFeatures));
+            }
 
             var sections = ProgressionSectionsField?.GetValue(progression) as Section[] ??
                            progression.GetComponentsInChildren<Section>(true);
