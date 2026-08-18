@@ -1,3 +1,4 @@
+using System.Linq;
 using FUSE.Authoring.Serialization;
 using FUSE.Authoring.Validation;
 using FUSE.Loading;
@@ -278,6 +279,82 @@ namespace FUSE.Tests.Loading
                 var result = new FuseDefinitionValidator().Validate(definition);
 
                 Assert.DoesNotContain(result.Errors, e => e.Code == "fuse.operations.component.trackSpanIds");
+            }
+        }
+
+        public class ReplaceDirectives
+        {
+            [Fact]
+            public void TrackSpanReplace_RoundTripsAsReplacementPatch()
+            {
+                var source = new JObject
+                {
+                    ["industries"] = new JObject
+                    {
+                        ["wh-e-engine"] = new JObject
+                        {
+                            ["components"] = new JObject
+                            {
+                                ["coaling"] = new JObject
+                                {
+                                    ["trackSpans"] = new JObject
+                                    {
+                                        ["$replace"] = new JArray("Pn9z", "WhittierCoal2")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                var (root, industries) = FuseLegacyIndustryConverterTests.ConvertIndustries(source);
+                var converted = (JObject)industries["wh-e-engine"]["components"]["coaling"];
+                Assert.Equal(
+                    new[] { "Pn9z", "WhittierCoal2" },
+                    converted["trackSpanPatch"]["replace"].Values<string>());
+
+                var definition = FuseSerializer.FromJson(root.ToString());
+                var component = definition.Operations.Industries["wh-e-engine"].Components["coaling"];
+                Assert.Equal(new[] { "Pn9z", "WhittierCoal2" }, component.TrackSpanPatch.Replace);
+            }
+
+            [Fact]
+            public void ComponentDictionaryReplace_RoundTripsAsWholesaleReplacement()
+            {
+                var source = new JObject
+                {
+                    ["industries"] = new JObject
+                    {
+                        ["wh-e-engine"] = new JObject
+                        {
+                            ["components"] = new JObject
+                            {
+                                ["$replace"] = new JObject
+                                {
+                                    ["diesel"] = new JObject
+                                    {
+                                        ["trackSpans"] = new JObject
+                                        {
+                                            ["$replace"] = new JArray("Pq23")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                var (root, industries) = FuseLegacyIndustryConverterTests.ConvertIndustries(source);
+                var converted = (JObject)industries["wh-e-engine"];
+                Assert.True(converted.Value<bool>("replaceComponents"));
+                Assert.False(converted.Value<bool>("mergeComponents"));
+                Assert.Equal(new[] { "diesel" }, ((JObject)converted["components"]).Properties().Select(p => p.Name));
+
+                var definition = FuseSerializer.FromJson(root.ToString());
+                var industry = definition.Operations.Industries["wh-e-engine"];
+                Assert.True(industry.ReplaceComponents);
+                Assert.False(industry.MergeComponents);
+                Assert.Equal(new[] { "diesel" }, industry.Components.Keys);
             }
         }
 

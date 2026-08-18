@@ -1089,6 +1089,87 @@ namespace FUSE.Loading
             {
                 TrackAPI.RebuildCollectionsOnly();
             }
+
+            ReconcileMissingMergedSpans(plan);
+        }
+
+        /// <summary>
+        /// A structural graph rebuild can retire a base span whose endpoint
+        /// segments were removed, while the final lightweight collection refresh
+        /// can still omit the replacement span created under the same id. This is
+        /// observable with ARC Whittier's Pyc3/Pap9 replacements: their new
+        /// definitions point at new single segments, but the old base spans point
+        /// at the deleted four-segment topology. Reconcile only spans whose final
+        /// plan owner still owns the exclusive registry claim, so this recovery
+        /// cannot override a conflict winner or another package's runtime span.
+        /// </summary>
+        private static void ReconcileMissingMergedSpans(FuseMergedTrackPlan plan)
+        {
+            if (plan?.Spans == null || plan.Spans.Count == 0)
+            {
+                return;
+            }
+
+            var restored = 0;
+            TrackAPI.BeginBatch();
+            try
+            {
+                foreach (var entry in plan.Spans.Values.OrderBy(item => item.Sequence))
+                {
+                    var packageId = entry.Owner?.Loaded?.Definition?.Id;
+                    if (!ShouldReconcileMergedSpan(
+                            packageId,
+                            FuseRegistry.GetExclusiveOwner(FuseClaimKind.Span, entry.Id),
+                            TrackAPI.GetSpan(entry.Id) != null))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        TrackAPI.AddSpan(entry.Id, entry.Value);
+                        entry.Owner.Transaction.PostBind(
+                            "track span",
+                            entry.Id,
+                            "restored after final graph collection refresh");
+                        restored++;
+                    }
+                    catch (Exception ex)
+                    {
+                        entry.Owner.Transaction.Error("track span", entry.Id, ex.Message);
+                        FuseLog.Exception(
+                            $"FUSE final span reconciliation failed package='{packageId ?? string.Empty}' " +
+                            $"kind='track span' id='{entry.Id}'",
+                            ex);
+                    }
+                }
+            }
+            finally
+            {
+                TrackAPI.EndBatch(false);
+            }
+
+            if (restored == 0)
+            {
+                return;
+            }
+
+            FuseLog.Info(
+                $"FUSE restored {restored} merged track span(s) that were missing after the final graph collection refresh.");
+            if (!TrackAPI.IsBatching && TrackAPI.ConsumePendingRebuildRequest())
+            {
+                TrackAPI.RebuildCollectionsOnly();
+            }
+        }
+
+        internal static bool ShouldReconcileMergedSpan(
+            string plannedOwner,
+            string registryOwner,
+            bool spanPresent)
+        {
+            return !spanPresent &&
+                   !string.IsNullOrWhiteSpace(plannedOwner) &&
+                   string.Equals(plannedOwner, registryOwner, StringComparison.OrdinalIgnoreCase);
         }
 
         private static FuseTrackAssemblyBridgeApplySummary ApplyMergedTrackAssemblyPackages(

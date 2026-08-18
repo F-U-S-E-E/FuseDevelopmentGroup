@@ -596,6 +596,7 @@ namespace FUSE.Loading
                 }
 
                 var handler = ReadHandler(item);
+                var points = ReadLegacyReplacementArray(item["points"]);
                 if (IsTurntableHandler(handler))
                 {
                     ((JObject)root["operations"]["turntables"])[property.Name] = ConvertTurntable(property.Name, item);
@@ -625,7 +626,7 @@ namespace FUSE.Loading
                 }
                 else if (!string.IsNullOrWhiteSpace(handler) &&
                          !SplineyHandlerMap.ContainsKey(handler) &&
-                         (item["points"] as JArray) == null)
+                         points == null)
                 {
                     // FUSE doesn't recognize this handler natively and the
                     // spliney has no curve geometry of its own; defer to
@@ -636,7 +637,7 @@ namespace FUSE.Loading
                     FuseSplineyPluginHost.Register(property.Name, item);
                     continue;
                 }
-                else if ((item["points"] as JArray)?.Count >= 2)
+                else if (points?.Count >= 2)
                 {
                     ((JObject)root["world"]["splineys"])[property.Name] = ConvertSpliney(item);
                 }
@@ -667,6 +668,23 @@ namespace FUSE.Loading
             return ReadString(item, "handler", "Handler") ?? string.Empty;
         }
 
+        private static JArray ReadLegacyReplacementArray(JToken value)
+        {
+            if (value is JArray array)
+            {
+                return array;
+            }
+
+            if (value is JObject patch &&
+                patch.TryGetValue("$replace", StringComparison.OrdinalIgnoreCase, out var replacement) &&
+                replacement is JArray replacementArray)
+            {
+                return replacementArray;
+            }
+
+            return null;
+        }
+
         private static JObject ConvertSpliney(JObject item)
         {
             var handler = ReadHandler(item);
@@ -677,7 +695,7 @@ namespace FUSE.Loading
             }
 
             var points = new JArray();
-            foreach (var point in (item["points"] as JArray)?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
+            foreach (var point in ReadLegacyReplacementArray(item["points"])?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
             {
                 points.Add(CleanObject(new JObject
                 {

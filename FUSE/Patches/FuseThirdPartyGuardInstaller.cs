@@ -7,8 +7,9 @@ namespace FUSE.Patches
     /// <summary>
     /// Single idempotent entry point for the guards FUSE keeps around
     /// third-party mods it has no compile-time reference to (currently the
-    /// Map Enhancer culling guard and the Rebill Industry Cars config-load
-    /// guard). Each guard resolves its target by name and idles silently
+    /// Map Enhancer culling guard, the Rebill Industry Cars config-load
+    /// guard, and the BRSS mod-menu startup guard). Each guard resolves its
+    /// target by name and idles silently
     /// when the mod — or the exact member surface the guard understands —
     /// is absent.
     ///
@@ -73,9 +74,20 @@ namespace FUSE.Patches
                 rebillStatus = "failed";
             }
 
+            string brssStatus;
+            try
+            {
+                brssStatus = FuseBrssModMenuGuardPatches.EnsureInstalled(_harmony);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE BRSS mod-menu guard failed to install", ex);
+                brssStatus = "failed";
+            }
+
             var summary =
                 $"FUSE third-party guards: mapEnhancerCulling='{mapEnhancerStatus}' " +
-                $"rebillIndustryCars='{rebillStatus}'.";
+                $"rebillIndustryCars='{rebillStatus}' brssModMenu='{brssStatus}'.";
             if (!string.Equals(summary, _lastSummary, StringComparison.Ordinal))
             {
                 _lastSummary = summary;
