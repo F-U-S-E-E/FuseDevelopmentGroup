@@ -149,12 +149,23 @@ namespace Fuse.Core.Tests
             definition.Progression.Progressions["ewh"] = progression;
 
             var json = FuseCoreSerializer.ToJson(definition);
-            var reparsed = JObject.Parse(json);
-            var field = reparsed.SelectToken("progression.progressions.ewh.enableFeaturesAtStart");
 
+            // Wire shape: the emitted JSON must still be the object (merge) form.
+            var wire = JObject.Parse(json);
+            var field = wire.SelectToken("progression.progressions.ewh.enableFeaturesAtStart");
             Assert.NotNull(field);
             Assert.Equal(JTokenType.Object, field.Type);
             Assert.True(field.Value<bool>("APPA-Start-Seed"));
+
+            // Full round-trip: the serializer must read its own output back
+            // into a merge Patch, not just emit object-shaped JSON.
+            var reparsed = FuseCoreSerializer.FromJson(json);
+            var patch = reparsed.Progression.Progressions["ewh"].EnableFeaturesAtStart;
+            Assert.NotNull(patch);
+            Assert.True(patch.HasValue);
+            Assert.Null(patch.Set);
+            Assert.NotNull(patch.Patch);
+            Assert.True(patch.Patch["APPA-Start-Seed"]);
         }
     }
 }
