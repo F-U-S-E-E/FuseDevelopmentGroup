@@ -1035,7 +1035,14 @@ namespace StrangeCustoms.Tracks
 
         public IReadOnlyDictionary<string, string> TouchedKeys { get; }
 
-        public IReadOnlyDictionary<string, TrackNode> NodesById { get; }
+        // Keep these as writable concrete dictionaries. Signals Everywhere
+        // was compiled against the legacy setters and rebuilds all three
+        // indexes from live Unity objects before applying its CTC data.
+        public Dictionary<string, TrackNode> NodesById { get; set; }
+
+        public Dictionary<string, TrackSegment> SegmentsById { get; set; }
+
+        public Dictionary<string, TrackSpan> SpansById { get; set; }
 
         /// <summary>
         /// Builds the minimal FUSE-owned context required by hosted plugins without reproducing legacy patching internals.
@@ -1045,6 +1052,8 @@ namespace StrangeCustoms.Tracks
             Logger = logger ?? Serilog.Log.ForContext<PatchingContext>();
             TouchedKeys = changedEntries ?? new Dictionary<string, string>(0);
             NodesById = BuildNodeIndex();
+            SegmentsById = new Dictionary<string, TrackSegment>(StringComparer.Ordinal);
+            SpansById = new Dictionary<string, TrackSpan>(StringComparer.Ordinal);
         }
 
         /// <summary>
@@ -1095,19 +1104,59 @@ namespace StrangeCustoms.Tracks
     /// never invokes the patches, the type must exist for the patch method
     /// bodies to type-check at JIT time.
     /// </summary>
+    [Serializable]
     [Obsolete(LegacyShim.Message)]
     public class SCPatchingException : Exception
     {
+        public SCPatchingException()
+        {
+        }
+
+        public SCPatchingException(string message)
+            : base(message)
+        {
+        }
+
         /// <summary>
         /// Preserves the legacy exception constructor so hosted plugin bodies can resolve the expected type.
         /// </summary>
-        public SCPatchingException(string message, string parameterName)
+        public SCPatchingException(string message, string jsonPath)
             : base(message)
         {
-            ParameterName = parameterName;
+            JsonPath = jsonPath;
+            ParameterName = jsonPath;
         }
 
+        public SCPatchingException(string message, Exception inner)
+            : base(message, inner)
+        {
+        }
+
+        public SCPatchingException(SCPatchingException inner, string previousPath)
+            : base(inner?.Message, inner)
+        {
+            JsonPath = previousPath + "." + inner?.JsonPath;
+            ParameterName = JsonPath;
+        }
+
+        public string JsonPath { get; }
+
+        // Retained as a FUSE-era alias for callers compiled against an early
+        // version of this compatibility shim.
         public string ParameterName { get; }
+
+        public override string ToString()
+        {
+            if (JsonPath == null)
+            {
+                return base.ToString();
+            }
+
+            var innerText = InnerException != null && !(InnerException is SCPatchingException)
+                ? "\n" + InnerException
+                : null;
+            return $"[{JsonPath}]: {Message}{innerText}";
+        }
     }
 }
 
