@@ -8,11 +8,11 @@ namespace FUSE.Patches
     /// Single idempotent entry point for the guards FUSE keeps around
     /// third-party mods it has no compile-time reference to (currently the
     /// Map Enhancer culling guard, the Rebill Industry Cars config-load
-    /// guard, the BRSS mod-menu startup guard, and the TimeSync main-thread
-    /// guard). Each guard resolves its
-    /// target by name and idles silently
-    /// when the mod — or the exact member surface the guard understands —
-    /// is absent.
+    /// guard, the BRSS mod-menu startup guard, the TimeSync main-thread
+    /// guard, the RR Utilities query-tool compatibility fix, and the Realistic
+    /// Rerail startup guard). Each guard resolves its target by name and idles
+    /// silently when the mod — or the exact member surface the guard understands
+    /// — is absent.
     ///
     /// Kept out of the attribute-driven FusePatchResilience pass on
     /// purpose: these guard classes carry no [HarmonyPatch] attributes, so
@@ -34,6 +34,7 @@ namespace FUSE.Patches
 
         private static Harmony _harmony;
         private static string _lastSummary;
+        private static bool _assemblyLoadRetryRegistered;
 
         internal static void EnsureInstalled()
         {
@@ -42,6 +43,12 @@ namespace FUSE.Patches
                 if (_harmony == null)
                 {
                     _harmony = new Harmony(HarmonyId);
+                }
+
+                if (!_assemblyLoadRetryRegistered)
+                {
+                    AppDomain.CurrentDomain.AssemblyLoad += OnAssemblyLoad;
+                    _assemblyLoadRetryRegistered = true;
                 }
             }
             catch (Exception ex)
@@ -97,14 +104,58 @@ namespace FUSE.Patches
                 timeSyncStatus = "failed";
             }
 
+            string utilitiesQueryStatus;
+            try
+            {
+                utilitiesQueryStatus = FuseUtilitiesQueryTooltipCompatibility.EnsureInstalled(_harmony);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE RR Utilities query compatibility failed to install", ex);
+                utilitiesQueryStatus = "failed";
+            }
+
+            string realisticRerailStatus;
+            try
+            {
+                realisticRerailStatus = FuseRealisticRerailCraneGuardPatches.EnsureInstalled(_harmony);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE Realistic Rerail startup guard failed to install", ex);
+                realisticRerailStatus = "failed";
+            }
+
             var summary =
                 $"FUSE third-party guards: mapEnhancerCulling='{mapEnhancerStatus}' " +
                 $"rebillIndustryCars='{rebillStatus}' brssModMenu='{brssStatus}' " +
-                $"timeSyncMainThread='{timeSyncStatus}'.";
+                $"timeSyncMainThread='{timeSyncStatus}' " +
+                $"utilitiesQuery='{utilitiesQueryStatus}' " +
+                $"realisticRerail='{realisticRerailStatus}'.";
             if (!string.Equals(summary, _lastSummary, StringComparison.Ordinal))
             {
                 _lastSummary = summary;
                 FuseLog.Info(summary);
+            }
+        }
+
+        private static void OnAssemblyLoad(object sender, AssemblyLoadEventArgs args)
+        {
+            var assemblyName = args?.LoadedAssembly?.GetName()?.Name;
+            if (!string.Equals(assemblyName, "CraneRerailing", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            try
+            {
+                FuseRealisticRerailCraneGuardPatches.EnsureInstalled(_harmony);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception(
+                    "FUSE Realistic Rerail startup guard failed during assembly-load retry",
+                    ex);
             }
         }
     }

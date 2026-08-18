@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using FUSE.Runtime.Cache;
@@ -403,28 +404,19 @@ namespace FUSE.Loading
                     // Railloader.dll whose types bind against FUSE's shim). One
                     // such type must not abort the whole scan and drop every
                     // queued builder task (issue #207) — skip it and keep going.
-                    bool isBuilder;
-                    try
+                    if (!TryIsConcreteSplineyBuilderType(type, out var inspectionFailure))
                     {
-                        isBuilder = type != null &&
-                            type.IsClass &&
-                            !type.IsAbstract &&
-                            typeof(StrangeCustoms.ISplineyBuilder).IsAssignableFrom(type);
-                    }
-                    catch (Exception ex)
-                    {
-                        unloadableTypeCount++;
-                        if (firstUnloadableType == null)
+                        if (inspectionFailure != null)
                         {
-                            firstUnloadableType =
-                                $"{assembly.GetName().Name}:{type?.FullName ?? "?"} ({ex.GetBaseException().GetType().Name}: {ex.GetBaseException().Message})";
+                            unloadableTypeCount++;
+                            if (firstUnloadableType == null)
+                            {
+                                var rootFailure = inspectionFailure.GetBaseException();
+                                firstUnloadableType =
+                                    $"{assembly.GetName().Name}:{type?.FullName ?? "?"} ({rootFailure.GetType().Name}: {rootFailure.Message})";
+                            }
                         }
 
-                        continue;
-                    }
-
-                    if (!isBuilder)
-                    {
                         continue;
                     }
 
@@ -455,6 +447,36 @@ namespace FUSE.Loading
             }
 
             return builders;
+        }
+
+        /// <summary>
+        /// A recovered legacy assembly can contain a few unusable types whose
+        /// dependencies were absent during UMM's first load attempt. Mono can
+        /// return those Type objects from GetTypes and then throw TypeLoadException
+        /// from IsAssignableFrom. Skip only that damaged type so one unrelated
+        /// plugin cannot abort discovery of every healthy spliney builder.
+        /// </summary>
+        internal static bool IsConcreteSplineyBuilderType(Type type)
+        {
+            return TryIsConcreteSplineyBuilderType(type, out _);
+        }
+
+        private static bool TryIsConcreteSplineyBuilderType(Type type, out Exception failure)
+        {
+            try
+            {
+                var result = type != null &&
+                             type.IsClass &&
+                             !type.IsAbstract &&
+                             typeof(StrangeCustoms.ISplineyBuilder).IsAssignableFrom(type);
+                failure = null;
+                return result;
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+                return false;
+            }
         }
 
         /// <summary>

@@ -71,7 +71,7 @@ namespace FUSE.Compatibility
                         continue;
                     }
 
-                    RecoveredPackageKeys.Add(BuildPackageKey(entry.Path, id));
+                    TryRecordRecovered(entry.Path, id);
                     recovered++;
                     FuseLog.Info(
                         $"FUSE recovered legacy UMM mod '{id}' after its early Railloader assembly-resolution failure. " +
@@ -89,6 +89,11 @@ namespace FUSE.Compatibility
         internal static bool WasRecovered(string folderPath, string packageId)
         {
             return RecoveredPackageKeys.Contains(BuildPackageKey(folderPath, packageId));
+        }
+
+        internal static bool TryRecordRecovered(string folderPath, string packageId)
+        {
+            return RecoveredPackageKeys.Add(BuildPackageKey(folderPath, packageId));
         }
 
         private static bool IsRecoveryCandidate(UnityModManager.ModEntry entry)

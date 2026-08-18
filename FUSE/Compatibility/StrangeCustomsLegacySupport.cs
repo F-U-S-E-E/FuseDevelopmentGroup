@@ -570,6 +570,60 @@ namespace StrangeCustoms.Tracks
         public SerializedSpan()
         {
         }
+
+        /// <summary>
+        /// Preserves the live-span projection used by SignalsEverywhere when
+        /// it snapshots existing CTC blocks.
+        /// </summary>
+        public SerializedSpan(TrackSpan trackSpan)
+        {
+            if (trackSpan == null)
+            {
+                return;
+            }
+
+            var upper = trackSpan.upper;
+            var lower = trackSpan.lower;
+            Upper = upper.HasValue
+                ? new SerializedLocation(upper.Value.Serializable())
+                : null;
+            Lower = lower.HasValue
+                ? new SerializedLocation(lower.Value.Serializable())
+                : null;
+        }
+
+        /// <summary>
+        /// Recreates the private legacy apply surface that SignalsEverywhere
+        /// resolves by reflection when rebuilding a CTC block.
+        /// </summary>
+        private void ApplyTo(string id, PatchingContext ctx, TrackSpan trackSpan)
+        {
+            if (trackSpan == null)
+            {
+                throw new ArgumentNullException(nameof(trackSpan));
+            }
+
+            var graph = Graph.Shared;
+            if (graph == null)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot apply serialized track span '{id}' because the live graph is unavailable.");
+            }
+
+            if (Lower == null || Upper == null)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot apply serialized track span '{id}' without both lower and upper locations.");
+            }
+
+            trackSpan.id = id;
+            trackSpan.lower = graph.MakeLocation((SerializableLocation)Lower);
+            trackSpan.upper = graph.MakeLocation((SerializableLocation)Upper);
+            if (Normalize)
+            {
+                trackSpan.NormalizeUpperLower();
+            }
+        }
     }
 
     /// <summary>

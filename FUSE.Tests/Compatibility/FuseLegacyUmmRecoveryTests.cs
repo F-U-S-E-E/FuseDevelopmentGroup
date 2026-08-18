@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Text;
 using FUSE.Compatibility;
 using Xunit;
@@ -27,6 +28,24 @@ namespace FUSE.Tests.Compatibility
         {
             Assert.False(FuseLegacyUmmRecovery.ReferencesLegacyLoader(null));
             Assert.False(FuseLegacyUmmRecovery.ReferencesLegacyLoader(Array.Empty<byte>()));
+        }
+
+        [Fact]
+        public void RecoveredPackageKey_NormalizesSeparatorsAndCasing()
+        {
+            var unique = Guid.NewGuid().ToString("N");
+            var folder = Path.Combine(Path.GetTempPath(), "FuseRecoveryKeyTests", unique);
+            var packageId = "AlinaNova21.AlinasUtils." + unique;
+
+            Assert.True(FuseLegacyUmmRecovery.TryRecordRecovered(
+                folder + Path.DirectorySeparatorChar,
+                packageId.ToUpperInvariant()));
+            Assert.True(FuseLegacyUmmRecovery.WasRecovered(
+                folder,
+                packageId.ToLowerInvariant()));
+            Assert.True(FuseLegacyUmmRecovery.WasRecovered(
+                folder + Path.AltDirectorySeparatorChar,
+                packageId));
         }
     }
 }
