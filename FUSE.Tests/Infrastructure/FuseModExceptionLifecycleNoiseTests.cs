@@ -8,32 +8,16 @@ namespace FUSE.Tests.Infrastructure
         [Theory]
         [InlineData("GP38Scripts.TractionMotorAudio.OnEnable")]
         [InlineData("GP38Scripts.GP38SmokeController.Start")]
-        public void BmanSharedLocomotiveLifecycle_IsRecoverableForEveryAsset(string frame)
+        [InlineData("Audio.ExhaustAudioController.StopPlaying")]
+        [InlineData("Audio.ExhaustAudioController.PlayNext")]
+        public void LocomotiveLifecycleFailures_RemainHealthObservations(string frame)
         {
             var stack = "  at " + frame + " ()\n" +
                 "  at Model.Car.HandleModelsLoaded (Model.Car car)";
 
-            Assert.True(FuseModExceptionLogHook.IsKnownRecoverableLifecycleNoise(
-                "NullReferenceException: Object reference not set to an instance of an object",
-                stack));
-        }
-
-        [Theory]
-        [InlineData("Audio.ExhaustAudioController.StopPlaying")]
-        [InlineData("Audio.ExhaustAudioController.PlayNext")]
-        public void ExhaustPreviewLifecycle_IsRecoverableOnlyDuringCarModelActivation(string frame)
-        {
-            var activationStack = "  at " + frame + " ()\n" +
-                "  at Model.Car.HandleModelsLoaded_Patch1 (Model.Car car)";
-            var unrelatedStack = "  at " + frame + " ()\n" +
-                "  at Some.Other.Update ()";
-
-            Assert.True(FuseModExceptionLogHook.IsKnownRecoverableLifecycleNoise(
-                "NullReferenceException: Object reference not set to an instance of an object",
-                activationStack));
             Assert.False(FuseModExceptionLogHook.IsKnownRecoverableLifecycleNoise(
                 "NullReferenceException: Object reference not set to an instance of an object",
-                unrelatedStack));
+                stack));
         }
 
         [Fact]

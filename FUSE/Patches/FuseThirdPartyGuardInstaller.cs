@@ -10,7 +10,8 @@ namespace FUSE.Patches
     /// Map Enhancer culling guard, the Rebill Industry Cars config-load
     /// guard, the BRSS mod-menu startup guard, the TimeSync main-thread
     /// guard, the RR Utilities compatibility fixes, the Memory Leak &amp; FPS
-    /// Enviro compatibility fix, and the Realistic Rerail startup guard).
+    /// Enviro compatibility fix, the Realistic Rerail startup guard, and
+    /// Bman's shared locomotive audio initialization fixes).
     /// Each guard resolves its target by name and idles
     /// silently when the mod — or the exact member surface the guard understands
     /// — is absent.
@@ -149,6 +150,18 @@ namespace FUSE.Patches
                 memoryLeakFpsStatus = "failed";
             }
 
+            string bmanLocomotiveAudioStatus;
+            try
+            {
+                bmanLocomotiveAudioStatus =
+                    FuseBmanLocomotiveAudioCompatibility.EnsureInstalled(_harmony);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE Bman locomotive audio compatibility failed to install", ex);
+                bmanLocomotiveAudioStatus = "failed";
+            }
+
             var summary =
                 $"FUSE third-party guards: mapEnhancerCulling='{mapEnhancerStatus}' " +
                 $"rebillIndustryCars='{rebillStatus}' brssModMenu='{brssStatus}' " +
@@ -156,7 +169,8 @@ namespace FUSE.Patches
                 $"utilitiesQuery='{utilitiesQueryStatus}' " +
                 $"utilitiesMapLoad='{utilitiesMapLoadStatus}' " +
                 $"realisticRerail='{realisticRerailStatus}' " +
-                $"memoryLeakFps='{memoryLeakFpsStatus}'.";
+                $"memoryLeakFps='{memoryLeakFpsStatus}' " +
+                $"bmanLocomotiveAudio='{bmanLocomotiveAudioStatus}'.";
             if (!string.Equals(summary, _lastSummary, StringComparison.Ordinal))
             {
                 _lastSummary = summary;
@@ -179,7 +193,11 @@ namespace FUSE.Patches
                 assemblyName,
                 "MemoryLeakFPSfix",
                 StringComparison.Ordinal);
-            if (!isRealisticRerail && !isUtilities && !isMemoryLeakFps)
+            var isBmanLocomotiveAudio = string.Equals(
+                assemblyName,
+                "GP38Scripts",
+                StringComparison.Ordinal);
+            if (!isRealisticRerail && !isUtilities && !isMemoryLeakFps && !isBmanLocomotiveAudio)
             {
                 return;
             }
@@ -200,6 +218,11 @@ namespace FUSE.Patches
                 if (isMemoryLeakFps)
                 {
                     FuseMemoryLeakFpsCompatibility.EnsureInstalled(_harmony);
+                }
+
+                if (isBmanLocomotiveAudio)
+                {
+                    FuseBmanLocomotiveAudioCompatibility.EnsureInstalled(_harmony);
                 }
             }
             catch (Exception ex)

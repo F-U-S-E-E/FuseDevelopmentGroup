@@ -154,6 +154,28 @@ namespace FUSE.Loading
             }
         }
 
+        /// <summary>
+        /// Records useful compatibility information that should remain visible
+        /// in the report without changing an otherwise healthy session to
+        /// Needs Attention. Use <see cref="RecordNotice"/> for findings that
+        /// require the player to fix or review something before a clean load.
+        /// </summary>
+        public static void RecordAdvisory(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            lock (Sync)
+            {
+                if (!Notices.Contains(message))
+                {
+                    Notices.Add(message);
+                }
+            }
+        }
+
         public static void RecordGraphPostBindIssue(string packageId, string kind, string objectId, string message)
         {
             var line =

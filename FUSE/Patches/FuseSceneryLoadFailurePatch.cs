@@ -728,7 +728,11 @@ namespace FUSE.Patches
             var type = string.IsNullOrWhiteSpace(entry.Type) ? "<unknown>" : entry.Type;
             var name = string.IsNullOrWhiteSpace(entry.Name) ? entry.Identifier : entry.Name;
             var filename = string.IsNullOrWhiteSpace(entry.Filename) ? "<blank>" : entry.Filename;
-            FuseLoadReport.RecordNotice(
+            // A generic catalog audit cannot prove this entry is scenery or
+            // that anything requested it at runtime. Keep it visible as an
+            // advisory, but reserve Needs Attention for a confirmed scenery
+            // load failure (handled by RecordSceneryLoadFailure above).
+            FuseLoadReport.RecordAdvisory(
                 $"Asset pack catalog/bundle mismatch: pack='{failure.PackIdentifier ?? "<unknown>"}' " +
                 $"identifier='{entry.Identifier}' name='{name}' type='{type}' filename='{filename}'. " +
                 "The bundle must be rebuilt or the catalog entry removed.");

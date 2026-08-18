@@ -168,16 +168,13 @@ namespace FUSE.Infrastructure
                 return;
             }
 
-            // Unity still writes these recoverable compatibility probes to
-            // Player.log, but they are not evidence that a locomotive or the
-            // session failed. In particular, Bman's shared GP38Scripts runs
-            // the same preview/activation lifecycle for every locomotive it
-            // supports. Missing preview audio parents and the first smoke
-            // callback can throw while the final car continues initializing
-            // successfully. Likewise, PlacerWindow asks for stale tender
-            // identifiers while rebuilding its library and skips those rows.
-            // Do not let a dense, harmless burst cross the health registry's
-            // recurring-error threshold and turn the entire Status page red.
+            // PlacerWindow probes every tender reference while rebuilding its
+            // purchase library. Stale optional tender swaps are skipped, but
+            // Unity logs every miss as an exception. Keep those diagnostics in
+            // Player.log without letting repeated menu probes make the whole
+            // session unhealthy. Locomotive lifecycle exceptions are NOT
+            // filtered here: FUSE repairs the known Bman initialization races,
+            // and any remaining audio/smoke failure must stay visible.
             if (IsKnownRecoverableLifecycleNoise(condition, stackTrace))
             {
                 return;
@@ -222,11 +219,10 @@ namespace FUSE.Infrastructure
         }
 
         /// <summary>
-        /// Returns true only for exception signatures whose callers are known
-        /// to recover and continue. The original Unity log entry is preserved;
-        /// this predicate affects only FUSE's session-health aggregation.
-        /// Kept as a pure string classifier so every supported Bman locomotive
-        /// receives the same treatment without depending on asset identifiers.
+        /// Returns true only for purchase-library identifier probes whose
+        /// caller skips the unavailable row and continues. The original Unity
+        /// log entry is preserved; this predicate affects only FUSE's
+        /// session-health aggregation.
         /// </summary>
         internal static bool IsKnownRecoverableLifecycleNoise(string condition, string stackTrace)
         {
@@ -242,22 +238,7 @@ namespace FUSE.Infrastructure
                 return true;
             }
 
-            if (!condition.StartsWith("NullReferenceException:", StringComparison.Ordinal))
-            {
-                return false;
-            }
-
-            if (stackTrace.IndexOf("GP38Scripts.TractionMotorAudio.OnEnable", StringComparison.Ordinal) >= 0 ||
-                stackTrace.IndexOf("GP38Scripts.GP38SmokeController.Start", StringComparison.Ordinal) >= 0)
-            {
-                return true;
-            }
-
-            var isExhaustLifecycle =
-                stackTrace.IndexOf("Audio.ExhaustAudioController.StopPlaying", StringComparison.Ordinal) >= 0 ||
-                stackTrace.IndexOf("Audio.ExhaustAudioController.PlayNext", StringComparison.Ordinal) >= 0;
-            return isExhaustLifecycle &&
-                stackTrace.IndexOf("Model.Car.HandleModelsLoaded", StringComparison.Ordinal) >= 0;
+            return false;
         }
 
         /// <summary>
