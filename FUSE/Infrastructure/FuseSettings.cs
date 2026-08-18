@@ -64,6 +64,10 @@ namespace FUSE.Infrastructure
         // Unity's native-allocation leak stacks are process-wide and expensive.
         // Keep them opt-in and restore the host's prior mode when FUSE unloads.
         public const bool DefaultEnableNativeLeakStackTraces = false;
+        // Startup check that asks GitHub (the canonical version authority) whether
+        // a newer stable FUSE release exists and, if so, surfaces a non-blocking
+        // notice. On by default; one switch turns off all network access for it.
+        public const bool DefaultEnableUpdateCheck = true;
         public const float ExperimentalEarlyScenePathSuppressionTimeoutSeconds = 8f;
 
         public static bool EnableExperimentalEarlyScenePathSuppression { get; private set; } =
@@ -130,6 +134,8 @@ namespace FUSE.Infrastructure
 
         public static bool EnableNativeLeakStackTraces { get; private set; } = DefaultEnableNativeLeakStackTraces;
 
+        public static bool EnableUpdateCheck { get; private set; } = DefaultEnableUpdateCheck;
+
         public static void Load(UnityModManager.ModEntry modEntry)
         {
             EnableExperimentalEarlyScenePathSuppression = DefaultEnableExperimentalEarlyScenePathSuppression;
@@ -160,6 +166,7 @@ namespace FUSE.Infrastructure
             FrameSpikeThresholdMs = DefaultFrameSpikeThresholdMs;
             ForceConstrainedVramMode = DefaultForceConstrainedVramMode;
             EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
+            EnableUpdateCheck = DefaultEnableUpdateCheck;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
             var infoPath = Path.Combine(modEntry?.Path ?? string.Empty, "Info.json");
@@ -229,6 +236,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "ForceConstrainedVramMode", DefaultForceConstrainedVramMode);
                 EnableNativeLeakStackTraces =
                     ReadBool(settings, "EnableNativeLeakStackTraces", DefaultEnableNativeLeakStackTraces);
+                EnableUpdateCheck =
+                    ReadBool(settings, "EnableUpdateCheck", DefaultEnableUpdateCheck);
                 ApplyUserOverrides();
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -262,6 +271,7 @@ namespace FUSE.Infrastructure
                     $"FrameSpikeThresholdMs={FrameSpikeThresholdMs} " +
                     $"ForceConstrainedVramMode={ForceConstrainedVramMode} " +
                     $"EnableNativeLeakStackTraces={EnableNativeLeakStackTraces} " +
+                    $"EnableUpdateCheck={EnableUpdateCheck} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
             catch (Exception ex)
@@ -294,6 +304,7 @@ namespace FUSE.Infrastructure
                 FrameSpikeThresholdMs = DefaultFrameSpikeThresholdMs;
                 ForceConstrainedVramMode = DefaultForceConstrainedVramMode;
                 EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
+                EnableUpdateCheck = DefaultEnableUpdateCheck;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Exception($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled", ex);
             }
@@ -528,6 +539,15 @@ namespace FUSE.Infrastructure
             FuseNativeLeakDiagnostic.Apply(enabled);
         }
 
+        public static void SetEnableUpdateCheck(bool enabled)
+        {
+            EnableUpdateCheck = enabled;
+            SaveUserOverride(nameof(EnableUpdateCheck), enabled);
+            FuseLog.Info(
+                $"FUSE setting changed: {nameof(EnableUpdateCheck)}={enabled}. " +
+                "Takes effect on the next game start.");
+        }
+
         public static string GetUserSettingsPath()
         {
             return Path.Combine(Application.persistentDataPath, "FUSE", "settings.json");
@@ -745,6 +765,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(ForceConstrainedVramMode), ForceConstrainedVramMode);
                 EnableNativeLeakStackTraces =
                     ReadBool(settings, nameof(EnableNativeLeakStackTraces), EnableNativeLeakStackTraces);
+                EnableUpdateCheck =
+                    ReadBool(settings, nameof(EnableUpdateCheck), EnableUpdateCheck);
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
             }
             catch (Exception ex)

@@ -161,6 +161,23 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Shared, game-free version/release-selection logic. The single source of
+         truth lives in FUSE.Core, where FUSE.Core.Tests exercises it with no game
+         install. It is LINKED into the in-game mod (not referenced) so the mod
+         keeps its no-project-reference build and its use of the game's in-box
+         Newtonsoft.Json; because it is the same file, the two can never drift. -->
+    <Compile Include="..\FUSE.Core\Versioning\FuseReleaseSelection.cs">
+      <Link>Versioning\FuseReleaseSelection.cs</Link>
+    </Compile>
+    <Compile Include="..\FUSE.Core\Versioning\FuseGitHubReleaseParser.cs">
+      <Link>Versioning\FuseGitHubReleaseParser.cs</Link>
+    </Compile>
+    <Compile Include="..\FUSE.Core\Versioning\FuseGenerationGate.cs">
+      <Link>Versioning\FuseGenerationGate.cs</Link>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="Info.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

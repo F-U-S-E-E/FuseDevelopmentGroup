@@ -102,6 +102,16 @@ namespace FUSE
                 FuseUmmInjector.ScheduleInjection(modEntry.Path, ReadInfoJsonString(Path.Combine(modEntry.Path ?? string.Empty, "Info.json"), "Version"));
                 FuseLegacyAssemblyHost.EnsureStartupHost();
 
+                if (FuseSettings.EnableUpdateCheck)
+                {
+                    // Non-blocking: asks GitHub for the newest stable release and
+                    // surfaces a notice if this build is behind. Skips itself for
+                    // an unstamped 0.0.0 dev build. See FuseVersionCheck.
+                    FuseVersionCheck.Start(
+                        modEntry.Path,
+                        ReadInfoJsonString(Path.Combine(modEntry.Path ?? string.Empty, "Info.json"), "Version"));
+                }
+
                 modEntry.OnUnload = OnUnload;
                 _isLoaded = true;
                 FuseEvents.RaiseFuseLoaded();
@@ -248,6 +258,7 @@ namespace FUSE
             FuseLegacyAssemblyHost.Shutdown();
             FuseLegacySupportAssemblyShim.Shutdown();
             FuseRuntimeRebindService.Shutdown();
+            FuseVersionCheck.Shutdown();
             FuseMenuWindow.Shutdown();
             FuseTrackDebugOverlay.Shutdown();
             FuseSceneryDebugOverlay.Shutdown();

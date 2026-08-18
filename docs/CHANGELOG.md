@@ -7,6 +7,39 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
 
 ## [Unreleased]
 
+### Added
+
+- `FUSE-Installer.exe` now bundles the FUSE framework and installs it on a
+  manual (double-click) run, so players can get FUSE running without unzipping
+  anything. Dragging mod `.zip` files onto the exe still installs exactly those
+  mods and leaves FUSE untouched. A no-argument run also still processes any
+  loose zips beside the exe; pass `--no-fuse` to skip installing FUSE. The
+  release build bundles the core mod zip it just built and self-checks, via a
+  dry run, that a manual run will install FUSE.
+- A pytest suite for the installer and its legacy JSON reader
+  (`tools/tests/`), run in CI by a new Python Tests workflow.
+- FUSE checks GitHub on startup for a newer stable release and, if the running
+  build is behind, shows a non-blocking notice — a one-time toast on the next map
+  load plus an "Update available" line with a download link on the Status page. It
+  compares against the newest stable `mod-v` release only (release candidates and
+  the external-editor/tools lanes are ignored), skips local `0.0.0` dev builds,
+  and can be turned off with the new `EnableUpdateCheck` setting. The new
+  `/fuse.update` console command reports status and re-checks on demand. This was
+  blocked until the repository went public, since GitHub answers anonymous release
+  queries only for public repositories.
+- Nexus uploads are stamped `"Source": "nexus"` in `Info.json` so the update
+  notice can point a Nexus-installed player back to Nexus, while GitHub-published
+  artifacts keep the canonical `"github"` stamp. The release flow builds a
+  Nexus-only copy of the core zip with the flipped stamp
+  (`scripts/stamp-info-source.ps1`); the two zips are otherwise identical.
+
+### Changed
+
+- `scripts/Validate-ModPackage.cs` now fails the build if a packaged archive
+  contains a backslash entry name, simulating UMM's update-path rewrite rather
+  than only extracting the archive. Plain extraction tolerates backslashes on
+  Windows, which is why the release gate passed all three broken releases.
+
 ### Fixed
 
 - Updating FUSE through Unity Mod Manager failed with "Error when unpacking"
@@ -23,12 +56,11 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
   first (which makes UMM treat it as a fresh install) or by extracting the zip
   by hand.
 
-### Changed
-
-- `scripts/Validate-ModPackage.cs` now fails the build if a packaged archive
-  contains a backslash entry name, simulating UMM's update-path rewrite rather
-  than only extracting the archive. Plain extraction tolerates backslashes on
-  Windows, which is why the release gate passed all three broken releases.
+- The installer now extracts each package into a staging directory and swaps it
+  into place only after a fully successful extraction. A failure partway through
+  (a locked file, a bad path, a full disk) no longer leaves a half-written mod
+  folder behind, and a failed `--replace` reinstall leaves the existing install
+  untouched.
 
 ## [1.0.2]
 

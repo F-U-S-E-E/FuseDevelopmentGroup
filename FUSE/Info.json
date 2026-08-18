@@ -8,6 +8,7 @@
   "AssemblyName": "FUSE.dll",
   "EntryMethod": "FUSE.FusePlugin.Load",
   "HomePage": "",
+  "Source": "github",
   "Settings": {
     "EnableExperimentalEarlyScenePathSuppression": false,
     "MirrorAssetPacksToLocalLow": false,
@@ -21,6 +22,7 @@
     "EnableFrameSpikeDiagnostics": false,
     "FrameSpikeThresholdMs": 100,
     "ForceConstrainedVramMode": false,
-    "EnableNativeLeakStackTraces": false
+    "EnableNativeLeakStackTraces": false,
+    "EnableUpdateCheck": true
   }
 }

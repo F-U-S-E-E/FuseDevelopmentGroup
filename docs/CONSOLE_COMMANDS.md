@@ -13,6 +13,7 @@ recovery commands at the end of this page.
 | --- | --- |
 | [`/fuse.report`](#fusereport) | Last map-load report (human or JSON) |
 | [`/fuse.loaded`](#fuseloaded) | Loaded packages and applied/faulted state |
+| [`/fuse.update`](#fuseupdate) | Version/update status and re-check |
 | [`/fuse.conflicts`](#fuseconflicts) | Recorded ownership collisions |
 | [`/fuse.validate`](#fusevalidate) | Re-run the validator for one package |
 | [`/fuse.graph`](#fusegraph) | Track graph summary |
@@ -56,6 +57,22 @@ command to run when a package's content is missing from the world — a package
 that faulted during apply still appears here, with the fault recorded.
 
 A faulted package does not stop unrelated packages from loading.
+
+### `/fuse.update`
+
+Reports the running FUSE version, the detected install source (GitHub or Nexus),
+and whether a newer stable release is available, then kicks a fresh check against
+GitHub. The result also lands in `FUSE.log` and on the FUSE window's Status page.
+
+```
+/fuse.update
+```
+
+A newer *stable* release shows a download link; release candidates are ignored,
+and a local or development build (version `0.0.0`) reports that the check does not
+run for it. The `EnableUpdateCheck` setting only governs the automatic startup
+check; this command always checks on demand — see
+[SETTINGS.md](SETTINGS.md#enableupdatecheck).
 
 ### `/fuse.conflicts`
 
