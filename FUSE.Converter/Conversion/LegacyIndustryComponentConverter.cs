@@ -156,12 +156,50 @@ namespace FUSE.Converter.Conversion
         public static bool ShouldConvertComponentAsPartial(JObject item)
         {
             if (item == null) return false;
-            // Explicit type → never partial.
-            if (item["type"] != null || item["Type"] != null) return false;
+            var explicitType = item.Value<string>("type") ?? item.Value<string>("Type");
+            if (!string.IsNullOrWhiteSpace(explicitType))
+            {
+                var normalizedType = NormalizeComponentType(explicitType);
+                var isLegacyRuntimeType = !string.Equals(
+                    explicitType.Trim(),
+                    normalizedType,
+                    StringComparison.OrdinalIgnoreCase);
+                return isLegacyRuntimeType
+                    && HasComponentPatchPayload(item)
+                    && RequiresTrackSpan(normalizedType)
+                    && normalizedType != "passengerStop"
+                    && !HasLoadComponentBindingShape(item);
+            }
             // No standalone shape → partial.
             if (!HasStandaloneComponentShape(item)) return true;
             // Legacy load-op fields without span/load binding → partial.
             return HasLegacyLoadOperationShape(item) && !HasLoadComponentBindingShape(item);
+        }
+
+        private static bool HasComponentPatchPayload(JObject item)
+        {
+            return item != null && item.Properties().Any(property =>
+                !string.Equals(property.Name, "type", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(property.Name, "name", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool RequiresTrackSpan(string normalizedType)
+        {
+            switch (normalizedType)
+            {
+                case "loader":
+                case "unloader":
+                case "repairTrack":
+                case "teamTrack":
+                case "interchange":
+                case "interchangedLoader":
+                case "interchangedUnloader":
+                case "progression":
+                case "passengerStop":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         /// <summary>

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Helpers;
 using KeyValue.Runtime;
 using Model;
 using Model.Ops;
@@ -67,6 +68,7 @@ namespace FUSE.Runtime.API
                 return result;
             }
 
+            DisableClonedSceneryStreaming(root, result);
             ReplaceGlobalObjectIds(root, id + ".loader", result);
             DisableTrackMarkers(root, result);
             ClearCachedIdentityFields(root, result);
@@ -78,6 +80,57 @@ namespace FUSE.Runtime.API
 
             ValidateRendererPresence(root, "loader", result);
             return result;
+        }
+
+        private static void DisableClonedSceneryStreaming(
+            GameObject root,
+            FusePrefabSanitizerResult result)
+        {
+            // Loader prefabs are cloned from live scene objects such as the Bryson
+            // coaling tower and water columns. Those source roots can contain a
+            // SceneryAssetInstance used to stream the vanilla visual. Keeping that
+            // component on the functional clone makes it enter FUSE's scenery load
+            // queue and lets culling tear down/recreate parts of an operational
+            // loader. LoaderAPI deliberately sanitizes clones while inactive, so
+            // disable the copied behaviour before the clone is activated and remove
+            // it at the end of the frame. The already-cloned model and loader
+            // components remain in place.
+            var sceneryInstances = root.GetComponentsInChildren<SceneryAssetInstance>(true);
+            if (sceneryInstances.Length == 0)
+            {
+                return;
+            }
+
+            // Do not freeze an incomplete scene-source clone. If culling had already
+            // removed its visual or functional loader before Resolve/Instantiate, the
+            // copied SceneryAssetInstance is still needed to materialize the missing
+            // content when the destination comes into range.
+            if (root.GetComponentInChildren<Renderer>(true) == null ||
+                root.GetComponentInChildren<CarLoadTargetLoader>(true) == null)
+            {
+                result.Warnings.Add(
+                    "kept cloned scenery streaming because the source loader was not fully materialized");
+                return;
+            }
+
+            var disabled = 0;
+            for (var index = 0; index < sceneryInstances.Length; index++)
+            {
+                var scenery = sceneryInstances[index];
+                if (scenery == null)
+                {
+                    continue;
+                }
+
+                scenery.enabled = false;
+                UnityEngine.Object.Destroy(scenery);
+                disabled++;
+            }
+
+            if (disabled > 0)
+            {
+                result.Actions.Add($"disabled {disabled} cloned scenery streaming component(s)");
+            }
         }
 
         public static FusePrefabSanitizerResult SanitizeStation(

@@ -235,6 +235,83 @@ namespace FUSE.Tests.Converter
         }
 
         [Fact]
+        public void ConvertSource_accepts_root_level_legacy_track_dictionaries()
+        {
+            // Flying Spuds and other RailLoader packages place all three
+            // dictionaries at the document root instead of under tracks.
+            var source = JObject.Parse(@"{
+                ""nodes"": {
+                    ""NPOE-7j00"": {
+                        ""position"": { ""x"": 9458.39, ""y"": 546.64, ""z"": 7536.29 },
+                        ""rotation"": { ""x"": 0, ""y"": 152.5, ""z"": 0 }
+                    },
+                    ""NPOE-7j01"": {
+                        ""position"": { ""x"": 9477.55, ""y"": 546.64, ""z"": 7499.48 },
+                        ""rotation"": { ""x"": 0, ""y"": 152.5, ""z"": 0 }
+                    }
+                },
+                ""segments"": {
+                    ""SPOE-7j00"": {
+                        ""style"": ""Standard"",
+                        ""trackClass"": ""Mainline"",
+                        ""startId"": ""NPOE-7j01"",
+                        ""endId"": ""NPOE-7j00""
+                    }
+                },
+                ""spans"": {
+                    ""KG-R1"": {
+                        ""upper"": { ""segmentId"": ""SPOE-7j00"", ""end"": ""Start"", ""distance"": 0 },
+                        ""lower"": { ""segmentId"": ""SPOE-7j00"", ""end"": ""End"", ""distance"": 0 }
+                    }
+                }
+            }");
+
+            var rail = NewSkeleton();
+            LegacySourceConverter.ConvertSource(source, rail, "Industry.json", null, report: null);
+
+            var tracks = (JObject)rail["tracks"];
+            Assert.Equal(2, ((JObject)tracks["nodes"]).Count);
+            Assert.Equal("NPOE-7j01", tracks["segments"]["SPOE-7j00"].Value<string>("startNodeId"));
+            Assert.Equal("NPOE-7j00", tracks["segments"]["SPOE-7j00"].Value<string>("endNodeId"));
+
+            var spans = (JObject)tracks["spans"];
+            var span = (JObject)spans["KG-R1"];
+            Assert.NotNull(span);
+            Assert.Equal("SPOE-7j00", span["upper"].Value<string>("segmentId"));
+            Assert.Equal("A", span["upper"].Value<string>("end"));
+            Assert.Equal("SPOE-7j00", span["lower"].Value<string>("segmentId"));
+            Assert.Equal("B", span["lower"].Value<string>("end"));
+        }
+
+        [Fact]
+        public void ConvertSource_nested_span_overrides_root_level_alias()
+        {
+            var source = JObject.Parse(@"{
+                ""spans"": {
+                    ""shared"": {
+                        ""upper"": { ""segmentId"": ""old"" },
+                        ""lower"": { ""segmentId"": ""old"" }
+                    }
+                },
+                ""tracks"": {
+                    ""spans"": {
+                        ""shared"": {
+                            ""upper"": { ""segmentId"": ""new"" },
+                            ""lower"": { ""segmentId"": ""new"" }
+                        }
+                    }
+                }
+            }");
+
+            var rail = NewSkeleton();
+            LegacySourceConverter.ConvertSource(source, rail, "Industry.json", null, report: null);
+
+            var span = rail["tracks"]["spans"]["shared"];
+            Assert.Equal("new", span["upper"].Value<string>("segmentId"));
+            Assert.Equal("new", span["lower"].Value<string>("segmentId"));
+        }
+
+        [Fact]
         public void ConvertSource_pushes_short_splineys_into_extensions_bucket()
         {
             // Splineys with <2 points get stashed under

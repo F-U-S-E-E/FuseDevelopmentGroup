@@ -48,6 +48,16 @@ namespace FUSE.Tests.Converter
         }
 
         [Fact]
+        public void DetectKind_returns_route_for_root_level_legacy_spans()
+        {
+            var folder = Path.Combine(_workspace, "root-spans");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "Industry.json"),
+                "{ \"spans\": { \"KG-R1\": {} } }");
+            Assert.Equal("route", LegacyKindDetector.DetectKind(folder, "auto"));
+        }
+
+        [Fact]
         public void DetectKind_returns_asset_for_asset_pack_folder()
         {
             var folder = Path.Combine(_workspace, "asset-pack");

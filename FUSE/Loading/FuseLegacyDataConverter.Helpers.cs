@@ -43,6 +43,37 @@ namespace FUSE.Loading
             }
         }
 
+        /// <summary>
+        /// Combines dictionary aliases in legacy-precedence order. Some older
+        /// RailLoader packages wrote nodes, segments, and spans at the document
+        /// root while newer packages write them under tracks. Later sources win so the
+        /// canonical nested form can intentionally override the legacy alias,
+        /// including overriding an entry with null to request a removal.
+        /// </summary>
+        private static JObject MergeLegacyDictionaries(params JObject[] sources)
+        {
+            var merged = new JObject();
+            if (sources == null)
+            {
+                return merged;
+            }
+
+            foreach (var source in sources)
+            {
+                if (source == null)
+                {
+                    continue;
+                }
+
+                foreach (var property in source.Properties())
+                {
+                    merged[property.Name] = property.Value.DeepClone();
+                }
+            }
+
+            return merged;
+        }
+
         private static JObject Vector(JToken value, bool defaultScale)
         {
             var fallback = defaultScale ? 1f : 0f;

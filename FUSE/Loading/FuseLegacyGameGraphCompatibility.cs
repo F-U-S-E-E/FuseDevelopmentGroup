@@ -76,6 +76,7 @@ namespace FUSE.Loading
             }
 
             var source = FuseLegacyDataConverter.ReadLegacyObject(sourcePath);
+            NormalizeRootTrackDictionaries(source);
             FuseLegacyJsonPatch.Apply(state, source, Path.GetFileName(sourcePath));
             MirrorAreaIndustriesToTopLevel(state, source);
             var slice = BuildPatchSlice(state, source);
@@ -96,6 +97,59 @@ namespace FUSE.Loading
             definition.Progression = expandedDefinition.Progression;
             MarkExpanded(definition, sourcePath, true);
             return true;
+        }
+
+        /// <summary>
+        /// RailLoader's original game-graph schema placed nodes, segments, and
+        /// spans at the document root. The compatibility expander patches each
+        /// legacy file against a canonical runtime snapshot whose track data is
+        /// under <c>tracks</c>. Normalize those aliases before applying the JSON
+        /// patch; otherwise the expander creates disconnected root dictionaries
+        /// and then replaces the already-correct first-pass conversion with a
+        /// slice that contains no track data.
+        /// </summary>
+        internal static void NormalizeRootTrackDictionaries(JObject source)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            var tracks = GetPropertyValue(source, "tracks") as JObject;
+            foreach (var section in new[] { "nodes", "segments", "spans" })
+            {
+                var rootProperty = source.Properties().FirstOrDefault(property =>
+                    string.Equals(property.Name, section, StringComparison.OrdinalIgnoreCase));
+                if (!(rootProperty?.Value is JObject rootDictionary))
+                {
+                    continue;
+                }
+
+                if (tracks == null)
+                {
+                    tracks = new JObject();
+                    source["tracks"] = tracks;
+                }
+
+                var merged = new JObject();
+                foreach (var property in rootDictionary.Properties())
+                {
+                    merged[property.Name] = property.Value.DeepClone();
+                }
+
+                if (GetPropertyValue(tracks, section) is JObject nestedDictionary)
+                {
+                    foreach (var property in nestedDictionary.Properties())
+                    {
+                        // The newer canonical shape wins if both aliases name
+                        // the same object, including a null removal directive.
+                        merged[property.Name] = property.Value.DeepClone();
+                    }
+                }
+
+                tracks[section] = merged;
+                rootProperty.Remove();
+            }
         }
 
         private static bool ShouldExpand(FuseLoadedMod loaded)
@@ -520,7 +574,7 @@ namespace FUSE.Loading
             return result;
         }
 
-        private static JObject BuildPatchSlice(JObject state, JObject patch)
+        internal static JObject BuildPatchSlice(JObject state, JObject patch)
         {
             var slice = new JObject();
             CopyTracks(slice, state, patch);

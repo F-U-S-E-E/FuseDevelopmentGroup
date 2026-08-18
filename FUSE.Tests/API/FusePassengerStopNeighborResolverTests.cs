@@ -44,6 +44,40 @@ namespace FUSE.Tests.API
             Assert.Empty(Resolve(new[] { " ", null }, source, new[] { source, bryson }));
         }
 
+        [Fact]
+        public void ResolveIncoming_FindsStopThatReferencesSourceTimetableCode()
+        {
+            var oliveHill = new Stop("olivehill-station", "OH");
+            var airport = new Stop("mca-station", "MCA", "OH");
+            var iodla = new Stop("iodla-jct-station", "IJ", "MCA");
+
+            var incoming = FusePassengerStopNeighborResolver.ResolveIncoming(
+                oliveHill,
+                new[] { oliveHill, airport, iodla },
+                stop => stop.NeighborIds,
+                stop => stop.Identifier,
+                stop => stop.TimetableCode);
+
+            Assert.Equal(new[] { airport }, incoming);
+        }
+
+        [Fact]
+        public void ResolveIncoming_IgnoresSelfBlankAndUnrelatedReferences()
+        {
+            var source = new Stop("olivehill-station", "OH", "OH");
+            var blank = new Stop("blank", "BLK", " ", null);
+            var unrelated = new Stop("mca-station", "MCA", "IJ");
+
+            var incoming = FusePassengerStopNeighborResolver.ResolveIncoming(
+                source,
+                new[] { source, blank, unrelated },
+                stop => stop.NeighborIds,
+                stop => stop.Identifier,
+                stop => stop.TimetableCode);
+
+            Assert.Empty(incoming);
+        }
+
         private static Stop[] Resolve(string[] neighborIds, Stop source, Stop[] candidates)
         {
             return FusePassengerStopNeighborResolver.Resolve(
@@ -56,14 +90,16 @@ namespace FUSE.Tests.API
 
         private sealed class Stop
         {
-            internal Stop(string identifier, string timetableCode)
+            internal Stop(string identifier, string timetableCode, params string[] neighborIds)
             {
                 Identifier = identifier;
                 TimetableCode = timetableCode;
+                NeighborIds = neighborIds;
             }
 
             internal string Identifier { get; }
             internal string TimetableCode { get; }
+            internal string[] NeighborIds { get; }
         }
     }
 }

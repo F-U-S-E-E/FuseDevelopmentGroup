@@ -39,7 +39,7 @@ namespace FUSE.Converter.Conversion
 
         private static readonly HashSet<string> LegacyDataKeys = new HashSet<string>(StringComparer.Ordinal)
         {
-            "tracks", "areas", "industries", "loads", "turntables",
+            "tracks", "nodes", "segments", "spans", "areas", "industries", "loads", "turntables",
             "scenery", "splineys", "mandelas", "texts", "simpleGraphs",
             "progression", "progressions", "mapFeatures",
         };

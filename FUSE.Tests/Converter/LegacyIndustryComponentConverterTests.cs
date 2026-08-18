@@ -65,6 +65,15 @@ namespace FUSE.Tests.Converter
         public void ShouldConvertComponentAsPartial_returns_false_when_type_set()
         {
             Assert.False(LegacyIndustryComponentConverter.ShouldConvertComponentAsPartial(JObject.Parse("{ \"type\": \"loader\" }")));
+            Assert.False(LegacyIndustryComponentConverter.ShouldConvertComponentAsPartial(
+                JObject.Parse("{ \"type\": \"loader\", \"trackSpans\": [\"P1\"] }")));
+        }
+
+        [Fact]
+        public void ShouldConvertComponentAsPartial_returns_true_for_typed_base_component_patch_without_spans()
+        {
+            Assert.True(LegacyIndustryComponentConverter.ShouldConvertComponentAsPartial(
+                JObject.Parse("{ \"type\": \"Model.Ops.IndustryLoader\", \"loadId\": \"logs\", \"maxStorage\": 128 }")));
         }
 
         [Fact]
@@ -298,6 +307,21 @@ namespace FUSE.Tests.Converter
             // The rate fields the mod actually wants to change survive.
             Assert.Equal(72, converted.Value<int>("storageChangeRate"));
             Assert.Equal("logs", converted.Value<string>("loadId"));
+        }
+
+        [Fact]
+        public void ConvertComponent_marks_explicitly_typed_spanless_base_loader_patch_as_partial()
+        {
+            var converted = LegacyIndustryComponentConverter.ConvertComponent(
+                "l1",
+                JObject.Parse("{ \"type\": \"Model.Ops.IndustryLoader\", \"name\": \"Connelly Creek L1\", \"loadId\": \"logs\", \"storageChangeRate\": 64, \"maxStorage\": 128 }"),
+                context: null);
+
+            Assert.True(converted.Value<bool>("partial"));
+            Assert.Null(converted["type"]);
+            Assert.Null(converted["trackSpanIds"]);
+            Assert.Equal("Connelly Creek L1", converted.Value<string>("name"));
+            Assert.Equal(128, converted.Value<int>("maxStorage"));
         }
 
         // ------------------------------------------------------------------

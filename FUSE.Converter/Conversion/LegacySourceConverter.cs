@@ -70,7 +70,16 @@ namespace FUSE.Converter.Conversion
         private static void ApplyTracks(JObject source, JObject rail, string sourceName, List<FuseConversionReportEntry> report)
         {
             var tracks = source["tracks"] as JObject;
-            if (tracks == null) return;
+            var legacyNodes = MergeLegacyDictionaries(
+                source["nodes"] as JObject,
+                tracks == null ? null : tracks["nodes"] as JObject);
+            var legacySegments = MergeLegacyDictionaries(
+                source["segments"] as JObject,
+                tracks == null ? null : tracks["segments"] as JObject);
+            var legacySpans = MergeLegacyDictionaries(
+                source["spans"] as JObject,
+                tracks == null ? null : tracks["spans"] as JObject);
+            if (!legacyNodes.HasValues && !legacySegments.HasValues && !legacySpans.HasValues) return;
 
             var railTracks = rail["tracks"] as JObject ?? new JObject();
             var nodes = (railTracks["nodes"] as JObject) ?? new JObject();
@@ -81,7 +90,7 @@ namespace FUSE.Converter.Conversion
             var segmentRemovals = (removals["segments"] as JArray) ?? new JArray();
             var spanRemovals = (removals["spans"] as JArray) ?? new JArray();
 
-            if (tracks["nodes"] is JObject legacyNodes)
+            if (legacyNodes.HasValues)
             {
                 foreach (var prop in legacyNodes.Properties())
                 {
@@ -98,7 +107,7 @@ namespace FUSE.Converter.Conversion
                 }
             }
 
-            if (tracks["segments"] is JObject legacySegments)
+            if (legacySegments.HasValues)
             {
                 foreach (var prop in legacySegments.Properties())
                 {
@@ -132,7 +141,7 @@ namespace FUSE.Converter.Conversion
                 }
             }
 
-            if (tracks["spans"] is JObject legacySpans)
+            if (legacySpans.HasValues)
             {
                 foreach (var prop in legacySpans.Properties())
                 {
@@ -148,6 +157,23 @@ namespace FUSE.Converter.Conversion
                     }
                 }
             }
+        }
+
+        private static JObject MergeLegacyDictionaries(params JObject[] sources)
+        {
+            var merged = new JObject();
+            if (sources == null) return merged;
+
+            foreach (var source in sources)
+            {
+                if (source == null) continue;
+                foreach (var property in source.Properties())
+                {
+                    merged[property.Name] = property.Value.DeepClone();
+                }
+            }
+
+            return merged;
         }
 
         private static void ApplyLoads(JObject source, JObject rail, string sourceName, List<FuseConversionReportEntry> report)
