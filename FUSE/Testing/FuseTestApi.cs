@@ -180,6 +180,12 @@ namespace FUSE.Testing
             var nodesIndex = HasWritableGraphIndex<TrackNode>("NodesById");
             var segmentsIndex = HasWritableGraphIndex<TrackSegment>("SegmentsById");
             var spansIndex = HasWritableGraphIndex<TrackSpan>("SpansById");
+            var concreteSplineyBuilder =
+                FuseSplineyPluginHost.IsConcreteSplineyBuilderType(typeof(StrangeCustoms.FlowyThingBuilder));
+            var rejectsNonBuilder =
+                !FuseSplineyPluginHost.IsConcreteSplineyBuilderType(typeof(string));
+            var rejectsMissingBuilder =
+                !FuseSplineyPluginHost.IsConcreteSplineyBuilderType(null);
 
             return new JObject
             {
@@ -188,14 +194,20 @@ namespace FUSE.Testing
                                   serializedSpanApply &&
                                   nodesIndex &&
                                   segmentsIndex &&
-                                  spansIndex,
+                                  spansIndex &&
+                                  concreteSplineyBuilder &&
+                                  rejectsNonBuilder &&
+                                  rejectsMissingBuilder,
                 ["strangeCustoms"] = new JObject
                 {
                     ["serializedSpanTrackSpanConstructor"] = serializedSpanConstructor,
                     ["serializedSpanApplyTo"] = serializedSpanApply,
                     ["patchingContextNodesByIdWritable"] = nodesIndex,
                     ["patchingContextSegmentsByIdWritable"] = segmentsIndex,
-                    ["patchingContextSpansByIdWritable"] = spansIndex
+                    ["patchingContextSpansByIdWritable"] = spansIndex,
+                    ["concreteSplineyBuilderRecognized"] = concreteSplineyBuilder,
+                    ["nonBuilderRejected"] = rejectsNonBuilder,
+                    ["missingBuilderRejected"] = rejectsMissingBuilder
                 }
             };
         }
