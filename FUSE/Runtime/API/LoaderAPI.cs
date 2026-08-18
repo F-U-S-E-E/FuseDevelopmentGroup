@@ -141,6 +141,8 @@ namespace FUSE.Runtime.API
                 loader.SetActive(false);
             }
 
+            var requiresIndustry = !string.IsNullOrWhiteSpace(definition.IndustryId);
+            Industry industry = null;
             try
             {
                 var instance = UnityEngine.Object.Instantiate(prefab, loader.transform);
@@ -169,13 +171,11 @@ namespace FUSE.Runtime.API
                     renderer.enabled = true;
                 }
 
-                var requiresIndustry = !string.IsNullOrWhiteSpace(definition.IndustryId);
-                var industry = AttachIndustry(instance, definition.IndustryId);
+                industry = AttachIndustry(instance, definition.IndustryId);
                 FusePrefabSanitizer.SanitizeLoader(instance, id, industry, requiresIndustry).Log($"FUSE loader '{id}'");
                 instance.SetActive(true);
                 FuseLoaderRuntimeIndex.Instance.Set(id, loader);
                 MapAPI.RefreshAttachedMapMasks(loader, $"loader '{id}' apply");
-                FusePrefabSanitizer.ValidateLoaderPostBind(loader, id, industry, requiresIndustry).Log($"FUSE loader '{id}' post-bind");
             }
             finally
             {
@@ -189,6 +189,11 @@ namespace FUSE.Runtime.API
                     loader.SetActive(true);
                 }
             }
+
+            // Validate after the parent has been restored. Validating inside the try
+            // reported every newly-created loader as inactive even though the finally
+            // block activated it immediately afterward.
+            FusePrefabSanitizer.ValidateLoaderPostBind(loader, id, industry, requiresIndustry).Log($"FUSE loader '{id}' post-bind");
         }
 
         private static Industry AttachIndustry(GameObject instance, string industryId)

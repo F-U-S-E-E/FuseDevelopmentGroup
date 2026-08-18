@@ -45,12 +45,86 @@ namespace FUSE.Loading
                     continue;
                 }
 
+                // Legacy map packs commonly create an operations loader and then
+                // use a mandela entry such as World/Loaders/<id> to correct the
+                // loader root's final transform. Treating that correction as a
+                // scene clone attaches scene-clone lifecycle state to a functional
+                // loader, causing it to participate in snapshot/rebind passes and
+                // making diagnostics classify it as scenery. Fold transform-only
+                // corrections into the loader definition instead.
+                if (TryMergeGeneratedLoaderMandela(property.Name, item, root))
+                {
+                    continue;
+                }
+
                 var converted = ConvertSceneClone(property.Name, property.Value);
                 if (converted != null)
                 {
                     sceneClones[property.Name] = Clean(converted);
                 }
             }
+        }
+
+        private static bool TryMergeGeneratedLoaderMandela(string id, JObject item, JObject root)
+        {
+            if (item == null || root == null)
+            {
+                return false;
+            }
+
+            // A source means "instantiate a new object", not "adjust the loader
+            // created by this package". Loader definitions also have no scale
+            // field, so keep scaled entries in the scene-clone pipeline rather
+            // than silently dropping authored behavior.
+            if (!string.IsNullOrWhiteSpace(ReadString(item, "source", "instantiateFrom")) ||
+                HasAnyProperty(item, "localScale", "scale"))
+            {
+                return false;
+            }
+
+            var targetPath = ReadString(item, "targetPath") ?? id;
+            const string worldPrefix = "World/Loaders/";
+            const string rootPrefix = "Loaders/";
+            string loaderId;
+            if (targetPath.StartsWith(worldPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                loaderId = targetPath.Substring(worldPrefix.Length);
+            }
+            else if (targetPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                loaderId = targetPath.Substring(rootPrefix.Length);
+            }
+            else
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(loaderId) ||
+                loaderId.IndexOf('/') >= 0 ||
+                loaderId.IndexOf('\\') >= 0)
+            {
+                return false;
+            }
+
+            var loaders = root["operations"]?["loaders"] as JObject;
+            var loaderProperty = loaders?.Properties().FirstOrDefault(property =>
+                string.Equals(property.Name, loaderId, StringComparison.OrdinalIgnoreCase));
+            if (!(loaderProperty?.Value is JObject loader))
+            {
+                return false;
+            }
+
+            if (HasAnyProperty(item, "localPosition", "position"))
+            {
+                loader["position"] = Vector(item["localPosition"] ?? item["position"], false);
+            }
+
+            if (HasAnyProperty(item, "localRotation", "rotation"))
+            {
+                loader["rotation"] = Vector(item["localRotation"] ?? item["rotation"], false);
+            }
+
+            return true;
         }
 
         private static bool TryConvertMandelaSuppression(string id, JObject item, JArray suppressions)
@@ -285,7 +359,7 @@ namespace FUSE.Loading
 
             var result = new JObject
             {
-                ["segmentId"] = ReadString(item, "segmentId", "segment", "id") ?? string.Empty,
+                ["segmentId"] = ReadString(item, "segmentId", "segmentID", "SegmentId", "SegmentID", "segment", "id") ?? string.Empty,
                 ["end"] = NormalizeEnd(ReadString(item, "end", "End")) ?? "A"
             };
 
@@ -596,6 +670,7 @@ namespace FUSE.Loading
                 }
 
                 var handler = ReadHandler(item);
+                var points = ReadLegacyReplacementArray(item["points"]);
                 if (IsTurntableHandler(handler))
                 {
                     ((JObject)root["operations"]["turntables"])[property.Name] = ConvertTurntable(property.Name, item);
@@ -625,7 +700,7 @@ namespace FUSE.Loading
                 }
                 else if (!string.IsNullOrWhiteSpace(handler) &&
                          !SplineyHandlerMap.ContainsKey(handler) &&
-                         (item["points"] as JArray) == null)
+                         points == null)
                 {
                     // FUSE doesn't recognize this handler natively and the
                     // spliney has no curve geometry of its own; defer to
@@ -636,7 +711,7 @@ namespace FUSE.Loading
                     FuseSplineyPluginHost.Register(property.Name, item);
                     continue;
                 }
-                else if ((item["points"] as JArray)?.Count >= 2)
+                else if (points?.Count >= 2)
                 {
                     ((JObject)root["world"]["splineys"])[property.Name] = ConvertSpliney(item);
                 }
@@ -667,6 +742,23 @@ namespace FUSE.Loading
             return ReadString(item, "handler", "Handler") ?? string.Empty;
         }
 
+        private static JArray ReadLegacyReplacementArray(JToken value)
+        {
+            if (value is JArray array)
+            {
+                return array;
+            }
+
+            if (value is JObject patch &&
+                patch.TryGetValue("$replace", StringComparison.OrdinalIgnoreCase, out var replacement) &&
+                replacement is JArray replacementArray)
+            {
+                return replacementArray;
+            }
+
+            return null;
+        }
+
         private static JObject ConvertSpliney(JObject item)
         {
             var handler = ReadHandler(item);
@@ -677,7 +769,7 @@ namespace FUSE.Loading
             }
 
             var points = new JArray();
-            foreach (var point in (item["points"] as JArray)?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
+            foreach (var point in ReadLegacyReplacementArray(item["points"])?.OfType<JObject>() ?? Enumerable.Empty<JObject>())
             {
                 points.Add(CleanObject(new JObject
                 {

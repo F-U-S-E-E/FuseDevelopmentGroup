@@ -118,7 +118,7 @@ namespace FUSE.Loading
 
         private static bool ShouldConvertAsPartialComponent(JObject item, string explicitType, JObject trackSpanPatch)
         {
-            if (item == null || !string.IsNullOrWhiteSpace(explicitType))
+            if (item == null)
             {
                 return false;
             }
@@ -128,12 +128,41 @@ namespace FUSE.Loading
                 return true;
             }
 
+            if (!string.IsNullOrWhiteSpace(explicitType))
+            {
+                var normalizedType = FuseIndustryComponentTypes.Normalize(NormalizeComponentType(explicitType));
+                var isLegacyRuntimeType = !string.Equals(
+                    explicitType.Trim(),
+                    normalizedType,
+                    StringComparison.OrdinalIgnoreCase);
+
+                // Legacy game-graph mixins commonly repeat the runtime type while
+                // patching an existing base-game component by industry/component id.
+                // The type is descriptive in that shape; it does not turn the patch
+                // into a new standalone component. If a span-bound component carries
+                // no span binding, preserve it as a partial merge so the runtime keeps
+                // the base component's spans. Spanless passenger stops are the one
+                // supported standalone exception.
+                return isLegacyRuntimeType &&
+                       HasComponentPatchPayload(item) &&
+                       FuseIndustryComponentTypes.UsesTrackSpanIds(normalizedType) &&
+                       !string.Equals(normalizedType, FuseIndustryComponentTypes.PassengerStop, StringComparison.OrdinalIgnoreCase) &&
+                       !HasLoadComponentBindingShape(item);
+            }
+
             if (!HasStandaloneComponentShape(item))
             {
                 return true;
             }
 
             return HasLoadOperationShape(item) && !HasLoadComponentBindingShape(item);
+        }
+
+        private static bool HasComponentPatchPayload(JObject item)
+        {
+            return item != null && item.Properties().Any(property =>
+                !string.Equals(property.Name, "type", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(property.Name, "name", StringComparison.OrdinalIgnoreCase));
         }
 
         private static bool HasStandaloneComponentShape(JObject item)

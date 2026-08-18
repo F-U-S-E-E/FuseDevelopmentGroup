@@ -750,12 +750,19 @@ namespace FUSE.Loading
         internal static void ConvertSource(JObject source, JObject root, FuseLegacyPackageManifest manifest)
         {
             var tracks = source["tracks"] as JObject;
-            if (tracks != null)
-            {
-                ConvertDictionary(tracks["nodes"], root["tracks"]["nodes"] as JObject, root["tracks"]["removals"]["nodes"] as JArray, ConvertNode);
-                ConvertDictionary(tracks["segments"], root["tracks"]["segments"] as JObject, root["tracks"]["removals"]["segments"] as JArray, ConvertSegment);
-                ConvertDictionary(tracks["spans"], root["tracks"]["spans"] as JObject, root["tracks"]["removals"]["spans"] as JArray, ConvertSpan);
-            }
+            // RailLoader accepts both the original root-level track dictionaries
+            // and the later dictionaries nested under `tracks`. Convert both
+            // shapes so older route packages retain their physical track and
+            // industry span bindings. Canonical nested entries win duplicate ids.
+            var nestedNodes = tracks == null ? null : tracks["nodes"] as JObject;
+            var nestedSegments = tracks == null ? null : tracks["segments"] as JObject;
+            var nestedSpans = tracks == null ? null : tracks["spans"] as JObject;
+            var legacyNodes = MergeLegacyDictionaries(source["nodes"] as JObject, nestedNodes);
+            var legacySegments = MergeLegacyDictionaries(source["segments"] as JObject, nestedSegments);
+            var legacySpans = MergeLegacyDictionaries(source["spans"] as JObject, nestedSpans);
+            ConvertDictionary(legacyNodes, root["tracks"]["nodes"] as JObject, root["tracks"]["removals"]["nodes"] as JArray, ConvertNode);
+            ConvertDictionary(legacySegments, root["tracks"]["segments"] as JObject, root["tracks"]["removals"]["segments"] as JArray, ConvertSegment);
+            ConvertDictionary(legacySpans, root["tracks"]["spans"] as JObject, root["tracks"]["removals"]["spans"] as JArray, ConvertSpan);
 
             ConvertDictionary(source["loads"], root["operations"]["loads"] as JObject, null, ConvertLoad);
 

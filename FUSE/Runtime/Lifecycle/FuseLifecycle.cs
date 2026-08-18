@@ -281,7 +281,7 @@ namespace FUSE.Runtime.Lifecycle
             }
 
             // Second attempt for the third-party guards: FUSE loads before
-            // MapEnhancer and the rebill mod in UMM's order, so the
+            // MapEnhancer, the rebill mod, and BRSS in UMM's order, so the
             // plugin-load attempt resolves neither ("idle (not present)")
             // and the guards never engaged in the field. By map load every
             // mod assembly is up; the installer re-resolves absent targets

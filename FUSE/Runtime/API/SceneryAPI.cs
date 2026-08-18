@@ -23,7 +23,8 @@ namespace FUSE.Runtime.API
                 { "CabooseHouse", "ALWHouses_CabooseHouse" },
                 { "CitySignDeep", "ALW_Sign_CitySignDeep" },
                 { "CitySignEverett", "ALW_Sign_CitySignEverett" },
-                { "CitySignWalkerWoody", "ALW_Sign_CitySignWalkerWoody" }
+                { "CitySignWalkerWoody", "ALW_Sign_CitySignWalkerWoody" },
+                { "TurntableMeasurementTool", "ALW_ModRes_TurntableMeasurementTool" }
             };
 
         private static readonly HashSet<string> OptionalLegacySceneryAssets =

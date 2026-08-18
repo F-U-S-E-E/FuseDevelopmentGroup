@@ -309,13 +309,11 @@ namespace FUSE.Runtime.API
             }
 
             var reconciledStops = 0;
-            foreach (var component in UnityEngine.Object.FindObjectsOfType<FusePassengerStopComponent>(true))
+            var fuseComponents = UnityEngine.Object.FindObjectsOfType<FusePassengerStopComponent>(true)
+                .Where(component => component != null)
+                .ToArray();
+            foreach (var component in fuseComponents)
             {
-                if (component == null)
-                {
-                    continue;
-                }
-
                 var stopIdentifier = component.GetStopIdentifier();
                 var sourceStop = liveStops.FirstOrDefault(stop =>
                     string.Equals(stop.identifier, stopIdentifier, StringComparison.OrdinalIgnoreCase));
@@ -324,16 +322,51 @@ namespace FUSE.Runtime.API
                     continue;
                 }
 
-                sourceStop.neighbors = FusePassengerStopNeighborResolver.Resolve(
+                var neighbors = FusePassengerStopNeighborResolver.Resolve(
                     component.NeighborIds,
                     sourceStop,
                     liveStops,
                     stop => stop.identifier,
                     stop => stop.timetableCode);
+
+                // Legacy station packs occasionally author only one half of an
+                // undirected passenger-stop link. Do not rewrite an explicit
+                // route, but keep a stop with no outgoing links from becoming
+                // isolated when another FUSE stop clearly names it as a
+                // neighbor (by identifier or timetable code).
+                if (neighbors.Length == 0)
+                {
+                    neighbors = FusePassengerStopNeighborResolver.ResolveIncoming(
+                            component,
+                            fuseComponents,
+                            candidate => candidate.NeighborIds,
+                            candidate => candidate.GetStopIdentifier(),
+                            candidate => candidate.TimetableCode)
+                        .Select(candidate => FindLiveStop(candidate, liveStops))
+                        .Where(stop => stop != null && !ReferenceEquals(stop, sourceStop))
+                        .Distinct()
+                        .ToArray();
+                }
+
+                sourceStop.neighbors = neighbors;
                 reconciledStops++;
             }
 
             return reconciledStops;
+        }
+
+        private static PassengerStop FindLiveStop(
+            FusePassengerStopComponent component,
+            IEnumerable<PassengerStop> liveStops)
+        {
+            var identifier = component?.GetStopIdentifier();
+            var timetableCode = component?.TimetableCode;
+            return (liveStops ?? Enumerable.Empty<PassengerStop>()).FirstOrDefault(stop =>
+                stop != null &&
+                ((!string.IsNullOrWhiteSpace(identifier) &&
+                  string.Equals(stop.identifier, identifier, StringComparison.OrdinalIgnoreCase)) ||
+                 (!string.IsNullOrWhiteSpace(timetableCode) &&
+                  string.Equals(stop.timetableCode, timetableCode, StringComparison.OrdinalIgnoreCase))));
         }
 
         private void ConfigureTimetable(PassengerStop passengerStop)

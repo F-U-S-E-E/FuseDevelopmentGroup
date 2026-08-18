@@ -144,6 +144,32 @@ namespace FUSE.Tests.Patches
             Assert.Equal("wh-5-drg-st.wav", entry.Filename);
         }
 
+        [Fact]
+        public void BaseGameAssetPackPath_IsExcludedFromExternalBundleAudit()
+        {
+            var streamingAssets = System.IO.Path.Combine("game", "Railroader_Data", "StreamingAssets");
+            var builtInPack = System.IO.Path.Combine(streamingAssets, "AssetPacks", "scenery-structures01");
+
+            Assert.True(FuseAssetPackBundleAuditPatch.IsBaseGameAssetPackPath(
+                builtInPack,
+                streamingAssets));
+        }
+
+        [Fact]
+        public void ModAssetPackPath_RemainsEligibleForBundleAudit()
+        {
+            var streamingAssets = System.IO.Path.Combine("game", "Railroader_Data", "StreamingAssets");
+            var externalPack = System.IO.Path.Combine("game", "Mods", "AspensAssets", "aspensassets");
+            var prefixCollision = System.IO.Path.Combine(streamingAssets, "AssetPacksExternal", "not-built-in");
+
+            Assert.False(FuseAssetPackBundleAuditPatch.IsBaseGameAssetPackPath(
+                externalPack,
+                streamingAssets));
+            Assert.False(FuseAssetPackBundleAuditPatch.IsBaseGameAssetPackPath(
+                prefixCollision,
+                streamingAssets));
+        }
+
         [Theory]
         [InlineData(null, (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.Unknown)]
         [InlineData("", (int)FuseAssetPackBundleAuditPatch.CatalogAssetTypeClassification.Unknown)]

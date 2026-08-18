@@ -1254,9 +1254,6 @@ def has_load_component_binding_shape(item):
         "trackSpanIds",
         "trackSpans",
         "spans",
-        "loadId",
-        "LoadId",
-        "load",
     ))
 
 
@@ -1280,8 +1277,26 @@ def has_standalone_component_shape(item):
 def should_convert_component_as_partial(item):
     if not isinstance(item, dict):
         return False
-    if item.get("type") or item.get("Type"):
-        return False
+    explicit_type = item.get("type") or item.get("Type")
+    if explicit_type:
+        normalized_type = normalize_component_type(explicit_type)
+        is_legacy_runtime_type = str(explicit_type).strip().lower() != normalized_type.lower()
+        has_patch_payload = any(key.lower() not in {"type", "name"} for key in item)
+        return (
+            is_legacy_runtime_type
+            and has_patch_payload
+            and normalized_type in {
+                "loader",
+                "unloader",
+                "repairTrack",
+                "teamTrack",
+                "interchange",
+                "interchangedLoader",
+                "interchangedUnloader",
+                "progression",
+            }
+            and not has_load_component_binding_shape(item)
+        )
     if not has_standalone_component_shape(item):
         return True
     return has_legacy_load_operation_shape(item) and not has_load_component_binding_shape(item)
@@ -1968,13 +1983,33 @@ def convert_source(source, rail, source_name=None, order_state=None):
     order_state = order_state if order_state is not None else {}
 
     tracks = source.get("tracks") or {}
-    for node_id, node in (tracks.get("nodes") or {}).items():
+
+    # RailLoader accepts the original root-level node/segment/span
+    # dictionaries as well as the later `tracks` container. Merge aliases in
+    # legacy-to-canonical order so every FUSE conversion path behaves alike.
+    legacy_nodes = {}
+    root_nodes = source.get("nodes")
+    nested_nodes = tracks.get("nodes")
+    if isinstance(root_nodes, dict):
+        legacy_nodes.update(root_nodes)
+    if isinstance(nested_nodes, dict):
+        legacy_nodes.update(nested_nodes)
+
+    for node_id, node in legacy_nodes.items():
         if node is None:
             rail["tracks"]["removals"]["nodes"].append(node_id)
         elif isinstance(node, dict):
             rail["tracks"]["nodes"][node_id] = convert_node(node)
 
-    for segment_id, segment in (tracks.get("segments") or {}).items():
+    legacy_segments = {}
+    root_segments = source.get("segments")
+    nested_segments = tracks.get("segments")
+    if isinstance(root_segments, dict):
+        legacy_segments.update(root_segments)
+    if isinstance(nested_segments, dict):
+        legacy_segments.update(nested_segments)
+
+    for segment_id, segment in legacy_segments.items():
         if segment is None:
             rail["tracks"]["removals"]["segments"].append(segment_id)
         elif isinstance(segment, dict):
@@ -1982,7 +2017,15 @@ def convert_source(source, rail, source_name=None, order_state=None):
             if converted_segment:
                 rail["tracks"]["segments"][segment_id] = clean(converted_segment)
 
-    for span_id, span in (tracks.get("spans") or {}).items():
+    legacy_spans = {}
+    root_spans = source.get("spans")
+    nested_spans = tracks.get("spans")
+    if isinstance(root_spans, dict):
+        legacy_spans.update(root_spans)
+    if isinstance(nested_spans, dict):
+        legacy_spans.update(nested_spans)
+
+    for span_id, span in legacy_spans.items():
         if span is None:
             rail["tracks"]["removals"]["spans"].append(span_id)
         elif isinstance(span, dict):

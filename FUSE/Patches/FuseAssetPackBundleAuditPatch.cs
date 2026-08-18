@@ -12,8 +12,12 @@ using UnityEngine;
 namespace FUSE.Patches
 {
     /// <summary>
-    /// Faults catalog/bundle mismatches the moment they are knowable instead of
-    /// letting them surface as per-retry load exceptions.
+    /// Faults external catalog/bundle mismatches the moment they are knowable
+    /// instead of letting them surface as per-retry load exceptions. Base-game
+    /// packs are excluded because their catalogs contain compatibility aliases
+    /// that can resolve through game-owned stores without a same-named bundle
+    /// entry; treating those aliases as broken makes FUSE report stock content
+    /// such as Allen Dual Shed and Great Northern 5 Chime as mod failures.
     ///
     /// An asset pack's Catalog.json declares assets by name/filename, but nothing
     /// validates that the pack's bundle actually contains them. A declared-but-
@@ -104,7 +108,13 @@ namespace FUSE.Patches
                     return;
                 }
 
-                var declared = ReadDeclaredAssets(store);
+                var basePath = FuseAssetPackPatchHelpers.ResolveBasePath(store);
+                if (IsBaseGameAssetPackPath(basePath, Application.streamingAssetsPath))
+                {
+                    return;
+                }
+
+                var declared = ReadDeclaredAssets(store, basePath);
                 if (declared.Count == 0)
                 {
                     return;
@@ -143,10 +153,11 @@ namespace FUSE.Patches
         // on the malformed catalogs some packs ship, and pulling the parsed
         // struct in would add an AssetPack.Common compile-time reference for two
         // string fields.
-        private static List<CatalogAssetEntry> ReadDeclaredAssets(AssetPackRuntimeStore store)
+        private static List<CatalogAssetEntry> ReadDeclaredAssets(
+            AssetPackRuntimeStore store,
+            string basePath)
         {
             var declared = new List<CatalogAssetEntry>();
-            var basePath = FuseAssetPackPatchHelpers.ResolveBasePath(store);
             if (string.IsNullOrWhiteSpace(basePath))
             {
                 return declared;
@@ -185,6 +196,30 @@ namespace FUSE.Patches
             }
 
             return declared;
+        }
+
+        internal static bool IsBaseGameAssetPackPath(string basePath, string streamingAssetsPath)
+        {
+            if (string.IsNullOrWhiteSpace(basePath) ||
+                string.IsNullOrWhiteSpace(streamingAssetsPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                var candidate = Path.GetFullPath(basePath)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var assetPackRoot = Path.GetFullPath(Path.Combine(streamingAssetsPath, "AssetPacks"))
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var rootPrefix = assetPackRoot + Path.DirectorySeparatorChar;
+                return string.Equals(candidate, assetPackRoot, StringComparison.OrdinalIgnoreCase) ||
+                       candidate.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>

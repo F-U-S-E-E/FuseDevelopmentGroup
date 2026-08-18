@@ -39,6 +39,20 @@ namespace FUSE.Tests.Loading
         private static (JObject root, JObject sceneClones, JArray removals, JArray suppressions)
             ConvertMandelas(JObject mandelas)
         {
+            var root = ConvertLegacySource(new JObject
+            {
+                ["mandelas"] = mandelas
+            });
+
+            var world = (JObject)root["world"];
+            var sceneClones = (JObject)world["sceneClones"];
+            var removals = (JArray)world["removals"]["sceneClones"];
+            var suppressions = (JArray)world["suppressBaseScenePaths"];
+            return (root, sceneClones, removals, suppressions);
+        }
+
+        private static JObject ConvertLegacySource(JObject source)
+        {
             var manifest = new FuseLegacyPackageManifest
             {
                 PackageId = "test-pkg",
@@ -47,17 +61,8 @@ namespace FUSE.Tests.Loading
                 Version = "1.0.0"
             };
             var root = FuseLegacyDataConverter.CreateSkeleton(manifest, "mandela-fragment");
-            var source = new JObject
-            {
-                ["mandelas"] = mandelas
-            };
             FuseLegacyDataConverter.ConvertSource(source, root, manifest);
-
-            var world = (JObject)root["world"];
-            var sceneClones = (JObject)world["sceneClones"];
-            var removals = (JArray)world["removals"]["sceneClones"];
-            var suppressions = (JArray)world["suppressBaseScenePaths"];
-            return (root, sceneClones, removals, suppressions);
+            return root;
         }
 
         public class EnabledTrue
@@ -308,6 +313,79 @@ namespace FUSE.Tests.Loading
                 Assert.False(keepEntry.ContainsKey("localPosition"));
                 Assert.False(keepEntry.ContainsKey("localRotation"));
                 Assert.False(keepEntry.ContainsKey("localScale"));
+            }
+        }
+
+        public class GeneratedLoader
+        {
+            [Fact]
+            public void MatchingLoaderTransform_IsFoldedIntoLoader_NotRegisteredAsSceneClone()
+            {
+                const string loaderId = "FranklinCoalTower";
+                const string loaderPath = "World/Loaders/FranklinCoalTower";
+                var root = FuseLegacyMandelaConverterTests.ConvertLegacySource(new JObject
+                {
+                    ["splineys"] = new JObject
+                    {
+                        [loaderId] = new JObject
+                        {
+                            ["Position"] = new JObject { ["x"] = 11190f, ["y"] = 615f, ["z"] = -22610f },
+                            ["Rotation"] = new JObject { ["x"] = 0f, ["y"] = 159f, ["z"] = 0f },
+                            ["Prefab"] = "vanilla://coalTower",
+                            ["Industry"] = "franklinservice",
+                            ["Handler"] = "AlinasMapMod.LoaderBuilder"
+                        }
+                    },
+                    ["mandelas"] = new JObject
+                    {
+                        [loaderPath] = new JObject
+                        {
+                            ["localPosition"] = new JObject { ["x"] = 11190.2021f, ["y"] = 616.399658f, ["z"] = -22610.15f },
+                            ["localRotation"] = new JObject { ["x"] = 0f, ["y"] = 271f, ["z"] = 0f },
+                            ["enabled"] = true
+                        }
+                    }
+                });
+
+                var loader = (JObject)root["operations"]["loaders"][loaderId];
+                var position = (JObject)loader["position"];
+                var rotation = (JObject)loader["rotation"];
+                var sceneClones = (JObject)root["world"]["sceneClones"];
+
+                Assert.Equal(11190.2021f, (float)position["x"], precision: 2);
+                Assert.Equal(616.399658f, (float)position["y"], precision: 3);
+                Assert.Equal(-22610.15f, (float)position["z"], precision: 2);
+                Assert.Equal(271f, (float)rotation["y"]);
+                Assert.False(sceneClones.ContainsKey(loaderPath));
+            }
+
+            [Fact]
+            public void ScaledLoaderPath_RemainsSceneCloneBecauseLoaderDefinitionsCannotRepresentScale()
+            {
+                const string loaderId = "ScaledLoader";
+                const string loaderPath = "World/Loaders/ScaledLoader";
+                var root = FuseLegacyMandelaConverterTests.ConvertLegacySource(new JObject
+                {
+                    ["splineys"] = new JObject
+                    {
+                        [loaderId] = new JObject
+                        {
+                            ["Position"] = new JObject { ["x"] = 1f, ["y"] = 2f, ["z"] = 3f },
+                            ["Prefab"] = "vanilla://coalTower",
+                            ["Handler"] = "AlinasMapMod.LoaderBuilder"
+                        }
+                    },
+                    ["mandelas"] = new JObject
+                    {
+                        [loaderPath] = new JObject
+                        {
+                            ["localScale"] = new JObject { ["x"] = 2f, ["y"] = 2f, ["z"] = 2f },
+                            ["enabled"] = true
+                        }
+                    }
+                });
+
+                Assert.True(((JObject)root["world"]["sceneClones"]).ContainsKey(loaderPath));
             }
         }
     }
