@@ -17,10 +17,11 @@ namespace FUSE.Patches
     {
         private static bool _countGuardInstalled;
         private static bool _windowGuardInstalled;
+        private static bool _loggedInstall;
 
         private static PropertyInfo _builderAssetsProperty;
 
-        internal static bool Installed => _countGuardInstalled || _windowGuardInstalled;
+        internal static bool Installed => _countGuardInstalled && _windowGuardInstalled;
 
         internal static string EnsureInstalled(Harmony harmony)
         {
@@ -74,13 +75,20 @@ namespace FUSE.Patches
 
             if (Installed)
             {
-                FuseLog.Info(
-                    "FUSE installed Realistic Rerail's startup guards for the initial " +
-                    "unconfigured window and no-selected-crane state.");
+                if (!_loggedInstall)
+                {
+                    _loggedInstall = true;
+                    FuseLog.Info(
+                        "FUSE installed Realistic Rerail's startup guards for the initial " +
+                        "unconfigured window and no-selected-crane state.");
+                }
+
                 return "installed";
             }
 
-            return "idle (surface changed)";
+            return _countGuardInstalled || _windowGuardInstalled
+                ? "partial (surface changed)"
+                : "idle (surface changed)";
         }
 
         internal static bool ShouldRunCountCoupledMowCars(bool hasCraneCar)

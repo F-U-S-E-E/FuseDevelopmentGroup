@@ -1,9 +1,7 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
-using System.Text;
 using FUSE.Infrastructure;
 using UnityModManagerNet;
 
@@ -27,9 +25,6 @@ namespace FUSE.Compatibility
             typeof(UnityModManager.ModEntry).GetField("mFirstLoading", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ErrorOnLoadingField =
             typeof(UnityModManager.ModEntry).GetField("mErrorOnLoading", BindingFlags.Instance | BindingFlags.NonPublic);
-        private static readonly HashSet<string> RecoveredPackageKeys =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
         internal static int RecoverFailedEntries()
         {
             if (ModEntriesField == null || AssemblyField == null || FirstLoadingField == null || ErrorOnLoadingField == null)
@@ -52,7 +47,12 @@ namespace FUSE.Compatibility
                     continue;
                 }
 
-                var id = entry.Info?.Id ?? Path.GetFileName(entry.Path);
+                var id = string.IsNullOrWhiteSpace(entry.Info?.Id)
+                    ? FuseRecoveredPackageRegistry.FolderName(entry.Path)
+                    : entry.Info.Id;
+                var previousAssembly = AssemblyField.GetValue(entry);
+                var previousErrorOnLoading = ErrorOnLoadingField.GetValue(entry);
+                var previousFirstLoading = FirstLoadingField.GetValue(entry);
                 try
                 {
                     // The failed Assembly.LoadFrom result is still attached to
@@ -65,6 +65,11 @@ namespace FUSE.Compatibility
 
                     if (!entry.Load() || entry.ErrorOnLoading || !entry.Loaded)
                     {
+                        RestoreEntryState(
+                            entry,
+                            previousAssembly,
+                            previousErrorOnLoading,
+                            previousFirstLoading);
                         FuseLog.Warning(
                             $"FUSE could not recover legacy UMM mod '{id}' after installing compatibility shims; " +
                             "the mod remains inactive for this session.");
@@ -79,6 +84,11 @@ namespace FUSE.Compatibility
                 }
                 catch (Exception ex)
                 {
+                    RestoreEntryState(
+                        entry,
+                        previousAssembly,
+                        previousErrorOnLoading,
+                        previousFirstLoading);
                     FuseLog.Exception($"FUSE legacy UMM recovery failed for '{id}'", ex);
                 }
             }
@@ -88,12 +98,17 @@ namespace FUSE.Compatibility
 
         internal static bool WasRecovered(string folderPath, string packageId)
         {
-            return RecoveredPackageKeys.Contains(BuildPackageKey(folderPath, packageId));
+            return FuseRecoveredPackageRegistry.WasRecovered(folderPath, packageId);
         }
 
         internal static bool TryRecordRecovered(string folderPath, string packageId)
         {
-            return RecoveredPackageKeys.Add(BuildPackageKey(folderPath, packageId));
+            return FuseRecoveredPackageRegistry.TryRecord(folderPath, packageId);
+        }
+
+        internal static void Reset()
+        {
+            FuseRecoveredPackageRegistry.Reset();
         }
 
         private static bool IsRecoveryCandidate(UnityModManager.ModEntry entry)
@@ -113,7 +128,8 @@ namespace FUSE.Compatibility
             var assemblyPath = Path.Combine(entry.Path ?? string.Empty, entry.Info.AssemblyName ?? string.Empty);
             try
             {
-                return File.Exists(assemblyPath) && ReferencesLegacyLoader(File.ReadAllBytes(assemblyPath));
+                return File.Exists(assemblyPath) &&
+                       FuseLegacyLoaderReferenceScanner.ReferencesLegacyLoader(File.ReadAllBytes(assemblyPath));
             }
             catch (Exception ex)
             {
@@ -124,57 +140,15 @@ namespace FUSE.Compatibility
             }
         }
 
-        internal static bool ReferencesLegacyLoader(byte[] assemblyBytes)
+        private static void RestoreEntryState(
+            UnityModManager.ModEntry entry,
+            object assembly,
+            object errorOnLoading,
+            object firstLoading)
         {
-            return ContainsAscii(assemblyBytes, "Railloader.Interchange") ||
-                   ContainsAscii(assemblyBytes, "StrangeCustoms");
-        }
-
-        private static bool ContainsAscii(byte[] source, string value)
-        {
-            if (source == null || source.Length == 0 || string.IsNullOrEmpty(value))
-            {
-                return false;
-            }
-
-            var pattern = Encoding.ASCII.GetBytes(value);
-            for (var offset = 0; offset <= source.Length - pattern.Length; offset++)
-            {
-                var matched = true;
-                for (var index = 0; index < pattern.Length; index++)
-                {
-                    if (source[offset + index] == pattern[index])
-                    {
-                        continue;
-                    }
-
-                    matched = false;
-                    break;
-                }
-
-                if (matched)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static string BuildPackageKey(string folderPath, string packageId)
-        {
-            string normalizedPath;
-            try
-            {
-                normalizedPath = Path.GetFullPath(folderPath ?? string.Empty)
-                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            }
-            catch
-            {
-                normalizedPath = (folderPath ?? string.Empty).Trim();
-            }
-
-            return normalizedPath + "|" + (packageId ?? string.Empty).Trim();
+            AssemblyField.SetValue(entry, assembly);
+            ErrorOnLoadingField.SetValue(entry, errorOnLoading);
+            FirstLoadingField.SetValue(entry, firstLoading);
         }
     }
 }

@@ -41,6 +41,9 @@ namespace FUSE.Tests.Patches
         [InlineData(0f, 0.3f)]
         [InlineData(2.5f, 2.5f)]
         [InlineData("4.25", 4.25f)]
+        [InlineData("NaN", 0.3f)]
+        [InlineData("Infinity", 0.3f)]
+        [InlineData("not-a-number", 0.3f)]
         public void Radius_UsesPositiveFiniteSettingOrFallback(
             object value,
             float expected)

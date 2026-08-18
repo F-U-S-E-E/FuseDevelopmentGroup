@@ -153,13 +153,14 @@ namespace FUSE.Patches
                 }
 
                 const int MapLoaded = 1;
-                var currentState = Convert.ToInt32(stateField.GetValue(null));
+                var stateTarget = stateField.IsStatic ? null : __instance;
+                var currentState = Convert.ToInt32(stateField.GetValue(stateTarget));
                 if (currentState == MapLoaded)
                 {
                     return false;
                 }
 
-                stateField.SetValue(null, Enum.ToObject(stateField.FieldType, MapLoaded));
+                stateField.SetValue(stateTarget, Enum.ToObject(stateField.FieldType, MapLoaded));
                 Messenger.Default.Register<WorldDidMoveEvent>(
                     __instance,
                     HandleWorldDidMove);
@@ -168,6 +169,7 @@ namespace FUSE.Patches
             catch (Exception ex)
             {
                 LogRuntimeFailure(ex);
+                return true;
             }
 
             return false;

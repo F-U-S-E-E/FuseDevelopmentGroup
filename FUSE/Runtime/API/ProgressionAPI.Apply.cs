@@ -238,12 +238,22 @@ namespace FUSE.Runtime.API
 
             if (ProgressionEnableFeaturesAtStartField != null)
             {
+                var ownedStartFeatures =
+                    ProgressionEnableFeaturesAtStartField.GetValue(progression) as MapFeature[] ??
+                    Array.Empty<MapFeature>();
                 var inheritedStartFeatures =
                     ProgressionEnableFeaturesAtStartField.GetValue(baseProgression) as MapFeature[] ??
                     Array.Empty<MapFeature>();
                 ProgressionEnableFeaturesAtStartField.SetValue(
                     progression,
-                    inheritedStartFeatures.ToArray());
+                    ownedStartFeatures
+                        .Concat(inheritedStartFeatures)
+                        .Where(feature => feature != null)
+                        .GroupBy(
+                            feature => feature.identifier ?? feature.name,
+                            StringComparer.OrdinalIgnoreCase)
+                        .Select(group => group.First())
+                        .ToArray());
             }
 
             FuseLog.Info(

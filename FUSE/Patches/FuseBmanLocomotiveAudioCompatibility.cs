@@ -314,7 +314,7 @@ namespace FUSE.Patches
 
         private static void EnsureAudioSource(Component component, FieldInfo field)
         {
-            if (field != null && field.GetValue(component) == null)
+            if (field != null && (field.GetValue(component) as UnityEngine.Object) == null)
             {
                 var source = component.gameObject.AddComponent<AudioSource>();
                 source.playOnAwake = false;
@@ -329,7 +329,7 @@ namespace FUSE.Patches
             {
                 if (__instance is Component component &&
                     _parentCarField != null &&
-                    _parentCarField.GetValue(component) == null)
+                    (_parentCarField.GetValue(component) as UnityEngine.Object) == null)
                 {
                     _parentCarField.SetValue(component, component.GetComponentInParent<Car>());
                 }

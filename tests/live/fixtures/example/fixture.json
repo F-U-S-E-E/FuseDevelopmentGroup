@@ -6,5 +6,5 @@
   "multiplayerRole": "host",
   "reason": "fixture run",
   "captureReport": true,
-  "dumps": ["runtimegraph", "mandelas"]
+  "dumps": ["runtimegraph", "mandelas", "compatibility"]
 }

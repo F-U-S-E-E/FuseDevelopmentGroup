@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using FUSE.Infrastructure;
 using HarmonyLib;
 
@@ -34,11 +35,23 @@ namespace FUSE.Patches
         // these manually-applied guards together with the attribute patches.
         private const string HarmonyId = "FUSE";
 
+        private static readonly object InstallGate = new object();
         private static Harmony _harmony;
         private static string _lastSummary;
         private static bool _assemblyLoadRetryRegistered;
+        private static int _active;
+        private static int _assemblyLoadRetryPending;
 
         internal static void EnsureInstalled()
+        {
+            lock (InstallGate)
+            {
+                Volatile.Write(ref _active, 1);
+                EnsureInstalledCore();
+            }
+        }
+
+        private static void EnsureInstalledCore()
         {
             try
             {
@@ -202,34 +215,58 @@ namespace FUSE.Patches
                 return;
             }
 
-            try
+            if (Volatile.Read(ref _active) == 0)
             {
-                if (isRealisticRerail)
+                return;
+            }
+
+            // AssemblyLoad runs on whichever thread loaded the assembly. Do not
+            // resolve Unity types or mutate Harmony patches here; the always-on
+            // runtime pump drains this coalesced retry on Unity's main thread.
+            Interlocked.Exchange(ref _assemblyLoadRetryPending, 1);
+        }
+
+        internal static void DrainPending()
+        {
+            if (Interlocked.Exchange(ref _assemblyLoadRetryPending, 0) == 0)
+            {
+                return;
+            }
+
+            lock (InstallGate)
+            {
+                if (Volatile.Read(ref _active) == 0)
                 {
-                    FuseRealisticRerailCraneGuardPatches.EnsureInstalled(_harmony);
+                    return;
                 }
 
-                if (isUtilities)
+                try
                 {
-                    FuseUtilitiesQueryTooltipCompatibility.EnsureInstalled(_harmony);
-                    FuseUtilitiesMapLoadCompatibility.EnsureInstalled(_harmony);
+                    EnsureInstalledCore();
                 }
-
-                if (isMemoryLeakFps)
+                catch (Exception ex)
                 {
-                    FuseMemoryLeakFpsCompatibility.EnsureInstalled(_harmony);
-                }
-
-                if (isBmanLocomotiveAudio)
-                {
-                    FuseBmanLocomotiveAudioCompatibility.EnsureInstalled(_harmony);
+                    FuseLog.Exception(
+                        "FUSE third-party compatibility failed during a main-thread assembly-load retry",
+                        ex);
                 }
             }
-            catch (Exception ex)
+        }
+
+        internal static void Shutdown()
+        {
+            lock (InstallGate)
             {
-                FuseLog.Exception(
-                    $"FUSE third-party compatibility failed during '{assemblyName}' assembly-load retry",
-                    ex);
+                Volatile.Write(ref _active, 0);
+                Interlocked.Exchange(ref _assemblyLoadRetryPending, 0);
+                if (_assemblyLoadRetryRegistered)
+                {
+                    AppDomain.CurrentDomain.AssemblyLoad -= OnAssemblyLoad;
+                    _assemblyLoadRetryRegistered = false;
+                }
+
+                _harmony = null;
+                _lastSummary = null;
             }
         }
     }

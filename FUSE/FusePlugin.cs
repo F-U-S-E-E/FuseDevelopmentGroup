@@ -219,6 +219,7 @@ namespace FUSE
         private static void Shutdown()
         {
             FuseNarrowGaugePerformanceCompatibility.Shutdown();
+            FuseThirdPartyGuardInstaller.Shutdown();
 
             if (_harmony != null)
             {
@@ -258,6 +259,7 @@ namespace FUSE
             FuseModExceptionLogHook.Shutdown();
             FuseLegacyAssemblyHost.Shutdown();
             FuseLegacySupportAssemblyShim.Shutdown();
+            FuseLegacyUmmRecovery.Reset();
             FuseRuntimeRebindService.Shutdown();
             FuseVersionCheck.Shutdown();
             FuseMenuWindow.Shutdown();

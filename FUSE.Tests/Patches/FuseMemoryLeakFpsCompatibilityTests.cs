@@ -40,12 +40,14 @@ namespace FUSE.Tests.Patches
                     methodName));
         }
 
-        [Fact]
-        public void ReflectionRefresh_UsesCurrentTwoArgumentApi()
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void ReflectionRefresh_UsesCurrentTwoArgumentApi(bool forced)
         {
             Assert.Equal(
-                new object[] { true, false },
-                FuseMemoryLeakFpsCompatibility.CurrentRenderArguments(true));
+                new object[] { forced, false },
+                FuseMemoryLeakFpsCompatibility.CurrentRenderArguments(forced));
         }
     }
 }

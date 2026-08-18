@@ -253,13 +253,19 @@ namespace FUSE.Patches
                 return;
             }
 
-            distances[0] = distance;
-            var managerName = AccessTools.Field(currentType, "_managerName")?.GetValue(hose) as string;
-            AccessTools.DeclaredMethod(
+            var configure = AccessTools.DeclaredMethod(
                     currentType,
                     "Configure",
-                    new[] { typeof(string), typeof(float[]) })
-                ?.Invoke(hose, new object[] { managerName ?? "Hose", distances });
+                    new[] { typeof(string), typeof(float[]) });
+            if (configure == null)
+            {
+                return;
+            }
+
+            var updated = (float[])distances.Clone();
+            updated[0] = distance;
+            var managerName = AccessTools.Field(currentType, "_managerName")?.GetValue(hose) as string;
+            configure.Invoke(hose, new object[] { managerName ?? "Hose", updated });
         }
 
         private static void ApplyGraphicsSettings(object instance)

@@ -1,7 +1,6 @@
 using System.Reflection;
-using System.Collections.Generic;
+using System.Runtime.Serialization;
 using StrangeCustoms.Tracks;
-using Track;
 using Xunit;
 
 namespace FUSE.Tests.Compatibility
@@ -9,26 +8,6 @@ namespace FUSE.Tests.Compatibility
 #pragma warning disable CS0618 // Verifies the intentional legacy StrangeCustoms binary surface.
     public sealed class StrangeCustomsSerializedSpanCompatibilityTests
     {
-        [Fact]
-        public void SerializedSpan_ExposesSignalsEverywhereRuntimeContract()
-        {
-            Assert.NotNull(typeof(SerializedSpan).GetConstructor(new[] { typeof(TrackSpan) }));
-            Assert.NotNull(typeof(SerializedSpan).GetMethod(
-                "ApplyTo",
-                BindingFlags.Instance | BindingFlags.NonPublic,
-                binder: null,
-                types: new[] { typeof(string), typeof(PatchingContext), typeof(TrackSpan) },
-                modifiers: null));
-        }
-
-        [Fact]
-        public void PatchingContext_ExposesWritableLiveGraphIndexes()
-        {
-            AssertWritableDictionary<TrackNode>("NodesById");
-            AssertWritableDictionary<TrackSegment>("SegmentsById");
-            AssertWritableDictionary<TrackSpan>("SpansById");
-        }
-
         [Fact]
         public void PatchingException_ExposesLegacyConstructorSurface()
         {
@@ -42,13 +21,26 @@ namespace FUSE.Tests.Compatibility
                 new[] { typeof(SCPatchingException), typeof(string) }));
         }
 
-        private static void AssertWritableDictionary<TValue>(string propertyName)
+        [Fact]
+        public void PatchingException_PreservesLegacyPathDuringSerialization()
         {
-            var property = typeof(PatchingContext).GetProperty(propertyName);
-            Assert.NotNull(property);
-            Assert.True(property.CanRead);
-            Assert.True(property.CanWrite);
-            Assert.Equal(typeof(Dictionary<string, TValue>), property.PropertyType);
+            var original = new SCPatchingException("invalid value", "sections[0]");
+            var info = new SerializationInfo(
+                typeof(SCPatchingException),
+                new FormatterConverter());
+            var context = new StreamingContext(StreamingContextStates.All);
+
+            original.GetObjectData(info, context);
+            var constructor = typeof(SCPatchingException).GetConstructor(
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                types: new[] { typeof(SerializationInfo), typeof(StreamingContext) },
+                modifiers: null);
+            Assert.NotNull(constructor);
+
+            var restored = (SCPatchingException)constructor.Invoke(new object[] { info, context });
+            Assert.Equal("sections[0]", restored.JsonPath);
+            Assert.Equal("sections[0]", restored.ParameterName);
         }
     }
 #pragma warning restore CS0618

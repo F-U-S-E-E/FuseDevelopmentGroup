@@ -79,6 +79,10 @@ namespace FUSE.Runtime.Lifecycle
                 Justification = "Unity invokes Update() as an instance message; a static method is never called.")]
             private void Update()
             {
+                // AssemblyLoad can run on a loader thread. Third-party guard
+                // discovery and Harmony mutation are coalesced and replayed here.
+                FUSE.Patches.FuseThirdPartyGuardInstaller.DrainPending();
+
                 // TimeSync Mod's ten-minute System.Threading.Timer callback
                 // arrives on a worker thread. Replay it here before it can
                 // touch StateManager and the Unity-backed in-game console.

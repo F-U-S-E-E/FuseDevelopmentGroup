@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.Serialization;
 using Helpers;
 using Model;
 using Model.Definition.Data;
@@ -1139,11 +1140,35 @@ namespace StrangeCustoms.Tracks
             ParameterName = JsonPath;
         }
 
+        protected SCPatchingException(SerializationInfo info, StreamingContext context)
+            : base(info, context)
+        {
+            if (info == null)
+            {
+                throw new ArgumentNullException(nameof(info));
+            }
+
+            JsonPath = info.GetString(nameof(JsonPath));
+            ParameterName = info.GetString(nameof(ParameterName));
+        }
+
         public string JsonPath { get; }
 
         // Retained as a FUSE-era alias for callers compiled against an early
         // version of this compatibility shim.
         public string ParameterName { get; }
+
+        public override void GetObjectData(SerializationInfo info, StreamingContext context)
+        {
+            if (info == null)
+            {
+                throw new ArgumentNullException(nameof(info));
+            }
+
+            base.GetObjectData(info, context);
+            info.AddValue(nameof(JsonPath), JsonPath);
+            info.AddValue(nameof(ParameterName), ParameterName);
+        }
 
         public override string ToString()
         {

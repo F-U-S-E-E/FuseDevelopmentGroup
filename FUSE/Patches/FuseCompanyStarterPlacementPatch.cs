@@ -188,7 +188,7 @@ namespace FUSE.Patches
 
                 ApplyRequiredInitialLoads(
                     descriptors,
-                    placement.loadPercent);
+                    1f);
 
                 return descriptors;
             }

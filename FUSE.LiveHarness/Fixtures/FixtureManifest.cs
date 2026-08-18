@@ -24,6 +24,6 @@ public sealed class FixtureManifest
     /// <summary>Capture and golden-master the <c>/fuse.report json</c> output.</summary>
     public bool CaptureReport { get; set; } = true;
 
-    /// <summary>Dump captures to golden-master. Valid: graph, runtimegraph, mandelas, progression.</summary>
+    /// <summary>Dump captures to golden-master. Valid: graph, runtimegraph, mandelas, progression, compatibility.</summary>
     public string[] Dumps { get; set; } = { "runtimegraph", "mandelas" };
 }
