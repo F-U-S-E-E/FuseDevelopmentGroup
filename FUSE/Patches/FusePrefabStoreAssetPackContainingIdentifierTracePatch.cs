@@ -69,9 +69,33 @@ namespace FUSE.Patches
                 }
 
                 AssetPackRuntimeStore firstMatch = null;
+                var skippedMalformedStore = false;
                 foreach (var store in stores)
                 {
-                    if (store == null || !store.ContainsIdentifier(identifier))
+                    if (store == null)
+                    {
+                        continue;
+                    }
+
+                    if (IsQuarantinedDefinitionStore(store))
+                    {
+                        skippedMalformedStore = true;
+                        continue;
+                    }
+
+                    bool containsIdentifier;
+                    try
+                    {
+                        containsIdentifier = store.ContainsIdentifier(identifier);
+                    }
+                    catch (JsonException ex)
+                    {
+                        QuarantineDefinitionStore(__instance, store, ex);
+                        skippedMalformedStore = true;
+                        continue;
+                    }
+
+                    if (!containsIdentifier)
                     {
                         continue;
                     }
@@ -126,6 +150,15 @@ namespace FUSE.Patches
                 if (firstMatch != null)
                 {
                     LogFuseFilteredIdentifierOnce(identifier, firstMatch);
+                    throw new Model.Database.PrefabStore.UnknownIdentifierException(identifier);
+                }
+
+                // The stock method would revisit every store and hit the same
+                // malformed Definitions.json again. We already completed the
+                // ordered scan of every usable store, so preserve the stock
+                // unknown-identifier outcome without re-entering the bad pack.
+                if (skippedMalformedStore)
+                {
                     throw new Model.Database.PrefabStore.UnknownIdentifierException(identifier);
                 }
 
@@ -184,7 +217,90 @@ namespace FUSE.Patches
         private static Dictionary<string, string> _sourceCanonicalIdentifierIndex;
         private static Dictionary<string, AssetPackRuntimeStore> _sourceLoserIndex;
         private static Dictionary<AssetPackRuntimeStore, int> _sourceStoreIndexes;
-        private static int _firstUnindexedStore;
+        private static SourceStoreScanState<AssetPackRuntimeStore> _sourceStoreScanState;
+        private static readonly DefinitionStoreQuarantine<AssetPackRuntimeStore> QuarantinedDefinitionStoreRegistry =
+            new DefinitionStoreQuarantine<AssetPackRuntimeStore>();
+
+        internal sealed class SourceStoreScanState<TStore>
+            where TStore : class
+        {
+            private readonly HashSet<TStore> _malformedStores = new HashSet<TStore>();
+
+            internal int FirstOpaqueStoreIndex { get; private set; } = -1;
+
+            internal int MalformedStoreCount => _malformedStores.Count;
+
+            internal bool MarkMalformed(TStore store)
+            {
+                return store != null && _malformedStores.Add(store);
+            }
+
+            internal void MarkOpaque(int storeIndex)
+            {
+                if (FirstOpaqueStoreIndex < 0)
+                {
+                    FirstOpaqueStoreIndex = storeIndex;
+                }
+            }
+
+            internal bool ShouldProbe(TStore store)
+            {
+                return store != null && !_malformedStores.Contains(store);
+            }
+
+            internal bool CanUseCandidate(int candidateIndex)
+            {
+                return candidateIndex >= 0 &&
+                       (FirstOpaqueStoreIndex < 0 || FirstOpaqueStoreIndex >= candidateIndex);
+            }
+
+        }
+
+        internal sealed class DefinitionStoreQuarantine<TStore>
+            where TStore : class
+        {
+            private readonly HashSet<TStore> _stores = new HashSet<TStore>();
+
+            internal bool Add(TStore store)
+            {
+                return store != null && _stores.Add(store);
+            }
+
+            internal bool Contains(TStore store)
+            {
+                return store != null && _stores.Contains(store);
+            }
+
+            internal SourceStoreScanState<TStore> CreateScanState(IEnumerable<TStore> stores)
+            {
+                var state = new SourceStoreScanState<TStore>();
+                foreach (var store in stores ?? Enumerable.Empty<TStore>())
+                {
+                    if (Contains(store))
+                    {
+                        state.MarkMalformed(store);
+                    }
+                }
+
+                return state;
+            }
+
+            internal bool CanUseCandidate(
+                SourceStoreScanState<TStore> scanState,
+                TStore store,
+                int storeIndex)
+            {
+                return !Contains(store) &&
+                       scanState != null &&
+                       scanState.ShouldProbe(store) &&
+                       scanState.CanUseCandidate(storeIndex);
+            }
+
+            internal void Clear()
+            {
+                _stores.Clear();
+            }
+        }
 
         private static bool TryResolveFromSourceIndex(
             PrefabStore prefabStore,
@@ -215,7 +331,10 @@ namespace FUSE.Patches
 
                 if (_sourceStoreIndexes == null ||
                     !_sourceStoreIndexes.TryGetValue(candidate, out var candidateIndex) ||
-                    (_firstUnindexedStore >= 0 && _firstUnindexedStore < candidateIndex))
+                    !QuarantinedDefinitionStoreRegistry.CanUseCandidate(
+                        _sourceStoreScanState,
+                        candidate,
+                        candidateIndex))
                 {
                     return false;
                 }
@@ -264,7 +383,8 @@ namespace FUSE.Patches
                     BuildSourceIndex(prefabStore, stores);
                 }
 
-                indexComplete = _firstUnindexedStore < 0;
+                indexComplete = _sourceStoreScanState != null &&
+                                _sourceStoreScanState.FirstOpaqueStoreIndex < 0;
                 if (!indexComplete || _sourceCanonicalIdentifierIndex == null)
                 {
                     return false;
@@ -284,7 +404,7 @@ namespace FUSE.Patches
             var canonicalIndex = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var loserIndex = new Dictionary<string, AssetPackRuntimeStore>(StringComparer.Ordinal);
             var storeIndexes = new Dictionary<AssetPackRuntimeStore, int>();
-            var firstUnindexedStore = -1;
+            var scanState = QuarantinedDefinitionStoreRegistry.CreateScanState(stores);
 
             for (var storeIndex = 0; storeIndex < stores.Count; storeIndex++)
             {
@@ -295,26 +415,52 @@ namespace FUSE.Patches
                 }
 
                 storeIndexes[store] = storeIndex;
+                if (!scanState.ShouldProbe(store))
+                {
+                    continue;
+                }
+
+                string basePath;
+                try
+                {
+                    basePath = FuseAssetPackPatchHelpers.ResolveBasePath(store);
+                }
+                catch
+                {
+                    scanState.MarkOpaque(storeIndex);
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(basePath))
+                {
+                    scanState.MarkOpaque(storeIndex);
+                    continue;
+                }
 
                 try
                 {
-                    var basePath = FuseAssetPackPatchHelpers.ResolveBasePath(store);
-                    if (string.IsNullOrWhiteSpace(basePath))
-                    {
-                        if (firstUnindexedStore < 0)
-                        {
-                            firstUnindexedStore = storeIndex;
-                        }
-                        continue;
-                    }
-
                     var definitionsPath = Path.Combine(basePath, "Definitions.json");
                     if (!File.Exists(definitionsPath))
                     {
                         continue;
                     }
 
-                    foreach (var objectIdentifier in ReadTopLevelObjectIdentifiers(definitionsPath))
+                    if (!TryReadCompleteTopLevelObjectIdentifiers(
+                            definitionsPath,
+                            out var objectIdentifiers,
+                            out var jsonException))
+                    {
+                        QuarantinedDefinitionStoreRegistry.Add(store);
+                        scanState.MarkMalformed(store);
+                        LogQuarantinedDefinitionStoreOnce(store, basePath, jsonException);
+                        continue;
+                    }
+
+                    // Resolve collision status before committing any entries so
+                    // an opaque registry failure cannot leave a partial store in
+                    // the source index either.
+                    var isLoserFolder = FuseAssetCollisionRegistry.IsLoserFolder(basePath);
+                    foreach (var objectIdentifier in objectIdentifiers)
                     {
                         if (string.IsNullOrEmpty(objectIdentifier) ||
                             index.ContainsKey(objectIdentifier))
@@ -322,7 +468,7 @@ namespace FUSE.Patches
                             continue;
                         }
 
-                        if (FuseAssetCollisionRegistry.IsLoserFolder(basePath))
+                        if (isLoserFolder)
                         {
                             if (!loserIndex.ContainsKey(objectIdentifier))
                             {
@@ -342,10 +488,7 @@ namespace FUSE.Patches
                 {
                     // An incomplete earlier store makes later source-index hits
                     // ambiguous. The caller falls back to the stock ordered scan.
-                    if (firstUnindexedStore < 0)
-                    {
-                        firstUnindexedStore = storeIndex;
-                    }
+                    scanState.MarkOpaque(storeIndex);
                 }
             }
 
@@ -355,24 +498,59 @@ namespace FUSE.Patches
             _sourceCanonicalIdentifierIndex = canonicalIndex;
             _sourceLoserIndex = loserIndex;
             _sourceStoreIndexes = storeIndexes;
-            _firstUnindexedStore = firstUnindexedStore;
+            _sourceStoreScanState = scanState;
             FusePerformanceMetrics.RecordCount("prefab source identifier index count", index.Count);
             FuseLog.Info(
                 $"FUSE prefab source identifier index built identifiers={index.Count} " +
-                $"stores={stores.Count} firstUnindexedStore={firstUnindexedStore}.");
+                $"stores={stores.Count} quarantinedStores={scanState.MalformedStoreCount} " +
+                $"firstUnindexedStore={scanState.FirstOpaqueStoreIndex}.");
+        }
+
+        internal static bool TryReadCompleteTopLevelObjectIdentifiers(
+            string definitionsPath,
+            out string[] identifiers,
+            out JsonException jsonException)
+        {
+            identifiers = Array.Empty<string>();
+            jsonException = null;
+
+            try
+            {
+                identifiers = ReadTopLevelObjectIdentifiers(definitionsPath).ToArray();
+                return true;
+            }
+            catch (JsonException ex)
+            {
+                jsonException = ex;
+                return false;
+            }
         }
 
         internal static IEnumerable<string> ReadTopLevelObjectIdentifiers(string definitionsPath)
         {
+            var identifiers = new List<string>();
             using (var stream = File.OpenRead(definitionsPath))
             using (var textReader = new StreamReader(stream))
             using (var reader = new JsonTextReader(textReader))
             {
                 var objectsArrayDepth = -1;
                 var objectDepth = -1;
+                var objectsArrayFinished = false;
+                var rootObjectStarted = false;
+                var rootObjectFinished = false;
                 while (reader.Read())
                 {
-                    if (objectsArrayDepth < 0 &&
+                    if (reader.TokenType == JsonToken.StartObject && reader.Depth == 0)
+                    {
+                        rootObjectStarted = true;
+                    }
+                    else if (reader.TokenType == JsonToken.EndObject && reader.Depth == 0)
+                    {
+                        rootObjectFinished = true;
+                    }
+
+                    if (!objectsArrayFinished &&
+                        objectsArrayDepth < 0 &&
                         reader.TokenType == JsonToken.PropertyName &&
                         reader.Depth == 1 &&
                         string.Equals((string)reader.Value, "objects", StringComparison.Ordinal))
@@ -392,7 +570,10 @@ namespace FUSE.Patches
                     if (reader.TokenType == JsonToken.EndArray &&
                         reader.Depth == objectsArrayDepth)
                     {
-                        yield break;
+                        objectsArrayDepth = -1;
+                        objectDepth = -1;
+                        objectsArrayFinished = true;
+                        continue;
                     }
 
                     if (reader.TokenType == JsonToken.StartObject &&
@@ -409,7 +590,7 @@ namespace FUSE.Patches
                         reader.Read() &&
                         reader.TokenType == JsonToken.String)
                     {
-                        yield return reader.Value as string;
+                        identifiers.Add(reader.Value as string);
                     }
 
                     if (objectDepth >= 0 &&
@@ -419,6 +600,110 @@ namespace FUSE.Patches
                         objectDepth = -1;
                     }
                 }
+
+                if (!rootObjectStarted || !rootObjectFinished)
+                {
+                    throw new JsonReaderException(
+                        "Definitions.json must contain a complete root JSON object.");
+                }
+            }
+
+            return identifiers;
+        }
+
+        internal static bool IsQuarantinedDefinitionStore(AssetPackRuntimeStore store)
+        {
+            lock (SourceIndexSync)
+            {
+                return QuarantinedDefinitionStoreRegistry.Contains(store);
+            }
+        }
+
+        internal static void QuarantineDefinitionStore(
+            PrefabStore prefabStore,
+            AssetPackRuntimeStore store,
+            JsonException jsonException)
+        {
+            var added = false;
+            lock (SourceIndexSync)
+            {
+                added = QuarantinedDefinitionStoreRegistry.Add(store);
+                var activeIndexContainsStore = _sourceStoreIndexes != null &&
+                                               _sourceStoreIndexes.ContainsKey(store);
+                if (ReferenceEquals(_sourceIndexOwner, prefabStore) || activeIndexContainsStore)
+                {
+                    if (_sourceStoreScanState == null)
+                    {
+                        _sourceStoreScanState = new SourceStoreScanState<AssetPackRuntimeStore>();
+                    }
+
+                    if (_sourceStoreScanState.MarkMalformed(store) || activeIndexContainsStore)
+                    {
+                        // A store can become malformed after the index was built.
+                        // Rebuild on the next lookup so no stale entry can select it.
+                        _sourceIndex = null;
+                        _sourceCanonicalIdentifierIndex = null;
+                        _sourceLoserIndex = null;
+                        _sourceStoreIndexes = null;
+                    }
+                }
+            }
+
+            if (!added)
+            {
+                return;
+            }
+
+            string basePath = null;
+            try
+            {
+                basePath = FuseAssetPackPatchHelpers.ResolveBasePath(store);
+            }
+            catch
+            {
+                basePath = null;
+            }
+
+            LogQuarantinedDefinitionStoreOnce(store, basePath, jsonException);
+        }
+
+        private static readonly HashSet<string> LoggedQuarantinedDefinitionStores =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object LoggedQuarantinedDefinitionStoresSync = new object();
+
+        private static void LogQuarantinedDefinitionStoreOnce(
+            AssetPackRuntimeStore store,
+            string basePath,
+            JsonException jsonException)
+        {
+            try
+            {
+                string definitionsPath = null;
+                if (!string.IsNullOrWhiteSpace(basePath))
+                {
+                    definitionsPath = Path.Combine(basePath, "Definitions.json");
+                }
+
+                var storeIdentifier = store?.Identifier;
+                var logKey = definitionsPath ?? storeIdentifier ?? "<unknown>";
+                lock (LoggedQuarantinedDefinitionStoresSync)
+                {
+                    if (!LoggedQuarantinedDefinitionStores.Add(logKey))
+                    {
+                        return;
+                    }
+                }
+
+                FuseLog.Warning(
+                    "FUSE quarantined malformed asset pack definitions at " +
+                    $"'{definitionsPath ?? storeIdentifier ?? "<unknown>"}' from prefab identifier lookup: " +
+                    $"{jsonException?.GetBaseException().Message ?? "invalid JSON"}. " +
+                    "Other asset packs will continue to resolve; the source file was not modified.");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"FUSE could not log quarantined asset pack diagnostics: {ex.Message}");
             }
         }
 
@@ -494,7 +779,13 @@ namespace FUSE.Patches
                 _sourceCanonicalIdentifierIndex = null;
                 _sourceLoserIndex = null;
                 _sourceStoreIndexes = null;
-                _firstUnindexedStore = -1;
+                _sourceStoreScanState = null;
+                QuarantinedDefinitionStoreRegistry.Clear();
+            }
+
+            lock (LoggedQuarantinedDefinitionStoresSync)
+            {
+                LoggedQuarantinedDefinitionStores.Clear();
             }
         }
     }
