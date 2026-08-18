@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -110,12 +111,12 @@ namespace FUSE.Tests.Loading
         public void MainCodePath_BypassDeserialize_RealPs1Pack_NoLlosClonesExist()
         {
             var text = File.ReadAllText(Ps1BasePackDefinitions);
-            var before = _h.PostfixInvocations;
+            var before = LegosLibraryHarness.PostfixInvocations;
 
             var container = _h.BypassDeserialize(text);
 
             Assert.NotNull(container);
-            Assert.Equal(before, _h.PostfixInvocations);
+            Assert.Equal(before, LegosLibraryHarness.PostfixInvocations);
             var ids = container.Objects.Select(o => o.Identifier).ToArray();
             _out.WriteLine("main/bypass identifiers: " + string.Join(", ", ids));
             Assert.Equal(new[] { Ps1BaseIdentifier }, ids);
@@ -132,13 +133,13 @@ namespace FUSE.Tests.Loading
         public void Pr227CodePath_ColdLoad_RealPs1Pack_LlosRepaintClonesExist()
         {
             var text = File.ReadAllText(Ps1BasePackDefinitions);
-            var before = _h.PostfixInvocations;
+            var before = LegosLibraryHarness.PostfixInvocations;
             var dropped = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
             var container = _h.ColdLoad(text, "fuseasset://" + Uri.EscapeDataString(Path.GetDirectoryName(Ps1BasePackDefinitions)), dropped);
 
             Assert.NotNull(container);
-            Assert.Equal(before + 1, _h.PostfixInvocations);
+            Assert.Equal(before + 1, LegosLibraryHarness.PostfixInvocations);
             Assert.Empty(dropped); // native path bound every kind; no tolerant fallback
             var ids = container.Objects.Select(o => o.Identifier).ToArray();
             _out.WriteLine("PR#227/cold-load identifiers: " + string.Join(", ", ids));
@@ -181,11 +182,11 @@ namespace FUSE.Tests.Loading
         public void GamePublicDeserialize_RealPs1Pack_LlosRepaintClonesExist()
         {
             var text = File.ReadAllText(Ps1BasePackDefinitions);
-            var before = _h.PostfixInvocations;
+            var before = LegosLibraryHarness.PostfixInvocations;
 
             var container = ContainerSerialization.Deserialize(text);
 
-            Assert.Equal(before + 1, _h.PostfixInvocations);
+            Assert.Equal(before + 1, LegosLibraryHarness.PostfixInvocations);
             var ids = container.Objects.Select(o => o.Identifier).ToArray();
             foreach (var cloneId in ExpectedPs1CloneIdentifiers())
             {
@@ -206,11 +207,11 @@ namespace FUSE.Tests.Loading
         public void MainCodePath_BypassDeserialize_RealCnwPacificPack_NoTenderSwapClone()
         {
             var text = File.ReadAllText(CnwBasePackDefinitions);
-            var before = _h.PostfixInvocations;
+            var before = LegosLibraryHarness.PostfixInvocations;
 
             var container = _h.BypassDeserialize(text);
 
-            Assert.Equal(before, _h.PostfixInvocations);
+            Assert.Equal(before, LegosLibraryHarness.PostfixInvocations);
             var ids = container.Objects.Select(o => o.Identifier).ToArray();
             _out.WriteLine("main/bypass identifiers: " + string.Join(", ", ids));
             Assert.Contains("ls-462-p37", ids);
@@ -221,12 +222,12 @@ namespace FUSE.Tests.Loading
         public void Pr227CodePath_ColdLoad_RealCnwPacificPack_TenderSwapCloneExists()
         {
             var text = File.ReadAllText(CnwBasePackDefinitions);
-            var before = _h.PostfixInvocations;
+            var before = LegosLibraryHarness.PostfixInvocations;
             var dropped = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
             var container = _h.ColdLoad(text, "fuseasset://" + Uri.EscapeDataString(Path.GetDirectoryName(CnwBasePackDefinitions)), dropped);
 
-            Assert.Equal(before + 1, _h.PostfixInvocations);
+            Assert.Equal(before + 1, LegosLibraryHarness.PostfixInvocations);
             Assert.Empty(dropped);
             var ids = container.Objects.Select(o => o.Identifier).ToArray();
             _out.WriteLine("PR#227/cold-load identifiers: " + string.Join(", ", ids));
@@ -355,7 +356,7 @@ namespace FUSE.Tests.Loading
                     unbindableKinds.Add($"{rel}: {string.Join(", ", mainDropped.Select(kv => kv.Key + "=" + kv.Value))}");
                 }
 
-                var before = _h.PostfixInvocations;
+                var before = LegosLibraryHarness.PostfixInvocations;
                 var dropped = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 string[] coldIds;
                 try
@@ -370,7 +371,7 @@ namespace FUSE.Tests.Loading
                 }
                 Assert.Equal(mainDropped.OrderBy(kv => kv.Key).ToArray(), dropped.OrderBy(kv => kv.Key).ToArray());
 
-                var fired = _h.PostfixInvocations - before;
+                var fired = LegosLibraryHarness.PostfixInvocations - before;
                 if (fired == 0)
                 {
                     packsFallback++;
@@ -507,8 +508,7 @@ namespace FUSE.Tests.Loading
         // Counts invocations of the REAL LLoS postfix (a tiny counting postfix installed on the
         // same target; Harmony runs all postfixes, so this counts once per Deserialize call).
         private static int _postfixInvocations;
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Read through the fixture instance on purpose.")]
-        public int PostfixInvocations => System.Threading.Volatile.Read(ref _postfixInvocations);
+        public static int PostfixInvocations => System.Threading.Volatile.Read(ref _postfixInvocations);
 
         private readonly Harmony _harmony;
         private readonly ResolveEventHandler _resolver;
@@ -544,7 +544,14 @@ namespace FUSE.Tests.Loading
                     var p = Path.Combine(dir, name + ".dll");
                     if (File.Exists(p))
                     {
-                        try { return Assembly.LoadFrom(p); } catch { /* try next */ }
+                        try
+                        {
+                            return Assembly.LoadFrom(p);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Assembly resolver could not load '{p}': {ex.Message}");
+                        }
                     }
                 }
                 return null;
@@ -683,7 +690,14 @@ namespace FUSE.Tests.Loading
                 var infoPath = Path.Combine(modDir, "info.json");
                 if (File.Exists(infoPath))
                 {
-                    try { id = (string)JObject.Parse(File.ReadAllText(infoPath))["Id"] ?? id; } catch { /* keep folder name */ }
+                    try
+                    {
+                        id = (string)JObject.Parse(File.ReadAllText(infoPath))["Id"] ?? id;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Could not read mod id from '{infoPath}'; using folder name: {ex.Message}");
+                    }
                 }
                 specPackDirs.Add((id, modDir));
             }
