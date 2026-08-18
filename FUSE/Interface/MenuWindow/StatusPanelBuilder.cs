@@ -95,7 +95,7 @@ namespace FUSE.Interface.MenuWindow
                 problemModCount == 0,
                 modExceptionState.Total == 0
                     ? "0 exceptions observed"
-                    : $"{modExceptionState.Total} one-off exception(s) observed across {modExceptions.Length} mod(s) (informational)",
+                    : $"{modExceptionState.Total} below-threshold exception(s) observed across {modExceptions.Length} mod(s) (informational)",
                 $"{modExceptionState.Total} exception(s) across {modExceptions.Length} mod(s); {problemModCount} recurring");
             builder.Spacer(6f);
 
@@ -142,7 +142,7 @@ namespace FUSE.Interface.MenuWindow
                 modExceptionState.Total == 0
                     ? "All idle — no third-party mod exceptions were observed this session."
                     : problemModCount == 0
-                        ? "One-off third-party exceptions were observed and logged for reference; they only count as a problem if they recur (" +
+                        ? "Below-threshold third-party exceptions were observed and logged for reference; a mod counts as a problem at (" +
                           FuseModExceptionRegistry.ProblemEpisodeThreshold + "+ episodes or " +
                           FuseModExceptionRegistry.ProblemCountThreshold + "+ occurrences). Details are in FUSE.log and the health report."
                         : "Recurring counts are third-party mod faults FUSE observed or contained; offenders are named in FUSE.log and the health report.",

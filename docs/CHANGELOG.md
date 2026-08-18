@@ -102,8 +102,8 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
   single one-off third-party exception (for example another mod's
   first-frame-after-load `NullReferenceException`), contradicting the health
   report, which only counts a mod as a problem once it recurs (3+ episodes or
-  10+ occurrences). Both surfaces now share that one threshold; one-off
-  exceptions are listed as informational. (#208)
+  10+ occurrences). Both surfaces now share that one threshold; anything
+  below it is listed as informational. (#208)
 - A single unloadable type in some other assembly (typically a stray, real
   `Railloader.dll` still being loaded from a mod folder) aborted FUSE's scan for
   legacy `ISplineyBuilder` implementations, so every queued builder task —
