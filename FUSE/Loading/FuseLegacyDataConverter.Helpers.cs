@@ -326,6 +326,19 @@ namespace FUSE.Loading
                 return defaultValue;
             }
 
+            // Numeric tokens must be read through the typed accessor. JValue.ToString()
+            // formats with the current culture, so a comma-decimal locale (pt-BR, de-DE,
+            // fr-FR, ...) turns 12.5 into "12,5", which the invariant parse below
+            // rejects. That silently collapsed every fractional legacy coordinate to the
+            // default (issue #219).
+            switch (token.Type)
+            {
+                case JTokenType.Integer:
+                    return token.Value<int>();
+                case JTokenType.Float:
+                    return (int)Math.Round(token.Value<double>());
+            }
+
             return int.TryParse(token.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
                 ? parsed
                 : defaultValue;
@@ -336,6 +349,12 @@ namespace FUSE.Loading
             if (token == null || token.Type == JTokenType.Null)
             {
                 return defaultValue;
+            }
+
+            // See ReadInt: never round-trip a numeric token through ToString().
+            if (token.Type == JTokenType.Float || token.Type == JTokenType.Integer)
+            {
+                return token.Value<float>();
             }
 
             return float.TryParse(token.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)

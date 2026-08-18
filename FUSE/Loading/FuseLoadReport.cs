@@ -882,10 +882,11 @@ namespace FUSE.Loading
 
             // A single one-off third-party exception must not flip the report
             // red, but a per-cycle thrower (world moves, update ticks) crosses
-            // these thresholds within seconds of the fault starting.
+            // the registry's thresholds within seconds of the fault starting.
+            // The Status page shares this predicate (issue #208).
             public bool HasModExceptionProblem =>
                 ModExceptions != null &&
-                ModExceptions.Any(record => record.Episodes >= 3 || record.Count >= 10);
+                ModExceptions.Any(record => record.IsProblem);
         }
 
         private static JArray ToArray(IEnumerable<string> values)
