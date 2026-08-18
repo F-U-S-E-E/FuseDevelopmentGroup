@@ -79,6 +79,11 @@ namespace FUSE.Runtime.Lifecycle
                 Justification = "Unity invokes Update() as an instance message; a static method is never called.")]
             private void Update()
             {
+                // TimeSync Mod's ten-minute System.Threading.Timer callback
+                // arrives on a worker thread. Replay it here before it can
+                // touch StateManager and the Unity-backed in-game console.
+                FUSE.Patches.FuseTimeSyncMainThreadGuardPatches.DrainPending();
+
                 // Scenery load-failure records + broken-scenery quarantines:
                 // queued from task continuations / the log hook / the bundle
                 // audit (any thread), resolved and applied here.

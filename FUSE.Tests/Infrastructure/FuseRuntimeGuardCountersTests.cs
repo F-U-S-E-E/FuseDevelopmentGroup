@@ -33,6 +33,7 @@ namespace FUSE.Tests.Infrastructure
                 "mapEnhancerCullingGuarded=0 " +
                 "rebillAutoConfigSuppressed=0 " +
                 "brssModMenuDeferred=0 " +
+                "timeSyncMainThread=0 " +
                 "flares=0 switchRailsBackfilled=0 frameSpikes=0",
                 FuseRuntimeGuardCounters.FormatSummary());
         }
@@ -89,17 +90,19 @@ namespace FUSE.Tests.Infrastructure
             Assert.Equal(2, FuseRuntimeGuardCounters.RecordMapEnhancerCullingGuarded());
             Assert.Equal(1, FuseRuntimeGuardCounters.RecordRebillAutoConfigSuppressed());
             Assert.Equal(1, FuseRuntimeGuardCounters.RecordBrssModMenuDeferred());
+            Assert.Equal(1, FuseRuntimeGuardCounters.RecordTimeSyncMainThreadMarshaled());
             Assert.Equal(1, FuseRuntimeGuardCounters.RecordSwitchGeometryRailsBackfilled());
 
             // Third-party containment must surface as guard activity: an
             // active suppression storm reading as "guards idle" would hide
             // the offender from every report surface.
             Assert.False(FuseRuntimeGuardCounters.AllIdle);
-            Assert.Equal(5, FuseRuntimeGuardCounters.GuardTotal);
+            Assert.Equal(6, FuseRuntimeGuardCounters.GuardTotal);
             var summary = FuseRuntimeGuardCounters.FormatSummary();
             Assert.Contains("mapEnhancerCullingGuarded=2", summary);
             Assert.Contains("rebillAutoConfigSuppressed=1", summary);
             Assert.Contains("brssModMenuDeferred=1", summary);
+            Assert.Contains("timeSyncMainThread=1", summary);
             Assert.Contains("switchRailsBackfilled=1", summary);
         }
     }

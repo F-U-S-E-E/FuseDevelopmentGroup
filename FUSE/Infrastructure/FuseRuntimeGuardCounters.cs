@@ -5,8 +5,9 @@ namespace FUSE.Infrastructure
     /// broken content (decal culling, car-decal helpers, curve-mesh culling,
     /// scenery decal machinery, scenery asset loads, stale flares, switch
     /// geometry backfills, and the third-party containment guards for Map
-    /// Enhancer culling, Rebill Industry Cars config loads, and BRSS mod-menu
-    /// startup) plus the frame-spike diagnostic.
+    /// Enhancer culling, Rebill Industry Cars config loads, BRSS mod-menu
+    /// startup, and TimeSync main-thread dispatch) plus the frame-spike
+    /// diagnostic.
     ///
     /// Lives in Infrastructure so both ends of the dependency rule work: the
     /// guard patches (FUSE.Patches) write here, and the load report
@@ -33,6 +34,7 @@ namespace FUSE.Infrastructure
         internal static long MapEnhancerCullingGuarded { get; private set; }
         internal static long RebillAutoConfigSuppressed { get; private set; }
         internal static long BrssModMenuDeferred { get; private set; }
+        internal static long TimeSyncMainThreadMarshaled { get; private set; }
 
         internal static long FrameSpikes { get; private set; }
         internal static float FrameSpikeWorstMs { get; private set; }
@@ -63,7 +65,8 @@ namespace FUSE.Infrastructure
             SwitchGeometryRailsBackfilled +
             MapEnhancerCullingGuarded +
             RebillAutoConfigSuppressed +
-            BrssModMenuDeferred;
+            BrssModMenuDeferred +
+            TimeSyncMainThreadMarshaled;
 
         internal static bool AllIdle => GuardTotal == 0;
 
@@ -94,6 +97,8 @@ namespace FUSE.Infrastructure
         internal static long RecordRebillAutoConfigSuppressed() => ++RebillAutoConfigSuppressed;
 
         internal static long RecordBrssModMenuDeferred() => ++BrssModMenuDeferred;
+
+        internal static long RecordTimeSyncMainThreadMarshaled() => ++TimeSyncMainThreadMarshaled;
 
         internal static long RecordFrameSpike(float frameMs)
         {
@@ -127,6 +132,7 @@ namespace FUSE.Infrastructure
                 $"mapEnhancerCullingGuarded={MapEnhancerCullingGuarded} " +
                 $"rebillAutoConfigSuppressed={RebillAutoConfigSuppressed} " +
                 $"brssModMenuDeferred={BrssModMenuDeferred} " +
+                $"timeSyncMainThread={TimeSyncMainThreadMarshaled} " +
                 $"flares={FlareSuppressed} switchRailsBackfilled={SwitchGeometryRailsBackfilled} " +
                 spikes;
         }
@@ -148,6 +154,7 @@ namespace FUSE.Infrastructure
             MapEnhancerCullingGuarded = 0;
             RebillAutoConfigSuppressed = 0;
             BrssModMenuDeferred = 0;
+            TimeSyncMainThreadMarshaled = 0;
             FrameSpikes = 0;
             FrameSpikeWorstMs = 0f;
             SceneryLoadWatchAttached = 0;

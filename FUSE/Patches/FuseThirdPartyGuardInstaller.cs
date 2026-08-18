@@ -8,7 +8,8 @@ namespace FUSE.Patches
     /// Single idempotent entry point for the guards FUSE keeps around
     /// third-party mods it has no compile-time reference to (currently the
     /// Map Enhancer culling guard, the Rebill Industry Cars config-load
-    /// guard, and the BRSS mod-menu startup guard). Each guard resolves its
+    /// guard, the BRSS mod-menu startup guard, and the TimeSync main-thread
+    /// guard). Each guard resolves its
     /// target by name and idles silently
     /// when the mod — or the exact member surface the guard understands —
     /// is absent.
@@ -85,9 +86,21 @@ namespace FUSE.Patches
                 brssStatus = "failed";
             }
 
+            string timeSyncStatus;
+            try
+            {
+                timeSyncStatus = FuseTimeSyncMainThreadGuardPatches.EnsureInstalled(_harmony);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE TimeSync main-thread guard failed to install", ex);
+                timeSyncStatus = "failed";
+            }
+
             var summary =
                 $"FUSE third-party guards: mapEnhancerCulling='{mapEnhancerStatus}' " +
-                $"rebillIndustryCars='{rebillStatus}' brssModMenu='{brssStatus}'.";
+                $"rebillIndustryCars='{rebillStatus}' brssModMenu='{brssStatus}' " +
+                $"timeSyncMainThread='{timeSyncStatus}'.";
             if (!string.Equals(summary, _lastSummary, StringComparison.Ordinal))
             {
                 _lastSummary = summary;
