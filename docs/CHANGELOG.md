@@ -9,6 +9,15 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
 
 ### Added
 
+- `FUSE-Installer.exe` now bundles the FUSE framework and installs it on a
+  manual (double-click) run, so players can get FUSE running without unzipping
+  anything. Dragging mod `.zip` files onto the exe still installs exactly those
+  mods and leaves FUSE untouched. A no-argument run also still processes any
+  loose zips beside the exe; pass `--no-fuse` to skip installing FUSE. The
+  release build bundles the core mod zip it just built and self-checks, via a
+  dry run, that a manual run will install FUSE.
+- A pytest suite for the installer and its legacy JSON reader
+  (`tools/tests/`), run in CI by a new Python Tests workflow.
 - FUSE checks GitHub on startup for a newer stable release and, if the running
   build is behind, shows a non-blocking notice — a one-time toast on the next map
   load plus an "Update available" line with a download link on the Status page. It
@@ -46,6 +55,12 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
   Until a release carries the fix, update by deleting `Railroader/Mods/FUSE`
   first (which makes UMM treat it as a fresh install) or by extracting the zip
   by hand.
+
+- The installer now extracts each package into a staging directory and swaps it
+  into place only after a fully successful extraction. A failure partway through
+  (a locked file, a bad path, a full disk) no longer leaves a half-written mod
+  folder behind, and a failed `--replace` reinstall leaves the existing install
+  untouched.
 
 ## [1.0.2]
 

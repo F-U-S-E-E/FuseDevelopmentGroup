@@ -1,0 +1,45 @@
+name: Python Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch/PR when a new commit lands.
+concurrency:
+  group: python-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python-tests:
+    # Same self-hosted runner as ci.yml / release.yml / the lint workflows.
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # These tests only read the tree and write to a pytest tmp dir; nothing
+          # pushes back, so don't persist the checkout token on the runner.
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # Match the interpreter the release build packages the exe with, so
+          # tests run against the same Python the shipped installer uses.
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install pytest
+
+      # Unit tests for the tools/ Python utilities — currently the FUSE installer
+      # (zip inspection, package detection, atomic install/rollback, bundled-FUSE
+      # behavior) and its tolerant legacy JSON reader.
+      - name: Run pytest
+        run: python -m pytest tools/tests -q
