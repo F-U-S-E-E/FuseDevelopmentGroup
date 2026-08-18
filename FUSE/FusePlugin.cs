@@ -65,6 +65,7 @@ namespace FUSE
             try
             {
                 FuseLegacySupportAssemblyShim.Initialize();
+                FuseLegacyUmmRecovery.RecoverFailedEntries();
                 WarnIfLegacyRailloaderInstallPresent();
                 LogStartupVersions(modEntry);
                 FuseSettings.Load(modEntry);
