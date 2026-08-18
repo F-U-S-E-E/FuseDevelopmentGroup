@@ -371,6 +371,8 @@ namespace FUSE.Loading
         {
             var builders = new Dictionary<string, StrangeCustoms.ISplineyBuilder>(StringComparer.OrdinalIgnoreCase);
             var fuseAssembly = typeof(FuseSplineyPluginHost).Assembly;
+            var unloadableTypeCount = 0;
+            string firstUnloadableType = null;
 
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
@@ -395,12 +397,33 @@ namespace FUSE.Loading
 
                 foreach (var type in types)
                 {
-                    if (type == null || !type.IsClass || type.IsAbstract)
+                    // Type inspection itself can throw for a foreign type whose
+                    // field/base types cannot be resolved (Mono raises
+                    // TypeLoadException from IsAssignableFrom, e.g. a stray real
+                    // Railloader.dll whose types bind against FUSE's shim). One
+                    // such type must not abort the whole scan and drop every
+                    // queued builder task (issue #207) — skip it and keep going.
+                    bool isBuilder;
+                    try
                     {
+                        isBuilder = type != null &&
+                            type.IsClass &&
+                            !type.IsAbstract &&
+                            typeof(StrangeCustoms.ISplineyBuilder).IsAssignableFrom(type);
+                    }
+                    catch (Exception ex)
+                    {
+                        unloadableTypeCount++;
+                        if (firstUnloadableType == null)
+                        {
+                            firstUnloadableType =
+                                $"{assembly.GetName().Name}:{type?.FullName ?? "?"} ({ex.GetBaseException().GetType().Name}: {ex.GetBaseException().Message})";
+                        }
+
                         continue;
                     }
 
-                    if (!typeof(StrangeCustoms.ISplineyBuilder).IsAssignableFrom(type))
+                    if (!isBuilder)
                     {
                         continue;
                     }
@@ -421,6 +444,14 @@ namespace FUSE.Loading
                             $"ISplineyBuilder '{type.FullName}': {ex.GetBaseException().Message}");
                     }
                 }
+            }
+
+            if (unloadableTypeCount > 0)
+            {
+                FuseLog.Warning(
+                    $"FUSE spliney plugin host skipped {unloadableTypeCount} unloadable type(s) while scanning " +
+                    $"for ISplineyBuilder implementations; first: {firstUnloadableType}. If this names a " +
+                    "Railloader assembly, a stray legacy Railloader.dll is still being loaded from a mod folder.");
             }
 
             return builders;

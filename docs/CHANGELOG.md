@@ -62,6 +62,62 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
   folder behind, and a failed `--replace` reinstall leaves the existing install
   untouched.
 
+- Legacy map mods collapsed onto the world origin on comma-decimal locales
+  (pt-BR, de-DE, fr-FR, ...): spaghetti track on the map, "zero length" track
+  spans, "Switch tracks do not intersect", scenery and scene clones piled at
+  their group's origin. The in-game legacy converter round-tripped numeric JSON
+  values through `ToString()`, which formats with the current culture, so every
+  fractional coordinate failed the invariant parse and became 0 while integer
+  coordinates survived. Numeric tokens are now read through the typed accessor.
+  The standalone converters were never affected. (#219)
+- Legacy Railloader/StrangeCustoms packages that keep `segments` (in
+  `game-graph.json`) or `spans` (in industry files) at the top level of the file
+  instead of under `tracks` now convert completely; previously nodes and scenery
+  loaded but no track was built and industries had no spans or locations, e.g.
+  Whittier Industries. Explicit legacy `type` values on span-less industry
+  component patches (such as `Model.Ops.IndustryLoader`) are converted as
+  patches instead of failing validation and faulting the whole package. (#210,
+  #223, part of #203)
+- Legacy `points: { "$replace": [...] }` patches addressed to a base-game road
+  or river by scene path (e.g. `World/Roads Sylva/Chipper Curve`) now replace
+  the control points of the existing spline in place, keeping its profile,
+  style, and hierarchy, instead of building a second generic road over the
+  original. Existing scene trestles are patched the same way. (#220, part of
+  #203)
+- World restoration is now contained per package: a malformed progression
+  section, an unbindable legacy component, or a third-party `TimeSync`
+  callback on the wrong thread no longer aborts loading for every other
+  package. One-sided terminal passenger links (such as Olive Hill → MCA) are
+  repaired without inventing extra routes, legacy location id casing is
+  preserved, and AssetLoader discovery, generated loader transforms, and
+  loader lifecycle state survive the compatibility guards added during live
+  testing. (#203)
+- One asset pack with a malformed `Definitions.json` no longer knocks out
+  unrelated packs. The failed store used to become an ordering barrier in the
+  prefab source index and abort scenery enumeration, so valid packs registered
+  after it stopped resolving and buildings went missing across the map. Such a
+  store is now quarantined by itself, its path is logged once, and later packs
+  resolve normally; the bad file itself is still the mod author's to fix. (#196)
+- The Status page's "Mod Health" row flagged a mod as needing review after a
+  single one-off third-party exception (for example another mod's
+  first-frame-after-load `NullReferenceException`), contradicting the health
+  report, which only counts a mod as a problem once it recurs (3+ episodes or
+  10+ occurrences). Both surfaces now share that one threshold; anything
+  below it is listed as informational. (#208)
+- A single unloadable type in some other assembly (typically a stray, real
+  `Railloader.dll` still being loaded from a mod folder) aborted FUSE's scan for
+  legacy `ISplineyBuilder` implementations, so every queued builder task —
+  DKW switch meshes, for example — was silently dropped. The scan now skips the
+  offending type, keeps going, and logs which assembly it came from. (#207)
+- The Dependency Graph page painted every load-order target that is not a FUSE
+  data package as red `MISSING`, including installed asset-only packs and
+  code-only plugins that satisfy the dependency, and the optional load-order
+  hints on legacy-converted packages that the loader deliberately ignores.
+  Installed asset/plugin mods now show `PRESENT`, optional legacy hints show
+  `NOT INSTALLED (optional hint)` in grey, and only real missing requirements
+  stay red. The matching "ignored legacy order reference" log lines are now
+  informational instead of warnings. (#207, #223)
+
 ## [1.0.2]
 
 ### Added
