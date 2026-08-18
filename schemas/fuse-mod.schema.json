@@ -2174,6 +2174,10 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+                "baseProgression": {
+                    "$ref": "#/$defs/idRef",
+                    "description": "Optional existing progression to inherit sections and Company start features from. Custom sections with the same id override inherited sections."
+                },
                 "sections": {
                     "allOf": [
                         {

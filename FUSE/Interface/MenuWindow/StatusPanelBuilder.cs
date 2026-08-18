@@ -51,7 +51,11 @@ namespace FUSE.Interface.MenuWindow
                 return;
             }
             var data = checklistData.Value;
-            var hasAdvisories = data.NoticesCount > data.BlockingNoticesCount || !FuseRuntimeGuardCounters.AllIdle;
+            var modExceptionState = FuseModExceptionRegistry.CaptureReportState();
+            var hasAdvisories =
+                data.NoticesCount > data.BlockingNoticesCount ||
+                !FuseRuntimeGuardCounters.AllIdle ||
+                modExceptionState.Total > 0;
 
             builder.AddSection("Overview");
 
@@ -86,7 +90,6 @@ namespace FUSE.Interface.MenuWindow
             // (rows + totals + summary line under the registry's lock), reused
             // by the readiness row and the breakdown section below so a
             // concurrent log event can never render contradictory rows.
-            var modExceptionState = FuseModExceptionRegistry.CaptureReportState();
             var modExceptions = modExceptionState.Mods;
             // Same threshold as the health report (FuseLoadReport
             // HasModExceptionProblem): a one-off third-party exception is

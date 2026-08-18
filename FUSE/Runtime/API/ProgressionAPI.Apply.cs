@@ -164,8 +164,8 @@ namespace FUSE.Runtime.API
             var sectionDefinitions = definition.Sections ?? new Dictionary<string, FuseSection>();
             foreach (var sectionDefinition in sectionDefinitions)
             {
-                var section = GetSection(sectionDefinition.Key);
-                if (section == null || section.transform.parent != progression.transform)
+                var section = FindOwnedSection(progression, sectionDefinition.Key);
+                if (section == null)
                 {
                     var gameObject = new GameObject(sectionDefinition.Key);
                     gameObject.transform.SetParent(progression.transform, false);
@@ -179,7 +179,7 @@ namespace FUSE.Runtime.API
 
             foreach (var sectionDefinition in sectionDefinitions)
             {
-                var section = GetSection(sectionDefinition.Key);
+                var section = FindOwnedSection(progression, sectionDefinition.Key);
                 if (section == null)
                 {
                     throw new InvalidOperationException($"Progression section '{sectionDefinition.Key}' could not be created.");
@@ -189,8 +189,97 @@ namespace FUSE.Runtime.API
                 FuseSectionRuntimeIndex.Instance.Set(section.identifier, section);
             }
 
-            ProgressionSectionsField?.SetValue(progression, progression.GetComponentsInChildren<Section>());
+            var ownedSections = progression.GetComponentsInChildren<Section>(true);
+            var combinedSections = InheritBaseProgression(
+                progression,
+                definition,
+                ownedSections,
+                packageId);
+            ProgressionSectionsField?.SetValue(progression, combinedSections);
             ApplyEnableFeaturesAtStart(progression, definition, packageId);
+        }
+
+        private static Section[] InheritBaseProgression(
+            Progression progression,
+            FuseProgression definition,
+            IReadOnlyCollection<Section> ownedSections,
+            string packageId)
+        {
+            var owned = (ownedSections ?? Array.Empty<Section>())
+                .Where(section => section != null)
+                .ToArray();
+            if (string.IsNullOrWhiteSpace(definition.BaseProgression))
+            {
+                return owned;
+            }
+
+            var baseProgression = GetProgression(definition.BaseProgression);
+            if (baseProgression == null || baseProgression == progression)
+            {
+                FuseLog.Warning(
+                    $"FUSE progression '{progression.identifier}' could not inherit base progression " +
+                    $"'{definition.BaseProgression}' package='{packageId ?? string.Empty}'.");
+                return owned;
+            }
+
+            var inheritedSections = ProgressionSectionsField?.GetValue(baseProgression) as Section[] ??
+                                    baseProgression.GetComponentsInChildren<Section>(true);
+            var overriddenIds = new HashSet<string>(
+                owned
+                    .Where(section => !string.IsNullOrWhiteSpace(section.identifier))
+                    .Select(section => section.identifier),
+                StringComparer.OrdinalIgnoreCase);
+            var combined = inheritedSections
+                .Where(section =>
+                    section != null &&
+                    !overriddenIds.Contains(section.identifier))
+                .Concat(owned)
+                .ToArray();
+
+            if (ProgressionEnableFeaturesAtStartField != null)
+            {
+                var ownedStartFeatures =
+                    ProgressionEnableFeaturesAtStartField.GetValue(progression) as MapFeature[] ??
+                    Array.Empty<MapFeature>();
+                var inheritedStartFeatures =
+                    ProgressionEnableFeaturesAtStartField.GetValue(baseProgression) as MapFeature[] ??
+                    Array.Empty<MapFeature>();
+                ProgressionEnableFeaturesAtStartField.SetValue(
+                    progression,
+                    ownedStartFeatures
+                        .Concat(inheritedStartFeatures)
+                        .Where(feature => feature != null)
+                        .GroupBy(
+                            feature => feature.identifier ?? feature.name,
+                            StringComparer.OrdinalIgnoreCase)
+                        .Select(group => group.First())
+                        .ToArray());
+            }
+
+            FuseLog.Info(
+                $"FUSE progression '{progression.identifier}' inherited base='{baseProgression.identifier}' " +
+                $"inheritedSections={combined.Length - owned.Length} ownedSections={owned.Length} " +
+                $"package='{packageId ?? string.Empty}'.");
+            return combined;
+        }
+
+        private static Section FindOwnedSection(
+            Progression progression,
+            string id)
+        {
+            if (progression == null || string.IsNullOrWhiteSpace(id))
+            {
+                return null;
+            }
+
+            return progression
+                .GetComponentsInChildren<Section>(true)
+                .FirstOrDefault(section =>
+                    section != null &&
+                    string.Equals(
+                        section.identifier,
+                        id,
+                        StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>

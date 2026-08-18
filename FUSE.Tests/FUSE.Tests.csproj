@@ -102,6 +102,10 @@
       <HintPath>$(UnityManagedDir)\UnityEngine.CoreModule.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <Reference Include="UnityEngine.PhysicsModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.PhysicsModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <!-- AssetPackRuntimeStore lives in Assembly-CSharp; AssetBundle in
          UnityEngine.AssetBundleModule. Tests for FuseAssetPackPatchHelpers
          and the bundle-collision Harmony patches need to type-check

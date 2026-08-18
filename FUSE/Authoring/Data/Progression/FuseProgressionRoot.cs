@@ -14,6 +14,14 @@ namespace FUSE.Authoring.Data
 
     public sealed class FuseProgression
     {
+        /// <summary>
+        /// Optional runtime progression whose sections and Company start
+        /// features are inherited. Converted legacy maps use this to extend
+        /// the base ewh career without copying Railroader's private scene
+        /// objects into package data.
+        /// </summary>
+        public string BaseProgression { get; set; }
+
         public Dictionary<string, FuseSection> Sections { get; set; } = new Dictionary<string, FuseSection>();
 
         /// <summary>

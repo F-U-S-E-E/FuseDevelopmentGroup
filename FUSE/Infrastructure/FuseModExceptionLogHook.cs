@@ -168,6 +168,18 @@ namespace FUSE.Infrastructure
                 return;
             }
 
+            // PlacerWindow probes every tender reference while rebuilding its
+            // purchase library. Stale optional tender swaps are skipped, but
+            // Unity logs every miss as an exception. Keep those diagnostics in
+            // Player.log without letting repeated menu probes make the whole
+            // session unhealthy. Locomotive lifecycle exceptions are NOT
+            // filtered here: FUSE repairs the known Bman initialization races,
+            // and any remaining audio/smoke failure must stay visible.
+            if (IsKnownRecoverableLifecycleNoise(condition, stackTrace))
+            {
+                return;
+            }
+
             var hash = ComputeSignatureHash(condition, stackTrace);
             SignatureEntry entry;
             lock (Sync)
@@ -204,6 +216,29 @@ namespace FUSE.Infrastructure
                 StackTrace = stackTrace,
                 Entry = entry
             });
+        }
+
+        /// <summary>
+        /// Returns true only for purchase-library identifier probes whose
+        /// caller skips the unavailable row and continues. The original Unity
+        /// log entry is preserved; this predicate affects only FUSE's
+        /// session-health aggregation.
+        /// </summary>
+        internal static bool IsKnownRecoverableLifecycleNoise(string condition, string stackTrace)
+        {
+            if (string.IsNullOrEmpty(condition) || string.IsNullOrEmpty(stackTrace))
+            {
+                return false;
+            }
+
+            if (condition.StartsWith("UnknownIdentifierException:", StringComparison.Ordinal) &&
+                stackTrace.IndexOf("UI.Placer.PlacerWindow.ConfigureRow", StringComparison.Ordinal) >= 0 &&
+                stackTrace.IndexOf("UI.Placer.PlacerWindow.RebuildLibrary", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>

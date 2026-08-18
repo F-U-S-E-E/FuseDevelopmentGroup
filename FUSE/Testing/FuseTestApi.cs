@@ -8,6 +8,9 @@ using FUSE.Loading;
 using FUSE.Runtime.Lifecycle;
 using Game.Persistence;
 using Game.State;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using StrangeCustoms.Tracks;
 using Track;
 using UI.Console;
 using UnityEngine;
@@ -36,6 +39,7 @@ namespace FUSE.Testing
                 ["runtimegraph"] = ("/fuse.dumpruntimegraph", "FUSE-runtime-graph.json"),
                 ["mandelas"] = ("/fuse.dumpmandelas", "FUSE-mandelas.json"),
                 ["progression"] = ("/fuse.dumpprogression", "FUSE-progression.json"),
+                ["compatibility"] = (null, "FUSE-compatibility-contracts.json"),
             };
 
         private static readonly Type[] StartGameSinglePlayerParams = { typeof(GameSetup) };
@@ -142,7 +146,7 @@ namespace FUSE.Testing
 
         /// <summary>
         /// Run one of FUSE's dump console commands (<c>graph</c>, <c>runtimegraph</c>, <c>mandelas</c>,
-        /// <c>progression</c>), returning its summary text and the absolute path of the JSON file it wrote.
+        /// <c>progression</c>, <c>compatibility</c>), returning its summary text and the absolute path of the JSON file it wrote.
         /// </summary>
         public static string Dump(string which, out string artifactPath)
         {
@@ -152,9 +156,69 @@ namespace FUSE.Testing
                 return $"FUSE test bridge: unknown dump '{which}'. Known: {string.Join(", ", DumpTargets.Keys)}.";
             }
 
-            var summary = RunConsoleCommand(target.Command);
             artifactPath = Path.Combine(FuseConsoleCommands.GetRailroaderRootFolder(), target.File);
-            return summary;
+            if (string.Equals(which.Trim(), "compatibility", StringComparison.OrdinalIgnoreCase))
+            {
+                var report = BuildCompatibilityContractReport();
+                File.WriteAllText(artifactPath, report.ToString(Formatting.Indented));
+                return $"FUSE compatibility dump wrote '{artifactPath}' passed={report.Value<bool>("allPassed")}.";
+            }
+
+            return RunConsoleCommand(target.Command);
+        }
+
+        private static JObject BuildCompatibilityContractReport()
+        {
+            var serializedSpanConstructor =
+                typeof(SerializedSpan).GetConstructor(new[] { typeof(TrackSpan) }) != null;
+            var serializedSpanApply = typeof(SerializedSpan).GetMethod(
+                "ApplyTo",
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                types: new[] { typeof(string), typeof(PatchingContext), typeof(TrackSpan) },
+                modifiers: null) != null;
+            var nodesIndex = HasWritableGraphIndex<TrackNode>("NodesById");
+            var segmentsIndex = HasWritableGraphIndex<TrackSegment>("SegmentsById");
+            var spansIndex = HasWritableGraphIndex<TrackSpan>("SpansById");
+            var concreteSplineyBuilder =
+                FuseSplineyPluginHost.IsConcreteSplineyBuilderType(typeof(StrangeCustoms.FlowyThingBuilder));
+            var rejectsNonBuilder =
+                !FuseSplineyPluginHost.IsConcreteSplineyBuilderType(typeof(string));
+            var rejectsMissingBuilder =
+                !FuseSplineyPluginHost.IsConcreteSplineyBuilderType(null);
+
+            return new JObject
+            {
+                ["schemaVersion"] = 1,
+                ["allPassed"] = serializedSpanConstructor &&
+                                  serializedSpanApply &&
+                                  nodesIndex &&
+                                  segmentsIndex &&
+                                  spansIndex &&
+                                  concreteSplineyBuilder &&
+                                  rejectsNonBuilder &&
+                                  rejectsMissingBuilder,
+                ["strangeCustoms"] = new JObject
+                {
+                    ["serializedSpanTrackSpanConstructor"] = serializedSpanConstructor,
+                    ["serializedSpanApplyTo"] = serializedSpanApply,
+                    ["patchingContextNodesByIdWritable"] = nodesIndex,
+                    ["patchingContextSegmentsByIdWritable"] = segmentsIndex,
+                    ["patchingContextSpansByIdWritable"] = spansIndex,
+                    ["concreteSplineyBuilderRecognized"] = concreteSplineyBuilder,
+                    ["nonBuilderRejected"] = rejectsNonBuilder,
+                    ["missingBuilderRejected"] = rejectsMissingBuilder
+                }
+            };
+        }
+
+        private static bool HasWritableGraphIndex<TValue>(string propertyName)
+        {
+            var property = typeof(PatchingContext).GetProperty(propertyName);
+            return property != null &&
+                   property.CanRead &&
+                   property.CanWrite &&
+                   property.PropertyType == typeof(Dictionary<string, TValue>);
         }
 
         /// <summary>

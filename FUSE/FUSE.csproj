@@ -134,6 +134,10 @@
       <HintPath>$(UnityManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.PhysicsModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.PhysicsModule.dll')">
+      <HintPath>$(UnityManagedDir)\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.ImageConversionModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>false</Private>
@@ -212,6 +216,7 @@
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.dll')" Text="UnityEngine.dll was not found in the Railroader Managed folder. This shim assembly is required for UnityEngine.AssetBundle compile-time references." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.IMGUIModule.dll')" Text="UnityEngine.IMGUIModule.dll was not found in the Railroader Managed folder." />
+    <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.PhysicsModule.dll')" Text="UnityEngine.PhysicsModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.ImageConversionModule.dll')" Text="UnityEngine.ImageConversionModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.TextRenderingModule.dll')" Text="UnityEngine.TextRenderingModule.dll was not found in the Railroader Managed folder." />
     <Error Condition="!Exists('$(UnityManagedDir)\UnityEngine.UIModule.dll')" Text="UnityEngine.UIModule.dll was not found in the Railroader Managed folder." />

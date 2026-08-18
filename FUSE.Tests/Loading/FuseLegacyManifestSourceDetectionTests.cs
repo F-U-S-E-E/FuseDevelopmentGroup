@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using FUSE.Loading;
@@ -30,11 +31,13 @@ namespace FUSE.Tests.Loading
             {
                 Directory.Delete(_root, recursive: true);
             }
-            catch (IOException)
+            catch (IOException ex)
             {
+                Debug.WriteLine($"Test cleanup could not delete '{_root}': {ex.Message}");
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException ex)
             {
+                Debug.WriteLine($"Test cleanup could not delete '{_root}': {ex.Message}");
             }
         }
 

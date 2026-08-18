@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.Serialization;
 using Helpers;
 using Model;
 using Model.Definition.Data;
@@ -570,6 +571,60 @@ namespace StrangeCustoms.Tracks
         public SerializedSpan()
         {
         }
+
+        /// <summary>
+        /// Preserves the live-span projection used by SignalsEverywhere when
+        /// it snapshots existing CTC blocks.
+        /// </summary>
+        public SerializedSpan(TrackSpan trackSpan)
+        {
+            if (trackSpan == null)
+            {
+                return;
+            }
+
+            var upper = trackSpan.upper;
+            var lower = trackSpan.lower;
+            Upper = upper.HasValue
+                ? new SerializedLocation(upper.Value.Serializable())
+                : null;
+            Lower = lower.HasValue
+                ? new SerializedLocation(lower.Value.Serializable())
+                : null;
+        }
+
+        /// <summary>
+        /// Recreates the private legacy apply surface that SignalsEverywhere
+        /// resolves by reflection when rebuilding a CTC block.
+        /// </summary>
+        private void ApplyTo(string id, PatchingContext ctx, TrackSpan trackSpan)
+        {
+            if (trackSpan == null)
+            {
+                throw new ArgumentNullException(nameof(trackSpan));
+            }
+
+            var graph = Graph.Shared;
+            if (graph == null)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot apply serialized track span '{id}' because the live graph is unavailable.");
+            }
+
+            if (Lower == null || Upper == null)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot apply serialized track span '{id}' without both lower and upper locations.");
+            }
+
+            trackSpan.id = id;
+            trackSpan.lower = graph.MakeLocation((SerializableLocation)Lower);
+            trackSpan.upper = graph.MakeLocation((SerializableLocation)Upper);
+            if (Normalize)
+            {
+                trackSpan.NormalizeUpperLower();
+            }
+        }
     }
 
     /// <summary>
@@ -981,7 +1036,14 @@ namespace StrangeCustoms.Tracks
 
         public IReadOnlyDictionary<string, string> TouchedKeys { get; }
 
-        public IReadOnlyDictionary<string, TrackNode> NodesById { get; }
+        // Keep these as writable concrete dictionaries. Signals Everywhere
+        // was compiled against the legacy setters and rebuilds all three
+        // indexes from live Unity objects before applying its CTC data.
+        public Dictionary<string, TrackNode> NodesById { get; set; }
+
+        public Dictionary<string, TrackSegment> SegmentsById { get; set; }
+
+        public Dictionary<string, TrackSpan> SpansById { get; set; }
 
         /// <summary>
         /// Builds the minimal FUSE-owned context required by hosted plugins without reproducing legacy patching internals.
@@ -991,6 +1053,8 @@ namespace StrangeCustoms.Tracks
             Logger = logger ?? Serilog.Log.ForContext<PatchingContext>();
             TouchedKeys = changedEntries ?? new Dictionary<string, string>(0);
             NodesById = BuildNodeIndex();
+            SegmentsById = new Dictionary<string, TrackSegment>(StringComparer.Ordinal);
+            SpansById = new Dictionary<string, TrackSpan>(StringComparer.Ordinal);
         }
 
         /// <summary>
@@ -1041,19 +1105,83 @@ namespace StrangeCustoms.Tracks
     /// never invokes the patches, the type must exist for the patch method
     /// bodies to type-check at JIT time.
     /// </summary>
+    [Serializable]
     [Obsolete(LegacyShim.Message)]
     public class SCPatchingException : Exception
     {
+        public SCPatchingException()
+        {
+        }
+
+        public SCPatchingException(string message)
+            : base(message)
+        {
+        }
+
         /// <summary>
         /// Preserves the legacy exception constructor so hosted plugin bodies can resolve the expected type.
         /// </summary>
-        public SCPatchingException(string message, string parameterName)
+        public SCPatchingException(string message, string jsonPath)
             : base(message)
         {
-            ParameterName = parameterName;
+            JsonPath = jsonPath;
+            ParameterName = jsonPath;
         }
 
+        public SCPatchingException(string message, Exception inner)
+            : base(message, inner)
+        {
+        }
+
+        public SCPatchingException(SCPatchingException inner, string previousPath)
+            : base(inner?.Message, inner)
+        {
+            JsonPath = previousPath + "." + inner?.JsonPath;
+            ParameterName = JsonPath;
+        }
+
+        protected SCPatchingException(SerializationInfo info, StreamingContext context)
+            : base(info, context)
+        {
+            if (info == null)
+            {
+                throw new ArgumentNullException(nameof(info));
+            }
+
+            JsonPath = info.GetString(nameof(JsonPath));
+            ParameterName = info.GetString(nameof(ParameterName));
+        }
+
+        public string JsonPath { get; }
+
+        // Retained as a FUSE-era alias for callers compiled against an early
+        // version of this compatibility shim.
         public string ParameterName { get; }
+
+        public override void GetObjectData(SerializationInfo info, StreamingContext context)
+        {
+            if (info == null)
+            {
+                throw new ArgumentNullException(nameof(info));
+            }
+
+            base.GetObjectData(info, context);
+            info.AddValue(nameof(JsonPath), JsonPath);
+            info.AddValue(nameof(ParameterName), ParameterName);
+        }
+
+        public override string ToString()
+        {
+            if (JsonPath == null)
+            {
+                return base.ToString();
+            }
+
+            var innerText = InnerException != null && !(InnerException is SCPatchingException)
+                ? "\n" + InnerException
+                : null;
+            return $"[{JsonPath}]: {Message}{innerText}";
+        }
     }
 }
 
