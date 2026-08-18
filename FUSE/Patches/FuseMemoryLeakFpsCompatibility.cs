@@ -2,6 +2,8 @@ using System;
 using System.Linq;
 using System.Reflection;
 using FUSE.Infrastructure;
+using GalaSoft.MvvmLight.Messaging;
+using Game.Events;
 using HarmonyLib;
 
 namespace FUSE.Patches
@@ -24,10 +26,10 @@ namespace FUSE.Patches
             nameof(EnviroStartPostfix));
 
         private static bool _startPostfixInstalled;
-        private static bool _worldMoveInstalled;
+        private static bool _mapLoadInstalled;
         private static bool _loggedRuntimeFailure;
 
-        internal static bool Installed => _startPostfixInstalled && _worldMoveInstalled;
+        internal static bool Installed => _startPostfixInstalled && _mapLoadInstalled;
 
         internal static string EnsureInstalled(Harmony harmony)
         {
@@ -76,17 +78,17 @@ namespace FUSE.Patches
                 }
             }
 
-            if (!_worldMoveInstalled)
+            if (!_mapLoadInstalled)
             {
-                var worldMoveTarget = AccessTools.DeclaredMethod(modType, "WorldDidMove");
-                if (worldMoveTarget != null)
+                var mapLoadTarget = AccessTools.DeclaredMethod(modType, "OnMapDidLoad");
+                if (mapLoadTarget != null)
                 {
                     harmony.Patch(
-                        worldMoveTarget,
+                        mapLoadTarget,
                         prefix: new HarmonyMethod(
                             typeof(FuseMemoryLeakFpsCompatibility),
-                            nameof(WorldDidMovePrefix)));
-                    _worldMoveInstalled = true;
+                            nameof(OnMapDidLoadPrefix)));
+                    _mapLoadInstalled = true;
                 }
             }
 
@@ -98,7 +100,7 @@ namespace FUSE.Patches
                 return "installed";
             }
 
-            return _worldMoveInstalled
+            return _mapLoadInstalled
                 ? "waiting (legacy Start postfix not applied yet)"
                 : "idle (surface changed)";
         }
@@ -137,15 +139,31 @@ namespace FUSE.Patches
             RefreshReflection(__instance);
         }
 
-        private static bool WorldDidMovePrefix()
+        private static bool OnMapDidLoadPrefix(object __instance)
         {
             try
             {
-                var managerType = AccessTools.TypeByName("Enviro.EnviroManager");
-                var manager = managerType == null
+                var modType = __instance?.GetType();
+                var stateField = modType == null
                     ? null
-                    : AccessTools.Property(managerType, "instance")?.GetValue(null, null);
-                RefreshReflection(manager);
+                    : AccessTools.Field(modType, "<MapState>k__BackingField");
+                if (stateField == null)
+                {
+                    return true;
+                }
+
+                const int MapLoaded = 1;
+                var currentState = Convert.ToInt32(stateField.GetValue(null));
+                if (currentState == MapLoaded)
+                {
+                    return false;
+                }
+
+                stateField.SetValue(null, Enum.ToObject(stateField.FieldType, MapLoaded));
+                Messenger.Default.Register<WorldDidMoveEvent>(
+                    __instance,
+                    HandleWorldDidMove);
+                DisableEnviroAutomaticPositionRefresh();
             }
             catch (Exception ex)
             {
@@ -153,6 +171,35 @@ namespace FUSE.Patches
             }
 
             return false;
+        }
+
+        private static void HandleWorldDidMove(WorldDidMoveEvent message)
+        {
+            var managerType = AccessTools.TypeByName("Enviro.EnviroManager");
+            var manager = managerType == null
+                ? null
+                : AccessTools.Property(managerType, "instance")?.GetValue(null, null);
+            RefreshReflection(manager);
+        }
+
+        private static void DisableEnviroAutomaticPositionRefresh()
+        {
+            var managerType = AccessTools.TypeByName("Enviro.EnviroManager");
+            var manager = managerType == null
+                ? null
+                : AccessTools.Property(managerType, "instance")?.GetValue(null, null);
+            var reflections = manager == null
+                ? null
+                : AccessTools.Field(manager.GetType(), "Reflections")?.GetValue(manager);
+            var settings = reflections == null
+                ? null
+                : AccessTools.Field(reflections.GetType(), "Settings")?.GetValue(reflections);
+            var updateField = settings == null
+                ? null
+                : AccessTools.Field(
+                    settings.GetType(),
+                    "globalReflectionsUpdateOnPosition");
+            updateField?.SetValue(settings, false);
         }
 
         private static void RefreshReflection(object manager)
