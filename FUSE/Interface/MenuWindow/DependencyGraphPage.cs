@@ -15,6 +15,11 @@ namespace FUSE.Interface.MenuWindow
             builder.AddTitle("Mod Dependency Graph", "");
 
             builder.AddLabel("This page shows mod dependencies with load order requirements and any detected faults.");
+            AddWrappedLabel(
+                builder,
+                "Legacy (converted) packages list soft load-order hints: a hint whose target is not installed is optional and does not block loading. " +
+                "Asset-only packs and code-only plugins satisfy a dependency without being FUSE data packages.",
+                48f);
 
             builder.Spacer(24f);
 
@@ -28,6 +33,14 @@ namespace FUSE.Interface.MenuWindow
             var byId = manifests
                 .GroupBy(manifest => manifest.Id, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            // Resolve every edge target that is not a discovered data package
+            // against the Mods root once, so installed asset-only packs and
+            // hosted code-only plugins render as PRESENT rather than MISSING
+            // (issues #207, #223).
+            var undiscovered = manifests
+                .SelectMany(manifest => manifest.LoadAfter.Concat(manifest.LoadBefore))
+                .Where(id => !string.IsNullOrWhiteSpace(id) && !byId.ContainsKey(id));
+            var presentInModsRoot = FuseDataPackageDiscovery.ResolvePackagesPresentInModsRoot(undiscovered);
             var rows = 0;
             foreach (var manifest in manifests)
             {
@@ -46,19 +59,19 @@ namespace FUSE.Interface.MenuWindow
                 AddWrappedLabel(builder, InsertBreakHints(manifest.Id), 28f);
                 foreach (var dependencyId in manifest.LoadAfter)
                 {
-                    builder.AddField("load after", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependencyId, byId))));
+                    builder.AddField("load after", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependencyId, byId, presentInModsRoot, manifest.IsLegacyConverted))));
                     rows++;
                 }
 
                 foreach (var dependencyId in manifest.LoadBefore)
                 {
-                    builder.AddField("load before", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependencyId, byId))));
+                    builder.AddField("load before", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependencyId, byId, presentInModsRoot, manifest.IsLegacyConverted))));
                     rows++;
                 }
 
                 foreach (var fault in manifest.Faults)
                 {
-                    builder.AddField("fault detected", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(fault, byId))));
+                    builder.AddField("fault detected", builder.AddLabelMarkup(InsertBreakHints(FormatFault(fault))));
                     rows++;
                 }
 
@@ -73,7 +86,11 @@ namespace FUSE.Interface.MenuWindow
             }
         }
 
-        private static string FormatDependencyEdge(string dependencyId, IDictionary<string, FusePackageManifestSnapshot> packages)
+        internal static string FormatDependencyEdge(
+            string dependencyId,
+            IDictionary<string, FusePackageManifestSnapshot> packages,
+            ICollection<string> presentInModsRoot,
+            bool advisory)
         {
             if (string.IsNullOrWhiteSpace(dependencyId))
             {
@@ -82,12 +99,32 @@ namespace FUSE.Interface.MenuWindow
 
             if (packages != null && packages.TryGetValue(dependencyId, out var dependency))
             {
-                return dependency.Disabled
-                    ? dependencyId + " | <color=\"yellow\">DISABLED"
-                    : dependencyId + " | <color=\"green\">READY";
+                if (!dependency.Disabled)
+                {
+                    return dependencyId + " | <color=\"green\">READY";
+                }
+
+                return advisory
+                    ? dependencyId + " | <color=\"grey\">DISABLED (optional hint)"
+                    : dependencyId + " | <color=\"yellow\">DISABLED";
             }
 
-            return dependencyId + " | <color=\"red\">MISSING";
+            if (presentInModsRoot != null && presentInModsRoot.Contains(dependencyId))
+            {
+                return dependencyId + " | <color=\"green\">PRESENT (asset/plugin mod)";
+            }
+
+            // Legacy-converted packages' loadAfter/loadBefore are advisory: the
+            // loader ignores an unresolved target without recording a fault, so
+            // the page must not paint it as an error either.
+            return advisory
+                ? dependencyId + " | <color=\"grey\">NOT INSTALLED (optional hint)"
+                : dependencyId + " | <color=\"red\">MISSING";
+        }
+
+        private static string FormatFault(string fault)
+        {
+            return "<color=\"red\">" + (string.IsNullOrWhiteSpace(fault) ? "(blank)" : fault);
         }
     }
 }

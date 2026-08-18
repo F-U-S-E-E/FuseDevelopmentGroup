@@ -84,12 +84,19 @@ namespace FUSE.Interface.MenuWindow
             // concurrent log event can never render contradictory rows.
             var modExceptionState = FuseModExceptionRegistry.CaptureReportState();
             var modExceptions = modExceptionState.Mods;
+            // Same threshold as the health report (FuseLoadReport
+            // HasModExceptionProblem): a one-off third-party exception is
+            // informational, not a "Review" — only a recurring thrower flips
+            // this row (issue #208).
+            var problemModCount = modExceptions.Count(record => record.IsProblem);
             AddReadinessRow(
                 builder,
                 "Mod Health",
-                modExceptionState.Total == 0,
-                "0 exceptions observed",
-                $"{modExceptionState.Total} exception(s) across {modExceptions.Length} mod(s)");
+                problemModCount == 0,
+                modExceptionState.Total == 0
+                    ? "0 exceptions observed"
+                    : $"{modExceptionState.Total} one-off exception(s) observed across {modExceptions.Length} mod(s) (informational)",
+                $"{modExceptionState.Total} exception(s) across {modExceptions.Length} mod(s); {problemModCount} recurring");
             builder.Spacer(6f);
 
             // Full per-guard breakdown (this window is the only UI surface, so
@@ -134,7 +141,11 @@ namespace FUSE.Interface.MenuWindow
                 builder,
                 modExceptionState.Total == 0
                     ? "All idle — no third-party mod exceptions were observed this session."
-                    : "Non-zero counts are third-party mod faults FUSE observed or contained; offenders are named in FUSE.log and the health report.",
+                    : problemModCount == 0
+                        ? "One-off third-party exceptions were observed and logged for reference; they only count as a problem if they recur (" +
+                          FuseModExceptionRegistry.ProblemEpisodeThreshold + "+ episodes or " +
+                          FuseModExceptionRegistry.ProblemCountThreshold + "+ occurrences). Details are in FUSE.log and the health report."
+                        : "Recurring counts are third-party mod faults FUSE observed or contained; offenders are named in FUSE.log and the health report.",
                 48f);
             builder.Spacer(6f);
 

@@ -503,7 +503,7 @@ namespace FUSE.Loading
                             var message = $"Package '{package.Id}' declares FuseLoadAfter '{dependencyId}', but that package is disabled.";
                             if (package.IsLegacyDataPackage)
                             {
-                                FuseLog.Warning($"FUSE ignored legacy order reference because it is advisory: {message}");
+                                FuseLog.Info($"FUSE ignored legacy order reference because it is advisory: {message}");
                             }
                             else
                             {
@@ -520,7 +520,7 @@ namespace FUSE.Loading
                         var message = $"Package '{package.Id}' declares FuseLoadAfter '{dependencyId}', but no matching FUSE data package was discovered.";
                         if (package.IsLegacyDataPackage)
                         {
-                            FuseLog.Warning($"FUSE ignored legacy order reference because it is advisory: {message}");
+                            FuseLog.Info($"FUSE ignored legacy order reference because it is advisory: {message}");
                         }
                         else
                         {
@@ -539,7 +539,7 @@ namespace FUSE.Loading
                             var message = $"Package '{package.Id}' declares FuseLoadBefore '{dependencyId}', but that package is disabled.";
                             if (package.IsLegacyDataPackage)
                             {
-                                FuseLog.Warning($"FUSE ignored legacy order reference because it is advisory: {message}");
+                                FuseLog.Info($"FUSE ignored legacy order reference because it is advisory: {message}");
                             }
                             else
                             {
@@ -556,7 +556,7 @@ namespace FUSE.Loading
                         var message = $"Package '{package.Id}' declares FuseLoadBefore '{dependencyId}', but no matching FUSE data package was discovered.";
                         if (package.IsLegacyDataPackage)
                         {
-                            FuseLog.Warning($"FUSE ignored legacy order reference because it is advisory: {message}");
+                            FuseLog.Info($"FUSE ignored legacy order reference because it is advisory: {message}");
                         }
                         else
                         {
@@ -637,6 +637,74 @@ namespace FUSE.Loading
                     ? idCompare
                     : string.Compare(left.FolderPath, right.FolderPath, StringComparison.OrdinalIgnoreCase);
             });
+        }
+
+        /// <summary>
+        /// Batch form of <see cref="IsPackagePresentInModsRoot"/> for UI: scans the
+        /// Mods root once and returns which of <paramref name="dependencyIds"/>
+        /// resolve to an enabled mod folder that is *not* a discovered FUSE data
+        /// package (asset-only packs, hosted code-only plugins). The Dependency
+        /// Graph page uses this to stop painting installed asset/plugin mods as
+        /// MISSING (issues #207, #223).
+        /// </summary>
+        internal static HashSet<string> ResolvePackagesPresentInModsRoot(IEnumerable<string> dependencyIds)
+        {
+            var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var wanted = (dependencyIds ?? Enumerable.Empty<string>())
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(id => id.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (wanted.Length == 0)
+            {
+                return present;
+            }
+
+            var modsRoot = GetModsRoot();
+            if (string.IsNullOrWhiteSpace(modsRoot) || !Directory.Exists(modsRoot))
+            {
+                return present;
+            }
+
+            try
+            {
+                foreach (var packagePath in Directory.GetDirectories(modsRoot))
+                {
+                    var packageId = TryReadPackageId(packagePath);
+                    if (FuseUmmState.TryGetDisabledReason(packagePath, packageId, out _) ||
+                        !FuseModSetService.IsPackageEnabledByActiveSet(packageId, packagePath))
+                    {
+                        continue;
+                    }
+
+                    var folderName = Path.GetFileName(packagePath);
+                    foreach (var dependencyId in wanted)
+                    {
+                        if (present.Contains(dependencyId))
+                        {
+                            continue;
+                        }
+
+                        var legacyNormalizedDependency = FuseLegacyDataConverter.EnsureFusePackageId(dependencyId);
+                        if (PackageIdMatches(packageId, dependencyId, legacyNormalizedDependency) ||
+                            PackageIdMatches(folderName, dependencyId, legacyNormalizedDependency))
+                        {
+                            present.Add(dependencyId);
+                        }
+                    }
+
+                    if (present.Count == wanted.Length)
+                    {
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                FuseLog.Exception("FUSE could not inspect Mods folder while resolving dependency graph rows", ex);
+            }
+
+            return present;
         }
 
         private static bool IsPackagePresentInModsRoot(string dependencyId)
