@@ -68,6 +68,13 @@ namespace FUSE.Infrastructure
         // a newer stable FUSE release exists and, if so, surfaces a non-blocking
         // notice. On by default; one switch turns off all network access for it.
         public const bool DefaultEnableUpdateCheck = true;
+        // The cold load of a direct (fuseasset://) asset pack goes through the
+        // game's public ContainerSerialization.Deserialize so old-loader
+        // Harmony postfixes (LegosLibraryOfStuff clone/edit injection) apply
+        // to mod packs exactly as they do to natively loaded packs. This is
+        // the escape hatch back to FUSE's Newtonsoft-only loader if a field
+        // regression ever needs it; it is not a normal user setting.
+        public const bool DefaultDirectStoreNativeDeserialize = true;
         public const float ExperimentalEarlyScenePathSuppressionTimeoutSeconds = 8f;
 
         public static bool EnableExperimentalEarlyScenePathSuppression { get; private set; } =
@@ -136,6 +143,8 @@ namespace FUSE.Infrastructure
 
         public static bool EnableUpdateCheck { get; private set; } = DefaultEnableUpdateCheck;
 
+        public static bool DirectStoreNativeDeserialize { get; private set; } = DefaultDirectStoreNativeDeserialize;
+
         public static void Load(UnityModManager.ModEntry modEntry)
         {
             EnableExperimentalEarlyScenePathSuppression = DefaultEnableExperimentalEarlyScenePathSuppression;
@@ -167,6 +176,7 @@ namespace FUSE.Infrastructure
             ForceConstrainedVramMode = DefaultForceConstrainedVramMode;
             EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
             EnableUpdateCheck = DefaultEnableUpdateCheck;
+            DirectStoreNativeDeserialize = DefaultDirectStoreNativeDeserialize;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
             var infoPath = Path.Combine(modEntry?.Path ?? string.Empty, "Info.json");
@@ -238,6 +248,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "EnableNativeLeakStackTraces", DefaultEnableNativeLeakStackTraces);
                 EnableUpdateCheck =
                     ReadBool(settings, "EnableUpdateCheck", DefaultEnableUpdateCheck);
+                DirectStoreNativeDeserialize =
+                    ReadBool(settings, "DirectStoreNativeDeserialize", DefaultDirectStoreNativeDeserialize);
                 ApplyUserOverrides();
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -272,6 +284,7 @@ namespace FUSE.Infrastructure
                     $"ForceConstrainedVramMode={ForceConstrainedVramMode} " +
                     $"EnableNativeLeakStackTraces={EnableNativeLeakStackTraces} " +
                     $"EnableUpdateCheck={EnableUpdateCheck} " +
+                    $"DirectStoreNativeDeserialize={DirectStoreNativeDeserialize} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
             catch (Exception ex)
@@ -305,6 +318,7 @@ namespace FUSE.Infrastructure
                 ForceConstrainedVramMode = DefaultForceConstrainedVramMode;
                 EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
                 EnableUpdateCheck = DefaultEnableUpdateCheck;
+                DirectStoreNativeDeserialize = DefaultDirectStoreNativeDeserialize;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Exception($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled", ex);
             }
@@ -767,6 +781,8 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(EnableNativeLeakStackTraces), EnableNativeLeakStackTraces);
                 EnableUpdateCheck =
                     ReadBool(settings, nameof(EnableUpdateCheck), EnableUpdateCheck);
+                DirectStoreNativeDeserialize =
+                    ReadBool(settings, nameof(DirectStoreNativeDeserialize), DirectStoreNativeDeserialize);
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
             }
             catch (Exception ex)

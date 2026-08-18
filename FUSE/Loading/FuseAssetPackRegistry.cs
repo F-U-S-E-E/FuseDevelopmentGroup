@@ -106,15 +106,15 @@ namespace FUSE.Loading
         // Old-loader plugins (notably LegosLibraryOfStuff) install a Harmony postfix on
         // the public ContainerSerialization.Deserialize entry point and mutate shared
         // component instances on every call. A pack must therefore pass through that
-        // method exactly ONCE per load: the cold load of a direct store does so on
-        // purpose (see LoadResilientDirectContainer — the game's native path never runs
-        // for fuseasset:// stores, so that is the pack's only deserialization), while every
-        // RE-deserialize (sanitize, per-item mixinto re-deserialize, generated store
-        // refresh) goes through Newtonsoft directly using the same settings the public
-        // method would have used, so the postfix does not re-fire on the same identifiers
-        // and break per-car ComponentGroup toggles (e.g. ERIE LOGO going dead). See
-        // FuseLegacyContainerMixintoRegistry for the same bypass on the per-item mixinto
-        // re-deserialize.
+        // method exactly ONCE per PrefabStore generation: the cold load of a direct
+        // store does so on purpose (see LoadResilientDirectContainer — the game's native
+        // Container() body never runs for fuseasset:// stores, so that is the pack's only
+        // deserialization), while the per-item mixinto re-deserialize goes through
+        // Newtonsoft directly using the same settings the public method would have used,
+        // so the postfix does not re-fire on the same identifiers and break per-car
+        // ComponentGroup toggles (commit c188ad1: "ERIE LOGO" going dead when AssetLoader's
+        // native store and FUSE's direct store both existed for one folder). See
+        // FuseLegacyContainerMixintoRegistry for that bypass.
         private static readonly MethodInfo ContainerSerializerSettingsMethod =
             AccessTools.Method(typeof(ContainerSerialization), "JsonSerializerSettings");
 
