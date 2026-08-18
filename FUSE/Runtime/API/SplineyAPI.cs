@@ -48,7 +48,10 @@ namespace FUSE.Runtime.API
                 throw new ArgumentNullException(nameof(definition));
             }
 
-            ApplyDefinition(root, id, definition, true);
+            if (!TryApplyScenePathSplineyPatch(root, id, definition))
+            {
+                ApplyDefinition(root, id, definition, true);
+            }
             FuseSplineyRuntimeIndex.Instance.Set(id, root);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Spliney, id, definition);
         }
@@ -84,6 +87,19 @@ namespace FUSE.Runtime.API
             if (FuseSplineyRuntimeIndex.Instance.TryGetValue(id, out var cached))
             {
                 return (GameObject)cached;
+            }
+
+            // Strange Customs accepts a scene hierarchy path as a spliney id
+            // when a package patches an existing base-game road/river. FUSE
+            // previously looked only for its own markers, so a legacy
+            // `points: { "$replace": [...] }` patch created a second spline
+            // over the original instead of updating it. Resolve path-shaped
+            // ids before the ready-cache early-out and admit only actual
+            // spline roots so an arbitrary scene object cannot be captured.
+            if (TryResolveScenePathSpliney(id, out var sceneSpliney))
+            {
+                FuseSplineyRuntimeIndex.Instance.Set(id, sceneSpliney);
+                return sceneSpliney;
             }
 
             if (FuseCacheRegistry.IsReady)
@@ -205,6 +221,117 @@ namespace FUSE.Runtime.API
 
             var builder = root.GetComponent<RiverBuilder>();
             builder?.BuildSpline();
+        }
+
+        private static bool TryApplyScenePathSplineyPatch(GameObject root, string id, FuseSpliney definition)
+        {
+            if (root == null || definition == null)
+            {
+                return false;
+            }
+
+            var marker = root.GetComponent<FuseSplineyMarker>();
+            var isScenePathTarget = marker != null && marker.PreserveExistingSceneObject;
+            if (!isScenePathTarget)
+            {
+                isScenePathTarget = IsScenePathIdentifier(id) &&
+                    ReferenceEquals(FusePrefabResolver.ResolveScenePath(id), root);
+            }
+
+            var riverPath = root.GetComponent<RiverPath>();
+            if (!isScenePathTarget || riverPath == null)
+            {
+                return false;
+            }
+
+            var points = definition.Points ?? Array.Empty<FuseSplineyPoint>();
+            if (points.Length < 2)
+            {
+                throw new InvalidOperationException($"Spliney '{id}' requires at least two points.");
+            }
+
+            // A legacy partial patch inherits the base spline's profile,
+            // style, offset, transform, and parent. Only replace the authored
+            // control points unless the fragment explicitly names a style or
+            // profile. This keeps roads such as Sylva's Chipper Curve asphalt
+            // instead of rebuilding them with FUSE's first generic road
+            // profile (the pale overlay seen in the field report).
+            var wasActive = root.activeSelf;
+            root.SetActive(false);
+            riverPath.points = points.Select(point => new RiverPath.Point(
+                root.transform.InverseTransformPoint(point.Position),
+                (Quaternion.Inverse(root.transform.rotation) * Quaternion.Euler(point.Rotation)).eulerAngles,
+                point.Width ?? 3.5f)).ToList();
+
+            if (!string.IsNullOrWhiteSpace(definition.Style))
+            {
+                riverPath.style = string.Equals(definition.Style, "river", StringComparison.OrdinalIgnoreCase)
+                    ? RiverPath.RiverPathStyle.River
+                    : RiverPath.RiverPathStyle.Road;
+            }
+            else if (!string.IsNullOrWhiteSpace(definition.Type) &&
+                     !string.Equals(definition.Type, "unknown", StringComparison.OrdinalIgnoreCase))
+            {
+                riverPath.style = IsWaterSpline(ParseKind(definition.Type))
+                    ? RiverPath.RiverPathStyle.River
+                    : RiverPath.RiverPathStyle.Road;
+            }
+
+            var builder = root.GetComponent<RiverBuilder>();
+            if (builder != null && !string.IsNullOrWhiteSpace(definition.Profile))
+            {
+                var profile = ResolveSplineProfile(definition.Profile, ParseKind(definition.Type));
+                if (profile == null)
+                {
+                    throw new InvalidOperationException($"Spline profile '{definition.Profile}' was not found for '{root.name}'.");
+                }
+
+                if (RiverBuilderSplineProfileField == null)
+                {
+                    throw new InvalidOperationException("RiverBuilder.splineProfile field was not found.");
+                }
+
+                RiverBuilderSplineProfileField.SetValue(builder, profile);
+            }
+
+            marker = marker ?? root.AddComponent<FuseSplineyMarker>();
+            marker.Id = id;
+            marker.Kind = riverPath.style == RiverPath.RiverPathStyle.River ? "River" : "Road";
+            marker.PreserveExistingSceneObject = true;
+            root.SetActive(wasActive);
+            if (wasActive)
+            {
+                builder?.BuildSpline();
+            }
+
+            FuseLog.Info($"FUSE replaced control points in existing scene spliney '{id}' while preserving its base profile and hierarchy.");
+            return true;
+        }
+
+        private static bool TryResolveScenePathSpliney(string id, out GameObject spliney)
+        {
+            spliney = null;
+            if (!IsScenePathIdentifier(id))
+            {
+                return false;
+            }
+
+            var candidate = FusePrefabResolver.ResolveScenePath(id);
+            if (candidate == null ||
+                (candidate.GetComponent<RiverPath>() == null && candidate.GetComponent<AutoTrestle.AutoTrestle>() == null))
+            {
+                return false;
+            }
+
+            spliney = candidate;
+            return true;
+        }
+
+        private static bool IsScenePathIdentifier(string id)
+        {
+            return !string.IsNullOrWhiteSpace(id) &&
+                   id.IndexOf('/') >= 0 &&
+                   id.IndexOf("://", StringComparison.Ordinal) < 0;
         }
 
         private static void ConfigureFlowy(GameObject root, FuseSpliney definition, SplineyKind kind, IReadOnlyList<FuseSplineyPoint> points)
@@ -526,5 +653,6 @@ namespace FUSE.Runtime.API
     {
         public string Id;
         public string Kind;
+        public bool PreserveExistingSceneObject;
     }
 }
