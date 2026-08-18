@@ -2186,6 +2186,10 @@
                         }
                     ],
                     "default": {}
+                },
+                "enableFeaturesAtStart": {
+                    "$ref": "#/$defs/idPatch",
+                    "description": "Map features force-enabled every time this progression is configured in Company mode. Mirrors the game's Progression.enableFeaturesAtStart: on every load the game calls SetFeatureEnabled(feature, true) for each entry, so the enable is persisted into the save and self-heals existing saves. Never fires in sandbox. Array form replaces the list; object form ({\"id\": true}) merges per id — use the object form when patching a base-game progression (e.g. \"ewh\") so its own start features (wh-el, ewh-intch) are preserved."
                 }
             }
         },
@@ -2423,6 +2427,20 @@
             },
             "uniqueItems": true,
             "default": []
+        },
+        "idPatch": {
+            "description": "An id list in either FuseStringPatch form: an array replaces the runtime list; an object of {\"id\": boolean} merges per id (true adds, false removes, anything else is kept).",
+            "oneOf": [
+                {
+                    "$ref": "#/$defs/idArray"
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                }
+            ]
         },
         "stringListPatch": {
             "type": "object",

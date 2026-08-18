@@ -196,6 +196,25 @@ Progression can be authored either in the older keyed form under `progressions.<
 
 Section unlock payloads such as `areasEnableOnUnlock`, `gameObjectsEnableOnUnlock`, `unlockIncludeIndustries`, `unlockExcludeIndustries`, `unlockIncludeIndustryComponents`, `trackGroupsEnableOnUnlock`, and `trackGroupsAvailableOnUnlock` are materialized through a synthetic FUSE `MapFeature` that is enabled when the section unlocks. This keeps narrative packages on the base game's progression path instead of inventing a parallel unlock system.
 
+Declaring `progressions.<id>` for an id that already exists at runtime (for example the base career progression `ewh`) patches that progression in place: its sections are merged onto the live base progression instead of creating a parallel one. This is how a map mod's milestones ride the normal Company career.
+
+`progressions.<id>.enableFeaturesAtStart` lists map features that are force-enabled every time that progression is configured in Company mode. It mirrors the game's own `Progression.enableFeaturesAtStart` — the lever the base career uses for `wh-el` / `ewh-intch`: on every load the game calls `SetFeatureEnabled(feature, true)` for each entry, so the enable is persisted into the save and self-heals existing saves. It never fires in sandbox (the game does not configure a progression there; sandbox is covered by `initiallyEnabled`). This is the correct way to make a mod's starting trunk present at career start. Note that `initiallyEnabled` on a map feature is sandbox-only and cannot do this. The field follows FuseStringPatch semantics: an array replaces the list, an object (`{"id": true}`) merges per id — use the object form when patching a base-game progression so its own start features are preserved:
+
+```json
+{
+  "progression": {
+    "progressions": {
+      "ewh": {
+        "enableFeaturesAtStart": { "My-Start-Trunk": true, "My-Start-Yard": true },
+        "sections": { "...": {} }
+      }
+    }
+  }
+}
+```
+
+A feature granted through `enableFeaturesAtStart` must not also appear in any section's `enableFeaturesOnAvailable` / `enableFeaturesOnUnlock` / `disableFeaturesOnUnlock` arrays on that progression: the game rewrites those section-derived enables on every state update and would overwrite the start grant.
+
 Section `interchangeTransfers` maps source interchange component ids to destination interchange component ids. FUSE materializes these as child `InterchangeTransfer` components on the runtime `Section`, matching the base game's section-completion waybill rewrite path. Null or blank destinations are kept as no-op legacy entries.
 
 Progression delivery phases that contain deliveries should set `industryComponentId` when the target progression industry component is known. If omitted, FUSE can infer it when every delivery in the phase points at the same `destinationIndustryId` and that industry has exactly one `ProgressionIndustryComponent`.
