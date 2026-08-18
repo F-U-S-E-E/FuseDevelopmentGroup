@@ -15,6 +15,19 @@ namespace FUSE.Authoring.Data
     public sealed class FuseProgression
     {
         public Dictionary<string, FuseSection> Sections { get; set; } = new Dictionary<string, FuseSection>();
+
+        /// <summary>
+        /// Map features force-enabled every time this progression is configured
+        /// in Company mode. Mirrors the game's Progression.enableFeaturesAtStart
+        /// (the same lever the base career uses for wh-el / ewh-intch): the game
+        /// calls SetFeatureEnabled(feature, true) for each entry on every load,
+        /// so the enable is persisted into the save and self-heals existing
+        /// saves. Array form replaces the list; object form merges per id — use
+        /// the object form when patching a base-game progression so its own
+        /// start features are preserved. Never fires in sandbox (the game does
+        /// not Configure a progression there).
+        /// </summary>
+        public FuseStringPatch EnableFeaturesAtStart { get; set; }
     }
 
     public sealed class FuseSection

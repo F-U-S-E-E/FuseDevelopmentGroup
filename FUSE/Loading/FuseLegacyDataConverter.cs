@@ -410,6 +410,16 @@ namespace FUSE.Loading
                 var dataKeys = new[]
                 {
                     "tracks",
+                    // RailLoader-era files keep these track dictionaries at
+                    // the document root instead of under "tracks" (Whittier
+                    // Industries' game-graph.json / KWIX_*.json, #210). The
+                    // converters merge them (MergeLegacyDictionaries), so a
+                    // file whose only payload is a root-level dictionary must
+                    // still be recognised as a data source here — parity with
+                    // FUSE.Converter's LegacyKindDetector.
+                    "nodes",
+                    "segments",
+                    "spans",
                     "loads",
                     "areas",
                     "industries",

@@ -16,6 +16,16 @@ namespace FUSE.Infrastructure
         public string DisplayName { get; set; } = string.Empty;
         public long Count { get; set; }
         public long Episodes { get; set; }
+
+        /// <summary>
+        /// True when this mod's observations cross the report's problem
+        /// thresholds (<see cref="FuseModExceptionRegistry.IsProblem"/>). A
+        /// single one-off exception is informational; a per-cycle thrower
+        /// crosses the thresholds within seconds. Every surface that decides
+        /// "is this mod a problem" — the health report and the Status page —
+        /// must use this one predicate so they never disagree (issue #208).
+        /// </summary>
+        public bool IsProblem => FuseModExceptionRegistry.IsProblem(this);
         public DateTime FirstSeenUtc { get; set; }
         public DateTime LastSeenUtc { get; set; }
         public FuseModExceptionSignatureSnapshot[] Signatures { get; set; } =
@@ -70,6 +80,26 @@ namespace FUSE.Infrastructure
         private const string OverflowDisplayName = "(other mods)";
 
         private const int MaxTrackedMods = 32;
+
+        /// <summary>
+        /// A mod is reported as a problem once it has this many distinct
+        /// episodes (1-second coalesced bursts) ...
+        /// </summary>
+        internal const long ProblemEpisodeThreshold = 3;
+
+        /// <summary>... or this many total occurrences this session.</summary>
+        internal const long ProblemCountThreshold = 10;
+
+        /// <summary>
+        /// The single source of truth for "does this mod's exception record
+        /// count as a problem". A one-off third-party exception (for example
+        /// a first-frame-after-map-load NRE in another mod's window code)
+        /// must not flip the report or the Status page red; a repeating
+        /// thrower crosses these thresholds within seconds of starting.
+        /// </summary>
+        internal static bool IsProblem(FuseModExceptionSnapshot record) =>
+            record != null &&
+            (record.Episodes >= ProblemEpisodeThreshold || record.Count >= ProblemCountThreshold);
         private const int MaxSignaturesPerMod = 8;
         private const long EpisodeCoalesceWindowMs = 1000;
         private const int SampleMessageMaxLength = 200;
