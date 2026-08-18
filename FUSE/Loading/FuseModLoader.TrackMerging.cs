@@ -1456,10 +1456,30 @@ namespace FUSE.Loading
                 return;
             }
 
-            var exists = TrackAPI.GetSpan(entry.Id) != null;
+            var runtimeSpan = TrackAPI.GetSpan(entry.Id);
+            var exists = runtimeSpan != null;
+            var recreateForTopologyChange =
+                exists &&
+                ShouldRecreateMergedSpanRuntime(
+                    TrackAPI.GetDefinition(runtimeSpan),
+                    entry.Value);
             transaction.TryApply("track span", entry.Id, exists, () =>
             {
-                if (exists)
+                if (recreateForTopologyChange)
+                {
+                    // A Unity Destroy requested while the old segment topology
+                    // was removed is deferred until the end of the frame. Updating
+                    // that retiring TrackSpan object makes the replacement appear
+                    // to succeed, then disappear when Unity finishes the pending
+                    // destroy. A fresh graph child is required when the endpoint
+                    // segment set changes (ARC Whittier's Pyc3/Pap9 case).
+                    TrackAPI.RemoveSpan(entry.Id);
+                    TrackAPI.AddSpan(entry.Id, entry.Value);
+                    FuseLog.Info(
+                        $"FUSE recreated track span package='{definition.Id}' operation='apply-merged-spans' " +
+                        $"kind='track span' id='{entry.Id}' message='endpoint topology changed; avoided reusing retiring runtime span instance'.");
+                }
+                else if (exists)
                 {
                     TrackAPI.UpdateSpan(entry.Id, entry.Value);
                 }
@@ -1468,6 +1488,36 @@ namespace FUSE.Loading
                     TrackAPI.AddSpan(entry.Id, entry.Value);
                 }
             });
+        }
+
+        internal static bool ShouldRecreateMergedSpanRuntime(
+            FuseSpan runtimeDefinition,
+            FuseSpan replacementDefinition)
+        {
+            var runtimeUpper = runtimeDefinition?.Upper?.SegmentId;
+            var runtimeLower = runtimeDefinition?.Lower?.SegmentId;
+            var replacementUpper = replacementDefinition?.Upper?.SegmentId;
+            var replacementLower = replacementDefinition?.Lower?.SegmentId;
+
+            if (string.IsNullOrWhiteSpace(replacementUpper) ||
+                string.IsNullOrWhiteSpace(replacementLower))
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(runtimeUpper) ||
+                string.IsNullOrWhiteSpace(runtimeLower))
+            {
+                return true;
+            }
+
+            var sameOrder =
+                string.Equals(runtimeUpper, replacementUpper, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(runtimeLower, replacementLower, StringComparison.OrdinalIgnoreCase);
+            var reversedOrder =
+                string.Equals(runtimeUpper, replacementLower, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(runtimeLower, replacementUpper, StringComparison.OrdinalIgnoreCase);
+            return !sameOrder && !reversedOrder;
         }
     }
 }

@@ -15,6 +15,13 @@ namespace FUSE.Patches
     /// active, so malformed assets still fail at their actual point of use.
     /// </summary>
     [HarmonyPatch(typeof(PrefabStore), "CheckDefinitions")]
+    // AssetLoader 1.0.1 performs all UMM mod-folder asset-store discovery in
+    // its own CheckDefinitions prefix. If this skip prefix runs first,
+    // Harmony suppresses AssetLoader's state-mutating prefix along with the
+    // original method: UMM reports the rolling-stock mods active, but their
+    // Definitions.json files never enter PrefabStore. Run after AssetLoader so
+    // its discovery completes before FUSE skips only the stock diagnostic pass.
+    [HarmonyAfter("AssetLoader")]
     internal static class FusePrefabStoreDefinitionCheckPerformancePatch
     {
         private static bool _logged;
