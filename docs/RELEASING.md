@@ -30,6 +30,17 @@ Nexus receives the core zip alone, on purpose. A player installing from Nexus
 needs one file; the converter, installer and dev bridge only belong in front of
 package authors, who get them from GitHub.
 
+The Nexus upload also carries a **provenance stamp** so the in-game update check
+can send an out-of-date player back to where they installed. Every GitHub artifact
+ships the committed `Info.json` default `"Source": "github"`; the release builds a
+second copy of the core zip with `Source` re-stamped to `"nexus"` (via
+`scripts/stamp-info-source.ps1`) and uploads *that* one to Nexus. The two zips
+share a name and their entire contents — only that one field differs. GitHub stays
+canonical for versioning; the stamp only decides which download link the notice
+shows. The stamp step is GA-only and gated on `NEXUS_FILE_GROUP_ID`, so only stable
+builds are ever stamped `nexus`. The runtime reads it in
+`FUSE.Infrastructure.FuseInstallSource`.
+
 The mod version flows in via `-p:ModVersion=<ver>`, which stamps the assemblies
 and `Info.json` (see `Directory.Build.targets`). The release flow is the only
 place a real version is set.

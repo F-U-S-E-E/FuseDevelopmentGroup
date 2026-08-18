@@ -297,6 +297,49 @@ jobs:
             dist/FUSEConvertFolder.pyz
             FUSE.LiveBridge-v${{ steps.version.outputs.version }}.zip
 
+      # Provenance stamp for the update check. The core zip attached to the GitHub
+      # release above stays Source="github" (the committed Info.json default); the
+      # Nexus upload gets its own copy of the SAME contents with Source re-stamped
+      # to "nexus", so an out-of-date player who installed from Nexus is pointed
+      # back to Nexus while GitHub remains canonical (docs/RELEASING.md).
+      #
+      # GA only, and gated on NEXUS_FILE_GROUP_ID for the same reasons as the
+      # upload step below — no point building the variant when it will not ship.
+      - name: Package Nexus variant (Source=nexus)
+        id: nexus_package
+        if: ${{ vars.NEXUS_FILE_GROUP_ID != '' && steps.version.outputs.is_ga == 'true' }}
+        shell: powershell
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $nexusRoot = Join-Path $PWD "staging-nexus"
+          $modFolder = Join-Path $nexusRoot "FUSE"
+          # Same user-facing filename as the GitHub core zip; only the containing
+          # folder and the Info.json Source field differ.
+          $archivePath = Join-Path $nexusRoot "FUSE-v$version.zip"
+
+          if (Test-Path $nexusRoot) { Remove-Item $nexusRoot -Recurse -Force }
+          New-Item -ItemType Directory -Path $nexusRoot | Out-Null
+
+          # Reuse the exact staged mod folder the GitHub/core zip was built and
+          # validated from, so the Nexus zip can never drift from it; then flip
+          # only the provenance stamp.
+          Copy-Item -Recurse "staging\FUSE" $modFolder
+          powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\stamp-info-source.ps1" -Path (Join-Path $modFolder "Info.json") -Source nexus
+
+          # Cheap guard: the stamp is a byte-faithful regex replace, so confirm the
+          # manifest still parses and actually reads "nexus" before it ships.
+          $info = Get-Content -LiteralPath (Join-Path $modFolder "Info.json") -Raw | ConvertFrom-Json
+          if ($info.Source -ne "nexus") { throw "Nexus variant Info.json Source is '$($info.Source)', expected 'nexus'." }
+
+          # Pack with New-ModArchive.ps1 (forward-slash entry names), NOT
+          # Compress-Archive: under Windows PowerShell 5.1 Compress-Archive writes
+          # backslash entry names that break UMM's UPDATE path — the exact
+          # 1.0.0-1.0.2 bug fixed for the core zip above (issue #209). Nexus is a
+          # pure update channel, so this variant must carry the fix too; the
+          # validator now fails the release on any backslash entry regardless.
+          .\scripts\New-ModArchive.ps1 -Path $modFolder -DestinationPath $archivePath
+          "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
+
       # Uploads ONLY the core mod zip to the mod's Nexus Mods page — deliberately
       # not the complete bundle, the tools, or the Live Bridge. Players installing
       # from Nexus need exactly one file; keep the Files tab that way.
@@ -321,7 +364,8 @@ jobs:
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}
           file_group_id: ${{ vars.NEXUS_FILE_GROUP_ID }}
-          filename: ${{ steps.package.outputs.archive_path }}
+          # The Source=nexus variant, not steps.package (which stays github).
+          filename: ${{ steps.nexus_package.outputs.archive_path }}
           version: ${{ steps.version.outputs.version }}
           display_name: FUSE v${{ steps.version.outputs.version }}
           description: |

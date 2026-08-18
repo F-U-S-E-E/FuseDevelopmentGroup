@@ -11,7 +11,7 @@ New to FUSE, or installing it on a fresh setup.
 | --- | --- |
 | [Getting Started](GETTING_STARTED.md) | Install FUSE and your first packages, verify the load, update, uninstall |
 | [FAQ](FAQ.md) | Common questions — legacy mods, multiplayer, saves, performance |
-| [Settings](SETTINGS.md) | All 28 settings, their defaults, and where they live |
+| [Settings](SETTINGS.md) | All 29 settings, their defaults, and where they live |
 | [Console Commands](CONSOLE_COMMANDS.md) | Every `/fuse.*` command |
 | [Troubleshooting](TROUBLESHOOTING.md) | Symptom → diagnostic → what to attach to a report |
 | [Known Issues](KNOWN_ISSUES.md) | Current limitations and unsupported content |

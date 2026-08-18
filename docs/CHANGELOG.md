@@ -18,6 +18,20 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
   dry run, that a manual run will install FUSE.
 - A pytest suite for the installer and its legacy JSON reader
   (`tools/tests/`), run in CI by a new Python Tests workflow.
+- FUSE checks GitHub on startup for a newer stable release and, if the running
+  build is behind, shows a non-blocking notice — a one-time toast on the next map
+  load plus an "Update available" line with a download link on the Status page. It
+  compares against the newest stable `mod-v` release only (release candidates and
+  the external-editor/tools lanes are ignored), skips local `0.0.0` dev builds,
+  and can be turned off with the new `EnableUpdateCheck` setting. The new
+  `/fuse.update` console command reports status and re-checks on demand. This was
+  blocked until the repository went public, since GitHub answers anonymous release
+  queries only for public repositories.
+- Nexus uploads are stamped `"Source": "nexus"` in `Info.json` so the update
+  notice can point a Nexus-installed player back to Nexus, while GitHub-published
+  artifacts keep the canonical `"github"` stamp. The release flow builds a
+  Nexus-only copy of the core zip with the flipped stamp
+  (`scripts/stamp-info-source.ps1`); the two zips are otherwise identical.
 
 ### Changed
 

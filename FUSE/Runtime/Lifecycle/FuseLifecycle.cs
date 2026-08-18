@@ -88,6 +88,17 @@ namespace FUSE.Runtime.Lifecycle
                 {
                     FuseLog.Exception("FUSE enhanced loading screen pipeline-complete signal failed", ex);
                 }
+
+                // A loaded map is the first point the toast UI is guaranteed
+                // alive, so flush any pending "you're outdated" notice here.
+                try
+                {
+                    FuseVersionCheck.NotifyMapDidLoad();
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception("FUSE update-notice map-load flush failed", ex);
+                }
             }
         }
 
@@ -360,6 +371,9 @@ namespace FUSE.Runtime.Lifecycle
         {
             try
             {
+                // A pending "you're outdated" toast must not fire at the main menu
+                // after the player leaves the map; re-arm it for the next load.
+                FuseVersionCheck.NotifyMapWillUnload();
                 // FUSE does not own the unload screen (the stock "Tyin' down…"
                 // progress is fine), and the post-load pipeline never runs on an
                 // unload — so hide our screen immediately rather than letting the
