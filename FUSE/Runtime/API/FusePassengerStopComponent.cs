@@ -312,11 +312,21 @@ namespace FUSE.Runtime.API
             var fuseComponents = UnityEngine.Object.FindObjectsOfType<FusePassengerStopComponent>(true)
                 .Where(component => component != null)
                 .ToArray();
+            var liveStopsByComponent = fuseComponents.ToDictionary(
+                component => component,
+                component => FindLiveStop(component, liveStops));
+            var inferredBranchNeighbors = FusePassengerStopNeighborResolver.ResolveUnauthoredBranchNetwork(
+                fuseComponents.Where(component => liveStopsByComponent[component] != null),
+                component => component.Branch,
+                component => component.NeighborIds,
+                component => component.GetStopIdentifier(),
+                component => liveStopsByComponent[component].CenterPoint.x,
+                component => liveStopsByComponent[component].CenterPoint.y,
+                component => liveStopsByComponent[component].CenterPoint.z);
             foreach (var component in fuseComponents)
             {
                 var stopIdentifier = component.GetStopIdentifier();
-                var sourceStop = liveStops.FirstOrDefault(stop =>
-                    string.Equals(stop.identifier, stopIdentifier, StringComparison.OrdinalIgnoreCase));
+                var sourceStop = liveStopsByComponent[component];
                 if (sourceStop == null)
                 {
                     continue;
@@ -343,6 +353,16 @@ namespace FUSE.Runtime.API
                             candidate => candidate.GetStopIdentifier(),
                             candidate => candidate.TimetableCode)
                         .Select(candidate => FindLiveStop(candidate, liveStops))
+                        .Where(stop => stop != null && !ReferenceEquals(stop, sourceStop))
+                        .Distinct()
+                        .ToArray();
+                }
+
+                if (neighbors.Length == 0 &&
+                    inferredBranchNeighbors.TryGetValue(component, out var inferredComponents))
+                {
+                    neighbors = inferredComponents
+                        .Select(candidate => liveStopsByComponent[candidate])
                         .Where(stop => stop != null && !ReferenceEquals(stop, sourceStop))
                         .Distinct()
                         .ToArray();
