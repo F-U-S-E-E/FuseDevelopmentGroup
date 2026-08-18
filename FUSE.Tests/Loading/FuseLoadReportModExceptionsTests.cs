@@ -56,6 +56,7 @@ namespace FUSE.Tests.Loading
                 GraphPostBindIssues = Array.Empty<string>(),
                 ProgressionTransferSkips = Array.Empty<string>(),
                 Notices = Array.Empty<string>(),
+                BlockingNotices = Array.Empty<string>(),
                 SceneryLoadFailures = Array.Empty<FuseLoadReport.SceneryLoadFailure>(),
                 OrphanedCars = Array.Empty<FuseSaveCarFault>(),
                 ModExceptions = FuseModExceptionRegistry.SnapshotForReport(),
@@ -158,6 +159,46 @@ namespace FUSE.Tests.Loading
             }
 
             Assert.True(CreateEmptySnapshot().HasProblems);
+        }
+
+        [Fact]
+        public void HasProblems_IgnoresInformationalNotices_ButPreservesTheAdvisory()
+        {
+            var snapshot = CreateEmptySnapshot();
+            snapshot.Notices = new[] { "Optional alias catalog could not be read." };
+
+            Assert.False(snapshot.HasProblems);
+            Assert.True(snapshot.HasAdvisories);
+
+            var details = FuseLoadReport.BuildDetailsForTests(snapshot);
+            Assert.Contains("Notices:", details);
+            Assert.Contains("Optional alias catalog could not be read.", details);
+
+            var json = JObject.Parse(FuseLoadReport.BuildJsonForTests(snapshot));
+            Assert.False((bool)json["hasProblems"]);
+            Assert.True((bool)json["hasAdvisories"]);
+            Assert.Equal(1, (int)json["counts"]["notices"]);
+            Assert.Equal(0, (int)json["counts"]["blockingNotices"]);
+        }
+
+        [Fact]
+        public void HasProblems_RetainsBlockingNoticeBehavior()
+        {
+            var snapshot = CreateEmptySnapshot();
+            const string message = "Map-load package pipeline failed.";
+            snapshot.Notices = new[] { message };
+            snapshot.BlockingNotices = new[] { message };
+
+            Assert.True(snapshot.HasProblems);
+            Assert.False(snapshot.HasAdvisories);
+
+            var details = FuseLoadReport.BuildDetailsForTests(snapshot);
+            Assert.Contains("Readiness notices:", details);
+            Assert.Contains(message, details);
+
+            var json = JObject.Parse(FuseLoadReport.BuildJsonForTests(snapshot));
+            Assert.True((bool)json["hasProblems"]);
+            Assert.Equal(1, (int)json["counts"]["blockingNotices"]);
         }
     }
 }
