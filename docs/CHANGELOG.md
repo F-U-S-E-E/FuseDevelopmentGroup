@@ -77,9 +77,9 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
   Whittier Industries. Explicit legacy `type` values on span-less industry
   component patches (such as `Model.Ops.IndustryLoader`) are converted as
   patches instead of failing validation and faulting the whole package. A
-  legacy file whose only top-level payload is one of those root-level
-  dictionaries is now also recognised as a data source by the in-game reader.
-  (#210, #223, part of #203)
+  legacy file whose only top-level payload is a root-level `nodes`, `segments`,
+  or `spans` dictionary is now also recognised as a data source by the in-game
+  reader. (#210, #223, part of #203)
 - Legacy `points: { "$replace": [...] }` patches addressed to a base-game road
   or river by scene path (e.g. `World/Roads Sylva/Chipper Curve`) now replace
   the control points of the existing spline in place, keeping its profile,
