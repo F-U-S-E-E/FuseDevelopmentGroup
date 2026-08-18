@@ -230,6 +230,13 @@ namespace FUSE.Converter.Conversion
         /// Progression fields whose legacy shape is a bool dictionary
         /// (<c>{ "FeatureX": true, "FeatureY": false }</c>) that the
         /// converter normalises to an array of enabled keys.
+        ///
+        /// Deliberately NOT listed: <c>enableFeaturesAtStart</c>. Flattening
+        /// it to an array would turn its FuseStringPatch semantics from
+        /// per-id MERGE into REPLACE, and a mod patching a base-game
+        /// progression (e.g. "ewh") would then wipe the base career's own
+        /// start features (wh-el, ewh-intch). It must pass through verbatim
+        /// so the object form reaches the runtime as a merge.
         /// </summary>
         public static readonly HashSet<string> BoolDictionaryArrayFields = new HashSet<string>(StringComparer.Ordinal)
         {

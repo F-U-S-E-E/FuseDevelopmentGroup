@@ -31,6 +31,11 @@ namespace FUSE.Runtime.API
         private static readonly PropertyInfo ManagerFeatureEnablesProperty = typeof(MapFeatureManager).GetProperty("FeatureEnables", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly MethodInfo ManagerHandleFeatureEnablesChangedMethod = typeof(MapFeatureManager).GetMethod("HandleFeatureEnablesChanged", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo ProgressionSectionsField = typeof(Progression).GetField("<Sections>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+        // Progression.enableFeaturesAtStart is a private [SerializeField] MapFeature[]
+        // (FormerlySerializedAs "enableAtStart"). Progression.Configure calls
+        // mapFeatureManager.SetFeatureEnabled(feature, true) for each entry when
+        // hosting, on every load — the base career's own start-feature lever.
+        private static readonly FieldInfo ProgressionEnableFeaturesAtStartField = typeof(Progression).GetField("enableFeaturesAtStart", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly MethodInfo ProgressionUpdateSectionStatesMethod = typeof(Progression).GetMethod("UpdateSectionStates", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo SectionInterchangeTransfersField = typeof(Section).GetField("<InterchangeTransfers>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly FieldInfo InterchangeTransferFromField = typeof(InterchangeTransfer).GetField("from", BindingFlags.Instance | BindingFlags.NonPublic);
