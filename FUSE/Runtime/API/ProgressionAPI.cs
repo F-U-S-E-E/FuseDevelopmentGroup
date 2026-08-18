@@ -266,6 +266,16 @@ namespace FUSE.Runtime.API
             definition = definition ?? new FuseProgression();
             definition.Sections = definition.Sections ?? new Dictionary<string, FuseSection>();
 
+            // Snapshot the live start-feature list the same way the section
+            // fields below are snapshotted: FromSet, because the snapshot is
+            // the exact current runtime state, not a merge patch. Guarded so
+            // a game build without the field simply leaves the cached value.
+            if (ProgressionEnableFeaturesAtStartField != null)
+            {
+                var startFeatures = ProgressionEnableFeaturesAtStartField.GetValue(progression) as MapFeature[];
+                definition.EnableFeaturesAtStart = FuseStringPatch.FromSet(ToFeatureIds(startFeatures));
+            }
+
             var sections = ProgressionSectionsField?.GetValue(progression) as Section[] ??
                            progression.GetComponentsInChildren<Section>(true);
             foreach (var section in sections.Where(section => section != null && !string.IsNullOrWhiteSpace(section.identifier)))

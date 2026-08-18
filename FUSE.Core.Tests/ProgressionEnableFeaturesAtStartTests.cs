@@ -106,6 +106,22 @@ namespace Fuse.Core.Tests
         }
 
         [Fact]
+        public void ObjectForm_FalseRemovesOnlyThatFeature()
+        {
+            // The idPatch contract: false is a per-id removal. It must remove
+            // exactly the named id and leave every other existing entry alone
+            // (both the base game's and the mod's own additions).
+            var progression = Load(@"{ ""enableFeaturesAtStart"": { ""ewh-intch"": false, ""APPA-Start-Seed"": true }, ""sections"": {} }");
+
+            var result = progression.EnableFeaturesAtStart.ApplyTo(new[] { "wh-el", "ewh-intch" });
+
+            Assert.Equal(
+                new[] { "APPA-Start-Seed", "wh-el" },
+                result.OrderBy(id => id, StringComparer.OrdinalIgnoreCase));
+            Assert.DoesNotContain("ewh-intch", result, StringComparer.OrdinalIgnoreCase);
+        }
+
+        [Fact]
         public void ArrayForm_ReplacesBaseCareerStartFeatures()
         {
             // Documents the hazard the merge form exists to avoid: array form
