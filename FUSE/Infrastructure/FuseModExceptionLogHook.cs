@@ -168,6 +168,21 @@ namespace FUSE.Infrastructure
                 return;
             }
 
+            // Unity still writes these recoverable compatibility probes to
+            // Player.log, but they are not evidence that a locomotive or the
+            // session failed. In particular, Bman's shared GP38Scripts runs
+            // the same preview/activation lifecycle for every locomotive it
+            // supports. Missing preview audio parents and the first smoke
+            // callback can throw while the final car continues initializing
+            // successfully. Likewise, PlacerWindow asks for stale tender
+            // identifiers while rebuilding its library and skips those rows.
+            // Do not let a dense, harmless burst cross the health registry's
+            // recurring-error threshold and turn the entire Status page red.
+            if (IsKnownRecoverableLifecycleNoise(condition, stackTrace))
+            {
+                return;
+            }
+
             var hash = ComputeSignatureHash(condition, stackTrace);
             SignatureEntry entry;
             lock (Sync)
@@ -204,6 +219,45 @@ namespace FUSE.Infrastructure
                 StackTrace = stackTrace,
                 Entry = entry
             });
+        }
+
+        /// <summary>
+        /// Returns true only for exception signatures whose callers are known
+        /// to recover and continue. The original Unity log entry is preserved;
+        /// this predicate affects only FUSE's session-health aggregation.
+        /// Kept as a pure string classifier so every supported Bman locomotive
+        /// receives the same treatment without depending on asset identifiers.
+        /// </summary>
+        internal static bool IsKnownRecoverableLifecycleNoise(string condition, string stackTrace)
+        {
+            if (string.IsNullOrEmpty(condition) || string.IsNullOrEmpty(stackTrace))
+            {
+                return false;
+            }
+
+            if (condition.StartsWith("UnknownIdentifierException:", StringComparison.Ordinal) &&
+                stackTrace.IndexOf("UI.Placer.PlacerWindow.ConfigureRow", StringComparison.Ordinal) >= 0 &&
+                stackTrace.IndexOf("UI.Placer.PlacerWindow.RebuildLibrary", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+
+            if (!condition.StartsWith("NullReferenceException:", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (stackTrace.IndexOf("GP38Scripts.TractionMotorAudio.OnEnable", StringComparison.Ordinal) >= 0 ||
+                stackTrace.IndexOf("GP38Scripts.GP38SmokeController.Start", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+
+            var isExhaustLifecycle =
+                stackTrace.IndexOf("Audio.ExhaustAudioController.StopPlaying", StringComparison.Ordinal) >= 0 ||
+                stackTrace.IndexOf("Audio.ExhaustAudioController.PlayNext", StringComparison.Ordinal) >= 0;
+            return isExhaustLifecycle &&
+                stackTrace.IndexOf("Model.Car.HandleModelsLoaded", StringComparison.Ordinal) >= 0;
         }
 
         /// <summary>
