@@ -13,6 +13,12 @@ namespace Fuse.Core.Model
 
     public sealed class FuseProgression
     {
+        /// <summary>
+        /// Optional runtime progression whose sections and Company start
+        /// features are inherited.
+        /// </summary>
+        public string BaseProgression { get; set; }
+
         public Dictionary<string, FuseSection> Sections { get; set; } = new Dictionary<string, FuseSection>();
 
         /// <summary>

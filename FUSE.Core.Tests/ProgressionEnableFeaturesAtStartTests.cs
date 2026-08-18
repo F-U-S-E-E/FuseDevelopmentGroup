@@ -52,6 +52,26 @@ namespace Fuse.Core.Tests
         }
 
         [Fact]
+        public void BaseProgression_RoundTripsForConvertedCareerStarts()
+        {
+            var progression = Load(@"{ ""baseProgression"": ""ewh"", ""sections"": {} }");
+            Assert.Equal("ewh", progression.BaseProgression);
+
+            var definition = new FuseModDefinition
+            {
+                Id = "Test.BaseProgression",
+                SchemaVersion = "1.0",
+                Progression = new FuseProgressionRoot()
+            };
+            definition.Progression.Progressions["appa"] = progression;
+
+            var wire = JObject.Parse(FuseCoreSerializer.ToJson(definition));
+            Assert.Equal(
+                "ewh",
+                wire.SelectToken("progression.progressions.appa.baseProgression")?.Value<string>());
+        }
+
+        [Fact]
         public void ObjectForm_DeserializesAsMergePatch()
         {
             var progression = Load(@"{ ""enableFeaturesAtStart"": { ""APPA-Start-Seed"": true, ""AR-Connelly"": true }, ""sections"": {} }");

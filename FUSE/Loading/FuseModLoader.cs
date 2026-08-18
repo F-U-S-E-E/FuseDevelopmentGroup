@@ -121,6 +121,10 @@ namespace FUSE.Loading
                              mod?.Definition == null ||
                              FuseMapSession.ShouldApplyDefinition(mod.Definition))
                 .ToArray();
+            FuseLegacyStartOptionRegistry.MergeEnabledFeaturesIntoProgressions(
+                applicableIds
+                    .Where(id => LoadedMods.ContainsKey(id))
+                    .Select(id => LoadedMods[id]));
             ApplyGlobalLoadCatalog(applicableIds, reason);
             PreEnableInitialTrackGroups(applicableIds);
 
