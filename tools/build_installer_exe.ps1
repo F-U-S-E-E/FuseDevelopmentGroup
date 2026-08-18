@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputDir = "",
+    [string]$FusePayload = "",
     [switch]$InstallPyInstaller
 )
 
@@ -96,12 +97,34 @@ foreach ($mod in $HiddenImports) {
     $args += $mod
 }
 
+# Bundle the FUSE mod zip into the exe so a manual (no-argument) run installs
+# FUSE. PyInstaller's onefile bundle unpacks this to sys._MEIPASS at runtime,
+# where fuse_installer.resolve_bundled_fuse() picks it up as bundled_fuse.zip.
+$BundledFuse = ''
+if (-not [string]::IsNullOrWhiteSpace($FusePayload)) {
+    # -PathType Leaf so a directory can't slip through (Copy-Item would then make
+    # bundled_fuse.zip a folder instead of the zip file).
+    if (-not (Test-Path -LiteralPath $FusePayload -PathType Leaf)) {
+        throw "FUSE payload not found or not a file: $FusePayload"
+    }
+    $BundledFuse = Join-Path $WorkDir 'bundled_fuse.zip'
+    Copy-Item -LiteralPath $FusePayload -Destination $BundledFuse -Force
+    # On Windows, --add-data separates the source and destination with ';'.
+    $args += '--add-data'
+    $args += "$BundledFuse;."
+}
+else {
+    Write-Host "WARNING: no -FusePayload given; the exe will NOT self-install FUSE on a manual run."
+    Write-Host "         Pass -FusePayload <path to FUSE-v*.zip> to enable that."
+}
+
 $args += $EntryScript
 
 Write-Host "Building FUSE-Installer.exe..."
 Write-Host "  entry:   $EntryScript"
 Write-Host "  out:     $OutputDir"
 Write-Host "  hidden:  $($HiddenImports -join ', ')"
+Write-Host "  bundled: $(if ($BundledFuse) { $FusePayload } else { '(none)' })"
 
 $buildExit = Invoke-InstallerPython @args
 if ($buildExit -ne 0) {
@@ -119,6 +142,35 @@ $smokeExit = $LASTEXITCODE
 if ($smokeExit -ne 0) {
     Write-Host $smokeOutput
     throw "Smoke check failed (exit=$smokeExit)."
+}
+
+# Self-check: prove that a manual (no-argument) run will actually install FUSE.
+# Runs a REAL install (not --dry-run) into a throwaway game dir, so the check
+# exercises zip extraction and file writes — catching unreadable members or
+# write-path failures — and then asserts the mod actually landed on disk.
+if (-not [string]::IsNullOrWhiteSpace($BundledFuse)) {
+    Write-Host "Self-check: installing bundled FUSE into a throwaway dir..."
+    $ProbeDir = Join-Path $WorkDir 'selfcheck'
+    if (Test-Path $ProbeDir) { Remove-Item $ProbeDir -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $ProbeDir | Out-Null
+    $selfOutput = & $exePath --no-pause --game-dir $ProbeDir 2>&1
+    $selfExit = $LASTEXITCODE
+    Write-Host $selfOutput
+    if ($selfExit -ne 0) {
+        throw "Self-check failed (exit=$selfExit): bundled FUSE install did not succeed."
+    }
+    # Match the inspected package id, not just the word FUSE (which also appears
+    # in the static "bundled FUSE:" / "FUSE:" output labels), so a non-FUSE
+    # payload can't silently pass the self-check.
+    if ("$selfOutput" -notmatch 'id=FUSE(\s|$)') {
+        throw "Self-check failed: bundled package is not FUSE (id=FUSE missing from install output)."
+    }
+    # Confirm extraction actually wrote the mod to disk.
+    $installedInfo = Join-Path $ProbeDir 'Mods\FUSE\Info.json'
+    if (-not (Test-Path -LiteralPath $installedInfo -PathType Leaf)) {
+        throw "Self-check failed: expected $installedInfo after installing bundled FUSE."
+    }
+    Write-Host "Self-check passed: a manual run installs FUSE to Mods\FUSE."
 }
 
 Write-Host "Built: $exePath"
