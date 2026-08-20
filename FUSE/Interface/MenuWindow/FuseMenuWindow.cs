@@ -132,6 +132,14 @@ namespace FUSE.Interface.MenuWindow
             {
                 ModsPanelBuilder.CloseAllLegacyModTabs("legacy settings tab no longer visible");
             }
+
+            if (_window != null && _window.IsShown &&
+                _selectedTabState.Value == TabIdTools &&
+                _selectedToolItem.Value == "liveDiagnostics" &&
+                LiveDiagnosticsToolPage.ShouldAutoRefresh(Time.unscaledTime))
+            {
+                RebuildWindow();
+            }
         }
 
         private void BuildFuseMenu(UIPanelBuilder builder)
@@ -442,9 +450,47 @@ namespace FUSE.Interface.MenuWindow
             }
 
             var scrollRects = _window.contentRectTransform.GetComponentsInChildren<ScrollRect>(true);
-            return scrollRects == null || scrollRects.Length == 0
-                ? null
-                : scrollRects[scrollRects.Length - 1];
+            if (scrollRects == null || scrollRects.Length == 0)
+            {
+                return null;
+            }
+
+            // List/detail pages contain two ScrollRects: the navigation list on
+            // the left and the actual page on the right. Component traversal
+            // order is not a UI contract, so choosing the last component made
+            // auto-refresh preserve the left list while the visible page jumped
+            // back to the top. Select the right-most viewport instead; single-
+            // scroll pages naturally select their only viewport.
+            ScrollRect selected = null;
+            var selectedCenterX = float.NegativeInfinity;
+            var selectedArea = float.NegativeInfinity;
+            var corners = new Vector3[4];
+            foreach (var candidate in scrollRects)
+            {
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                var viewport = candidate.viewport ?? candidate.transform as RectTransform;
+                if (viewport == null)
+                {
+                    continue;
+                }
+
+                viewport.GetWorldCorners(corners);
+                var centerX = (corners[0].x + corners[2].x) * 0.5f;
+                var area = Mathf.Abs((corners[2].x - corners[0].x) * (corners[2].y - corners[0].y));
+                if (centerX > selectedCenterX + 0.01f ||
+                    (Mathf.Abs(centerX - selectedCenterX) <= 0.01f && area > selectedArea))
+                {
+                    selected = candidate;
+                    selectedCenterX = centerX;
+                    selectedArea = area;
+                }
+            }
+
+            return selected ?? scrollRects[0];
         }
 
         public void SetSelectedProfile(string id)

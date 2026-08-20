@@ -15,17 +15,42 @@ using UnityEngine;
 
 namespace FUSE.Interface.MenuWindow
 {
+    internal sealed class FusePackageDisplayStatus
+    {
+        public FusePackageDisplayStatus(string label, string detail, string listGroup, int sortOrder, string markup)
+        {
+            Label = label ?? string.Empty;
+            Detail = detail ?? string.Empty;
+            ListGroup = listGroup ?? string.Empty;
+            SortOrder = sortOrder;
+            Markup = markup ?? string.Empty;
+        }
+
+        public string Label { get; }
+        public string Detail { get; }
+        public string ListGroup { get; }
+        public int SortOrder { get; }
+        public string Markup { get; }
+    }
+
     internal struct ModsPanelBuilder
     {
         public static void Build(UIPanelBuilder builder, UIState<string> selectedItem)
         {
             var manifests = MergeHostedLegacyPackageSnapshots(
                 FuseDataPackageDiscovery.GetPackageManifestSnapshots(),
-                FuseLegacyAssemblyHost.EnumerateAllHostedPlugins().Select(info => info.Manifest));
+                FuseLegacyAssemblyHost.EnumerateAllHostedPlugins().Select(info => info.Manifest))
+                .ToArray();
+            HydratePackageRuntimeState(manifests);
 
             List<UIPanelBuilder.ListItem<FusePackageManifestSnapshot>> list = manifests
-                .OrderBy(m => m.DisplayName)
-                .Select(m => new UIPanelBuilder.ListItem<FusePackageManifestSnapshot>(m.Id, m, "Active Mods", m.DisplayName))
+                .OrderBy(m => ClassifyPackageStatus(m).SortOrder)
+                .ThenBy(m => m.DisplayName)
+                .Select(m => new UIPanelBuilder.ListItem<FusePackageManifestSnapshot>(
+                    m.Id,
+                    m,
+                    ClassifyPackageStatus(m).ListGroup,
+                    m.DisplayName))
                 .ToList();
 
             builder.AddListDetail(list, selectedItem, delegate (UIPanelBuilder builder, FusePackageManifestSnapshot manifest)
@@ -36,7 +61,7 @@ namespace FUSE.Interface.MenuWindow
                     // previously selected mod's handler must not stay open.
                     CloseAllLegacyModTabs("mods selection cleared");
                     builder.AddExpandingVerticalSpacer();
-                    builder.AddLabelEmptyState(manifests.Count == 0 ? "No mods found through UMM." : "Select a mod");
+                    builder.AddLabelEmptyState(manifests.Length == 0 ? "No mods found through UMM." : "Select a mod");
                     builder.AddExpandingVerticalSpacer();
                 }
                 else
@@ -87,7 +112,26 @@ namespace FUSE.Interface.MenuWindow
                     Version = hosted.Version ?? string.Empty,
                     FolderName = folderName,
                     FolderPath = folderPath,
-                    IsLegacyHosted = true
+                    RequiredPackageIds = (hosted.RequiredReferences ?? Array.Empty<Railloader.ModReference>())
+                        .Select(reference => reference.Id)
+                        .Where(referenceId => !string.IsNullOrWhiteSpace(referenceId))
+                        .ToArray(),
+                    LoadAfter = (hosted.LoadAfter ?? Array.Empty<Railloader.ModReference>())
+                        .Select(reference => reference.Id)
+                        .Where(referenceId => !string.IsNullOrWhiteSpace(referenceId))
+                        .ToArray(),
+                    LoadBefore = hosted.LoadBefore ?? Array.Empty<string>(),
+                    ConflictsWith = (hosted.ConflictsWith ?? Array.Empty<Railloader.ModReference>())
+                        .Select(reference => new FUSE.Authoring.Data.FuseModRequirement
+                        {
+                            Id = reference.Id,
+                            NotBefore = reference.NotBefore?.ToString(),
+                            NotAfter = reference.NotAfter?.ToString()
+                        })
+                        .ToArray(),
+                    IsLegacyHosted = true,
+                    LoadedFromDisk = true,
+                    AppliedToRuntime = true
                 });
                 AddPackageIdentity(knownFolders, knownIds, folderPath, id);
             }
@@ -118,7 +162,12 @@ namespace FUSE.Interface.MenuWindow
         {
             builder.AddSection(manifest.DisplayName);
 
-            builder.AddField("Status", PackageStatusTextMarkup(manifest));
+            var status = ClassifyPackageStatus(manifest);
+            builder.AddField("Status", status.Markup);
+            if (!string.IsNullOrWhiteSpace(status.Detail))
+            {
+                builder.AddField("State details", status.Detail);
+            }
             builder.AddField("Version", manifest.Version ?? "Unknown");
             builder.AddField("Id", manifest.Id);
             builder.AddField("Folder", manifest.FolderName);
@@ -128,14 +177,24 @@ namespace FUSE.Interface.MenuWindow
 
             builder.AddField("Settings", CountPackageSettings(definitions).ToString());
 
-            if (manifest.Faults.Length > 0)
+            var faults = GetAllFaults(manifest);
+            if (faults.Length > 0)
             {
-                builder.AddField("Faults", string.Join("; ", manifest.Faults));
+                builder.AddField("Faults", string.Join("; ", faults));
             }
 
             if (manifest.Disabled && !string.IsNullOrEmpty(manifest.DisabledReason))
             {
                 builder.AddField("Disabled", manifest.DisabledReason);
+            }
+
+            var skipReasons = GetSkipReasons(manifest);
+            if (skipReasons.Length > 0)
+            {
+                var label = skipReasons.All(FusePackageFaultRegistry.IsOptionalSkipReason)
+                    ? "Optional content"
+                    : "Skipped";
+                builder.AddField(label, string.Join("; ", skipReasons));
             }
 
             var depSummary = BuildDependencySummary(manifest);
@@ -150,7 +209,7 @@ namespace FUSE.Interface.MenuWindow
             {
                 row.AddButton("Copy Mod Info", () =>
                 {
-                    GUIUtility.systemCopyBuffer = BuildSelectedPackageReport(manifest, definitions);
+                    GUIUtility.systemCopyBuffer = BuildSelectedPackageReport(manifest, definitions, status);
                     Toast.Present("Copied mod info to clipboard");
                     builder.Rebuild();
                 });
@@ -180,6 +239,17 @@ namespace FUSE.Interface.MenuWindow
                 if (definitions.Length > 1)
                 {
                     builder.AddLabel(loaded.Definition.Id);
+                }
+
+                if (loaded.FeatureEvaluation.RuleCount > 0)
+                {
+                    builder.AddField("Active feature set", loaded.FeatureEvaluation.Summary);
+                    if (loaded.FeatureEvaluation.DisabledRuleIds.Length > 0)
+                    {
+                        builder.AddField(
+                            "Disabled options",
+                            string.Join(", ", loaded.FeatureEvaluation.DisabledRuleIds));
+                    }
                 }
 
                 foreach (var pair in loaded.Definition.Settings
@@ -325,6 +395,100 @@ namespace FUSE.Interface.MenuWindow
                 .ToArray();
         }
 
+        private static void HydratePackageRuntimeState(IReadOnlyList<FusePackageManifestSnapshot> manifests)
+        {
+            if (manifests == null || manifests.Count == 0)
+            {
+                return;
+            }
+
+            var loadedIds = new HashSet<string>(
+                FusePackageFaultRegistry.GetLoadedPackageIds(),
+                StringComparer.OrdinalIgnoreCase);
+            var appliedIds = new HashSet<string>(
+                FusePackageFaultRegistry.GetAppliedPackageIds(),
+                StringComparer.OrdinalIgnoreCase);
+            var skipped = FusePackageFaultRegistry.GetSkippedPackages();
+            var disabled = FusePackageFaultRegistry.GetDisabledPackages();
+            var faultsByPackage = FusePackageFaultRegistry.GetFaults()
+                .GroupBy(fault => fault.PackageId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Select(FormatRuntimeFault).ToArray(),
+                    StringComparer.OrdinalIgnoreCase);
+            var loadedDefinitions = FuseModLoader.GetLoadedModsInOrder()
+                .Where(loaded => loaded?.Definition != null)
+                .ToArray();
+
+            foreach (var manifest in manifests.Where(manifest => manifest != null))
+            {
+                var definitionIds = loadedDefinitions
+                    .Where(loaded => DefinitionBelongsToPackage(loaded, manifest))
+                    .Select(loaded => loaded.Definition.Id)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .ToArray();
+                var registryIds = new[] { manifest.Id }
+                    .Concat(definitionIds)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                manifest.LoadedFromDisk = manifest.LoadedFromDisk || registryIds.Any(loadedIds.Contains);
+                manifest.AppliedToRuntime = manifest.AppliedToRuntime || registryIds.Any(appliedIds.Contains);
+
+                var skipReasons = registryIds
+                    .Select(id => skipped.TryGetValue(id, out var reason) ? reason : string.Empty)
+                    .Concat(manifest.SkipReasons ?? Array.Empty<string>())
+                    .Concat(string.IsNullOrWhiteSpace(manifest.SkipReason)
+                        ? Array.Empty<string>()
+                        : new[] { manifest.SkipReason })
+                    .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+                manifest.SkipReasons = skipReasons;
+                manifest.SkipReason = skipReasons.FirstOrDefault() ?? string.Empty;
+
+                if (!manifest.Disabled)
+                {
+                    var disabledReason = registryIds
+                        .Select(id => disabled.TryGetValue(id, out var reason) ? reason : string.Empty)
+                        .FirstOrDefault(reason => !string.IsNullOrWhiteSpace(reason));
+                    if (!string.IsNullOrWhiteSpace(disabledReason))
+                    {
+                        manifest.Disabled = true;
+                        manifest.DisabledReason = disabledReason;
+                    }
+                }
+
+                manifest.RuntimeFaults = registryIds
+                    .SelectMany(id => faultsByPackage.TryGetValue(id, out var packageFaults)
+                        ? packageFaults
+                        : Array.Empty<string>())
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+            }
+        }
+
+        private static bool DefinitionBelongsToPackage(FuseLoadedMod loaded, FusePackageManifestSnapshot manifest)
+        {
+            return loaded?.Definition != null && manifest != null &&
+                   (string.Equals(NormalizePath(loaded.FolderPath), NormalizePath(manifest.FolderPath), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(loaded.Definition.Id, manifest.Id, StringComparison.OrdinalIgnoreCase) ||
+                    loaded.Definition.Id.StartsWith((manifest.Id ?? string.Empty) + ".", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static string FormatRuntimeFault(FusePackageFault fault)
+        {
+            if (fault == null)
+            {
+                return string.Empty;
+            }
+
+            return string.IsNullOrWhiteSpace(fault.Stage)
+                ? fault.Message
+                : fault.Stage + ": " + fault.Message;
+        }
+
         private static int CountPackageSettings(IEnumerable<FuseLoadedMod> definitions)
         {
             return (definitions ?? [])
@@ -341,6 +505,7 @@ namespace FUSE.Interface.MenuWindow
 
             var parts = new[]
             {
+                manifest.RequiredPackageIds.Length == 0 ? string.Empty : "requires: " + string.Join(", ", manifest.RequiredPackageIds),
                 manifest.LoadAfter.Length == 0 ? string.Empty : "after: " + string.Join(", ", manifest.LoadAfter),
                 manifest.LoadBefore.Length == 0 ? string.Empty : "before: " + string.Join(", ", manifest.LoadBefore)
             }.Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
@@ -366,25 +531,88 @@ namespace FUSE.Interface.MenuWindow
             }
         }
 
-        private static string BuildSelectedPackageReport(FusePackageManifestSnapshot manifest, IReadOnlyList<FuseLoadedMod> definitions)
+        private static string BuildSelectedPackageReport(
+            FusePackageManifestSnapshot manifest,
+            IReadOnlyList<FuseLoadedMod> definitions,
+            FusePackageDisplayStatus status)
         {
             var builder = new StringBuilder();
             builder.AppendLine("FUSE selected mod");
             builder.AppendLine("Name: " + PackageDisplayName(manifest));
             builder.AppendLine("Id: " + manifest.Id);
             builder.AppendLine("Version: " + BlankAs(manifest.Version, "?"));
-            builder.AppendLine("Status: " + PackageStatusText(manifest));
+            builder.AppendLine("Status: " + status.Label);
+            if (!string.IsNullOrWhiteSpace(status.Detail))
+            {
+                builder.AppendLine("State details: " + status.Detail);
+            }
             builder.AppendLine("Folder: " + manifest.FolderPath);
             builder.AppendLine("Definitions: " + (definitions?.Count ?? 0));
             builder.AppendLine("Settings: " + CountPackageSettings(definitions));
-            if (manifest.Faults.Length > 0)
+            var skipReasons = GetSkipReasons(manifest);
+            if (skipReasons.Length > 0)
             {
-                builder.AppendLine("Faults: " + string.Join("; ", manifest.Faults));
+                builder.AppendLine("Skip reasons: " + string.Join("; ", skipReasons));
+            }
+
+            var faults = GetAllFaults(manifest);
+            if (faults.Length > 0)
+            {
+                builder.AppendLine("Faults: " + string.Join("; ", faults));
+            }
+
+            var definitionIds = (definitions ?? Array.Empty<FuseLoadedMod>())
+                .Where(loaded => loaded?.Definition != null)
+                .Select(loaded => loaded.Definition.Id)
+                .ToArray();
+            var detailedFaults = FusePackageFaultRegistry.GetFaults()
+                .Where(fault => string.Equals(fault.PackageId, manifest.Id, StringComparison.OrdinalIgnoreCase)
+                                || definitionIds.Contains(fault.PackageId, StringComparer.OrdinalIgnoreCase)
+                                || (!string.IsNullOrWhiteSpace(fault.FolderPath)
+                                    && string.Equals(NormalizePath(fault.FolderPath), NormalizePath(manifest.FolderPath), StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+            if (detailedFaults.Length > 0)
+            {
+                builder.AppendLine("Actionable package diagnostics:");
+                foreach (var fault in detailedFaults)
+                {
+                    builder.AppendLine("- Stage: " + BlankAs(fault.Stage, "unknown"));
+                    builder.AppendLine("  Message: " + BlankAs(fault.Message, "unknown"));
+                    builder.AppendLine("  Package: " + BlankAs(fault.PackageName, fault.PackageId)
+                                       + " [" + fault.PackageId + "]");
+                    builder.AppendLine("  Source root: " + BlankAs(fault.FolderPath, "unknown"));
+                    builder.AppendLine("  Relative file: " + BlankAs(fault.RelativeSourceFile, "unknown"));
+                    builder.AppendLine("  Absolute file: " + BlankAs(fault.SourceFile, "unknown"));
+                    if (!string.IsNullOrWhiteSpace(fault.JsonPath) || fault.LineNumber > 0)
+                    {
+                        builder.AppendLine("  JSON location: " + BlankAs(fault.JsonPath, "<root>")
+                                           + (fault.LineNumber > 0
+                                               ? $" line {fault.LineNumber}, position {fault.LinePosition}"
+                                               : string.Empty));
+                    }
+                    if (!string.IsNullOrWhiteSpace(fault.ValidationCode))
+                        builder.AppendLine("  Validation code: " + fault.ValidationCode);
+                    if (!string.IsNullOrWhiteSpace(fault.ExpectedShape))
+                        builder.AppendLine("  Expected: " + fault.ExpectedShape);
+                    if (!string.IsNullOrWhiteSpace(fault.ReceivedValue))
+                        builder.AppendLine("  Received: " + fault.ReceivedValue);
+                    builder.AppendLine("  Fix: " + BlankAs(fault.SuggestedAction, "Correct the named package source and reload the map."));
+                }
             }
 
             foreach (var loaded in definitions ?? Array.Empty<FuseLoadedMod>())
             {
                 builder.AppendLine("Definition: " + loaded.Definition.Id);
+                if (loaded.FeatureEvaluation.RuleCount > 0)
+                {
+                    builder.AppendLine("Feature rules: " + loaded.FeatureEvaluation.Summary);
+                    if (loaded.FeatureEvaluation.DisabledRuleIds.Length > 0)
+                    {
+                        builder.AppendLine(
+                            "Disabled feature rules: " +
+                            string.Join(", ", loaded.FeatureEvaluation.DisabledRuleIds));
+                    }
+                }
             }
 
             return builder.ToString();
@@ -405,46 +633,180 @@ namespace FUSE.Interface.MenuWindow
             return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
         }
 
-        private static string PackageStatusText(FusePackageManifestSnapshot manifest)
+        internal static FusePackageDisplayStatus ClassifyPackageStatus(FusePackageManifestSnapshot manifest)
         {
             if (manifest == null)
             {
-                return "unknown";
+                return new FusePackageDisplayStatus(
+                    "Unknown",
+                    "Package state is unavailable.",
+                    "Unknown",
+                    80,
+                    "<color=\"orange\">Unknown</color>");
             }
 
             if (manifest.Disabled)
             {
-                return "disabled";
+                return new FusePackageDisplayStatus(
+                    "Disabled",
+                    BlankAs(manifest.DisabledReason, "Disabled by the active mod configuration."),
+                    "Disabled Mods",
+                    60,
+                    "<color=\"yellow\">Disabled</color>");
             }
 
-            if (manifest.Faults.Length > 0)
+            var faults = GetAllFaults(manifest);
+            var skipReasons = GetSkipReasons(manifest);
+            var evidence = string.Join(
+                " | ",
+                faults
+                    .Concat(skipReasons.Where(reason => !FusePackageFaultRegistry.IsOptionalSkipReason(reason)))
+                    .Where(value => !string.IsNullOrWhiteSpace(value)));
+            var problem = ClassifyProblem(evidence);
+            var hasSkips = skipReasons.Length > 0;
+            var optionalSkip = hasSkips && skipReasons.All(FusePackageFaultRegistry.IsOptionalSkipReason);
+
+            if (manifest.AppliedToRuntime &&
+                (faults.Length > 0 || (hasSkips && !optionalSkip)))
             {
-                return manifest.Faults.Length + " fault(s)";
+                var actionableSkipDetail = string.Join(
+                    "; ",
+                    skipReasons.Where(reason => !FusePackageFaultRegistry.IsOptionalSkipReason(reason)));
+                var detail = problem.Length == 0
+                    ? (hasSkips ? string.Join("; ", skipReasons) : "One or more definitions failed while other content applied.")
+                    : problem + ". Other content from this package applied successfully.";
+                if (!string.IsNullOrWhiteSpace(actionableSkipDetail))
+                {
+                    detail += " Actionable skip: " + actionableSkipDetail;
+                }
+                return new FusePackageDisplayStatus(
+                    "Partially applied",
+                    detail,
+                    "Mods Needing Attention",
+                    20,
+                    "<color=\"orange\">Partially applied</color>");
             }
 
-            return manifest.IsLegacyConverted || manifest.IsLegacyHosted ? "ready | legacy" : "ready";
+            if (faults.Length > 0)
+            {
+                var label = problem.Length == 0 ? "Failed" : problem;
+                return new FusePackageDisplayStatus(
+                    label,
+                    faults[0],
+                    "Mods Needing Attention",
+                    10,
+                    "<color=\"red\">" + label + "</color>");
+            }
+
+            if (hasSkips && !optionalSkip)
+            {
+                var label = problem.Length == 0 ? "Skipped" : problem;
+                return new FusePackageDisplayStatus(
+                    label,
+                    string.Join("; ", skipReasons),
+                    "Mods Needing Attention",
+                    30,
+                    "<color=\"orange\">" + label + "</color>");
+            }
+
+            if (manifest.AppliedToRuntime)
+            {
+                var detail = optionalSkip
+                    ? "Applied successfully. Optional content is inactive: " + string.Join("; ", skipReasons)
+                    : string.Empty;
+                var legacy = manifest.IsLegacyConverted || manifest.IsLegacyHosted
+                    ? " - Legacy compatibility"
+                    : string.Empty;
+                return new FusePackageDisplayStatus(
+                    "Applied",
+                    detail,
+                    "Applied Mods",
+                    40,
+                    "<color=\"green\">Applied</color>" + legacy);
+            }
+
+            if (manifest.LoadedFromDisk)
+            {
+                return new FusePackageDisplayStatus(
+                    "Loaded; awaiting map apply",
+                    optionalSkip ? "Optional content is inactive: " + string.Join("; ", skipReasons) : string.Empty,
+                    "Ready Mods",
+                    50,
+                    "<color=\"green\">Loaded</color> - awaiting map apply");
+            }
+
+            if (manifest.IsLegacyHosted)
+            {
+                return new FusePackageDisplayStatus(
+                    "Active legacy code",
+                    string.Empty,
+                    "Applied Mods",
+                    40,
+                    "<color=\"green\">Active</color> - Legacy compatibility");
+            }
+
+            return new FusePackageDisplayStatus(
+                "Discovered; ready to load",
+                optionalSkip ? "Optional content is inactive: " + string.Join("; ", skipReasons) : string.Empty,
+                "Ready Mods",
+                50,
+                "<color=\"green\">Ready</color>");
         }
 
-        private static string PackageStatusTextMarkup(FusePackageManifestSnapshot manifest)
+        private static string[] GetAllFaults(FusePackageManifestSnapshot manifest)
         {
-            if (manifest == null)
+            return (manifest?.Faults ?? Array.Empty<string>())
+                .Concat(manifest?.RuntimeFaults ?? Array.Empty<string>())
+                .Where(fault => !string.IsNullOrWhiteSpace(fault))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        private static string[] GetSkipReasons(FusePackageManifestSnapshot manifest)
+        {
+            return (manifest?.SkipReasons ?? Array.Empty<string>())
+                .Concat(string.IsNullOrWhiteSpace(manifest?.SkipReason)
+                    ? Array.Empty<string>()
+                    : new[] { manifest.SkipReason })
+                .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        private static string ClassifyProblem(string evidence)
+        {
+            if (string.IsNullOrWhiteSpace(evidence))
             {
-                return "<color=\"orange\">Unknown";
+                return string.Empty;
             }
 
-            if (manifest.Disabled)
+            if (ContainsAny(evidence, "conflictswith", "conflicts with", "incompatible"))
             {
-                return "<color=\"yellow\">Disabled";
+                return "Incompatible mod installed";
             }
 
-            if (manifest.Faults.Length > 0)
+            if (ContainsAny(
+                evidence,
+                "dependency missing",
+                "no matching package",
+                " requires '",
+                "required package",
+                "required dependency"))
             {
-                return "<color=\"red\">Error: " + manifest.Faults.Length + " fault(s)";
+                return "Missing dependency";
             }
 
-            return manifest.IsLegacyConverted || manifest.IsLegacyHosted
-                ? "<color=\"green\">Ready</color> - Legacy"
-                : "<color=\"green\"Ready";
+            if (ContainsAny(evidence, "manifest json", "json:", "json ", "deserial", "schema", "could not be parsed"))
+            {
+                return "Invalid package data";
+            }
+
+            return string.Empty;
+        }
+
+        private static bool ContainsAny(string value, params string[] candidates)
+        {
+            return candidates.Any(candidate => value.IndexOf(candidate, StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         private static string GetSettingLabel(string key, FuseModSettingDefinition setting)
@@ -464,7 +826,7 @@ namespace FUSE.Interface.MenuWindow
                     BuildEnumSettingControl(builder, definition, key, setting);
                     break;
                 case "number":
-                    BuildTextSettingControl(builder, definition, key, setting, isNumber: true);
+                    BuildNumberSettingControl(builder, definition, key, setting);
                     break;
                 case "path":
                 case "color":
@@ -474,13 +836,25 @@ namespace FUSE.Interface.MenuWindow
                     break;
             }
 
+            var featureRules = definition?.FeatureRules == null
+                ? Enumerable.Empty<FuseFeatureRule>()
+                : definition.FeatureRules.Values;
+            var controlsFeature = featureRules
+                .Any(rule => rule != null && string.Equals(rule.Setting, key, StringComparison.Ordinal));
             if (FuseSettings.ShowAdvancedHealthDetails)
             {
                 builder.AddField(" ", DescribePackageSetting(key, setting));
             }
-            else if (!string.IsNullOrWhiteSpace(setting?.Description))
+            else if (controlsFeature || !string.IsNullOrWhiteSpace(setting?.Description))
             {
-                builder.AddField(" ", setting.Description);
+                var note = string.IsNullOrWhiteSpace(setting?.Description)
+                    ? string.Empty
+                    : setting.Description.Trim() + " ";
+                if (controlsFeature)
+                {
+                    note += "This option changes authored map content and takes effect after saving/reloading the map.";
+                }
+                builder.AddField(" ", note.Trim());
             }
         }
 
@@ -542,6 +916,46 @@ namespace FUSE.Interface.MenuWindow
                 {
                     SaveTextSetting(definition, key, setting, value, isNumber);
                 });
+                AddResetSettingButton(row, definition, key, setting);
+            }, 8f).Height(32f);
+        }
+
+        private static void BuildNumberSettingControl(
+            UIPanelBuilder builder,
+            FuseModDefinition definition,
+            string key,
+            FuseModSettingDefinition setting)
+        {
+            if (!setting.Min.HasValue || !setting.Max.HasValue
+                || setting.Min.Value >= setting.Max.Value)
+            {
+                BuildTextSettingControl(builder, definition, key, setting, isNumber: true);
+                return;
+            }
+
+            var minimum = (float)setting.Min.Value;
+            var maximum = (float)setting.Max.Value;
+            var step = setting.Step.GetValueOrDefault(0d);
+            builder.HStack(row =>
+            {
+                AddSettingRowLabel(row, GetSettingLabel(key, setting));
+                row.AddSlider(
+                    () => (float)FuseModSettingsStore.GetNumberValue(definition, key, setting),
+                    () => FuseModSettingsStore.GetNumberValue(definition, key, setting)
+                        .ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                    value =>
+                    {
+                        var selected = Math.Max(minimum, Math.Min(maximum, value));
+                        if (step > 0d)
+                        {
+                            selected = minimum
+                                + (float)(Math.Round((selected - minimum) / step) * step);
+                            selected = Math.Max(minimum, Math.Min(maximum, selected));
+                        }
+                        FuseModSettingsStore.SetValue(definition, key, setting, new JValue(selected));
+                    },
+                    minimum,
+                    maximum);
                 AddResetSettingButton(row, definition, key, setting);
             }, 8f).Height(32f);
         }
