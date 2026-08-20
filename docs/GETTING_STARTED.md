@@ -23,13 +23,18 @@ operations matters there.
 3. Start Railroader.
 4. Check that FUSE appears in Unity Mod Manager's mod list and is enabled.
 
-`FUSE-Installer.exe` can do this for you: drop it and your mod zips in the game's
-base folder and run it. See [FUSE_INSTALLER.md](FUSE_INSTALLER.md).
+`FUSE-Installer.exe` can do this for you: put it beside `Railroader.exe`, then
+double-click it or drag one or more mod zips onto it. It validates the game/UMM
+install, backs up updates, reports each package separately, and detects leftover
+legacy loader DLLs. It also replaces the old AssetLoader runtime with a
+data-only dependency alias, so use the installer when migrating an existing
+AssetLoader-based setup. See [FUSE_INSTALLER.md](FUSE_INSTALLER.md).
 
 ## Install Packages
 
-FUSE packages are folders ending in `.FUSE` that go in `Railroader/Mods`
-alongside FUSE itself.
+Native FUSE, UMM, and hosted RailLoader packages all go in `Railroader/Mods`
+alongside FUSE itself. A native package does not have to use `.FUSE` in its
+folder name; its `Info.json` and declared data files identify it.
 
 1. Place each `*.FUSE` package folder in `Railroader/Mods`.
 2. Install any asset packs the package requires — route packages usually depend on
@@ -37,8 +42,8 @@ alongside FUSE itself.
 3. Start the game and load a map.
 
 FUSE respects UMM's enabled checkbox for any package folder UMM can see. Unchecking
-a converted route, audio, or asset package there marks it disabled in FUSE too, and
-its track and data files are not loaded.
+a converted route/audio package or a directly installed asset package there marks
+it disabled in FUSE too, and its track, data, or assets are not loaded.
 
 Converting a legacy mod into a `*.FUSE` package is the converter's job — see
 [FUSE_CONVERTER.md](FUSE_CONVERTER.md).
@@ -62,17 +67,24 @@ Then confirm your packages are actually present:
 
 Every package you installed should be listed and applied. A package that is
 missing here was never discovered — check that it is in `Railroader/Mods` and
-enabled in UMM. A package listed as faulted was found but failed to apply; check
-`FUSE.log` for the package id and phase.
+enabled in UMM. A package listed as faulted was found but isolated.
+`/fuse.report` names the package and source file; `/fuse.report json` includes
+structured paths and JSON locations for mod authors.
 
 ## The FUSE Menu
 
 The FUSE icon in the top bar opens the in-game menu.
 
 - **Status** — the latest load report.
-- **Tools** — the Object Inspector, dependency/asset/diagnostics reports, scenery
-  benchmarks, and Runtime Actions (`Reload Track/Data`, `Reload Terrain`,
-  `Rebuild Caches`).
+- **Tools** — the Object Inspector, dependency/asset reports, **Live
+  Diagnostics**, scenery benchmarks, and Runtime Actions (`Reload Track/Data`,
+  `Reload Terrain`, `Rebuild Caches`). Live Diagnostics can filter/copy the
+  recent FUSE log or open an optional continuously scrolling Windows console.
+
+Routine Unity exceptions and compatibility-guard counters belong under **Tools
+→ Live Diagnostics**. They do not by themselves make the Status page unhealthy;
+use the symptom and package/asset/graph findings to decide whether a report is
+actionable.
 
 Runtime Actions are recovery and testing tools. Check `FUSE.log` after using one.
 

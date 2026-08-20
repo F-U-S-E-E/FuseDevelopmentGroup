@@ -9,6 +9,7 @@ using FUSE.Authoring.Data;
 using FUSE.Authoring.Data.Common;
 using FUSE.Runtime.Events;
 using FUSE.Infrastructure;
+using FUSE.Compatibility;
 using Track;
 using Track.Signals;
 using UnityEngine;
@@ -63,6 +64,11 @@ namespace FUSE.Runtime.API
                 definition.GroupId,
                 ParseTrackClass(definition.TrackClass),
                 definition.Priority);
+            RailroaderTrackContract.ApplyStructure(
+                segment,
+                definition.Style,
+                definition.BridgeSupportsSteel,
+                definition.Yard);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSegment, id, definition);
             return segment;
         }
@@ -110,6 +116,11 @@ namespace FUSE.Runtime.API
                 ParseTrackClass(definition.TrackClass),
                 definition.Priority,
                 definition.GroupId);
+            RailroaderTrackContract.ApplyStructure(
+                RequireSegment(id),
+                definition.Style,
+                definition.BridgeSupportsSteel,
+                definition.Yard);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSegment, id, definition);
         }
 
@@ -154,7 +165,9 @@ namespace FUSE.Runtime.API
             definition = definition ?? new FuseSegment();
             definition.StartNodeId = segment.a != null ? segment.a.id : null;
             definition.EndNodeId = segment.b != null ? segment.b.id : null;
-            definition.Style = segment.style.ToString();
+            definition.Style = RailroaderTrackContract.GetStyleName(segment);
+            definition.BridgeSupportsSteel = RailroaderTrackContract.GetBridgeSupportsSteel(segment);
+            definition.Yard = RailroaderTrackContract.GetYard(segment);
             definition.TrackClass = segment.trackClass == TrackClass.Mainline ? "main" : segment.trackClass.ToString();
             definition.SpeedLimit = segment.speedLimit;
             definition.Priority = segment.priority;

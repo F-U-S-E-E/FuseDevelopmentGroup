@@ -21,7 +21,8 @@ public class LegacyImportServiceTests
         {
             File.WriteAllText(Path.Combine(src, "Definition.json"),
                 "{\"id\":\"my.legacy.mod\",\"name\":\"My Legacy Mod\",\"version\":\"1.2.3\",\"author\":\"me\"}");
-            File.WriteAllText(Path.Combine(src, "data.json"), "{}");
+            File.WriteAllText(Path.Combine(src, "data.json"),
+                "{\"tracks\":{\"nodes\":{\"n_legacy\":{\"position\":{\"x\":10,\"y\":20,\"z\":30},\"rotation\":{\"x\":0,\"y\":0,\"z\":0}}}}}");
 
             var result = new LegacyImportService().Convert(src, outDir);
 

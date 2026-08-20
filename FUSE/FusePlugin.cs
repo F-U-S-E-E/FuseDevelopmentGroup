@@ -65,7 +65,6 @@ namespace FUSE
             try
             {
                 FuseLegacySupportAssemblyShim.Initialize();
-                FuseLegacyUmmRecovery.RecoverFailedEntries();
                 WarnIfLegacyRailloaderInstallPresent();
                 LogStartupVersions(modEntry);
                 FuseSettings.Load(modEntry);
@@ -75,6 +74,8 @@ namespace FUSE
 
                 _harmony = new Harmony(HarmonyId);
                 FusePatchResilience.ApplyAll(_harmony, Assembly.GetExecutingAssembly());
+                FuseConfusingSupplementsCompatibility.Initialize();
+                StrangeCustoms.FileCache.EnsureInstance();
                 FuseNarrowGaugePerformanceCompatibility.Initialize(_harmony);
                 FuseEarlyLoader.SetPatchAvailable(FusePatchResilience.Applied.Any(patch =>
                     string.Equals(patch.TypeName, "FUSE.Patches.FuseEarlyLoaderSceneManagerPatch", StringComparison.Ordinal)));
@@ -258,6 +259,7 @@ namespace FUSE
             FuseSceneryLoadFailurePatch.Shutdown();
             FuseModExceptionLogHook.Shutdown();
             FuseLegacyAssemblyHost.Shutdown();
+            StrangeCustoms.FileCache.Shutdown();
             FuseLegacySupportAssemblyShim.Shutdown();
             FuseLegacyUmmRecovery.Reset();
             FuseRuntimeRebindService.Shutdown();

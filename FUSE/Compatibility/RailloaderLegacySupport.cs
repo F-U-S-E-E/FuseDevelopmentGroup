@@ -6,6 +6,9 @@ using UI.Builder;
 using UI.Common;
 using UI.Console;
 using UnityEngine;
+using LegacyComponent = Model.Definition.Component;
+using LegacyComponentBuilderContext = Model.ComponentBuilderContext;
+using LegacyComponentBuilder = Model.IComponentBuilder;
 
 // Legacy support surface for assemblies compiled against the previous loader API.
 // This file reproduces the public surface of the legacy Railloader.Interchange API
@@ -112,8 +115,8 @@ namespace Railloader
         /// Preserves the legacy component-builder registration contract so plugin types can load under FUSE.
         /// </summary>
         void RegisterComponent<TComponent, TComponentBuilder>(string kind)
-            where TComponent : Component
-            where TComponentBuilder : IComponentBuilder;
+            where TComponent : LegacyComponent
+            where TComponentBuilder : LegacyComponentBuilder;
     }
 
     [Obsolete(LegacyShim.Message)]
@@ -383,14 +386,14 @@ namespace Railloader
 namespace Railloader.Extensions
 {
     [Obsolete(LegacyShim.Message)]
-    public abstract class ComponentBuilder<T> : IComponentBuilder where T : Component
+    public abstract class ComponentBuilder<T> : LegacyComponentBuilder where T : LegacyComponent
     {
         public System.Type ComponentType => typeof(T);
 
         /// <summary>
         /// Preserves the legacy non-generic dispatch entry point and forwards it to the typed builder contract.
         /// </summary>
-        public void Build(ComponentBuilderContext ctx, Component component)
+        public void Build(LegacyComponentBuilderContext ctx, LegacyComponent component)
         {
             Build(ctx, (T)(object)component);
         }
@@ -398,7 +401,7 @@ namespace Railloader.Extensions
         /// <summary>
         /// Preserves the typed legacy component-build override implemented by existing plugin binaries.
         /// </summary>
-        protected abstract void Build(ComponentBuilderContext ctx, T component);
+        protected abstract void Build(LegacyComponentBuilderContext ctx, T component);
     }
 }
 

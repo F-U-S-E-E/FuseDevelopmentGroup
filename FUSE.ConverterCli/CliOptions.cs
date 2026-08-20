@@ -18,7 +18,7 @@ internal sealed class CliOptions
     public bool Quiet { get; set; }
     public bool ShowHelp { get; set; }
 
-    private static readonly string[] Kinds = { "auto", "route", "audio", "asset" };
+    private static readonly string[] Kinds = { "auto", "route", "audio" };
     private static readonly string[] Formats = { "console", "json", "markdown", "all" };
 
     public bool WriteJsonReport => Format is "json" or "all";
@@ -53,13 +53,13 @@ internal sealed class CliOptions
                 case "--kind":
                     if (++index >= args.Length)
                     {
-                        error = "--kind requires a value (auto, route, audio, or asset).";
+                        error = "--kind requires a value (auto, route, or audio).";
                         return null;
                     }
 
                     if (!Kinds.Contains(args[index]))
                     {
-                        error = $"--kind: invalid value '{args[index]}'. Allowed: auto, route, audio, asset.";
+                        error = $"--kind: invalid value '{args[index]}'. Allowed: auto, route, audio.";
                         return null;
                     }
 
@@ -142,16 +142,18 @@ ARGUMENTS:
 OPTIONS:
   --out <dir>     Output root. Each mod converts into '<dir>\<ModFolder>.FUSE'.
                   Default: '.\FUSEConverted'.
-  --kind <kind>   Force a package kind: auto | route | audio | asset. Default: auto.
+  --kind <kind>   Force a JSON package kind: auto | route | audio. Default: auto.
   --clean         Replace an existing '.FUSE' output folder for each converted mod.
-  --batch         Treat each input as a container of mods and convert every
-                  recognized child folder.
+  --batch         Treat each input as a container of mods. JSON packages are
+                  converted; code/assets/tiles/native packages are reported
+                  with their correct install guidance.
   --validate      Validate converted fragments and print fix-hints (default: on).
   --no-validate   Skip validation.
   --strict        Exit with code 2 when validation produces warnings, not just errors.
   --format <fmt>  console (default) | json | markdown | all. json writes
                   conversion-report.json and markdown writes conversion-report.md
-                  into each mod's output folder; all writes both.
+                  into successful output packages. Failed/unsupported inputs
+                  write under '<out>\_conversion-reports'; all writes both.
   --quiet         Suppress per-diagnostic console output; print only summaries.
   -h, --help      Show this help.
 

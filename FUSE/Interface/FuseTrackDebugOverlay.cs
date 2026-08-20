@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using FUSE.Runtime.API;
 using FUSE.Infrastructure;
+using FUSE.Compatibility;
 using Model.Ops;
 using Track;
 using UnityEngine;
@@ -240,7 +241,7 @@ namespace FUSE.Interface
             string style;
             try
             {
-                style = segment.style.ToString();
+                style = RailroaderTrackContract.GetStyleName(segment);
             }
             catch
             {

@@ -309,7 +309,9 @@ namespace FUSE.Runtime.API
 
         private static void ApplyAreaDefinition(Area area, FuseArea definition)
         {
-            var displayName = string.IsNullOrWhiteSpace(definition.Name) ? area.identifier : definition.Name;
+            var displayName = string.IsNullOrWhiteSpace(definition.Name)
+                ? (string.IsNullOrWhiteSpace(area.name) ? area.identifier : area.name)
+                : definition.Name;
             area.name = displayName;
             area.gameObject.name = displayName;
             if (definition.Position.HasValue)

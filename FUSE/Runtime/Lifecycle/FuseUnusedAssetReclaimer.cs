@@ -75,6 +75,15 @@ namespace FUSE.Runtime.Lifecycle
                 return;
             }
 
+            // This method is driven every Unity frame. Texture.currentTextureMemory
+            // crosses into Unity's native runtime, but it cannot influence the
+            // decision when there are no evicted requests waiting to be reclaimed.
+            // Keep the overwhelmingly common idle path entirely managed and cheap.
+            if (pending <= 0)
+            {
+                return;
+            }
+
             var textureCurrentBytes = ToSignedBytes(Texture.currentTextureMemory);
             if (!HasEnoughPressureToSweep(pending, textureCurrentBytes) ||
                 Time.realtimeSinceStartup - _lastPendingChangeRealtime < QuietSeconds ||

@@ -404,6 +404,61 @@ namespace FUSE.Runtime.API
             return pruned;
         }
 
+        internal static int ReplaceTrackSpanReferences(TrackSpan previousSpan, TrackSpan replacementSpan, string source)
+        {
+            if (previousSpan == null || replacementSpan == null || ReferenceEquals(previousSpan, replacementSpan))
+            {
+                return 0;
+            }
+
+            var rebound = 0;
+            foreach (var component in UnityEngine.Object.FindObjectsOfType<IndustryComponent>(true))
+            {
+                if (!IsLiveIndustryComponent(component) || component.trackSpans == null || component.trackSpans.Length == 0)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var spans = component.trackSpans;
+                    var changed = false;
+                    for (var index = 0; index < spans.Length; index++)
+                    {
+                        if (!TrackSpanReferencesRemovedInstance(spans[index], previousSpan))
+                        {
+                            continue;
+                        }
+
+                        spans[index] = replacementSpan;
+                        changed = true;
+                        rebound++;
+                    }
+
+                    if (changed)
+                    {
+                        component.trackSpans = spans;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FuseLog.Exception(
+                        $"FUSE could not rebind industry component '{DescribeComponent(component)}' to replacement TrackSpan " +
+                        $"spanId='{SafeTrackSpanId(replacementSpan)}' after '{source ?? "unspecified"}'",
+                        ex);
+                }
+            }
+
+            if (rebound > 0)
+            {
+                FuseLog.Info(
+                    $"FUSE rebound {rebound} industry component TrackSpan reference(s) to replacement " +
+                    $"spanId='{SafeTrackSpanId(replacementSpan)}' after '{source ?? "unspecified"}'.");
+            }
+
+            return rebound;
+        }
+
         private static bool TrackSpanReferencesRemovedInstance(TrackSpan candidate, TrackSpan removedSpan)
         {
             if (ReferenceEquals(candidate, removedSpan))

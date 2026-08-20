@@ -55,6 +55,21 @@ namespace FUSE.Tests.Interface.MenuWindow
                 DependencyGraphPage.FormatDependencyEdge("c_l_b.assets01", Packages, PresentInModsRoot, advisory: true));
         }
 
+        [Theory]
+        [InlineData("Zamu.StrangeCustoms")]
+        [InlineData("AlinaNova21.AlinasMapMod.FUSE")]
+        [InlineData("AssetLoader")]
+        public void ReplacementCapability_IsIdentifiedAsProvidedByFuse(string dependencyId)
+        {
+            Assert.Contains(
+                "PROVIDED BY FUSE",
+                DependencyGraphPage.FormatDependencyEdge(
+                    dependencyId,
+                    Packages,
+                    PresentInModsRoot,
+                    advisory: false));
+        }
+
         [Fact]
         public void UnknownTarget_IsMissing_ForNativePackages_ButOptionalForLegacyHints()
         {

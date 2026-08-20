@@ -3,7 +3,7 @@
 This folder defines the JSON side of the FUSE mod format.
 
 - `fuse-mod.schema.json` is the authoritative JSON Schema for hand-authored and editor-exported `.json` files.
-- `fuse-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, built-in and custom industry components, loaders, turntables, roundhouses, stations, scenery, spawn points, span-anchored scenery, splineys, telegraph poles, labels, speed signs, masks, suppressions, map tiles, scene clones, world removals, progression data, audio definitions, mixinto metadata, package settings, and editor state.
+- `fuse-mod.example.json` is a compact example that exercises track, spans, areas, industry ordering, built-in and custom industry components, loaders, turntables, roundhouses, stations, scenery, spawn points, span-anchored scenery, splineys, water surfaces, telegraph poles, labels, speed signs, masks, suppressions, map tiles, scene clones, world removals, progression data, audio definitions, mixinto metadata, package settings, and editor state.
 - `umm-info.schema.json` documents the Unity Mod Manager `Info.json` shape FUSE expects for API mods, data packages, and asset-pack packages.
 - `umm-info.example.json` is a data-only map package manifest that depends on `FUSE`.
 
@@ -15,7 +15,7 @@ Top-level object groups:
 
 - `tracks`: nodes, segments, spans, areas, and optional removals for deleting base-game track objects.
 - `operations`: loads, industries, loaders, turntables, and passenger stations.
-- `world`: scenery, spawn points, splineys, telegraph poles, map labels, map masks, map tile overlays, scene clones, and optional removals for base scene objects.
+- `world`: scenery, spawn points, splineys, polygonal water surfaces, telegraph poles, map labels, map masks, map tile overlays, scene clones, and optional removals for base scene objects.
 - `progression`: progression trees and map features.
 
 Map declarations are complete replacement worlds by default. `map.suppressBaseWorld`
@@ -27,7 +27,7 @@ uses custom terrain as an overlay on the stock world.
 - `editor`: optional editor-only state that FUSE can ignore at runtime.
 - `extensions`: optional namespaced third-party data.
 
-`mixinto` is optional metadata for converted RailLoader/Strange Customs conditional mixin files. The converted file remains a normal FUSE fragment, but FUSE checks `mixinto.requires[]` immediately before runtime apply. If any required mod is missing, older than `notBefore`, or newer than `notAfter`, that fragment is skipped without faulting the rest of the package.
+`mixinto` is optional metadata for converted RailLoader/Strange Customs conditional mixin files. The converted file remains a normal FUSE fragment, but FUSE checks `mixinto.requires[]` and `mixinto.conflictsWith[]` immediately before runtime apply. A missing/out-of-range requirement or a matching conflict skips that fragment without faulting the rest of the package.
 
 ```json
 {
@@ -36,6 +36,9 @@ uses custom terrain as an overlay on the stock world.
     "sourceFile": "CNRI_FoxysLimestonePatch.json",
     "requires": [
       { "id": "CaptainFoxy.NantahalaLime", "notBefore": "1.1" }
+    ],
+    "conflictsWith": [
+      { "id": "Some.Incompatible.Route", "notAfter": "3.0" }
     ]
   }
 }
@@ -65,6 +68,46 @@ Enum `values` are treated as exact strings. FUSE does not normalize or rename se
   }
 }
 ```
+
+Native modular packages can connect a setting to authored content with a
+top-level `featureRules` dictionary. When a rule does not match, FUSE omits
+only its named targets from the runtime copy of the definition. The source JSON
+stays intact, so changing the option and reloading restores the objects.
+
+```json
+{
+  "settings": {
+    "enableExtraYard": {
+      "type": "bool",
+      "label": "Extra Yard Tracks",
+      "scope": "profile",
+      "default": true,
+      "reloadRequired": true
+    }
+  },
+  "featureRules": {
+    "extraYard": {
+      "setting": "enableExtraYard",
+      "operator": "equals",
+      "value": true,
+      "targets": {
+        "trackNodes": ["yard:n:4", "yard:n:5"],
+        "trackSegments": ["yard:s:extra"],
+        "trackSpans": ["yard:span:extra"],
+        "scenery": ["yard:prop:bumper"]
+      }
+    }
+  }
+}
+```
+
+Operators are `equals`, `notEquals`, `greaterThan`,
+`greaterThanOrEqual`, `lessThan`, and `lessThanOrEqual`; ordering operators
+require a number setting. Target keys cover track, operations, world,
+progression, and audio dictionaries. Industry components use
+`industryId/componentId`. Every target must be authored in the same definition,
+which prevents an option from accidentally deleting base-game or dependency
+objects. Rules are native FUSE data and are not projected into RailLoader JSON.
 
 All editable game objects are stored in dictionaries keyed by object ID. The ID is not repeated inside the object body. This keeps editor updates simple: replacing `tracks.nodes["murphy:n:001"]` updates exactly one object without array searches or ID duplication.
 
@@ -100,11 +143,12 @@ The shipped examples cover the public authoring cases:
 | Audio pack | `fuse-mod.example.json` | `audio.whistles`, `audio.horns`, and `audio.bells`. |
 | Industry component pack | `fuse-mod.example.json` | Built-in component types plus a fully-qualified custom component type with `fields`. |
 | Load component pack | `fuse-mod.example.json` | `operations.loads.*.fields` can carry reflection-bound custom load data. |
-| Package settings | `fuse-mod.example.json` | Top-level `settings` with bool, enum, color, user/profile/server scope, and reload metadata. |
-| Mixinto | `fuse-mod.example.json` | `mixinto.target`, `mixinto.sourceFile`, and conditional `requires`. |
+| Package settings | `fuse-mod.example.json` | Top-level `settings` with bool, enum, color, user/profile/server scope, reload metadata, and object-level `featureRules`. |
+| Mixinto | `fuse-mod.example.json` | `mixinto.target`, `mixinto.sourceFile`, conditional `requires`, and conditional `conflictsWith`. |
 | Progression section | `fuse-mod.example.json` | Root `progression.sections[]`, delivery phases, unlock features, and interchange transfers. |
 | Map mask | `fuse-mod.example.json` | `world.mapMasks` for terrain/object mask authoring. |
 | Scene clone | `fuse-mod.example.json` | `world.sceneClones` for base-game object cloning/retargeting. |
+| Water surface | `fuse-mod.example.json` | `world.waterSurfaces` for FUSE-owned lake planes and optional stock-lake material reuse. |
 | Span-anchored scenery | `fuse-mod.example.json` | `world.scenery.*.anchorSpanIds`. |
 | Signals | Not included | Signals are deferred and should not be treated as supported yet. |
 
@@ -279,7 +323,11 @@ Track segments may also set optional companion-mod gauge metadata:
 }
 ```
 
-FUSE stores `gauge` for mods such as NarrowGaugeMod; base Railroader track geometry remains unchanged unless a companion mod acts on it.
+FUSE stores `gauge` for mods such as NarrowGaugeMod; base Railroader track
+geometry remains unchanged unless a companion mod acts on it. Native values are
+`Standard`, `Narrow`, `DualGauge`, `DualGauge_L`, `DualGauge_R`, and
+`DualGauge_T`; the additional legacy aliases accepted by the schema are read
+compatibility values, not recommended new output.
 
 Asset and prefab references are URI strings:
 
@@ -316,6 +364,13 @@ Spliney `type` describes the physical spline family, not its material flavor:
 - `road`: normal road spline. Use `style`/`profile` for dirt versus pavement.
 - `terrainRoad`: terrain-carved road spline. Use `style`/`profile` for dirt versus pavement.
 - `trestle`: auto-generated trestle spline.
+- `objectLine`: repeats a scenery asset or safe scene-path prefab along a
+  piecewise path. Use this for fence panels, retaining-wall sections,
+  guardrails, hedges, and other rigid modules that must not be stretched into
+  a road/river mesh. Set exactly one of `assetIdentifier` or `prefab`, then use
+  `spacing`, `instanceScale`, `rotationOffset`, lateral/vertical offsets,
+  optional terrain snapping/slope alignment, and the bounded
+  `maximumInstances` safety limit.
 
 Converted Strange Customs `FlowyThingBuilder` data must inspect `style` and `profile`; entries with `style: "River"` or river profiles should be emitted as `type: "river"`, not as roads.
 When converting `FlowyThingBuilder` entries, preserve the legacy default `offsetY: -0.1` if the source omits it; the field keeps road and river surfaces at the same vertical bias Strange Customs used.
@@ -392,6 +447,7 @@ FUSE treats these as overlays on top of the base game's `StreamingAssets/Maps/<d
 - `tracks.areas` are applied at runtime and are used as preferred parents for FUSE-created industries. Area and industry `order` values are also used when rebuilding company-window location ordering.
 - `operations.loads` are applied at runtime by creating or updating `CarPrototypeLibrary.instance.opsLoads` entries. Use `units`, `density`, `unitWeightInPounds`, `importable`, `payPerQuantity`, and `costPerUnit` when the custom load needs full behavior parity with legacy mod data. Custom load mods may use `fields` for reflection-bound field/property values on the runtime `Load` object.
 - `world.mapMasks` are applied at runtime using the default behavior above.
+- `world.waterSurfaces` creates editable polygonal lake planes. Supply at least three world-space points; `sourceLakePath` reuses a specific stock lake's material/profile, while `materialName` selects a loaded material explicitly. `lockHeight`, `snapToTerrain`, `uvScale`, `triangleDensity`, `maximumTriangleArea`, `yOffset`, and `enableCollider` control generation. This native-only contract is intentionally not projected into RailLoader JSON.
 - `world.telegraphPoles` are applied at runtime by generating pole instances along the provided point path at the requested spacing.
 - `world.telegraphPoleMovements` are applied at runtime by translating existing base-game telegraph pole graph nodes by index. FUSE forces the telegraph manager to refresh when possible.
 - `world.spawnPoints` are applied at runtime by creating or updating `Character.SpawnPoint` components under a FUSE-owned world root.
@@ -453,3 +509,58 @@ Asset-pack-only packages can expose existing Railroader `AssetPack` runtime stor
   "FuseAssetPacks": ["SCAssetPacks"]
 }
 ```
+
+Track nodes and segments also preserve the newer graph structure metadata while
+remaining compatible with released Railroader builds that expose the older
+four-way style enum:
+
+```json
+{
+  "tracks": {
+    "nodes": {
+      "murphy:n:diamond-west": {
+        "position": { "x": 10, "y": 2, "z": 20 },
+        "rotation": { "x": 0, "y": 90, "z": 0 },
+        "isDiamond": true
+      }
+    },
+    "segments": {
+      "murphy:s:steel-yard-bridge": {
+        "startNodeId": "murphy:n:001",
+        "endNodeId": "murphy:n:002",
+        "style": "bridge",
+        "bridgeSupportsSteel": true,
+        "yard": true
+      }
+    }
+  }
+}
+```
+
+`isDiamond` marks a graph crossing node. `bridgeSupportsSteel` selects the
+steel-support bridge variant, and `yard` is independent of bridge/tunnel
+structure on game builds that expose combinable flags. Existing `style` values
+(`standard`, `bridge`, `tunnel`, `yard`) remain valid. Partial legacy overlays
+can set `preserveBridgeSupportsSteel` and `preserveYard` just as they already use
+`preserveStyle`.
+
+`Catalog.json` identifies a runtime store. A local `Bundle` is not required for
+a definitions-only catalog whose asset references resolve to another store.
+
+Use `FuseDefinitionOverrides` when a package intentionally supplies
+`Definitions.json` for an existing store without supplying a new catalog/bundle:
+
+```json
+{
+  "Requirements": ["FUSE"],
+  "FuseDefinitionOverrides": [
+    {
+      "StoreIdentifier": "fm-flatcar03",
+      "Path": "DefinitionOverrides/fm-flatcar03/Definitions.json"
+    }
+  ]
+}
+```
+
+Paths are package-relative and cannot escape the package directory. A string
+entry is also accepted and infers `StoreIdentifier` from its parent folder.

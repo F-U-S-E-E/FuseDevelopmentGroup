@@ -50,7 +50,28 @@ namespace FUSE.Tests.Converter
         {
             Assert.Null(LegacyDefinitionConverter.ConvertRequirement(JToken.Parse("\"Railroader\"")));
             Assert.Null(LegacyDefinitionConverter.ConvertRequirement(JToken.Parse("\"StrangeCustoms\"")));
+            Assert.Null(LegacyDefinitionConverter.ConvertRequirement(JToken.Parse("\"AlinaNova21.AlinasMapMod\"")));
+            Assert.Null(LegacyDefinitionConverter.ConvertRequirement(JToken.Parse("\"Railloader.Interchange\"")));
+            Assert.Null(LegacyDefinitionConverter.ConvertRequirement(JToken.Parse("\"AssetLoader\"")));
             Assert.Null(LegacyDefinitionConverter.ConvertRequirement(JToken.Parse("\"FUSE\"")));
+        }
+
+        [Fact]
+        public void ConvertRequirement_keeps_alina_content_pack_as_real_dependency()
+        {
+            var converted = LegacyDefinitionConverter.ConvertRequirement(
+                JToken.Parse("\"AlinaNova21.AlinasMapExpansionSW\""));
+
+            Assert.Equal("AlinaNova21.AlinasMapExpansionSW", converted.Value<string>("id"));
+        }
+
+        [Fact]
+        public void ConvertRequirement_keeps_zamu_mod_without_native_parity_as_real_dependency()
+        {
+            var converted = LegacyDefinitionConverter.ConvertRequirement(
+                JToken.Parse("\"Zamu.SomeKindOfMadness\""));
+
+            Assert.Equal("Zamu.SomeKindOfMadness", converted.Value<string>("id"));
         }
 
         [Fact]
@@ -173,6 +194,84 @@ namespace FUSE.Tests.Converter
             }
         }
 
+        [Fact]
+        public void LegacyDependencies_preserves_hard_requirements_separately_from_ordering()
+        {
+            var temp = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            try
+            {
+                Directory.CreateDirectory(temp);
+                File.WriteAllText(Path.Combine(temp, "Definition.json"), @"{
+                    ""requires"": [ { ""id"": ""RequiredMod"", ""notBefore"": ""2.0"" } ],
+                    ""loadAfter"": [ { ""id"": ""OptionalOrderingMod"" } ]
+                }");
+
+                var result = LegacyDefinitionConverter.LegacyDependencies(temp);
+
+                Assert.Equal(new[] { "RequiredMod.FUSE" }, result.Requires);
+                Assert.Equal(new[] { "OptionalOrderingMod.FUSE" }, result.LoadAfter);
+            }
+            finally
+            {
+                try { Directory.Delete(temp, true); } catch { }
+            }
+        }
+
+        [Fact]
+        public void LegacyDependencies_orders_after_conditional_mixinto_requirements_without_making_them_hard()
+        {
+            var temp = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            try
+            {
+                Directory.CreateDirectory(temp);
+                File.WriteAllText(Path.Combine(temp, "Definition.json"), @"{
+                    ""mixintos"": {
+                        ""game-graph"": {
+                            ""mixinto"": ""file(optional-track.json)"",
+                            ""requires"": [ ""OptionalBase"" ]
+                        }
+                    }
+                }");
+
+                var result = LegacyDefinitionConverter.LegacyDependencies(temp);
+
+                Assert.Empty(result.Requires);
+                Assert.Equal(new[] { "OptionalBase.FUSE" }, result.LoadAfter);
+            }
+            finally
+            {
+                try { Directory.Delete(temp, true); } catch { }
+            }
+        }
+
+        [Fact]
+        public void LegacyConflictsWith_preserves_core_ids_and_version_bounds_for_manifest_enforcement()
+        {
+            var temp = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            try
+            {
+                Directory.CreateDirectory(temp);
+                File.WriteAllText(Path.Combine(temp, "Definition.json"), @"{
+                    ""conflictsWith"": [
+                        { ""id"": ""Other.Route"", ""notBefore"": ""2.0"", ""notAfter"": ""3.0"" },
+                        ""Zamu.StrangeCustoms""
+                    ]
+                }");
+
+                var result = LegacyDefinitionConverter.LegacyConflictsWith(temp);
+
+                Assert.Equal(2, result.Count);
+                Assert.Equal("Other.Route", result[0].Value<string>("Id"));
+                Assert.Equal("2.0", result[0].Value<string>("NotBefore"));
+                Assert.Equal("3.0", result[0].Value<string>("NotAfter"));
+                Assert.Equal("Zamu.StrangeCustoms", result[1].Value<string>("Id"));
+            }
+            finally
+            {
+                try { Directory.Delete(temp, true); } catch { }
+            }
+        }
+
         // ------------------------------------------------------------------
         // MixintoMetadata
         // ------------------------------------------------------------------
@@ -241,6 +340,33 @@ namespace FUSE.Tests.Converter
                 Assert.NotNull(requires);
                 Assert.Single(requires);
                 Assert.Equal("DependencyMod", ((JObject)requires[0]).Value<string>("id"));
+            }
+            finally
+            {
+                try { Directory.Delete(temp, true); } catch { }
+            }
+        }
+
+        [Fact]
+        public void MixintoMetadata_preserves_conditional_conflictsWith()
+        {
+            var temp = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            try
+            {
+                Directory.CreateDirectory(temp);
+                File.WriteAllText(Path.Combine(temp, "Definition.json"), @"{
+                    ""mixintos"": {
+                        ""game-graph"": {
+                            ""mixinto"": ""file(optional.json)"",
+                            ""conflictsWith"": [ { ""id"": ""Other.Route"", ""notBefore"": ""2.0"" } ]
+                        }
+                    }
+                }");
+
+                var (metadata, _) = LegacyDefinitionConverter.MixintoMetadata(temp);
+                var conflict = Assert.Single((JArray)metadata["optional.json"]["conflictsWith"]);
+                Assert.Equal("Other.Route", conflict.Value<string>("id"));
+                Assert.Equal("2.0", conflict.Value<string>("notBefore"));
             }
             finally
             {

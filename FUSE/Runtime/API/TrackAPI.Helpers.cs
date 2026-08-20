@@ -46,6 +46,7 @@ namespace FUSE.Runtime.API
                 Position = definition.Position,
                 Rotation = definition.Rotation,
                 FlipSwitchStand = definition.FlipSwitchStand,
+                IsDiamond = definition.IsDiamond,
                 GroupId = definition.GroupId,
                 Tags = definition.Tags?.ToArray()
             };
@@ -69,8 +70,12 @@ namespace FUSE.Runtime.API
                 GroupId = definition.GroupId,
                 Tags = definition.Tags?.ToArray(),
                 Gauge = definition.Gauge,
+                BridgeSupportsSteel = definition.BridgeSupportsSteel,
+                Yard = definition.Yard,
                 Partial = definition.Partial,
                 PreserveStyle = definition.PreserveStyle,
+                PreserveBridgeSupportsSteel = definition.PreserveBridgeSupportsSteel,
+                PreserveYard = definition.PreserveYard,
                 PreserveTrackClass = definition.PreserveTrackClass,
                 PreserveSpeedLimit = definition.PreserveSpeedLimit,
                 PreservePriority = definition.PreservePriority,

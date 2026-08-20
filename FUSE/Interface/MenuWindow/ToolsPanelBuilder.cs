@@ -14,7 +14,10 @@ namespace FUSE.Interface.MenuWindow
             Inspector,
             DependencyGraph,
             Assets,
+            Conflicts,
             Audits,
+            LiveDiagnostics,
+            IndustryDashboard,
             Stats,
             Actions,
             Benchmark
@@ -41,7 +44,10 @@ namespace FUSE.Interface.MenuWindow
             list.Add(new UIPanelBuilder.ListItem<Page>("inspector", new Page(PageId.Inspector), "Tools", "Object Inspector"));
             list.Add(new UIPanelBuilder.ListItem<Page>("dependencyGraph", new Page(PageId.DependencyGraph), "Tools", "Dependency Graph"));
             list.Add(new UIPanelBuilder.ListItem<Page>("assets", new Page(PageId.Assets), "Tools", "Assets Report"));
+            list.Add(new UIPanelBuilder.ListItem<Page>("conflicts", new Page(PageId.Conflicts), "Tools", "Mod Conflicts"));
             list.Add(new UIPanelBuilder.ListItem<Page>("audits", new Page(PageId.Audits), "Tools", "Diagnostics Report"));
+            list.Add(new UIPanelBuilder.ListItem<Page>("liveDiagnostics", new Page(PageId.LiveDiagnostics), "Tools", "Live Diagnostics"));
+            list.Add(new UIPanelBuilder.ListItem<Page>("industryDashboard", new Page(PageId.IndustryDashboard), "Tools", "Industry Dashboard"));
             list.Add(new UIPanelBuilder.ListItem<Page>("stats", new Page(PageId.Stats), "Tools", "World Stats"));
             list.Add(new UIPanelBuilder.ListItem<Page>("actions", new Page(PageId.Actions), "Tools", "Runtime Actions"));
             list.Add(new UIPanelBuilder.ListItem<Page>("benchmark", new Page(PageId.Benchmark), "Tools", "Scenery Benchmark"));
@@ -69,8 +75,17 @@ namespace FUSE.Interface.MenuWindow
                             case PageId.Assets:
                                 AssetsToolPage.Build(builder);
                                 break;
+                            case PageId.Conflicts:
+                                ModConflictsToolPage.Build(builder);
+                                break;
                             case PageId.Audits:
                                 AuditsToolPage.Build(builder);
+                                break;
+                            case PageId.LiveDiagnostics:
+                                LiveDiagnosticsToolPage.Build(builder);
+                                break;
+                            case PageId.IndustryDashboard:
+                                IndustryDashboardToolPage.Build(builder);
                                 break;
                             case PageId.Stats:
                                 BuildStatsPage(builder);
@@ -108,6 +123,7 @@ namespace FUSE.Interface.MenuWindow
             builder.AddField("Scenery", SafeCount(() => SceneryAPI.GetAllScenery().Count()).ToString());
             builder.AddField("Scene Clones", SafeCount(() => SceneCloneAPI.GetAllSceneClones().Count()).ToString());
             builder.AddField("Splineys", SafeCount(() => SplineyAPI.GetAllSplineys().Count()).ToString());
+            builder.AddField("Water Surfaces", SafeCount(() => WaterSurfaceAPI.GetAllWaterSurfaces().Count()).ToString());
             builder.AddField("Map Labels", SafeCount(() => MapAPI.GetAllMapLabels().Count()).ToString());
             builder.AddField("Map Masks", SafeCount(() => MapAPI.GetAllMapMasks().Count()).ToString());
             builder.AddField("Progressions", SafeCount(() => ProgressionAPI.GetAllProgressions().Count()).ToString());
@@ -117,7 +133,12 @@ namespace FUSE.Interface.MenuWindow
             builder.AddSection("Registry");
             builder.AddField("Exclusive Claims", FUSE.Runtime.Registry.FuseRegistry.ExclusiveClaimCount.ToString());
             builder.AddField("Shared Claims", FUSE.Runtime.Registry.FuseRegistry.SharedClaimCount.ToString());
-            builder.AddField("Conflicts", FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count.ToString());
+            builder.AddField(
+                "Conflicts",
+                FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count(conflict => !conflict.IsCooperativeMerge).ToString());
+            builder.AddField(
+                "Shared Extension Targets",
+                FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count(conflict => conflict.IsCooperativeMerge).ToString());
             builder.AddField("Asset Stores", FUSE.Infrastructure.FusePerformanceMetrics.FormatCount("direct asset pack store count"));
         }
     }

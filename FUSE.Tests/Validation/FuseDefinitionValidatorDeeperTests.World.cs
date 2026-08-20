@@ -107,6 +107,45 @@ namespace FUSE.Tests.Validation
         public class WorldSplineyAndTelegraphRules
         {
             [Fact]
+            public void WaterSurface_WithInvalidGeometry_EmitsActionableErrors()
+            {
+                var definition = MinimalValid();
+                definition.World.WaterSurfaces["lake"] = new FuseWaterSurface
+                {
+                    Points = new[] { Vector3.zero, Vector3.one },
+                    TriangleDensity = 0f,
+                    MaximumTriangleArea = 0f,
+                    UvScale = 0f,
+                };
+
+                var result = NewValidator().Validate(definition);
+
+                Assert.Contains(result.Errors, e => e.Code == "fuse.waterSurface.points");
+                Assert.Contains(result.Errors, e => e.Code == "fuse.waterSurface.triangleDensity");
+                Assert.Contains(result.Errors, e => e.Code == "fuse.waterSurface.maximumTriangleArea");
+                Assert.Contains(result.Errors, e => e.Code == "fuse.waterSurface.uvScale");
+            }
+
+            [Fact]
+            public void WaterSurface_WithThreePointsAndSafeTessellation_IsAccepted()
+            {
+                var definition = MinimalValid();
+                definition.World.WaterSurfaces["lake"] = new FuseWaterSurface
+                {
+                    Points = new[]
+                    {
+                        Vector3.zero,
+                        new Vector3(20f, 0f, 0f),
+                        new Vector3(0f, 0f, 20f),
+                    },
+                };
+
+                var result = NewValidator().Validate(definition);
+
+                Assert.DoesNotContain(result.Errors, e => e.Field.StartsWith("world.waterSurfaces.lake", StringComparison.Ordinal));
+            }
+
+            [Fact]
             public void Spliney_WithFewerThanTwoPoints_EmitsError()
             {
                 var definition = MinimalValid();
@@ -134,6 +173,57 @@ namespace FUSE.Tests.Validation
                 var result = NewValidator().Validate(definition);
 
                 Assert.Contains(result.Errors, e => e.Field == "world.splineys.wires.type" && e.Code == "fuse.required");
+            }
+
+            [Fact]
+            public void ObjectLine_RequiresOneSourceAndSafeLayoutLimits()
+            {
+                var definition = MinimalValid();
+                definition.World.Splineys["fence"] = new FuseSpliney
+                {
+                    Type = "objectLine",
+                    AssetIdentifier = "fence-panel",
+                    Prefab = "path://scene/World/Fence",
+                    Spacing = 0f,
+                    MaximumInstances = 5000,
+                    Points = new[]
+                    {
+                        new FuseSplineyPoint { Position = Vector3.zero },
+                        new FuseSplineyPoint { Position = Vector3.right },
+                    },
+                };
+
+                var result = NewValidator().Validate(definition);
+
+                Assert.Contains(result.Errors, error => error.Code == "fuse.spliney.objectLine.source");
+                Assert.Contains(result.Errors, error => error.Code == "fuse.spliney.objectLine.spacing");
+                Assert.Contains(result.Errors, error => error.Code == "fuse.spliney.objectLine.maximumInstances");
+            }
+
+            [Fact]
+            public void ObjectLine_WithOneAssetSourceAndSafeLimits_IsAccepted()
+            {
+                var definition = MinimalValid();
+                definition.World.Splineys["fence"] = new FuseSpliney
+                {
+                    Type = "objectLine",
+                    AssetIdentifier = "fence-panel",
+                    Spacing = 3f,
+                    MaximumInstances = 200,
+                    Points = new[]
+                    {
+                        new FuseSplineyPoint { Position = Vector3.zero },
+                        new FuseSplineyPoint { Position = Vector3.right * 20f },
+                    },
+                };
+
+                var result = NewValidator().Validate(definition);
+
+                Assert.DoesNotContain(
+                    result.Errors,
+                    error => error.Field.StartsWith(
+                        "world.splineys.fence",
+                        StringComparison.Ordinal));
             }
 
             [Fact]
@@ -363,6 +453,21 @@ namespace FUSE.Tests.Validation
                 var result = NewValidator().Validate(definition);
 
                 Assert.Contains(result.Errors, e => e.Code == "fuse.world.removal.conflict");
+            }
+
+            [Fact]
+            public void WaterSurfaceRemoval_AlsoDefined_EmitsConflictError()
+            {
+                var definition = MinimalValid();
+                definition.World.WaterSurfaces["lake"] = new FuseWaterSurface
+                {
+                    Points = new[] { Vector3.zero, Vector3.right, Vector3.forward },
+                };
+                definition.World.Removals.WaterSurfaces = new[] { "lake" };
+
+                var result = NewValidator().Validate(definition);
+
+                Assert.Contains(result.Errors, e => e.Field == "world.removals.waterSurfaces[0]" && e.Code == "fuse.world.removal.conflict");
             }
 
             [Fact]

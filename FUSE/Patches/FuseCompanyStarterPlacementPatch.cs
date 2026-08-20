@@ -2,9 +2,11 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using FUSE.Loading;
 using FUSE.Infrastructure;
 using Game.Messages;
 using Game.Progression;
+using Game.Scripting.Interactive;
 using Game.State;
 using HarmonyLib;
 using KeyValue.Runtime;
@@ -13,25 +15,40 @@ using Model.Definition;
 using Model.Ops;
 using Model.Ops.Definition;
 using Track;
+using UI.Common;
 using UnityEngine;
 
 namespace FUSE.Patches
 {
     /// <summary>
     /// Moves the stock East Whittier Company starter equipment into an
-    /// interactive placement queue, and does the same for invalid placements
-    /// from any other setup. This lets the player choose live track after the
-    /// progression has settled instead of depending on one fixed scene marker.
+    /// interactive placement queue when Appalachian Railway's Whittier start
+    /// package is active. This lets the player choose live track after the
+    /// progression and tutorial have settled instead of depending on one fixed
+    /// scene marker.
     /// </summary>
     [HarmonyPatch(typeof(CompanyModeSetup), nameof(CompanyModeSetup.Setup))]
     internal static class FuseCompanyStarterPlacementPatch
     {
+        private const string AppalachianWhittierStartId =
+            "KingG.Appalachian-Railway.start-whit";
+        private static readonly Queue<SetupDescriptor.CarPlacement>
+            PendingPlacements =
+                new Queue<SetupDescriptor.CarPlacement>();
+        private static bool _presenting;
+
         [HarmonyPostfix]
         private static void SetupPostfix(
             SetupDescriptor setupDescriptor,
             ref IEnumerator __result)
         {
-            if (__result != null && setupDescriptor != null)
+            PendingPlacements.Clear();
+            _presenting = false;
+            if (__result != null
+                && setupDescriptor != null
+                && ShouldQueueStarterSetup(
+                    setupDescriptor.identifier,
+                    FuseModLoader.GetLoadedMods()))
             {
                 __result = RepairAfterInitialDelay(__result, setupDescriptor);
             }
@@ -42,7 +59,6 @@ namespace FUSE.Patches
             SetupDescriptor setupDescriptor)
         {
             var repairPending = true;
-            var placementQueue = new Queue<SetupDescriptor.CarPlacement>();
             while (original.MoveNext())
             {
                 yield return original.Current;
@@ -52,14 +68,36 @@ namespace FUSE.Patches
                 }
 
                 repairPending = false;
-                QueueStarterPlacements(setupDescriptor, placementQueue);
+                QueueStarterPlacements(
+                    setupDescriptor,
+                    PendingPlacements);
             }
 
-            if (placementQueue.Count > 0)
+            if (PendingPlacements.Count > 0)
             {
                 yield return null;
-                PresentNextPlacement(placementQueue);
+                while (InteractiveBookWindow.Shared != null
+                       && InteractiveBookWindow.Shared.IsShown)
+                {
+                    yield return null;
+                }
+                PresentNextPlacement();
             }
+        }
+
+        internal static bool ShouldQueueStarterSetup(
+            string setupIdentifier,
+            IEnumerable<string> loadedDefinitionIds)
+        {
+            return !string.IsNullOrWhiteSpace(setupIdentifier)
+                   && setupIdentifier.StartsWith(
+                       "ewh-",
+                       StringComparison.OrdinalIgnoreCase)
+                   && (loadedDefinitionIds ?? Array.Empty<string>()).Any(id =>
+                       string.Equals(
+                           id,
+                           AppalachianWhittierStartId,
+                           StringComparison.OrdinalIgnoreCase));
         }
 
         internal static int QueueStarterPlacements(
@@ -74,16 +112,9 @@ namespace FUSE.Patches
             }
 
             var queued = 0;
-            var queueEntireSetup = IsStockEastWhittierSetup(setupDescriptor);
             var retained = new List<SetupDescriptor.CarPlacement>(source.Length);
             foreach (var placement in source)
             {
-                if (!queueEntireSetup && PlacementIsUsable(placement))
-                {
-                    retained.Add(placement);
-                    continue;
-                }
-
                 placementQueue?.Enqueue(placement);
                 queued++;
                 FuseLog.Info(
@@ -96,45 +127,19 @@ namespace FUSE.Patches
             return queued;
         }
 
-        private static bool IsStockEastWhittierSetup(
-            SetupDescriptor setupDescriptor)
+        private static void PresentNextPlacement()
         {
-            return setupDescriptor != null &&
-                   !string.IsNullOrWhiteSpace(setupDescriptor.identifier) &&
-                   setupDescriptor.identifier.StartsWith(
-                       "ewh-",
-                       StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool PlacementIsUsable(
-            SetupDescriptor.CarPlacement placement)
-        {
-            if (placement?.marker == null)
-            {
-                return false;
-            }
-
-            var location = placement.marker.Location;
-            return location.HasValue &&
-                   location.Value.IsValid &&
-                   location.Value.segment != null &&
-                   location.Value.segment.GroupEnabled &&
-                   location.Value.segment.Available;
-        }
-
-        private static void PresentNextPlacement(
-            Queue<SetupDescriptor.CarPlacement> placementQueue)
-        {
-            if (placementQueue == null || placementQueue.Count == 0)
+            if (_presenting || PendingPlacements.Count == 0)
             {
                 return;
             }
 
-            var placement = placementQueue.Dequeue();
+            var placement = PendingPlacements.Peek();
             var descriptors = BuildDescriptors(placement);
             if (descriptors.Count == 0)
             {
-                PresentNextPlacement(placementQueue);
+                PendingPlacements.Dequeue();
+                PresentNextPlacement();
                 return;
             }
 
@@ -142,22 +147,112 @@ namespace FUSE.Patches
             if (placer == null)
             {
                 FuseLog.Warning(
-                    $"FUSE could not present {placementQueue.Count + 1} queued Company starter cut(s): " +
+                    $"FUSE could not present {PendingPlacements.Count} queued Company starter cut(s): " +
                     "the game's consist placer is unavailable.");
                 return;
             }
 
-            placer.Present(
-                descriptors,
-                null,
-                _ => placer.StartCoroutine(PresentAfterFrame(placementQueue)));
+            _presenting = true;
+            var trainController = TrainController.Shared;
+            if (trainController != null)
+            {
+                // The current game build reports `placed=true` even when its
+                // caught PlaceTrain call failed. Clearing and checking this
+                // public result prevents that false callback from consuming
+                // the retained starter cut.
+                trainController.LastPlacedTrain = null;
+            }
+            try
+            {
+                placer.Present(
+                    descriptors,
+                    null,
+                    placed =>
+                    {
+                        _presenting = false;
+                        var placedCount = TrainController.Shared?
+                            .LastPlacedTrain?.Count ?? 0;
+                        if (!WasPlacementCommitted(
+                                placed,
+                                descriptors.Count,
+                                placedCount))
+                        {
+                            FuseLog.Info(
+                                "FUSE retained "
+                                + PendingPlacements.Count
+                                + " Appalachian Railway starter cut(s) after "
+                                + (placed
+                                    ? "the game did not confirm every car was created."
+                                    : "placement was cancelled."));
+                            Toast.Present(
+                                "Starter equipment retained. Run /fuse.starters "
+                                + "when you are ready to place it.",
+                                ToastPosition.Middle);
+                            return;
+                        }
+
+                        if (PendingPlacements.Count > 0
+                            && ReferenceEquals(
+                                PendingPlacements.Peek(),
+                                placement))
+                        {
+                            PendingPlacements.Dequeue();
+                        }
+                        placer.StartCoroutine(PresentAfterFrame());
+                    });
+            }
+            catch (Exception ex)
+            {
+                _presenting = false;
+                FuseLog.Exception(
+                    "FUSE could not open Appalachian Railway starter placement; "
+                    + "the cut remains queued.",
+                    ex);
+                Toast.Present(
+                    "Starter equipment retained. Run /fuse.starters when "
+                    + "placement is available.",
+                    ToastPosition.Middle);
+            }
         }
 
-        private static IEnumerator PresentAfterFrame(
-            Queue<SetupDescriptor.CarPlacement> placementQueue)
+        internal static bool WasPlacementCommitted(
+            bool callbackReportedPlaced,
+            int expectedCarCount,
+            int placedCarCount)
+        {
+            return callbackReportedPlaced
+                   && expectedCarCount > 0
+                   && placedCarCount == expectedCarCount;
+        }
+
+        private static IEnumerator PresentAfterFrame()
         {
             yield return null;
-            PresentNextPlacement(placementQueue);
+            PresentNextPlacement();
+        }
+
+        internal static string ResumePendingPlacements()
+        {
+            if (PendingPlacements.Count == 0)
+                return "No Appalachian Railway starter equipment is pending.";
+            if (_presenting)
+            {
+                return "Starter equipment placement is already active ("
+                       + PendingPlacements.Count
+                       + " cut(s) remaining).";
+            }
+            if (InteractiveBookWindow.Shared != null
+                && InteractiveBookWindow.Shared.IsShown)
+            {
+                return "Close the tutorial, then run /fuse.starters again. "
+                       + PendingPlacements.Count
+                       + " starter cut(s) are safely retained.";
+            }
+
+            PresentNextPlacement();
+            return "Opened Appalachian Railway starter equipment placement ("
+                   + PendingPlacements.Count
+                   + " cut(s) remaining).";
         }
 
         private static List<CarDescriptor> BuildDescriptors(

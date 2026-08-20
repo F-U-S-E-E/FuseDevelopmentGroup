@@ -74,6 +74,15 @@ namespace FUSE.Tests.Loading
             return full;
         }
 
+        private string CreateCatalogOnlyPackFolder(string relative)
+        {
+            var full = Path.Combine(_modsRoot, relative);
+            Directory.CreateDirectory(full);
+            File.WriteAllText(Path.Combine(full, "Catalog.json"), "{}");
+            File.WriteAllText(Path.Combine(full, "Definitions.json"), "{}");
+            return full;
+        }
+
         [Fact]
         public void Discovery_yields_root_packs_before_SCAssetPacks_packs()
         {
@@ -137,6 +146,24 @@ namespace FUSE.Tests.Loading
         }
 
         [Fact]
+        public void Discovery_yields_package_root_catalog_store_before_child_stores()
+        {
+            var modFolder = Path.Combine(_modsRoot, "RootCatalogMod");
+            Directory.CreateDirectory(modFolder);
+            File.WriteAllText(Path.Combine(modFolder, "Catalog.json"), "{}");
+            File.WriteAllText(Path.Combine(modFolder, "Definitions.json"), "{}");
+            var child = CreatePackFolder(@"RootCatalogMod\child-store");
+
+            var folders = FuseAssetPackRegistry
+                .EnumerateFallbackAssetPackFolders(modFolder)
+                .Select(Path.GetFullPath)
+                .ToArray();
+
+            Assert.Equal(Path.GetFullPath(modFolder), folders[0]);
+            Assert.Contains(Path.GetFullPath(child), folders);
+        }
+
+        [Fact]
         public void Discovery_yields_model_only_packs_without_definitions()
         {
             var modFolder = Path.Combine(_modsRoot, "WhistleModels");
@@ -150,6 +177,23 @@ namespace FUSE.Tests.Loading
                 .ToArray();
 
             Assert.Contains(Path.GetFullPath(modelPack), folders);
+        }
+
+        [Fact]
+        public void Discovery_yields_catalog_stores_without_a_local_bundle()
+        {
+            var modFolder = Path.Combine(_modsRoot, "DefinitionsOnlyCatalogMod");
+            Directory.CreateDirectory(modFolder);
+
+            var catalogStore = CreateCatalogOnlyPackFolder(
+                @"DefinitionsOnlyCatalogMod\player-coal-load");
+
+            var folders = FuseAssetPackRegistry
+                .EnumerateFallbackAssetPackFolders(modFolder)
+                .Select(Path.GetFullPath)
+                .ToArray();
+
+            Assert.Contains(Path.GetFullPath(catalogStore), folders);
         }
 
         [Fact]

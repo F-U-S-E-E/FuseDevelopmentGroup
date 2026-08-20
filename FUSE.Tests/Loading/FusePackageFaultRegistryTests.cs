@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using FUSE.Loading;
+using Newtonsoft.Json.Linq;
 using Xunit;
 
 namespace FUSE.Tests.Loading
@@ -97,6 +98,62 @@ namespace FUSE.Tests.Loading
 
             var fault = Assert.Single(FusePackageFaultRegistry.GetFaults());
             Assert.Contains("inner-detail", fault.Details);
+        }
+
+        [Fact]
+        public void RecordFault_ExtractsJsonLocationAndSourceFile()
+        {
+            Exception exception = null;
+            try
+            {
+                JObject.Parse("{\"track\": [ }");
+            }
+            catch (Exception ex)
+            {
+                exception = ex;
+            }
+
+            var source = @"C:\Railroader\Mods\BrokenTrack\track.fuse.json";
+            FusePackageFaultRegistry.RecordFault(
+                "BrokenTrack",
+                "JSON deserialization",
+                "Invalid JSON",
+                exception,
+                @"C:\Railroader\Mods\BrokenTrack",
+                source);
+
+            var fault = Assert.Single(FusePackageFaultRegistry.GetFaults());
+            Assert.Equal(source, fault.SourceFile);
+            Assert.Equal("BrokenTrack", fault.PackageName);
+            Assert.Equal("track.fuse.json", fault.RelativeSourceFile);
+            Assert.Equal("track", fault.JsonPath);
+            Assert.True(fault.LineNumber > 0);
+            Assert.Contains("Valid JSON", fault.ExpectedShape);
+            Assert.Contains("Unexpected character", fault.ReceivedValue);
+            Assert.Contains("Correct the JSON", fault.SuggestedAction);
+        }
+
+        [Fact]
+        public void RecordFault_PreservesSchemaExpectationCodeAndReceivedValue()
+        {
+            FusePackageFaultRegistry.RecordFault(
+                "pkg",
+                "schema validation",
+                "Number expected.",
+                folderPath: @"C:\Railroader\Mods\Pretty Folder",
+                sourceFile: @"C:\Railroader\Mods\Pretty Folder\map.fuse.json",
+                jsonPath: "operations.loaders.loader.rate",
+                packageName: "Pretty Package",
+                validationCode: "fuse.number",
+                expectedShape: "A finite number greater than zero.",
+                receivedValue: "fast");
+
+            var fault = Assert.Single(FusePackageFaultRegistry.GetFaults());
+            Assert.Equal("Pretty Package", fault.PackageName);
+            Assert.Equal("map.fuse.json", fault.RelativeSourceFile);
+            Assert.Equal("fuse.number", fault.ValidationCode);
+            Assert.Equal("A finite number greater than zero.", fault.ExpectedShape);
+            Assert.Equal("fast", fault.ReceivedValue);
         }
 
         [Fact]

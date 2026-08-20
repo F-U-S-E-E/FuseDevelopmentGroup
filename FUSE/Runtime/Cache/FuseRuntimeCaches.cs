@@ -243,6 +243,19 @@ namespace FUSE.Runtime.Cache
         }
     }
 
+    public sealed class FuseWaterSurfaceRuntimeIndex : FuseRuntimeIndex<FuseWaterSurfaceRuntimeIndex>
+    {
+        public override void Rebuild()
+        {
+            Clear();
+            foreach (var marker in Object.FindObjectsOfType<FUSE.Runtime.API.FuseWaterSurfaceMarker>(true)
+                         .Where(marker => marker != null && !string.IsNullOrWhiteSpace(marker.Id)))
+            {
+                Set(marker.Id, marker.gameObject);
+            }
+        }
+    }
+
     public sealed class FuseMapLabelRuntimeIndex : FuseRuntimeIndex<FuseMapLabelRuntimeIndex>
     {
         public override void Rebuild()

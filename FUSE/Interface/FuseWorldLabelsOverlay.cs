@@ -4,6 +4,7 @@ using FUSE.Runtime.API;
 using FUSE.Runtime.Cache;
 using FUSE.Infrastructure;
 using Track;
+using UI.Common;
 using UnityEngine;
 
 namespace FUSE.Interface
@@ -62,6 +63,7 @@ namespace FUSE.Interface
         public static readonly Color TrackSegmentColor = new Color(1.00f, 0.88f, 0.25f, 1f);   // yellow
 
         private static GameObject _host;
+        private static bool _windowInspectionWarningLogged;
 
         private readonly List<Label> _labels = new List<Label>(256);
         private GUIStyle _labelStyle;
@@ -89,6 +91,8 @@ namespace FUSE.Interface
                 Destroy(_host);
                 _host = null;
             }
+
+            _windowInspectionWarningLogged = false;
         }
 
         private void Update()
@@ -114,7 +118,10 @@ namespace FUSE.Interface
 
         private void OnGUI()
         {
-            if (!FuseSettings.ShowWorldLabelsOverlay)
+            if (!ShouldRender(
+                    FuseSettings.ShowWorldLabelsOverlay,
+                    Time.timeScale <= 0f,
+                    HasShownGameWindow()))
             {
                 return;
             }
@@ -182,6 +189,47 @@ namespace FUSE.Interface
                 GUI.Label(new Rect(rect.x + 4f, rect.y + 2f, rect.width - 8f, rect.height - 4f), content, _labelStyle);
                 painted++;
             }
+        }
+
+        internal static bool ShouldRender(bool enabled, bool gamePaused, bool hasShownGameWindow)
+        {
+            return enabled && !gamePaused && !hasShownGameWindow;
+        }
+
+        private static bool HasShownGameWindow()
+        {
+            var manager = WindowManager.Shared;
+            if (manager == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var windows = manager.GetComponentsInChildren<Window>(true);
+                for (var index = 0; index < windows.Length; index++)
+                {
+                    if (windows[index] != null && windows[index].IsShown)
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // UI teardown can race OnGUI while returning to the main menu.
+                // Failing open keeps a transient manager state from disabling
+                // the overlay for the rest of the session.
+                if (!_windowInspectionWarningLogged)
+                {
+                    _windowInspectionWarningLogged = true;
+                    FuseLog.Warning(
+                        "FUSE world-labels overlay could not inspect game windows: " +
+                        ex.GetBaseException().Message);
+                }
+            }
+
+            return false;
         }
 
         private void OnDestroy()

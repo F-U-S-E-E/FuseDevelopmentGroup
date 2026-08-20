@@ -68,6 +68,27 @@ namespace FUSE.Infrastructure
         // a newer stable FUSE release exists and, if so, surfaces a non-blocking
         // notice. On by default; one switch turns off all network access for it.
         public const bool DefaultEnableUpdateCheck = true;
+        // Native replacement for ZAMU FallFromGrace. The defaults preserve the
+        // base game's grace calculation exactly (minimum 0, x1, +0) while still
+        // enabling the useful due-date row in the car inspector.
+        public const int DefaultGraceMinimumDays = 0;
+        public const int DefaultGraceMultiplier = 1;
+        public const int DefaultGraceAddedDays = 0;
+        public const int DefaultInterchangeServiceIntervalMinutes = 150;
+        public const bool DefaultInterchangeContinuousService = false;
+        public const float DefaultInterchangeNotBeforeHour = 0f;
+        public const float DefaultInterchangeNotAfterHour = 24f;
+        public const bool DefaultEnableOutboundIndustryRerouting = false;
+        public const float DefaultOutboundIndustryRerouteChance = 0.25f;
+        public const float DefaultOutboundIndustryFillFactor = 1f;
+        public const float DefaultOutboundIndustryPaymentMultiplier = 1f;
+        public const bool DefaultOutboundIndustryAllowShortTrips = false;
+        public const bool DefaultOutboundIndustryIgnoreOrigin = false;
+        public const bool DefaultOutboundIndustryPreventBlocking = false;
+        public const int DefaultInterchangeToInterchangeMaximumCars = 30;
+        public const bool DefaultForYourConvenienceShowCabooseIcons = false;
+        public const bool DefaultForYourConvenienceShowCarTagMph = false;
+        public const bool DefaultForYourConvenienceShowCarTagLoads = false;
         // The cold load of a direct (fuseasset://) asset pack goes through the
         // game's public ContainerSerialization.Deserialize so old-loader
         // Harmony postfixes (LegosLibraryOfStuff clone/edit injection) apply
@@ -143,6 +164,57 @@ namespace FUSE.Infrastructure
 
         public static bool EnableUpdateCheck { get; private set; } = DefaultEnableUpdateCheck;
 
+        public static int GraceMinimumDays { get; private set; } = DefaultGraceMinimumDays;
+
+        public static int GraceMultiplier { get; private set; } = DefaultGraceMultiplier;
+
+        public static int GraceAddedDays { get; private set; } = DefaultGraceAddedDays;
+
+        public static int InterchangeServiceIntervalMinutes { get; private set; } =
+            DefaultInterchangeServiceIntervalMinutes;
+
+        public static bool InterchangeContinuousService { get; private set; } =
+            DefaultInterchangeContinuousService;
+
+        public static float InterchangeNotBeforeHour { get; private set; } =
+            DefaultInterchangeNotBeforeHour;
+
+        public static float InterchangeNotAfterHour { get; private set; } =
+            DefaultInterchangeNotAfterHour;
+
+        public static bool EnableOutboundIndustryRerouting { get; private set; } =
+            DefaultEnableOutboundIndustryRerouting;
+
+        public static float OutboundIndustryRerouteChance { get; private set; } =
+            DefaultOutboundIndustryRerouteChance;
+
+        public static float OutboundIndustryFillFactor { get; private set; } =
+            DefaultOutboundIndustryFillFactor;
+
+        public static float OutboundIndustryPaymentMultiplier { get; private set; } =
+            DefaultOutboundIndustryPaymentMultiplier;
+
+        public static bool OutboundIndustryAllowShortTrips { get; private set; } =
+            DefaultOutboundIndustryAllowShortTrips;
+
+        public static bool OutboundIndustryIgnoreOrigin { get; private set; } =
+            DefaultOutboundIndustryIgnoreOrigin;
+
+        public static bool OutboundIndustryPreventBlocking { get; private set; } =
+            DefaultOutboundIndustryPreventBlocking;
+
+        public static int InterchangeToInterchangeMaximumCars { get; private set; } =
+            DefaultInterchangeToInterchangeMaximumCars;
+
+        public static bool ForYourConvenienceShowCabooseIcons { get; private set; } =
+            DefaultForYourConvenienceShowCabooseIcons;
+
+        public static bool ForYourConvenienceShowCarTagMph { get; private set; } =
+            DefaultForYourConvenienceShowCarTagMph;
+
+        public static bool ForYourConvenienceShowCarTagLoads { get; private set; } =
+            DefaultForYourConvenienceShowCarTagLoads;
+
         public static bool DirectStoreNativeDeserialize { get; private set; } = DefaultDirectStoreNativeDeserialize;
 
         public static void Load(UnityModManager.ModEntry modEntry)
@@ -176,6 +248,24 @@ namespace FUSE.Infrastructure
             ForceConstrainedVramMode = DefaultForceConstrainedVramMode;
             EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
             EnableUpdateCheck = DefaultEnableUpdateCheck;
+            GraceMinimumDays = DefaultGraceMinimumDays;
+            GraceMultiplier = DefaultGraceMultiplier;
+            GraceAddedDays = DefaultGraceAddedDays;
+            InterchangeServiceIntervalMinutes = DefaultInterchangeServiceIntervalMinutes;
+            InterchangeContinuousService = DefaultInterchangeContinuousService;
+            InterchangeNotBeforeHour = DefaultInterchangeNotBeforeHour;
+            InterchangeNotAfterHour = DefaultInterchangeNotAfterHour;
+            EnableOutboundIndustryRerouting = DefaultEnableOutboundIndustryRerouting;
+            OutboundIndustryRerouteChance = DefaultOutboundIndustryRerouteChance;
+            OutboundIndustryFillFactor = DefaultOutboundIndustryFillFactor;
+            OutboundIndustryPaymentMultiplier = DefaultOutboundIndustryPaymentMultiplier;
+            OutboundIndustryAllowShortTrips = DefaultOutboundIndustryAllowShortTrips;
+            OutboundIndustryIgnoreOrigin = DefaultOutboundIndustryIgnoreOrigin;
+            OutboundIndustryPreventBlocking = DefaultOutboundIndustryPreventBlocking;
+            InterchangeToInterchangeMaximumCars = DefaultInterchangeToInterchangeMaximumCars;
+            ForYourConvenienceShowCabooseIcons = DefaultForYourConvenienceShowCabooseIcons;
+            ForYourConvenienceShowCarTagMph = DefaultForYourConvenienceShowCarTagMph;
+            ForYourConvenienceShowCarTagLoads = DefaultForYourConvenienceShowCarTagLoads;
             DirectStoreNativeDeserialize = DefaultDirectStoreNativeDeserialize;
             FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
 
@@ -248,6 +338,51 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "EnableNativeLeakStackTraces", DefaultEnableNativeLeakStackTraces);
                 EnableUpdateCheck =
                     ReadBool(settings, "EnableUpdateCheck", DefaultEnableUpdateCheck);
+                GraceMinimumDays =
+                    ReadInt(settings, "GraceMinimumDays", DefaultGraceMinimumDays);
+                GraceMultiplier =
+                    ReadInt(settings, "GraceMultiplier", DefaultGraceMultiplier);
+                GraceAddedDays =
+                    ReadInt(settings, "GraceAddedDays", DefaultGraceAddedDays);
+                InterchangeServiceIntervalMinutes = NormalizeInterchangeServiceIntervalMinutes(
+                    ReadInt(settings, "InterchangeServiceIntervalMinutes", DefaultInterchangeServiceIntervalMinutes));
+                InterchangeContinuousService =
+                    ReadBool(settings, "InterchangeContinuousService", DefaultInterchangeContinuousService);
+                InterchangeNotBeforeHour = ClampInterchangeServiceHour(
+                    ReadFloat(settings, "InterchangeNotBeforeHour", DefaultInterchangeNotBeforeHour));
+                InterchangeNotAfterHour = ClampInterchangeServiceHour(
+                    ReadFloat(settings, "InterchangeNotAfterHour", DefaultInterchangeNotAfterHour));
+                EnableOutboundIndustryRerouting =
+                    ReadBool(settings, "EnableOutboundIndustryRerouting", DefaultEnableOutboundIndustryRerouting);
+                OutboundIndustryRerouteChance = Mathf.Clamp01(
+                    ReadFloat(settings, "OutboundIndustryRerouteChance", DefaultOutboundIndustryRerouteChance));
+                OutboundIndustryFillFactor = ClampOutboundIndustryFillFactor(
+                    ReadFloat(settings, "OutboundIndustryFillFactor", DefaultOutboundIndustryFillFactor));
+                OutboundIndustryPaymentMultiplier = ClampOutboundIndustryPaymentMultiplier(
+                    ReadFloat(settings, "OutboundIndustryPaymentMultiplier", DefaultOutboundIndustryPaymentMultiplier));
+                OutboundIndustryAllowShortTrips =
+                    ReadBool(settings, "OutboundIndustryAllowShortTrips", DefaultOutboundIndustryAllowShortTrips);
+                OutboundIndustryIgnoreOrigin =
+                    ReadBool(settings, "OutboundIndustryIgnoreOrigin", DefaultOutboundIndustryIgnoreOrigin);
+                OutboundIndustryPreventBlocking =
+                    ReadBool(settings, "OutboundIndustryPreventBlocking", DefaultOutboundIndustryPreventBlocking);
+                InterchangeToInterchangeMaximumCars = ClampInterchangeToInterchangeMaximumCars(
+                    ReadInt(
+                        settings,
+                        "InterchangeToInterchangeMaximumCars",
+                        DefaultInterchangeToInterchangeMaximumCars));
+                ForYourConvenienceShowCabooseIcons = ReadBool(
+                    settings,
+                    "ForYourConvenienceShowCabooseIcons",
+                    DefaultForYourConvenienceShowCabooseIcons);
+                ForYourConvenienceShowCarTagMph = ReadBool(
+                    settings,
+                    "ForYourConvenienceShowCarTagMph",
+                    DefaultForYourConvenienceShowCarTagMph);
+                ForYourConvenienceShowCarTagLoads = ReadBool(
+                    settings,
+                    "ForYourConvenienceShowCarTagLoads",
+                    DefaultForYourConvenienceShowCarTagLoads);
                 DirectStoreNativeDeserialize =
                     ReadBool(settings, "DirectStoreNativeDeserialize", DefaultDirectStoreNativeDeserialize);
                 ApplyUserOverrides();
@@ -284,6 +419,24 @@ namespace FUSE.Infrastructure
                     $"ForceConstrainedVramMode={ForceConstrainedVramMode} " +
                     $"EnableNativeLeakStackTraces={EnableNativeLeakStackTraces} " +
                     $"EnableUpdateCheck={EnableUpdateCheck} " +
+                    $"GraceMinimumDays={GraceMinimumDays} " +
+                    $"GraceMultiplier={GraceMultiplier} " +
+                    $"GraceAddedDays={GraceAddedDays} " +
+                    $"InterchangeServiceIntervalMinutes={InterchangeServiceIntervalMinutes} " +
+                    $"InterchangeContinuousService={InterchangeContinuousService} " +
+                    $"InterchangeNotBeforeHour={InterchangeNotBeforeHour} " +
+                    $"InterchangeNotAfterHour={InterchangeNotAfterHour} " +
+                    $"EnableOutboundIndustryRerouting={EnableOutboundIndustryRerouting} " +
+                    $"OutboundIndustryRerouteChance={OutboundIndustryRerouteChance} " +
+                    $"OutboundIndustryFillFactor={OutboundIndustryFillFactor} " +
+                    $"OutboundIndustryPaymentMultiplier={OutboundIndustryPaymentMultiplier} " +
+                    $"OutboundIndustryAllowShortTrips={OutboundIndustryAllowShortTrips} " +
+                    $"OutboundIndustryIgnoreOrigin={OutboundIndustryIgnoreOrigin} " +
+                    $"OutboundIndustryPreventBlocking={OutboundIndustryPreventBlocking} " +
+                    $"InterchangeToInterchangeMaximumCars={InterchangeToInterchangeMaximumCars} " +
+                    $"ForYourConvenienceShowCabooseIcons={ForYourConvenienceShowCabooseIcons} " +
+                    $"ForYourConvenienceShowCarTagMph={ForYourConvenienceShowCarTagMph} " +
+                    $"ForYourConvenienceShowCarTagLoads={ForYourConvenienceShowCarTagLoads} " +
                     $"DirectStoreNativeDeserialize={DirectStoreNativeDeserialize} " +
                     $"timeoutSeconds={ExperimentalEarlyScenePathSuppressionTimeoutSeconds}.");
             }
@@ -318,6 +471,24 @@ namespace FUSE.Infrastructure
                 ForceConstrainedVramMode = DefaultForceConstrainedVramMode;
                 EnableNativeLeakStackTraces = DefaultEnableNativeLeakStackTraces;
                 EnableUpdateCheck = DefaultEnableUpdateCheck;
+                GraceMinimumDays = DefaultGraceMinimumDays;
+                GraceMultiplier = DefaultGraceMultiplier;
+                GraceAddedDays = DefaultGraceAddedDays;
+                InterchangeServiceIntervalMinutes = DefaultInterchangeServiceIntervalMinutes;
+                InterchangeContinuousService = DefaultInterchangeContinuousService;
+                InterchangeNotBeforeHour = DefaultInterchangeNotBeforeHour;
+                InterchangeNotAfterHour = DefaultInterchangeNotAfterHour;
+                EnableOutboundIndustryRerouting = DefaultEnableOutboundIndustryRerouting;
+                OutboundIndustryRerouteChance = DefaultOutboundIndustryRerouteChance;
+                OutboundIndustryFillFactor = DefaultOutboundIndustryFillFactor;
+                OutboundIndustryPaymentMultiplier = DefaultOutboundIndustryPaymentMultiplier;
+                OutboundIndustryAllowShortTrips = DefaultOutboundIndustryAllowShortTrips;
+                OutboundIndustryIgnoreOrigin = DefaultOutboundIndustryIgnoreOrigin;
+                OutboundIndustryPreventBlocking = DefaultOutboundIndustryPreventBlocking;
+                InterchangeToInterchangeMaximumCars = DefaultInterchangeToInterchangeMaximumCars;
+                ForYourConvenienceShowCabooseIcons = DefaultForYourConvenienceShowCabooseIcons;
+                ForYourConvenienceShowCarTagMph = DefaultForYourConvenienceShowCarTagMph;
+                ForYourConvenienceShowCarTagLoads = DefaultForYourConvenienceShowCarTagLoads;
                 DirectStoreNativeDeserialize = DefaultDirectStoreNativeDeserialize;
                 FuseLog.MirrorInfoToPlayerLog = MirrorInfoToPlayerLog;
                 FuseLog.Exception($"FUSE failed to parse Info.json settings; experimental early scene-path suppression remains disabled", ex);
@@ -562,6 +733,158 @@ namespace FUSE.Infrastructure
                 "Takes effect on the next game start.");
         }
 
+        public static void SetGraceMinimumDays(int value)
+        {
+            GraceMinimumDays = value;
+            SaveUserOverride(nameof(GraceMinimumDays), value);
+            FuseLog.Info($"FUSE legacy gameplay setting changed: {nameof(GraceMinimumDays)}={value}.");
+        }
+
+        public static void SetGraceMultiplier(int value)
+        {
+            GraceMultiplier = value;
+            SaveUserOverride(nameof(GraceMultiplier), value);
+            FuseLog.Info($"FUSE legacy gameplay setting changed: {nameof(GraceMultiplier)}={value}.");
+        }
+
+        public static void SetGraceAddedDays(int value)
+        {
+            GraceAddedDays = value;
+            SaveUserOverride(nameof(GraceAddedDays), value);
+            FuseLog.Info($"FUSE legacy gameplay setting changed: {nameof(GraceAddedDays)}={value}.");
+        }
+
+        public static void SetInterchangeServiceIntervalMinutes(int value)
+        {
+            InterchangeServiceIntervalMinutes = NormalizeInterchangeServiceIntervalMinutes(value);
+            SaveUserOverride(nameof(InterchangeServiceIntervalMinutes), InterchangeServiceIntervalMinutes);
+            FuseLog.Info(
+                $"FUSE legacy gameplay setting changed: {nameof(InterchangeServiceIntervalMinutes)}=" +
+                $"{InterchangeServiceIntervalMinutes}.");
+        }
+
+        public static void SetInterchangeContinuousService(bool enabled)
+        {
+            InterchangeContinuousService = enabled;
+            SaveUserOverride(nameof(InterchangeContinuousService), enabled);
+            FuseLog.Info(
+                $"FUSE legacy gameplay setting changed: {nameof(InterchangeContinuousService)}={enabled}.");
+        }
+
+        public static void SetInterchangeNotBeforeHour(float value)
+        {
+            InterchangeNotBeforeHour = ClampInterchangeServiceHour(value);
+            SaveUserOverride(nameof(InterchangeNotBeforeHour), InterchangeNotBeforeHour);
+            FuseLog.Info(
+                $"FUSE legacy gameplay setting changed: {nameof(InterchangeNotBeforeHour)}=" +
+                $"{InterchangeNotBeforeHour:F2}.");
+        }
+
+        public static void SetInterchangeNotAfterHour(float value)
+        {
+            InterchangeNotAfterHour = ClampInterchangeServiceHour(value);
+            SaveUserOverride(nameof(InterchangeNotAfterHour), InterchangeNotAfterHour);
+            FuseLog.Info(
+                $"FUSE legacy gameplay setting changed: {nameof(InterchangeNotAfterHour)}=" +
+                $"{InterchangeNotAfterHour:F2}.");
+        }
+
+        internal static int NormalizeInterchangeServiceIntervalMinutes(int value)
+        {
+            return value <= 0 ? DefaultInterchangeServiceIntervalMinutes : Math.Min(value, 7 * 24 * 60);
+        }
+
+        internal static float ClampInterchangeServiceHour(float value)
+        {
+            if (float.IsNaN(value))
+            {
+                return 0f;
+            }
+
+            return Mathf.Clamp(value, 0f, 24f);
+        }
+
+        public static void SetEnableOutboundIndustryRerouting(bool enabled)
+        {
+            EnableOutboundIndustryRerouting = enabled;
+            SaveUserOverride(nameof(EnableOutboundIndustryRerouting), enabled);
+        }
+
+        public static void SetOutboundIndustryRerouteChance(float value)
+        {
+            OutboundIndustryRerouteChance = Mathf.Clamp01(value);
+            SaveUserOverride(nameof(OutboundIndustryRerouteChance), OutboundIndustryRerouteChance);
+        }
+
+        public static void SetOutboundIndustryFillFactor(float value)
+        {
+            OutboundIndustryFillFactor = ClampOutboundIndustryFillFactor(value);
+            SaveUserOverride(nameof(OutboundIndustryFillFactor), OutboundIndustryFillFactor);
+        }
+
+        public static void SetOutboundIndustryPaymentMultiplier(float value)
+        {
+            OutboundIndustryPaymentMultiplier = ClampOutboundIndustryPaymentMultiplier(value);
+            SaveUserOverride(nameof(OutboundIndustryPaymentMultiplier), OutboundIndustryPaymentMultiplier);
+        }
+
+        public static void SetOutboundIndustryAllowShortTrips(bool enabled)
+        {
+            OutboundIndustryAllowShortTrips = enabled;
+            SaveUserOverride(nameof(OutboundIndustryAllowShortTrips), enabled);
+        }
+
+        public static void SetOutboundIndustryIgnoreOrigin(bool enabled)
+        {
+            OutboundIndustryIgnoreOrigin = enabled;
+            SaveUserOverride(nameof(OutboundIndustryIgnoreOrigin), enabled);
+        }
+
+        public static void SetOutboundIndustryPreventBlocking(bool enabled)
+        {
+            OutboundIndustryPreventBlocking = enabled;
+            SaveUserOverride(nameof(OutboundIndustryPreventBlocking), enabled);
+        }
+
+        public static void SetInterchangeToInterchangeMaximumCars(int value)
+        {
+            InterchangeToInterchangeMaximumCars = ClampInterchangeToInterchangeMaximumCars(value);
+            SaveUserOverride(nameof(InterchangeToInterchangeMaximumCars), InterchangeToInterchangeMaximumCars);
+        }
+
+        internal static int ClampInterchangeToInterchangeMaximumCars(int value)
+        {
+            return Mathf.Clamp(value, 0, 200);
+        }
+
+        public static void SetForYourConvenienceShowCabooseIcons(bool enabled)
+        {
+            ForYourConvenienceShowCabooseIcons = enabled;
+            SaveUserOverride(nameof(ForYourConvenienceShowCabooseIcons), enabled);
+        }
+
+        public static void SetForYourConvenienceShowCarTagMph(bool enabled)
+        {
+            ForYourConvenienceShowCarTagMph = enabled;
+            SaveUserOverride(nameof(ForYourConvenienceShowCarTagMph), enabled);
+        }
+
+        public static void SetForYourConvenienceShowCarTagLoads(bool enabled)
+        {
+            ForYourConvenienceShowCarTagLoads = enabled;
+            SaveUserOverride(nameof(ForYourConvenienceShowCarTagLoads), enabled);
+        }
+
+        internal static float ClampOutboundIndustryFillFactor(float value)
+        {
+            return float.IsNaN(value) ? DefaultOutboundIndustryFillFactor : Mathf.Clamp(value, 0.1f, 3f);
+        }
+
+        internal static float ClampOutboundIndustryPaymentMultiplier(float value)
+        {
+            return float.IsNaN(value) ? DefaultOutboundIndustryPaymentMultiplier : Mathf.Clamp(value, 0f, 10f);
+        }
+
         public static string GetUserSettingsPath()
         {
             return Path.Combine(Application.persistentDataPath, "FUSE", "settings.json");
@@ -611,6 +934,34 @@ namespace FUSE.Infrastructure
             return float.TryParse(
                 token.ToString(),
                 System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out parsed)
+                ? parsed
+                : defaultValue;
+        }
+
+        internal static int ReadInt(JToken settings, string key, int defaultValue)
+        {
+            if (settings == null || string.IsNullOrWhiteSpace(key))
+            {
+                return defaultValue;
+            }
+
+            var token = settings[key];
+            if (token == null)
+            {
+                return defaultValue;
+            }
+
+            if (token.Type == JTokenType.Integer)
+            {
+                return token.Value<int>();
+            }
+
+            int parsed;
+            return int.TryParse(
+                token.ToString(),
+                System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture,
                 out parsed)
                 ? parsed
@@ -781,6 +1132,57 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(EnableNativeLeakStackTraces), EnableNativeLeakStackTraces);
                 EnableUpdateCheck =
                     ReadBool(settings, nameof(EnableUpdateCheck), EnableUpdateCheck);
+                GraceMinimumDays =
+                    ReadInt(settings, nameof(GraceMinimumDays), GraceMinimumDays);
+                GraceMultiplier =
+                    ReadInt(settings, nameof(GraceMultiplier), GraceMultiplier);
+                GraceAddedDays =
+                    ReadInt(settings, nameof(GraceAddedDays), GraceAddedDays);
+                InterchangeServiceIntervalMinutes = NormalizeInterchangeServiceIntervalMinutes(
+                    ReadInt(
+                        settings,
+                        nameof(InterchangeServiceIntervalMinutes),
+                        InterchangeServiceIntervalMinutes));
+                InterchangeContinuousService =
+                    ReadBool(settings, nameof(InterchangeContinuousService), InterchangeContinuousService);
+                InterchangeNotBeforeHour = ClampInterchangeServiceHour(
+                    ReadFloat(settings, nameof(InterchangeNotBeforeHour), InterchangeNotBeforeHour));
+                InterchangeNotAfterHour = ClampInterchangeServiceHour(
+                    ReadFloat(settings, nameof(InterchangeNotAfterHour), InterchangeNotAfterHour));
+                EnableOutboundIndustryRerouting =
+                    ReadBool(settings, nameof(EnableOutboundIndustryRerouting), EnableOutboundIndustryRerouting);
+                OutboundIndustryRerouteChance = Mathf.Clamp01(
+                    ReadFloat(settings, nameof(OutboundIndustryRerouteChance), OutboundIndustryRerouteChance));
+                OutboundIndustryFillFactor = ClampOutboundIndustryFillFactor(
+                    ReadFloat(settings, nameof(OutboundIndustryFillFactor), OutboundIndustryFillFactor));
+                OutboundIndustryPaymentMultiplier = ClampOutboundIndustryPaymentMultiplier(
+                    ReadFloat(
+                        settings,
+                        nameof(OutboundIndustryPaymentMultiplier),
+                        OutboundIndustryPaymentMultiplier));
+                OutboundIndustryAllowShortTrips =
+                    ReadBool(settings, nameof(OutboundIndustryAllowShortTrips), OutboundIndustryAllowShortTrips);
+                OutboundIndustryIgnoreOrigin =
+                    ReadBool(settings, nameof(OutboundIndustryIgnoreOrigin), OutboundIndustryIgnoreOrigin);
+                OutboundIndustryPreventBlocking =
+                    ReadBool(settings, nameof(OutboundIndustryPreventBlocking), OutboundIndustryPreventBlocking);
+                InterchangeToInterchangeMaximumCars = ClampInterchangeToInterchangeMaximumCars(
+                    ReadInt(
+                        settings,
+                        nameof(InterchangeToInterchangeMaximumCars),
+                        InterchangeToInterchangeMaximumCars));
+                ForYourConvenienceShowCabooseIcons = ReadBool(
+                    settings,
+                    nameof(ForYourConvenienceShowCabooseIcons),
+                    ForYourConvenienceShowCabooseIcons);
+                ForYourConvenienceShowCarTagMph = ReadBool(
+                    settings,
+                    nameof(ForYourConvenienceShowCarTagMph),
+                    ForYourConvenienceShowCarTagMph);
+                ForYourConvenienceShowCarTagLoads = ReadBool(
+                    settings,
+                    nameof(ForYourConvenienceShowCarTagLoads),
+                    ForYourConvenienceShowCarTagLoads);
                 DirectStoreNativeDeserialize =
                     ReadBool(settings, nameof(DirectStoreNativeDeserialize), DirectStoreNativeDeserialize);
                 FuseLog.Info($"FUSE user setting overrides loaded from '{path}'.");
@@ -797,6 +1199,11 @@ namespace FUSE.Infrastructure
         }
 
         private static void SaveUserOverride(string key, float value)
+        {
+            SaveUserOverride(key, new JValue(value));
+        }
+
+        private static void SaveUserOverride(string key, int value)
         {
             SaveUserOverride(key, new JValue(value));
         }

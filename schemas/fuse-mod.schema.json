@@ -91,6 +91,10 @@
             "$ref": "#/$defs/settings",
             "description": "Package-declared FUSE settings. Runtime values are stored outside the mod folder and scoped by user, profile, or server profile."
         },
+        "featureRules": {
+            "$ref": "#/$defs/featureRules",
+            "description": "Native FUSE rules that include authored objects only when a package setting matches. Rules are evaluated on map/package load."
+        },
         "editor": {
             "$ref": "#/$defs/editor"
         },
@@ -113,7 +117,7 @@
         "uri": {
             "type": "string",
             "minLength": 1,
-            "pattern": "^(vanilla|path|scenery|asset|rail|file|empty)://.*$"
+            "pattern": "^(vanilla|path|scenery|asset|rail|file|empty|fuse)://.*$"
         },
         "vec3": {
             "type": "object",
@@ -185,6 +189,14 @@
                         "$ref": "#/$defs/modRequirement"
                     },
                     "default": []
+                },
+                "conflictsWith": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/modRequirement"
+                    },
+                    "default": [],
+                    "description": "Legacy conditional incompatibilities. The fragment is skipped when any matching package/version is enabled; the rest of the package remains active."
                 }
             }
         },
@@ -294,6 +306,82 @@
                 }
             }
         },
+        "featureRules": {
+            "type": "object",
+            "description": "Dictionary of stable feature-rule ids. A false rule omits all named targets until the next map/package reload.",
+            "propertyNames": {
+                "$ref": "#/$defs/id"
+            },
+            "additionalProperties": {
+                "$ref": "#/$defs/featureRule"
+            }
+        },
+        "featureRule": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "setting",
+                "value",
+                "targets"
+            ],
+            "properties": {
+                "setting": {
+                    "$ref": "#/$defs/id",
+                    "description": "Id of a setting declared by this package. The setting should set reloadRequired=true."
+                },
+                "operator": {
+                    "type": "string",
+                    "enum": [
+                        "equals",
+                        "notEquals",
+                        "greaterThan",
+                        "greaterThanOrEqual",
+                        "lessThan",
+                        "lessThanOrEqual"
+                    ],
+                    "default": "equals"
+                },
+                "value": {
+                    "description": "Comparison value. Its JSON type should match the referenced setting."
+                },
+                "targets": {
+                    "$ref": "#/$defs/featureTargets"
+                }
+            }
+        },
+        "featureTargets": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "trackNodes": { "$ref": "#/$defs/stringArray" },
+                "trackSegments": { "$ref": "#/$defs/stringArray" },
+                "trackSpans": { "$ref": "#/$defs/stringArray" },
+                "trackAreas": { "$ref": "#/$defs/stringArray" },
+                "loads": { "$ref": "#/$defs/stringArray" },
+                "industries": { "$ref": "#/$defs/stringArray" },
+                "industryComponents": {
+                    "$ref": "#/$defs/stringArray",
+                    "description": "Industry/component references formatted as industryId/componentId."
+                },
+                "loaders": { "$ref": "#/$defs/stringArray" },
+                "turntables": { "$ref": "#/$defs/stringArray" },
+                "stations": { "$ref": "#/$defs/stringArray" },
+                "scenery": { "$ref": "#/$defs/stringArray" },
+                "splineys": { "$ref": "#/$defs/stringArray" },
+                "waterSurfaces": { "$ref": "#/$defs/stringArray" },
+                "telegraphPoles": { "$ref": "#/$defs/stringArray" },
+                "mapLabels": { "$ref": "#/$defs/stringArray" },
+                "mapMasks": { "$ref": "#/$defs/stringArray" },
+                "mapTiles": { "$ref": "#/$defs/stringArray" },
+                "sceneClones": { "$ref": "#/$defs/stringArray" },
+                "progressions": { "$ref": "#/$defs/stringArray" },
+                "mapFeatures": { "$ref": "#/$defs/stringArray" },
+                "whistles": { "$ref": "#/$defs/stringArray" },
+                "horns": { "$ref": "#/$defs/stringArray" },
+                "bells": { "$ref": "#/$defs/stringArray" }
+            }
+        },
         "tracks": {
             "type": "object",
             "additionalProperties": false,
@@ -401,27 +489,16 @@
                     "type": "boolean",
                     "default": false
                 },
+                "isDiamond": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Marks this node as one half of a diamond crossing. FUSE preserves it on game versions that expose diamond-node routing."
+                },
                 "groupId": {
                     "$ref": "#/$defs/idRef"
                 },
                 "tags": {
                     "$ref": "#/$defs/stringArray"
-                },
-                "gauge": {
-                    "type": "string",
-                    "enum": [
-                        "Standard",
-                        "Narrow",
-                        "3ft",
-                        "3 ft",
-                        "ThreeFoot",
-                        "Three Foot",
-                        "DualGauge",
-                        "Dual",
-                        "Mixed",
-                        "MixedGauge"
-                    ],
-                    "description": "Optional NarrowGaugeMod metadata. FUSE stores the value for companion mods; Railroader's base graph still uses the normal track geometry."
                 }
             }
         },
@@ -463,6 +540,35 @@
                 "tags": {
                     "$ref": "#/$defs/stringArray"
                 },
+                "gauge": {
+                    "type": "string",
+                    "enum": [
+                        "Standard",
+                        "Narrow",
+                        "3ft",
+                        "3 ft",
+                        "ThreeFoot",
+                        "Three Foot",
+                        "DualGauge",
+                        "DualGauge_L",
+                        "DualGauge_R",
+                        "DualGauge_T",
+                        "Dual",
+                        "Mixed",
+                        "MixedGauge"
+                    ],
+                    "description": "Optional NarrowGaugeMod segment metadata. FUSE stores the value for companion mods; Railroader's base graph still uses the normal track geometry."
+                },
+                "bridgeSupportsSteel": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Use steel bridge supports when style is bridge. Older Railroader builds that only expose the four-way style enum retain bridge style but cannot represent this extra distinction."
+                },
+                "yard": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Marks the segment as yard track independently of bridge/tunnel structure on Railroader builds that expose combinable track flags. The legacy style value 'yard' remains supported."
+                },
                 "partial": {
                     "type": "boolean",
                     "default": false,
@@ -472,6 +578,16 @@
                     "type": "boolean",
                     "default": false,
                     "description": "In a partial patch, keep the existing segment style instead of overwriting it."
+                },
+                "preserveBridgeSupportsSteel": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "In a partial patch, keep the existing bridge-support material flag."
+                },
+                "preserveYard": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "In a partial patch, keep the existing independent yard flag."
                 },
                 "preserveTrackClass": {
                     "type": "boolean",
@@ -1333,6 +1449,20 @@
                     ],
                     "default": {}
                 },
+                "waterSurfaces": {
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/dictionary"
+                        },
+                        {
+                            "additionalProperties": {
+                                "$ref": "#/$defs/waterSurface"
+                            }
+                        }
+                    ],
+                    "description": "FUSE-owned lake polygons built from world-space boundary points and loaded Railroader water assets.",
+                    "default": {}
+                },
                 "telegraphPoles": {
                     "allOf": [
                         {
@@ -1435,6 +1565,7 @@
                     "default": {
                         "scenery": [],
                         "splineys": [],
+                        "waterSurfaces": [],
                         "telegraphPoles": [],
                         "mapLabels": [],
                         "mapMasks": [],
@@ -1452,6 +1583,9 @@
                     "$ref": "#/$defs/worldRemovalArray"
                 },
                 "splineys": {
+                    "$ref": "#/$defs/worldRemovalArray"
+                },
+                "waterSurfaces": {
                     "$ref": "#/$defs/worldRemovalArray"
                 },
                 "telegraphPoles": {
@@ -1570,7 +1704,8 @@
                         "road",
                         "terrainRoad",
                         "trestle",
-                        "waterfall"
+                        "waterfall",
+                        "objectLine"
                     ]
                 },
                 "profile": {
@@ -1589,6 +1724,55 @@
                 },
                 "tailStyle": {
                     "type": "string"
+                },
+                "assetIdentifier": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Scenery asset repeated by an objectLine spline. Mutually exclusive with prefab."
+                },
+                "prefab": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Prefab URI such as path://scene/World/... repeated by an objectLine spline. Mutually exclusive with assetIdentifier."
+                },
+                "spacing": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "default": 5
+                },
+                "instanceScale": {
+                    "$ref": "#/$defs/vec3",
+                    "default": { "x": 1, "y": 1, "z": 1 }
+                },
+                "rotationOffset": {
+                    "$ref": "#/$defs/vec3",
+                    "default": { "x": 0, "y": 0, "z": 0 }
+                },
+                "lateralOffset": {
+                    "type": "number",
+                    "default": 0
+                },
+                "verticalOffset": {
+                    "type": "number",
+                    "default": 0
+                },
+                "snapToTerrain": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "alignToSlope": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "placeAtEnd": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "maximumInstances": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4096,
+                    "default": 1024
                 },
                 "points": {
                     "type": "array",
@@ -1620,6 +1804,64 @@
                 "width": {
                     "type": "number",
                     "exclusiveMinimum": 0
+                }
+            }
+        },
+        "waterSurface": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "points"
+            ],
+            "properties": {
+                "points": {
+                    "type": "array",
+                    "minItems": 3,
+                    "items": {
+                        "$ref": "#/$defs/vec3"
+                    }
+                },
+                "sourceLakePath": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional scene path whose LakePolygon profile/material should be reused."
+                },
+                "materialName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional exact loaded material name. When omitted, FUSE uses the source or a loaded stock water material."
+                },
+                "lockHeight": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "snapToTerrain": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "enableCollider": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "uvScale": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "default": 1
+                },
+                "triangleDensity": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1,
+                    "default": 0.2
+                },
+                "maximumTriangleArea": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "default": 50
+                },
+                "yOffset": {
+                    "type": "number",
+                    "default": 0
                 }
             }
         },

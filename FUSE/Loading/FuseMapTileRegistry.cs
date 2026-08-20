@@ -47,6 +47,61 @@ namespace FUSE.Loading
             }
         }
 
+        internal static bool RegisterTileSource(
+            string modId,
+            string modFolder,
+            string sourceId,
+            FuseMapTileSource tileSource)
+        {
+            if (string.IsNullOrWhiteSpace(modId)
+                || string.IsNullOrWhiteSpace(sourceId)
+                || tileSource == null)
+            {
+                return false;
+            }
+
+            string resolvedFolder;
+            try
+            {
+                resolvedFolder = ResolveSourceFolder(
+                    modFolder,
+                    tileSource.SourceFolder);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception(
+                    $"Skipping map tile source '{sourceId}' in '{modId}' "
+                    + "because its sourceFolder threw while resolving",
+                    ex);
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(resolvedFolder))
+            {
+                FuseLog.Warning(
+                    $"Skipping map tile source '{sourceId}' in '{modId}' "
+                    + "because its sourceFolder could not be resolved.");
+                return false;
+            }
+
+            lock (Sync)
+            {
+                var key = BuildSourceKey(modId, sourceId);
+                Sources[key] = new RegisteredTileSource
+                {
+                    SourceKey = key,
+                    ModId = modId,
+                    DirectoryName = NormalizeDirectoryName(
+                        tileSource.Directory),
+                    ResolvedFolder = resolvedFolder,
+                    Priority = tileSource.Priority
+                };
+                _sourceVersion++;
+            }
+
+            return true;
+        }
+
         internal static int MountIntoStore(MapStore store, string directoryName)
         {
             if (store == null)

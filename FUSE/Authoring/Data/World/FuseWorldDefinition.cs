@@ -9,6 +9,7 @@ namespace FUSE.Authoring.Data
         public Dictionary<string, FuseScenery> Scenery { get; set; } = new Dictionary<string, FuseScenery>();
         public FuseSpawnPoint[] SpawnPoints { get; set; } = Array.Empty<FuseSpawnPoint>();
         public Dictionary<string, FuseSpliney> Splineys { get; set; } = new Dictionary<string, FuseSpliney>();
+        public Dictionary<string, FuseWaterSurface> WaterSurfaces { get; set; } = new Dictionary<string, FuseWaterSurface>();
         public Dictionary<string, FuseTelegraphPoles> TelegraphPoles { get; set; } = new Dictionary<string, FuseTelegraphPoles>();
         public FuseTelegraphPoleMovement[] TelegraphPoleMovements { get; set; } = Array.Empty<FuseTelegraphPoleMovement>();
         public Dictionary<string, FuseMapLabel> MapLabels { get; set; } = new Dictionary<string, FuseMapLabel>();
@@ -36,6 +37,7 @@ namespace FUSE.Authoring.Data
     {
         public string[] Scenery { get; set; } = Array.Empty<string>();
         public string[] Splineys { get; set; } = Array.Empty<string>();
+        public string[] WaterSurfaces { get; set; } = Array.Empty<string>();
         public string[] TelegraphPoles { get; set; } = Array.Empty<string>();
         public string[] MapLabels { get; set; } = Array.Empty<string>();
         public string[] MapMasks { get; set; } = Array.Empty<string>();
@@ -95,6 +97,17 @@ namespace FUSE.Authoring.Data
         public float OffsetY { get; set; }
         public string HeadStyle { get; set; }
         public string TailStyle { get; set; }
+        public string AssetIdentifier { get; set; }
+        public string Prefab { get; set; }
+        public float Spacing { get; set; } = 5f;
+        public Vector3 InstanceScale { get; set; } = Vector3.one;
+        public Vector3 RotationOffset { get; set; }
+        public float LateralOffset { get; set; }
+        public float VerticalOffset { get; set; }
+        public bool SnapToTerrain { get; set; }
+        public bool AlignToSlope { get; set; }
+        public bool PlaceAtEnd { get; set; } = true;
+        public int MaximumInstances { get; set; } = 1024;
         public FuseSplineyPoint[] Points { get; set; }
     }
 
@@ -103,6 +116,25 @@ namespace FUSE.Authoring.Data
         public Vector3 Position { get; set; }
         public Vector3 Rotation { get; set; }
         public float? Width { get; set; }
+    }
+
+    /// <summary>
+    /// A flat or terrain-following lake polygon. Points are authored in world
+    /// coordinates. FUSE reuses a loaded Railroader water material/profile so
+    /// native map packages do not need to copy game assets.
+    /// </summary>
+    public sealed class FuseWaterSurface
+    {
+        public Vector3[] Points { get; set; } = Array.Empty<Vector3>();
+        public string SourceLakePath { get; set; }
+        public string MaterialName { get; set; }
+        public bool LockHeight { get; set; } = true;
+        public bool SnapToTerrain { get; set; }
+        public bool EnableCollider { get; set; } = true;
+        public float UvScale { get; set; } = 1f;
+        public float TriangleDensity { get; set; } = 0.2f;
+        public float MaximumTriangleArea { get; set; } = 50f;
+        public float YOffset { get; set; }
     }
 
     public sealed class FuseTelegraphPoles

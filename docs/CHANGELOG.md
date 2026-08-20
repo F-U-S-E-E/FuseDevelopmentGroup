@@ -1,5 +1,68 @@
 # Changelog
 
+- Installer 0.7.0 repairs UMM startup order for installed code mods that
+  reference FUSE-replaced RailLoader/Strange Customs assemblies. It inspects
+  DLL metadata without loading code, backs up each manifest, and adds FUSE to
+  `Requirements`/`LoadAfter`, fixing Alina Utilities failing before FUSE's
+  assembly resolver could run.
+
+- Completed the author-help catalog for native feature rules, rigid object-line
+  splineys, and water surfaces. Every validation code emitted by either
+  validator now has a title, cause, concrete fix, and example, enforced by the
+  Core coverage gate; two obsolete mixinto help keys were removed.
+
+- Added native ForYourConvenience parity without shipping the old code:
+  dependency-scoped station-map actions, off-by-default caboose icons and
+  speed/load car-tag additions, persisted Legacy Gameplay toggles, and a
+  read-only **Tools > Industry Dashboard** built from the current operations
+  controller.
+
+- Added native, dependency-scoped replacements for AbsoluteMadness and
+  SomeKindOfMadness. Outbound industry routing remains disabled for normal
+  profiles, activates when an enabled package requests either retired id (or
+  through an explicit Legacy Gameplay setting), exposes a contained native
+  candidate event, and includes bounded capacity/payment/short-trip/origin and
+  order-shuffle controls.
+- Added a native Interchange2Interchange replacement with dependency-scoped
+  activation, contracted interchange visibility, daily cross-interchange cargo
+  orders, bounded cut sizes, and a persisted maximum-cars control.
+
+- Added native FallFromGrace parity: FUSE now owns the configurable grace-day transform, exposes its settings under **Settings > Legacy Gameplay**, and adds the due-time row to paid waybills without requiring the old DLL. Default settings leave the base-game calculation unchanged.
+- Added native C1CD parity: configurable interchange intervals, daily or overnight service windows, and continuous extra-service scheduling now live under **Settings > Legacy Gameplay**. Invalid intervals are bounded instead of allowing the legacy scheduling loop to hang.
+
+- Added the legacy `/cs-livery-refresh` command and a FUSE-owned
+  `/fuse.liveries` diagnostic report. Refresh now clears only FUSE's cached
+  livery textures and reapplies each live car's saved `cs.livery` selection.
+- Replaced the Strange Customs `FileCache` ABI stub with a FUSE-owned loose-file
+  cache for PNG/JPEG textures and WAV/OGG/MP3/AIFF clips. It coalesces audio
+  callbacks, invalidates changed files, contains callback failures, and cleans
+  up cached Unity objects when FUSE unloads.
+- Replaced the Strange Customs `FlowyThingBuilder` ABI stub with a native
+  adapter that converts legacy road/river data at the compatibility boundary
+  and creates or updates the live spline through `SplineyAPI`.
+- Wired RailLoader's `WillCopyDebugInformation` compatibility event into copied
+  FUSE health reports. Contributions are bounded and normalized, and listener
+  exceptions are isolated at the messenger-listener boundary.
+- Completed the ADRFDR data contract: `ADRFDR.Pay4Resource` now resolves to
+  FUSE's native pay-for-resource component and location pickers display its
+  custom "Acquire …" title through the compatibility interface.
+
+## Unreleased audit accuracy follow-up (2026-08-20)
+
+- Prevents the runtime definition cache from returning the stored `FuseSpan`
+  object by reference. Span endpoints are now deep-cloned, so diagnostics and
+  other read paths cannot mutate or erase the authored definition.
+- Preserves cached authored span endpoints when Railroader temporarily cannot
+  resolve a `TrackSpan` location. The audit now distinguishes that transient
+  runtime state from a genuinely missing endpoint and still reports referenced
+  segments that were actually removed.
+- Stops reporting an empty `Industry` container as a defect by itself. The game
+  legitimately uses componentless industries for base locations, passenger or
+  scenery-only places, fictional destinations, and disabled content.
+- Omits successful `shared-extension` registry merges from audit findings; they
+  remain available as informational records on the dedicated Mod Conflicts
+  page.
+
 All notable changes to FUSE are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and FUSE uses
 [semantic versioning](https://semver.org/) with the mod and the external editor
@@ -9,13 +72,97 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
 
 ### Added
 
+- Native `world.splineys` now supports `objectLine` definitions for fences,
+  retaining walls, guardrails, pipes, and other rigid repeating modules. FUSE
+  places a loaded scenery asset or safe prefab along a uniformly sampled path
+  with scale, rotation, lateral/vertical offset, terrain snap, slope alignment,
+  endpoint, and instance-cap controls. Live updates preserve editor helper
+  children, and failed creation cleans up its partial runtime root.
+
+- Installer 0.6 now preflights the complete selected batch before writing:
+  unsafe/case-colliding ZIP members, ambiguous nested manifests, duplicate
+  package ids and `.FUSE` aliases, UMM/FUSE/RailLoader requirements, version
+  bounds, forward references, and dependency-failure propagation. Explicit
+  FUSE replacement contracts satisfy only the legacy ids FUSE actually owns;
+  reports preserve every dependency and corrective failure message.
+
+- Package faults now carry package id/name, source root, relative and absolute
+  file names, JSON property/line/position, validation code, expected shape,
+  received value, and a concrete action. Native, manifest, and legacy-converter
+  failures share the format; health JSON and selected-mod **Copy Mod Info**
+  preserve the complete author-facing diagnostic without crowding Status.
+
+- Native package `featureRules` connect existing FUSE settings to exact authored
+  track, operations, world, progression, and audio objects. Boolean, choice,
+  and numeric comparisons are evaluated on map load without mutating source
+  definitions; validation, Mods-page state, schema examples, and Tile Editor
+  authoring make the reload-required behavior explicit.
+
+- Native `world.waterSurfaces` authoring and runtime support creates, updates,
+  removes, inspects, caches, and reports polygonal lake planes without depending
+  on Alina's map runtime. Authors can reuse a stock lake by scene path, select a
+  loaded material, or use FUSE's guarded fallback; schema and validation reject
+  underspecified or unsafe tessellation data before map apply.
+
+- The Mods page now groups packages by actual runtime state and distinguishes
+  disabled, skipped, missing-dependency, incompatible, invalid-data, partially
+  applied, loaded-awaiting-map, and successfully applied packages. Optional
+  conditional mixintos remain green with a note instead of being presented as
+  whole-mod failures; copied mod info includes the same state and reason.
+- Legacy top-level `ConflictsWith` checks now see enabled code-only and
+  asset-only packages in the Mods folder, as well as retired package ids
+  provided by FUSE compatibility. Disabled and active-profile-excluded mods no
+  longer satisfy conditional or top-level compatibility checks.
+- Successful shared industry destination/component merges are now displayed in
+  **Mod Conflicts** under an informational **Shared Extension Targets** section.
+  They no longer count as ownership conflicts or load-health failures; actual
+  skipped/replaced ownership and spatial warnings remain separate and visible.
+- Human and JSON load reports now distinguish package folders from resident and
+  applied definitions. Missing optional mixinto companions are listed as
+  inactive conditional fragments, while only actionable skips contribute to
+  unhealthy status; legacy JSON count aliases remain for report consumers.
+
+- **Tools > Mod Conflicts** groups runtime ownership records by package pair and
+  shows exactly which nodes, segments, spans, industries, scenery, or other
+  targets the two packages share, plus the resolution FUSE used. A full report
+  can be copied for authors. Conservative spatial track-layout warnings appear
+  on this page separately from proven ownership conflicts; they retain both
+  packages and do not inflate the main Status conflict count.
+
+- Reduced always-on runtime overhead for large legacy mod sets: hosted RailLoader
+  update callbacks are now discovered once when the plug-in is hosted instead of
+  rebuilding a dictionary snapshot and repeating interface reflection every Unity
+  frame. The unused-asset reclaimer also avoids querying Unity texture-memory
+  counters while no evictions are pending.
+
+- Asset overlap diagnostics now collapse hundreds of keys shared by the same
+  winner/overridden source set into one source group. The panel and clipboard
+  summary state whether definitions are identical or behaviorally different and
+  explain the impact, while the exported JSON retains every individual key.
+
+- FUSE now completes AssetLoader 1.0.1's data-loading contract without running
+  its DLL. Direct discovery includes package-root, child, catalog-only, and
+  normal bundled stores. Definitions-only immediate child folders used by
+  tender/rolling-stock swaps are routed to their exact existing store, while
+  native packages can declare nested overrides with `FuseDefinitionOverrides`.
+  Malformed overrides fall back to the original store definitions and appear in
+  the Assets report instead of breaking equipment/customization menus. The
+  installer backs up old AssetLoader folders/ZIPs, verifies the runtime DLL is
+  absent, and creates a data-only `AssetLoader` UMM alias requiring FUSE so old
+  manifest dependencies remain valid.
+
 - `FUSE-Installer.exe` now bundles the FUSE framework and installs it on a
   manual (double-click) run, so players can get FUSE running without unzipping
   anything. Dragging mod `.zip` files onto the exe still installs exactly those
   mods and leaves FUSE untouched. A no-argument run also still processes any
   loose zips beside the exe; pass `--no-fuse` to skip installing FUSE. The
-  release build bundles the core mod zip it just built and self-checks, via a
-  dry run, that a manual run will install FUSE.
+  release build bundles the core mod zip it just built and performs a real
+  install into a throwaway Railroader tree to prove a manual run writes
+  `Mods/FUSE/Info.json`. The build gate waits for PyInstaller's extracted GUI
+  child process, avoiding a false failure while the files are still being
+  written. A drag-and-drop GUI launch leaves the bundled framework unchecked so
+  its scope matches the documented "install the dropped archives" behavior;
+  `--with-fuse` opts it back in.
 - A pytest suite for the installer and its legacy JSON reader
   (`tools/tests/`), run in CI by a new Python Tests workflow.
 - FUSE checks GitHub on startup for a newer stable release and, if the running
@@ -42,6 +189,158 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
 
 ### Fixed
 
+- Both converter entry points now reject code-only, asset-only, map-tile, and
+  already-native packages with specific installer guidance instead of reporting
+  a successful zero-fragment conversion. Mixed packages can still convert their
+  recognized top-level RailLoader JSON while keeping DLL behavior explicitly
+  unsupported. Failed reports are stored under `_conversion-reports` rather
+  than creating a report-only `.FUSE` package. Batch detection includes
+  manifest/code packages and no longer mistakes nested schema examples inside a
+  compiled mod for route content.
+
+- World labels no longer render over the pause menu or normal game windows.
+  The debug overlay pauses its IMGUI rendering while the game is paused or any
+  managed game window is shown, then resumes without rebuilding user settings.
+
+- Legacy package ordering now resolves object- or string-form `requires` and
+  `loadAfter` identifiers through the same `.FUSE` alias rules before building
+  the topological order. Conditional mixinto requirements both control whether
+  each fragment applies and add an optional package-order edge when their
+  dependency is present; a missing optional layer does not fault the package.
+  When a resolved later package explicitly requires or
+  loads after a base package, its intentional overrides are no longer presented
+  as mods fighting; unrelated packages remain conflict records. The Dependency
+  Graph labels retired runtime dependencies such as Strange Customs, Alina's
+  Map Mod, AssetLoader, and RailLoader services as `PROVIDED BY FUSE`, while
+  content packs such as Alina's SW expansion remain real dependencies.
+  Hosted legacy code plugins now also initialize in resolved
+  `requires`/`loadAfter`/`loadBefore` order rather than alphabetical Mods-folder
+  order. Cycles retain every plugin in deterministic order and emit one
+  actionable warning.
+
+- Legacy `conflictsWith` declarations are no longer discarded. Complete-package
+  conflicts retain inclusive version bounds in `FuseConflictsWith` and prevent
+  only the declaring package from loading; conditional mixinto conflicts skip
+  only that fragment. Tools > Mod Conflicts shows these separately as
+  author-declared incompatibilities instead of mixing them into detected runtime
+  ownership collisions. Hosted legacy mod definitions also expose their real
+  requires/load-order/conflict metadata to old plug-ins.
+
+- The merged graph planner now records definition-versus-definition ownership
+  collisions for nodes, segments, spans, and turntables, not only removals that
+  displaced earlier definitions. This makes competing route layouts visible
+  even when the last package wins a shared identifier. Independent layouts
+  using different IDs are covered by a non-blocking nearby-node advisory.
+
+- Passenger stops no longer throw during activation when another route package
+  removed a segment referenced by one of their child spans. FUSE sanitizes the
+  invalid span endpoints so Railroader's nullable checks skip that track. The
+  Strange Customs span facade likewise omits invalid endpoints, preventing
+  Signals Everywhere serialization from failing after graph collisions.
+
+- Duplicate automatic-waybill destinations are collapsed by their semantic
+  component type, area, display name, and track spans before the base-game
+  picker is built. Multiple live component instances can no longer produce the
+  same Whittier destination several times in the car Operations menu.
+
+- Legacy JSON control-character repair is still reported with the exact source
+  file, but the same warning is emitted only once per file and session instead
+  of repeating on each conversion pass.
+
+- A stale, partially bound Alina Utilities assembly can no longer make the
+  legacy host record a package error before UMM recovery activates the working
+  entry. Unloadable compiler-generated types are skipped locally, and the
+  recovered UMM plug-in remains the sole active instance.
+
+- If an older dual-entry Alina Utilities install still leaves a legacy
+  singleton alive without its RailLoader context, FUSE now connects that
+  instance to Alina Utilities' UMM settings object. This prevents its tile
+  distance, damage, and main-menu hooks from throwing while leaving the
+  separately installed utility mod in control of its original features.
+
+- Legacy Alina map packages no longer materialize the editor-only
+  `TurntableMeasurementTool` scenery helper in gameplay. This removes the
+  bright yellow measurement overlay that covered Stryker's Bryson turntable;
+  native FUSE scenery identifiers are unchanged.
+
+- Synthetic legacy map-tile definitions are no longer sent through the
+  game-graph patch expander, removing the misleading “source JSON could not be
+  resolved” warning emitted once per Alina map expansion.
+
+- Corrected the public schema's track gauge contract: `gauge` belongs to track
+  segments (matching the runtime model, converter, editor, and documentation),
+  not nodes. The schema now accepts the native editor's explicit
+  `DualGauge_L`, `DualGauge_R`, and `DualGauge_T` transition values and includes
+  the documented reserved `fuse://` URI scheme.
+
+- Legacy area objects used only as namespaces around `industries` no longer
+  become track-area updates with an invented `(0,0,0)` position or identifier
+  display name. ARC Whittier/KWIX-style packages can patch the base Whittier
+  industries without moving the live area/operations hierarchy away from its
+  tracks. Explicit authored area position, radius, color, order, spans, and
+  group metadata still convert normally. (#210, #239)
+
+- Confusing Supplements' `IndustryComponents.Empty` now has a complete
+  FUSE-owned behavior: it remains a visible span-bound track marker, accepts
+  every automatic destination class, and performs no service or ordering work.
+  Output-track warnings such as "KEEP CLEAR" no longer degrade into a stock
+  loader with a null load that repeatedly throws during `Industry.Tick`.
+
+- Alina's bright-yellow `TurntableMeasurementTool` is treated as an editor-only
+  authoring helper and is not instantiated in a playable map. Stryker's Bryson
+  keeps its actual cloned turntable while the yellow measurement plate is
+  omitted. The separate `ALWHouses_CabooseHouse` message in that report is an
+  ALW asset-pack catalog entry whose prefab is absent from the bundle; FUSE
+  quarantines that asset without blaming or hiding the turntable. (#235)
+
+- The Diagnostics Report no longer labels Railroader's endpoint-less base-game
+  placeholder/progression spans as invalid mod track. Span validation now applies
+  only to spans owned by a FUSE-hosted package. An actual package-owned malformed
+  span still names its owner, while a span removed by a competing route overhaul
+  is presented as a package collision with compatibility guidance instead of a
+  false base-track failure.
+
+- Legacy Strange Customs scenery is no longer discarded merely because its
+  identifier was absent from FUSE's mounted asset-pack index. Legacy-hosted
+  packages receive RailLoader-compatible guarded runtime resolution, with the
+  first attempted placement logged per identifier and real failures quarantined.
+  Native FUSE packages remain strictly validated so bad JSON cannot destabilize
+  unrelated content or game menus.
+
+- The Assets Report now distinguishes identical duplicate definitions from
+  conflicting definitions and shows package-relative source paths. Two installed
+  copies such as `RTM Objects pack` and `RTM_Objects_pack` can therefore be told
+  apart instead of appearing as a nonsensical self-override.
+
+- Live Diagnostics auto-refresh now preserves the right-hand detail/log scroll
+  position, including the bottom position, instead of snapping the page back to
+  the top once per second. The menu now identifies the detail pane when a page
+  also contains a separate navigation `ScrollRect`.
+
+- Opening the Equipment Purchase window no longer performs every cold asset-pack
+  `Definitions.json` load in one frame. FUSE warms one prefab store per frame and
+  caches the filtered car catalog for the active `PrefabStore`, avoiding the
+  multi-second buy-menu lock seen with large Lego/custom-equipment installations.
+
+- Runtime ownership collisions are now recorded when a later package removes a
+  node, segment, or span defined by an earlier package. These removal-versus-
+  definition collisions previously disappeared while FUSE built the merged plan,
+  leaving `/fuse.conflicts` at zero even when route overhauls were deleting one
+  another's graph. Package faults now also retain the source folder and definition
+  file in the report.
+
+- Asset-pack component kinds registered after a store was first inspected now
+  invalidate only the affected cold store and reload its untouched definitions
+  without re-running old-loader mutation postfixes. Toolshed storage/load-point
+  definitions on the ALW tank loader are therefore retained even when Toolshed
+  initializes after FUSE asset discovery; the visible tank and functional loader
+  no longer split into unrelated objects.
+
+- Legacy-install detection and the installer cleanup list now include
+  `Railloader.Injector.dll`. It is the managed legacy loader and Harmony owner,
+  not a harmless native bootstrap file, so leaving it in `Managed` could run the
+  old and FUSE loading pipelines together.
+
 - Updating FUSE through Unity Mod Manager failed with "Error when unpacking"
   and installed nothing, for every release from 1.0.0 through 1.0.2. The
   published zips stored entry names with backslashes, because
@@ -61,6 +360,36 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
   (a locked file, a bad path, a full disk) no longer leaves a half-written mod
   folder behind, and a failed `--replace` reinstall leaves the existing install
   untouched.
+
+- The standalone converter now keeps legacy hard `Requirements` as native FUSE
+  requirements and normalizes object-form `LoadAfter` entries to their ids.
+  Requirements for the loader systems FUSE itself replaces (Alina's Map Mod and
+  editor, RailLoader Injector/Interchange, and other core compatibility layers)
+  are removed instead of becoming impossible hard dependencies. (#240)
+
+- A concurrently installed legacy `AssetLoader` no longer patches the game's
+  prefab stores after FUSE has mounted and quarantined the same asset packs.
+  FUSE detects that exact legacy assembly and removes only its Harmony owner;
+  asset-pack problems remain isolated and the locomotive customization/buy-menu
+  path no longer receives a second set of stores. (#238)
+
+- Replacing a named TrackSpan now atomically rebinds every live industry and
+  interchange component from the old Unity component to the replacement before
+  the old object is retired. ARC Whittier-style base-track replacements no
+  longer leave Whittier Saw Mill without its customer/components or collapse
+  multiple unloading positions onto the surviving span. Strange Customs array-
+  wrapped additions such as Sylva Industries Boosted's
+  `trackSpans: [{ "$add": "Piei" }]` retain the vanilla R2 span and append R3,
+  restoring highlighting, delivery credit, and EOD payment on both tracks.
+  (#236, #239)
+
+- The Appalachian Railway starter-equipment placement pool is now activated
+  only by that package's Whittier start definition. It waits until the tutorial
+  overlay is out of the way, keeps an item queued when placement is cancelled
+  with Escape, and removes it only after `LastPlacedTrain` confirms that the
+  complete expected cut spawned. This also contains the current game's
+  false-success callback when `PlaceTrain` catches a failure. Other new games
+  no longer inherit the pool.
 
 - Legacy map mods collapsed onto the world origin on comma-decimal locales
   (pt-BR, de-DE, fr-FR, ...): spaghetti track on the map, "zero length" track
@@ -100,12 +429,12 @@ versioned independently (`mod-v*` and `externaleditor-v*` tags).
   after it stopped resolving and buildings went missing across the map. Such a
   store is now quarantined by itself, its path is logged once, and later packs
   resolve normally; the bad file itself is still the mod author's to fix. (#196)
-- The Status page's "Mod Health" row flagged a mod as needing review after a
-  single one-off third-party exception (for example another mod's
-  first-frame-after-load `NullReferenceException`), contradicting the health
-  report, which only counts a mod as a problem once it recurs (3+ episodes or
-  10+ occurrences). Both surfaces now share that one threshold; anything
-  below it is listed as informational. (#208)
+- Runtime guards and observed Unity/third-party exceptions no longer make the
+  Status page or readiness summary look unhealthy. They remain captured in the
+  structured health report and now have a dedicated **Tools > Live
+  Diagnostics** page with level/text filtering, copy/export actions, a bounded
+  in-memory view, optional auto-refresh, and an optional RailLoader-style live
+  Windows console that mirrors `FUSE.log`. (#208)
 - A single unloadable type in some other assembly (typically a stray, real
   `Railloader.dll` still being loaded from a mod folder) aborted FUSE's scan for
   legacy `ISplineyBuilder` implementations, so every queued builder task —

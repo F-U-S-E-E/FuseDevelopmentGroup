@@ -24,40 +24,80 @@ namespace FUSE.Loading
                 .Where(requirement => !string.IsNullOrWhiteSpace(requirement?.Id))
                 .ToArray() ?? Array.Empty<FuseModRequirement>();
 
-            if (requirements.Length == 0)
+            var conflictsWith = mixinto?.ConflictsWith?
+                .Where(requirement => !string.IsNullOrWhiteSpace(requirement?.Id))
+                .ToArray() ?? Array.Empty<FuseModRequirement>();
+
+            if (requirements.Length == 0 && conflictsWith.Length == 0)
             {
                 return true;
             }
 
             var installedMods = CollectInstalledMods();
+            var sourceFile = string.IsNullOrWhiteSpace(loaded.DefinitionPath)
+                ? mixinto?.SourceFile ?? string.Empty
+                : loaded.DefinitionPath;
             foreach (var requirement in requirements)
             {
                 if (!TryFindInstalled(requirement.Id, installedMods, out var installed))
                 {
                     reason =
-                        $"mixinto dependency missing id='{requirement.Id}' " +
-                        $"target='{mixinto?.Target ?? string.Empty}' sourceFile='{mixinto?.SourceFile ?? string.Empty}'";
+                        $"package='{definition?.Id ?? string.Empty}' mixinto dependency missing id='{requirement.Id}' " +
+                        $"target='{mixinto?.Target ?? string.Empty}' folder='{loaded.FolderPath}' sourceFile='{sourceFile}' " +
+                        "action='Install and enable the named dependency, or correct mixinto.requires in this file.'";
                     return false;
                 }
 
-                if (!VersionSatisfies(definition?.Id, requirement, installed, out reason))
+                // Replacement capabilities use FUSE's version line, not the
+                // retired package's version line. Once the capability is
+                // declared provided, legacy notBefore/notAfter values do not
+                // compare meaningfully and must not reject the mixinto.
+                if (!installed.IsReplacementCapability &&
+                    !VersionSatisfies(definition?.Id, requirement, installed, out reason))
                 {
                     reason =
-                        $"mixinto dependency version mismatch id='{requirement.Id}' installedVersion='{installed.Version}' " +
+                        $"package='{definition?.Id ?? string.Empty}' mixinto dependency version mismatch id='{requirement.Id}' installedVersion='{installed.Version}' " +
                         $"notBefore='{requirement.NotBefore ?? string.Empty}' notAfter='{requirement.NotAfter ?? string.Empty}' " +
-                        $"target='{mixinto?.Target ?? string.Empty}' sourceFile='{mixinto?.SourceFile ?? string.Empty}'";
+                        $"target='{mixinto?.Target ?? string.Empty}' folder='{loaded.FolderPath}' sourceFile='{sourceFile}' " +
+                        "action='Install a compatible dependency version, or correct the version bounds in mixinto.requires.'";
                     return false;
                 }
             }
 
-            reason = $"mixinto requirements satisfied target='{mixinto?.Target ?? string.Empty}' sourceFile='{mixinto?.SourceFile ?? string.Empty}'";
+            foreach (var conflict in conflictsWith)
+            {
+                if (!TryFindInstalled(conflict.Id, installedMods, out var installed))
+                {
+                    continue;
+                }
+
+                var matchesVersion = installed.IsReplacementCapability ||
+                    VersionSatisfies(definition?.Id, conflict, installed, out _);
+                if (!matchesVersion)
+                {
+                    continue;
+                }
+
+                reason =
+                    $"package='{definition?.Id ?? string.Empty}' mixinto conflict matched id='{conflict.Id}' " +
+                    $"installedVersion='{installed.Version}' target='{mixinto?.Target ?? string.Empty}' " +
+                    $"folder='{loaded.FolderPath}' sourceFile='{sourceFile}' " +
+                    "action='This conditional fragment is intentionally inactive while the conflicting package is enabled.'";
+                return false;
+            }
+
+            reason = $"mixinto requirements satisfied; conflicts clear target='{mixinto?.Target ?? string.Empty}' sourceFile='{sourceFile}'";
             return true;
         }
 
-        private static Dictionary<string, InstalledMod> CollectInstalledMods()
+        internal static Dictionary<string, InstalledMod> CollectInstalledMods()
         {
             var result = new Dictionary<string, InstalledMod>(StringComparer.OrdinalIgnoreCase);
-            AddInstalled(result, "FUSE", "1.0.0", "runtime");
+            var fuseVersion = typeof(FuseModRequirementResolver).Assembly.GetName().Version?.ToString() ?? "1.0.0";
+            foreach (var capabilityId in FuseReplacementCapabilityCatalog.AdvertisedPackageIds)
+            {
+                AddInstalled(result, capabilityId, fuseVersion, "FUSE replacement capability", true);
+            }
 
             foreach (var loaded in FuseModLoader.GetLoadedModsInOrder())
             {
@@ -67,7 +107,12 @@ namespace FUSE.Loading
                     continue;
                 }
 
-                AddInstalled(result, definition.Id, definition.ModVersion, "loaded definition");
+                AddInstalled(
+                    result,
+                    definition.Id,
+                    definition.ModVersion,
+                    "loaded definition",
+                    folderPath: loaded.FolderPath);
                 TryReadFolderManifests(loaded.FolderPath, result);
             }
 
@@ -90,6 +135,14 @@ namespace FUSE.Loading
 
             foreach (var folder in folders)
             {
+                var packageId = TryReadPrimaryPackageId(folder);
+                if (IsManifestDisabled(folder) ||
+                    FuseUmmState.TryGetDisabledReason(folder, packageId, out _) ||
+                    !FuseModSetService.IsPackageEnabledByActiveSet(packageId, folder))
+                {
+                    continue;
+                }
+
                 TryReadFolderManifests(folder, result);
             }
 
@@ -111,9 +164,83 @@ namespace FUSE.Loading
                 return;
             }
 
-            AddInstalled(result, Path.GetFileName(folder), string.Empty, "mod folder");
+            AddInstalled(result, Path.GetFileName(folder), string.Empty, "mod folder", folderPath: folder);
             TryReadManifest(infoPath, "Id", "Version", "Info.json", result);
             TryReadManifest(definitionPath, "id", "version", "Definition.json", result);
+        }
+
+        private static string TryReadPrimaryPackageId(string folder)
+        {
+            foreach (var candidate in new[]
+                     {
+                         new { Path = Path.Combine(folder, "Info.json"), Id = "Id" },
+                         new { Path = Path.Combine(folder, "Definition.json"), Id = "id" }
+                     })
+            {
+                if (!File.Exists(candidate.Path))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var manifest = FuseLegacyDataConverter.ReadLegacyObject(candidate.Path);
+                    var id = ReadString(manifest, candidate.Id, "Id", "id");
+                    if (!string.IsNullOrWhiteSpace(id))
+                    {
+                        return id;
+                    }
+                }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
+                {
+                    // The normal manifest reader reports the parse problem. The
+                    // folder name remains sufficient for enabled-state checks.
+                    FuseLog.Info(
+                        $"FUSE dependency scan could not read primary package id from '{candidate.Path}'; " +
+                        $"using folder identity instead. reason='{ex.Message}'");
+                }
+            }
+
+            return Path.GetFileName(folder) ?? string.Empty;
+        }
+
+        private static bool IsManifestDisabled(string folder)
+        {
+            var infoPath = Path.Combine(folder, "Info.json");
+            if (!File.Exists(infoPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                var info = FuseLegacyDataConverter.ReadLegacyObject(infoPath);
+                return ReadBoolean(info, "FuseDisabled", false) ||
+                       ReadBoolean(info, "Disabled", false) ||
+                       ReadBoolean(info, "disabled", false) ||
+                       !ReadBoolean(info, "Enabled", true) ||
+                       !ReadBoolean(info, "enabled", true);
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
+            {
+                return false;
+            }
+        }
+
+        private static bool ReadBoolean(JObject manifest, string propertyName, bool defaultValue)
+        {
+            var token = manifest?[propertyName];
+            if (token == null)
+            {
+                return defaultValue;
+            }
+
+            if (token.Type == JTokenType.Boolean)
+            {
+                return (bool)token;
+            }
+
+            return bool.TryParse(token.ToString(), out var value) ? value : defaultValue;
         }
 
         private static void TryReadManifest(
@@ -138,7 +265,7 @@ namespace FUSE.Loading
                 }
 
                 var version = ReadString(manifest, versionProperty, versionProperty.ToLowerInvariant(), "Version", "version");
-                AddInstalled(result, id, version, sourceName);
+                AddInstalled(result, id, version, sourceName, folderPath: Path.GetDirectoryName(path));
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
             {
@@ -178,7 +305,13 @@ namespace FUSE.Loading
             return string.Empty;
         }
 
-        private static void AddInstalled(IDictionary<string, InstalledMod> result, string id, string version, string source)
+        private static void AddInstalled(
+            IDictionary<string, InstalledMod> result,
+            string id,
+            string version,
+            string source,
+            bool isReplacementCapability = false,
+            string folderPath = null)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -186,15 +319,27 @@ namespace FUSE.Loading
             }
 
             var normalizedId = id.Trim();
-            AddAlias(result, normalizedId, version, source);
+            AddAlias(result, normalizedId, version, source, isReplacementCapability, folderPath);
             if (normalizedId.EndsWith(".FUSE", StringComparison.OrdinalIgnoreCase) ||
                 normalizedId.EndsWith(".RAIL", StringComparison.OrdinalIgnoreCase))
             {
-                AddAlias(result, normalizedId.Substring(0, normalizedId.Length - 5), version, source);
+                AddAlias(
+                    result,
+                    normalizedId.Substring(0, normalizedId.Length - 5),
+                    version,
+                    source,
+                    isReplacementCapability,
+                    folderPath);
             }
         }
 
-        private static void AddAlias(IDictionary<string, InstalledMod> result, string id, string version, string source)
+        private static void AddAlias(
+            IDictionary<string, InstalledMod> result,
+            string id,
+            string version,
+            string source,
+            bool isReplacementCapability,
+            string folderPath)
         {
             if (string.IsNullOrWhiteSpace(id) || result.ContainsKey(id))
             {
@@ -205,16 +350,40 @@ namespace FUSE.Loading
             {
                 Id = id,
                 Version = version ?? string.Empty,
-                Source = source ?? string.Empty
+                Source = source ?? string.Empty,
+                IsReplacementCapability = isReplacementCapability,
+                FolderPath = folderPath ?? string.Empty
             };
         }
 
-        private static bool TryFindInstalled(string id, Dictionary<string, InstalledMod> installedMods, out InstalledMod installed)
+        internal static bool TryFindInstalled(string id, Dictionary<string, InstalledMod> installedMods, out InstalledMod installed)
         {
             installed = null;
-            return !string.IsNullOrWhiteSpace(id) &&
-                   installedMods != null &&
-                   installedMods.TryGetValue(id.Trim(), out installed);
+            if (string.IsNullOrWhiteSpace(id) || installedMods == null)
+            {
+                return false;
+            }
+
+            if (installedMods.TryGetValue(id.Trim(), out installed))
+            {
+                return true;
+            }
+
+            if (!FuseReplacementCapabilityCatalog.IsProvided(id))
+            {
+                return false;
+            }
+
+            var fuseVersion = typeof(FuseModRequirementResolver).Assembly.GetName().Version?.ToString() ?? "1.0.0";
+            installed = new InstalledMod
+            {
+                Id = id.Trim(),
+                Version = fuseVersion,
+                Source = "FUSE replacement capability",
+                IsReplacementCapability = true,
+                FolderPath = string.Empty
+            };
+            return true;
         }
 
         internal static bool VersionSatisfies(
@@ -337,6 +506,8 @@ namespace FUSE.Loading
             public string Id { get; set; }
             public string Version { get; set; }
             public string Source { get; set; }
+            public bool IsReplacementCapability { get; set; }
+            public string FolderPath { get; set; }
         }
     }
 }

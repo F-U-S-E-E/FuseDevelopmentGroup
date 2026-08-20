@@ -77,6 +77,14 @@
       "default": 0,
       "description": "FUSE-specific package ordering priority. Lower values load earlier; ties fall back to dependency order, then package id."
     },
+    "FuseRequires": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      },
+      "default": [],
+      "description": "FUSE data package ids that must be installed and enabled for this package to apply."
+    },
     "FuseLoadAfter": {
       "type": "array",
       "items": {
@@ -92,6 +100,14 @@
       },
       "default": [],
       "description": "FUSE-specific data package ids that must load after this package."
+    },
+    "FuseConflictsWith": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/dependency"
+      },
+      "default": [],
+      "description": "Package ids and optional version bounds that this complete data package declares incompatible. Matching enabled packages prevent this package from loading and are shown as author-declared incompatibilities."
     },
     "FuseDataFile": {
       "type": "string",
@@ -123,6 +139,33 @@
         }
       ],
       "description": "FUSE-specific relative folder or folders containing Railroader AssetPack Runtime stores, for example SCAssetPacks."
+    },
+    "FuseDefinitionOverrides": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/definitionOverride"
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/definitionOverride"
+              },
+              {
+                "type": "string",
+                "minLength": 1
+              }
+            ]
+          },
+          "default": []
+        }
+      ],
+      "description": "FUSE-owned replacement for AssetLoader definitions-only store routing. Paths are relative to this package. String entries infer the target store identifier from the parent folder; object entries can name it explicitly."
     },
     "Settings": {
       "type": "object",
@@ -197,10 +240,31 @@
             },
             "NotBefore": {
               "type": "string"
+            },
+            "NotAfter": {
+              "type": "string"
             }
           }
         }
       ]
+    },
+    "definitionOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Path"
+      ],
+      "properties": {
+        "StoreIdentifier": {
+          "$ref": "#/$defs/id",
+          "description": "Exact existing AssetPackRuntimeStore identifier whose Definitions.json is replaced. If omitted, FUSE uses the definition file's parent folder name."
+        },
+        "Path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Package-relative Definitions.json path, or a package-relative folder containing Definitions.json."
+        }
+      }
     }
   }
 }

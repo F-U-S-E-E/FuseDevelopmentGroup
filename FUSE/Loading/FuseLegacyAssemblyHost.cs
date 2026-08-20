@@ -24,41 +24,16 @@ namespace FUSE.Loading
     {
         private static readonly Dictionary<string, HostedLegacyPlugin> HostedPlugins =
             new Dictionary<string, HostedLegacyPlugin>(StringComparer.OrdinalIgnoreCase);
+        // RailLoader captures its IUpdateHandler instances once after startup.
+        // Keep the same shape here: UpdateHostedPlugins runs every Unity frame,
+        // so enumerating Dictionary.Values.ToArray() and re-reflecting each type
+        // there produces permanent GC pressure in large mod sets.
+        private static HostedLegacyPlugin[] _hostedUpdatePlugins =
+            Array.Empty<HostedLegacyPlugin>();
 
         private static readonly List<IConsoleCommand> PendingConsoleCommands = new List<IConsoleCommand>();
-        // Package IDs that FUSE supersedes natively. When a legacy package
-        // declares itself (e.g. an old loader plugin we no longer host) or
-        // declares one of these as a dependency, the legacy-assembly host
-        // either skips the package itself or — for the dependency case at
-        // line ~399 — considers the dependency satisfied because FUSE
-        // provides the equivalent surface. Per the project's compat
-        // contract, FUSE shims the full public API of Railloader,
-        // StrangeCustoms, ConfusingSupplements, For Your Convenience, and
-        // Alina's Map Mod, so any of those package IDs appearing in a
-        // mod's "requires" must be treated as satisfied without needing
-        // the host binary on disk. Earlier revisions of this set omitted
-        // Zamu.ConfusingSupplements and Zamu.ForYourConvenience, which
-        // caused FUSE to skip every Foxy coal-patch package and any pack
-        // that built on the old For Your Convenience helpers — all of
-        // them must work day-1 of FUSE.
-        private static readonly HashSet<string> FuseReplacedLegacyPackages =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "AlinaNova21.AlinasMapMod",
-                "AlinaNova21.MapEditor",
-                "railroader",
-                "Railloader",
-                "RailLoader",
-                "Zamu.StrangeCustoms",
-                "Zamu.ConfusingSupplements",
-                "Zamu.ForYourConvenience",
-                // Defensive coverage for short-form / capitalization
-                // variants we have seen referenced in mod manifests.
-                "StrangeCustoms",
-                "ConfusingSupplements",
-                "ForYourConvenience"
-            };
-
+        private static readonly HashSet<string> ReportedLoadOrderCycles =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static GameObject _startupHost;
         private static bool _consoleSurfaceUnavailableLogged;
 
@@ -249,16 +224,108 @@ namespace FUSE.Loading
                         continue;
                     }
 
-                    foreach (var fileReference in EnumerateMixintoReferences(property.Value))
+                    foreach (var entry in EnumerateMixintoEntries(property.Value))
                     {
-                        var mixintoPath = ResolvePackageFile(manifest.FolderPath, fileReference);
+                        if (!IsLegacyMixintoActive(manifest, entry))
+                        {
+                            continue;
+                        }
+
+                        var mixintoPath = ResolvePackageFile(manifest.FolderPath, entry.Reference);
                         if (!string.IsNullOrWhiteSpace(mixintoPath))
                         {
-                            yield return new ModMixinto(new FuseLegacyModDefinition(manifest), mixintoPath);
+                            yield return new ModMixinto(
+                                new FuseLegacyModDefinition(manifest),
+                                mixintoPath,
+                                MixintoType.File,
+                                entry.Requires,
+                                entry.ConflictsWith);
                         }
                     }
                 }
             }
+        }
+
+        internal static IReadOnlyCollection<IMod> EnumerateInstalledMods(
+            string modsRoot,
+            Func<string, string, bool> enabledByActiveSet = null)
+        {
+            var mods = new Dictionary<string, IMod>(StringComparer.OrdinalIgnoreCase);
+            var isEnabled = enabledByActiveSet ?? FuseModSetService.IsPackageEnabledByActiveSet;
+            if (!string.IsNullOrWhiteSpace(modsRoot) && Directory.Exists(modsRoot))
+            {
+                foreach (var manifest in DiscoverLegacyManifests(modsRoot))
+                {
+                    if (manifest == null || string.IsNullOrWhiteSpace(manifest.Id) ||
+                        FuseUmmState.TryGetDisabledReason(manifest.FolderPath, manifest.Id, out _) ||
+                        !isEnabled(manifest.Id, manifest.FolderPath))
+                    {
+                        continue;
+                    }
+
+                    mods[manifest.Id] = new FuseLegacyModDefinition(manifest);
+                }
+            }
+
+            // Old plugins commonly use context.Mods as a capability check. A
+            // FUSE-owned replacement must therefore be visible under the legacy
+            // package id even though its superseded DLL is intentionally absent.
+            var fuseVersion = typeof(FuseLegacyAssemblyHost).Assembly.GetName().Version?.ToString() ?? "1.0.0";
+            foreach (var replacedId in FuseReplacementCapabilityCatalog.AdvertisedPackageIds)
+            {
+                if (string.IsNullOrWhiteSpace(replacedId) || mods.ContainsKey(replacedId))
+                {
+                    continue;
+                }
+
+                mods[replacedId] = new FuseLegacyModDefinition(new FuseLegacyAssemblyManifest
+                {
+                    Id = replacedId,
+                    Name = replacedId,
+                    Version = fuseVersion,
+                    FolderPath = modsRoot ?? string.Empty
+                });
+            }
+
+            return mods.Values.ToArray();
+        }
+
+        internal static void UpdateHostedPlugins()
+        {
+            var updatePlugins = _hostedUpdatePlugins;
+            for (var index = 0; index < updatePlugins.Length; index++)
+            {
+                var hosted = updatePlugins[index];
+                if (hosted == null || hosted.Plugin == null || hosted.UpdateFaulted)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    hosted.InvokeUpdate();
+                }
+                catch (Exception ex)
+                {
+                    hosted.UpdateFaulted = true;
+                    FuseModExceptionRegistry.RecordContained(ex, hosted.Manifest.Id, "legacy host update");
+                    FuseLog.Exception(
+                        $"FUSE legacy support disabled the per-frame update callback for '{hosted.Type.FullName}' from '{hosted.Manifest.Id}' after it threw",
+                        ex);
+                }
+            }
+        }
+
+        private static bool ImplementsLegacyUpdateHandler(Type pluginType)
+        {
+            if (pluginType == null)
+            {
+                return false;
+            }
+
+            return typeof(IUpdateHandler).IsAssignableFrom(pluginType) ||
+                   pluginType.GetInterfaces().Any(candidate =>
+                       string.Equals(candidate.FullName, "Railloader.IUpdateHandler", StringComparison.Ordinal));
         }
 
         internal static void RegisterConsoleCommand(IConsoleCommand command)
@@ -317,6 +384,7 @@ namespace FUSE.Loading
             }
 
             HostedPlugins.Clear();
+            _hostedUpdatePlugins = Array.Empty<HostedLegacyPlugin>();
             PendingConsoleCommands.Clear();
             if (_startupHost != null)
             {
@@ -361,7 +429,16 @@ namespace FUSE.Loading
             try
             {
                 InvokePluginLifecycleMethod(plugin, nameof(LegacyPluginBase.OnEnable));
-                HostedPlugins[key] = new HostedLegacyPlugin(manifest, pluginType, plugin);
+                var hosted = new HostedLegacyPlugin(manifest, pluginType, plugin);
+                HostedPlugins[key] = hosted;
+                if (hosted.HasUpdateHandler)
+                {
+                    var existing = _hostedUpdatePlugins;
+                    var replacement = new HostedLegacyPlugin[existing.Length + 1];
+                    Array.Copy(existing, replacement, existing.Length);
+                    replacement[replacement.Length - 1] = hosted;
+                    _hostedUpdatePlugins = replacement;
+                }
                 FuseLog.Info(
                     $"FUSE legacy support enabled hosted old-loader plugin '{pluginType.FullName}' " +
                     $"from package '{manifest.Id}'. This is temporary legacy compatibility, not a native FUSE package.");
@@ -419,11 +496,32 @@ namespace FUSE.Loading
 
         private static bool IsLegacyPluginType(Type type)
         {
-            return type != null &&
-                   type.IsClass &&
-                   !type.IsAbstract &&
-                   (typeof(LegacyPluginBase).IsAssignableFrom(type) ||
-                    InheritsFromFullName(type, "Railloader.PluginBase"));
+            if (type == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return type.IsClass &&
+                       !type.IsAbstract &&
+                       (typeof(LegacyPluginBase).IsAssignableFrom(type) ||
+                        InheritsFromFullName(type, "Railloader.PluginBase"));
+            }
+            catch (Exception ex) when (
+                ex is TypeLoadException ||
+                ex is FileLoadException ||
+                ex is FileNotFoundException ||
+                ex is BadImageFormatException)
+            {
+                // A UMM package can already have a stale, partially bound copy
+                // of its DLL in the AppDomain before recovery runs. Reflection
+                // over compiler-generated nested types may throw here even
+                // though FuseLegacyUmmRecovery subsequently activates the real
+                // entry. Treat that type as unhostable; the package-level host
+                // must not turn a recoverable probe into a mod error.
+                return false;
+            }
         }
 
         private static bool TryBuildLegacyConstructorArguments(
@@ -455,6 +553,12 @@ namespace FUSE.Loading
                     continue;
                 }
 
+                if (parameterType.IsInstanceOfType(FuseLegacyUIHelper.Shared))
+                {
+                    arguments[i] = FuseLegacyUIHelper.Shared;
+                    continue;
+                }
+
                 if (string.Equals(parameterType.FullName, "Railloader.IModdingContext", StringComparison.Ordinal))
                 {
                     arguments[i] = CreateRealModdingContextProxy(parameterType, context);
@@ -465,6 +569,12 @@ namespace FUSE.Loading
                     string.Equals(parameterType.FullName, "Railloader.IMod", StringComparison.Ordinal))
                 {
                     arguments[i] = CreateRealModDefinitionProxy(parameterType, definition);
+                    continue;
+                }
+
+                if (string.Equals(parameterType.FullName, "Railloader.IUIHelper", StringComparison.Ordinal))
+                {
+                    arguments[i] = CreateRealUIHelperProxy(parameterType);
                     continue;
                 }
 
@@ -536,6 +646,60 @@ namespace FUSE.Loading
                 InvokeRealModdingContext(context, method, args)).GetTransparentProxy();
         }
 
+        private static object CreateRealUIHelperProxy(Type interfaceType)
+        {
+            return new LegacyInterfaceProxy(interfaceType, InvokeRealUIHelper).GetTransparentProxy();
+        }
+
+        private static object InvokeRealUIHelper(MethodInfo method, object[] args)
+        {
+            if (method == null)
+            {
+                return null;
+            }
+
+            if (string.Equals(method.Name, "PopulateWindow", StringComparison.Ordinal))
+            {
+                return FuseLegacyUIHelper.Shared.PopulateWindow(
+                    args != null && args.Length > 0 ? args[0] as UI.Common.Window : null,
+                    args != null && args.Length > 1 ? args[1] as Action<UI.Builder.UIPanelBuilder> : null);
+            }
+
+            if (!string.Equals(method.Name, "CreateWindow", StringComparison.Ordinal))
+            {
+                return DefaultValue(method.ReturnType);
+            }
+
+            if (!method.IsGenericMethod)
+            {
+                if (args != null && args.Length == 3)
+                {
+                    return FuseLegacyUIHelper.Shared.CreateWindow(
+                        (int)args[0],
+                        (int)args[1],
+                        (UI.Common.Window.Position)args[2]);
+                }
+
+                if (args != null && args.Length == 4)
+                {
+                    return FuseLegacyUIHelper.Shared.CreateWindow(
+                        args[0] as string,
+                        (int)args[1],
+                        (int)args[2],
+                        (UI.Common.Window.Position)args[3]);
+                }
+            }
+
+            var genericArguments = method.GetGenericArguments();
+            var target = typeof(FuseLegacyUIHelper)
+                .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+                .Where(candidate => candidate.Name == "CreateWindow" && candidate.IsGenericMethodDefinition)
+                .FirstOrDefault(candidate => candidate.GetParameters().Length == (args?.Length ?? 0));
+            return target?.MakeGenericMethod(genericArguments).Invoke(
+                FuseLegacyUIHelper.Shared,
+                args ?? Array.Empty<object>());
+        }
+
         private static object InvokeRealModDefinition(FuseLegacyModDefinition definition, MethodInfo method)
         {
             switch (method?.Name)
@@ -549,10 +713,13 @@ namespace FUSE.Loading
                 case "get_Directory":
                     return definition.Directory;
                 case "get_LoadBefore":
-                    return Array.Empty<string>();
+                    return definition.LoadBefore;
                 case "get_LoadAfter":
+                    return ConvertModReferences(definition.LoadAfter, method.ReturnType);
                 case "get_Requires":
+                    return ConvertModReferences(definition.Requires, method.ReturnType);
                 case "get_ConflictsWith":
+                    return ConvertModReferences(definition.ConflictsWith, method.ReturnType);
                 case "get_Plugins":
                     return CreateEmptyArrayForReturnType(method.ReturnType);
                 case "get_IsEnabled":
@@ -576,7 +743,7 @@ namespace FUSE.Loading
                 case "get_ModsBaseDirectory":
                     return context.ModsBaseDirectory;
                 case "get_Mods":
-                    return CreateEmptyArrayForReturnType(method.ReturnType);
+                    return CreateRealModCollectionForReturnType(context.Mods, method.ReturnType);
                 case "RegisterConsoleCommand":
                     if (args != null && args.Length > 0 && args[0] is IConsoleCommand command)
                     {
@@ -593,16 +760,172 @@ namespace FUSE.Loading
                         args != null && args.Length > 1 ? args[1] : null);
                     return null;
                 case "GetMixintos":
-                    return CreateEmptyArrayForReturnType(method.ReturnType);
+                    return CreateRealMixintoCollectionForReturnType(context, method, args);
                 case "TryResolveFilePath":
                     return TryResolveFilePathFromProxy(context, method, args);
                 case "RegisterSubTypeOverload":
+                    RegisterLegacySubtypeFromProxy(method, args);
+                    return null;
                 case "RegisterComponent":
+                    RegisterLegacyComponentFromProxy(method, args);
                     return null;
                 case "ToString":
                     return "FUSE legacy Railloader context bridge";
                 default:
                     return DefaultValue(method?.ReturnType);
+            }
+        }
+
+        private static void RegisterLegacySubtypeFromProxy(MethodInfo method, object[] args)
+        {
+            var genericArguments = method?.GetGenericArguments() ?? Type.EmptyTypes;
+            if (genericArguments.Length == 2)
+            {
+                FuseLegacyTypeRegistry.RegisterSubType(
+                    genericArguments[0],
+                    args != null && args.Length > 0 ? args[0] as string : null,
+                    genericArguments[1]);
+                return;
+            }
+
+            if (args != null && args.Length >= 3)
+            {
+                FuseLegacyTypeRegistry.RegisterSubType(
+                    args[0] as Type,
+                    args[1] as string,
+                    args[2] as Type);
+                return;
+            }
+
+            throw new MissingMethodException("Unsupported legacy RegisterSubTypeOverload signature.");
+        }
+
+        private static void RegisterLegacyComponentFromProxy(MethodInfo method, object[] args)
+        {
+            var genericArguments = method?.GetGenericArguments() ?? Type.EmptyTypes;
+            if (genericArguments.Length != 2)
+            {
+                throw new MissingMethodException("Unsupported legacy RegisterComponent signature.");
+            }
+
+            FuseLegacyTypeRegistry.RegisterComponent(
+                genericArguments[0],
+                genericArguments[1],
+                args != null && args.Length > 0 ? args[0] as string : null);
+        }
+
+        private static object CreateRealModCollectionForReturnType(IReadOnlyCollection<IMod> mods, Type returnType)
+        {
+            var elementType = returnType?.IsArray == true
+                ? returnType.GetElementType()
+                : returnType?.GetGenericArguments().FirstOrDefault();
+            if (elementType == null)
+            {
+                return CreateEmptyArrayForReturnType(returnType);
+            }
+
+            var definitions = (mods ?? Array.Empty<IMod>()).OfType<FuseLegacyModDefinition>().ToArray();
+            var result = Array.CreateInstance(elementType, definitions.Length);
+            for (var index = 0; index < definitions.Length; index++)
+            {
+                result.SetValue(CreateRealModDefinitionProxy(elementType, definitions[index]), index);
+            }
+
+            return result;
+        }
+
+        private static object CreateRealMixintoCollectionForReturnType(
+            FuseLegacyModdingContext context,
+            MethodInfo method,
+            object[] args)
+        {
+            var targets = args != null && args.Length > 0 && args[0] is string[] many
+                ? many
+                : new[] { args != null && args.Length > 0 ? args[0] as string : null };
+            var mixintos = context.GetMixintos(targets).ToArray();
+            var elementType = method.ReturnType?.IsArray == true
+                ? method.ReturnType.GetElementType()
+                : method.ReturnType?.GetGenericArguments().FirstOrDefault();
+            if (elementType == null)
+            {
+                return CreateEmptyArrayForReturnType(method.ReturnType);
+            }
+
+            var result = Array.CreateInstance(elementType, mixintos.Length);
+            for (var index = 0; index < mixintos.Length; index++)
+            {
+                result.SetValue(ConvertMixintoForForeignContract(mixintos[index], elementType), index);
+            }
+
+            return result;
+        }
+
+        private static object ConvertMixintoForForeignContract(ModMixinto mixinto, Type targetType)
+        {
+            var converted = Activator.CreateInstance(targetType);
+            SetMemberValue(converted, targetType, "Mixinto", mixinto.Mixinto);
+            SetMemberValue(converted, targetType, "Type", ConvertEnumValue(mixinto.Type, GetMemberType(targetType, "Type")));
+
+            var sourceType = GetMemberType(targetType, "Source");
+            if (sourceType != null && mixinto.Source is FuseLegacyModDefinition source)
+            {
+                SetMemberValue(converted, targetType, "Source", CreateRealModDefinitionProxy(sourceType, source));
+            }
+
+            SetMemberValue(converted, targetType, "Requires", ConvertModReferences(mixinto.Requires, GetMemberType(targetType, "Requires")));
+            SetMemberValue(converted, targetType, "ConflictsWith", ConvertModReferences(mixinto.ConflictsWith, GetMemberType(targetType, "ConflictsWith")));
+            SetMemberValue(converted, targetType, "ManagedObject", mixinto.ManagedObject);
+            return converted;
+        }
+
+        private static object ConvertModReferences(ModReference[] references, Type targetType)
+        {
+            if (targetType?.IsArray != true)
+            {
+                return null;
+            }
+
+            var values = references ?? Array.Empty<ModReference>();
+            var elementType = targetType.GetElementType();
+            var result = Array.CreateInstance(elementType, values.Length);
+            for (var index = 0; index < values.Length; index++)
+            {
+                var converted = Activator.CreateInstance(elementType);
+                SetMemberValue(converted, elementType, "Id", values[index].Id);
+                SetMemberValue(converted, elementType, "NotBefore", values[index].NotBefore);
+                SetMemberValue(converted, elementType, "NotAfter", values[index].NotAfter);
+                result.SetValue(converted, index);
+            }
+
+            return result;
+        }
+
+        private static object ConvertEnumValue(object value, Type targetType)
+        {
+            return targetType?.IsEnum == true
+                ? Enum.ToObject(targetType, Convert.ToInt32(value))
+                : value;
+        }
+
+        private static Type GetMemberType(Type declaringType, string name)
+        {
+            return declaringType?.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.PropertyType ??
+                   declaringType?.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.FieldType;
+        }
+
+        private static void SetMemberValue(object target, Type declaringType, string name, object value)
+        {
+            var property = declaringType?.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (property?.CanWrite == true && (value == null || property.PropertyType.IsInstanceOfType(value)))
+            {
+                property.SetValue(target, value, null);
+                return;
+            }
+
+            var field = declaringType?.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field != null && (value == null || field.FieldType.IsInstanceOfType(value)))
+            {
+                field.SetValue(target, value);
             }
         }
 
@@ -668,12 +991,128 @@ namespace FUSE.Loading
 
         private static IEnumerable<FuseLegacyAssemblyManifest> DiscoverLegacyManifests(string modsRoot)
         {
+            var manifests = new List<FuseLegacyAssemblyManifest>();
             foreach (var packagePath in Directory.GetDirectories(modsRoot).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
             {
                 if (TryReadLegacyManifest(packagePath, out var manifest))
                 {
-                    yield return manifest;
+                    manifests.Add(manifest);
                 }
+            }
+
+            return OrderLegacyManifestsForHosting(manifests);
+        }
+
+        internal static IReadOnlyList<FuseLegacyAssemblyManifest> OrderLegacyManifestsForHosting(
+            IEnumerable<FuseLegacyAssemblyManifest> manifests)
+        {
+            var baseline = (manifests ?? Enumerable.Empty<FuseLegacyAssemblyManifest>())
+                .Where(manifest => manifest != null)
+                .OrderBy(manifest => manifest.FolderPath ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(manifest => manifest.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (baseline.Length <= 1)
+            {
+                return baseline;
+            }
+
+            var baselineIndex = baseline
+                .Select((manifest, index) => new { manifest, index })
+                .ToDictionary(item => item.manifest, item => item.index);
+            var outgoing = baseline.ToDictionary(
+                manifest => manifest,
+                _ => new HashSet<FuseLegacyAssemblyManifest>());
+            var incoming = baseline.ToDictionary(manifest => manifest, _ => 0);
+
+            foreach (var manifest in baseline)
+            {
+                foreach (var reference in (manifest.RequiredReferences ?? Array.Empty<ModReference>())
+                             .Concat(manifest.LoadAfter ?? Array.Empty<ModReference>()))
+                {
+                    if (TryResolveLegacyManifest(baseline, reference.Id, out var dependency))
+                    {
+                        AddLegacyLoadOrderEdge(dependency, manifest, outgoing, incoming);
+                    }
+                }
+
+                foreach (var targetId in manifest.LoadBefore ?? Array.Empty<string>())
+                {
+                    if (TryResolveLegacyManifest(baseline, targetId, out var target))
+                    {
+                        AddLegacyLoadOrderEdge(manifest, target, outgoing, incoming);
+                    }
+                }
+            }
+
+            var ready = baseline
+                .Where(manifest => incoming[manifest] == 0)
+                .OrderBy(manifest => baselineIndex[manifest])
+                .ToList();
+            var ordered = new List<FuseLegacyAssemblyManifest>(baseline.Length);
+            while (ready.Count > 0)
+            {
+                var next = ready[0];
+                ready.RemoveAt(0);
+                ordered.Add(next);
+                foreach (var after in outgoing[next].OrderBy(manifest => baselineIndex[manifest]))
+                {
+                    incoming[after]--;
+                    if (incoming[after] == 0)
+                    {
+                        ready.Add(after);
+                        ready.Sort((left, right) => baselineIndex[left].CompareTo(baselineIndex[right]));
+                    }
+                }
+            }
+
+            if (ordered.Count == baseline.Length)
+            {
+                return ordered;
+            }
+
+            var cycleMembers = baseline.Where(manifest => !ordered.Contains(manifest)).ToArray();
+            var signature = string.Join(",", cycleMembers.Select(manifest => manifest.Id).OrderBy(id => id, StringComparer.OrdinalIgnoreCase));
+            if (ReportedLoadOrderCycles.Add(signature))
+            {
+                FuseLog.Warning(
+                    $"FUSE legacy support found a loadAfter/loadBefore cycle among '{signature}'. " +
+                    "A deterministic folder order will be used for the cycle; correct the declarations to guarantee plugin initialization order.");
+            }
+
+            ordered.AddRange(cycleMembers);
+            return ordered;
+        }
+
+        private static bool TryResolveLegacyManifest(
+            IEnumerable<FuseLegacyAssemblyManifest> manifests,
+            string id,
+            out FuseLegacyAssemblyManifest match)
+        {
+            match = null;
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return false;
+            }
+
+            match = manifests.FirstOrDefault(candidate =>
+                candidate != null && FuseDeclaredPackageRelationship.SamePackageId(candidate.Id, id));
+            return match != null;
+        }
+
+        private static void AddLegacyLoadOrderEdge(
+            FuseLegacyAssemblyManifest before,
+            FuseLegacyAssemblyManifest after,
+            IDictionary<FuseLegacyAssemblyManifest, HashSet<FuseLegacyAssemblyManifest>> outgoing,
+            IDictionary<FuseLegacyAssemblyManifest, int> incoming)
+        {
+            if (before == null || after == null || ReferenceEquals(before, after))
+            {
+                return;
+            }
+
+            if (outgoing[before].Add(after))
+            {
+                incoming[after]++;
             }
         }
 
@@ -706,6 +1145,10 @@ namespace FUSE.Loading
                 FolderPath = folderPath,
                 Assemblies = ReadStringArray(definition["assemblies"] ?? definition["Assemblies"]).ToArray(),
                 Requires = ReadLegacyRequirementIds(definition["requires"] ?? definition["Requires"]).ToArray(),
+                RequiredReferences = ReadLegacyModReferences(definition["requires"] ?? definition["Requires"]).ToArray(),
+                LoadAfter = ReadLegacyModReferences(definition["loadAfter"] ?? definition["LoadAfter"]).ToArray(),
+                LoadBefore = ReadLegacyRequirementIds(definition["loadBefore"] ?? definition["LoadBefore"]).ToArray(),
+                ConflictsWith = ReadLegacyModReferences(definition["conflictsWith"] ?? definition["ConflictsWith"]).ToArray(),
                 RawDefinition = definition
             };
             return true;
@@ -723,7 +1166,7 @@ namespace FUSE.Loading
                 return false;
             }
 
-            if (FuseReplacedLegacyPackages.Contains(manifest.Id ?? string.Empty))
+            if (FuseReplacementCapabilityCatalog.IsProvided(manifest.Id))
             {
                 FuseLog.Info(
                     $"FUSE legacy support skipped old-loader package '{manifest.Id}' " +
@@ -753,25 +1196,78 @@ namespace FUSE.Loading
                 return false;
             }
 
-            foreach (var requirementId in manifest.Requires ?? Array.Empty<string>())
+            foreach (var requirement in manifest.RequiredReferences ?? Array.Empty<ModReference>())
             {
-                if (FuseReplacedLegacyPackages.Contains(requirementId ?? string.Empty))
+                if (FuseReplacementCapabilityCatalog.IsProvided(requirement.Id))
                 {
                     continue;
                 }
 
-                if (IsLegacyRequirementPresent(manifest, requirementId))
+                if (IsLegacyReferencePresent(manifest, requirement))
                 {
                     continue;
                 }
 
                 FuseLog.Warning(
                     $"FUSE legacy support skipped old-loader package '{manifest.Id}' " +
-                    $"because required legacy package '{requirementId}' is not installed or enabled.");
+                    $"because required legacy package '{requirement}' is not installed, enabled, or version-compatible.");
+                return false;
+            }
+
+            foreach (var conflict in manifest.ConflictsWith ?? Array.Empty<ModReference>())
+            {
+                if (!IsLegacyReferencePresent(manifest, conflict))
+                {
+                    continue;
+                }
+
+                FuseLog.Warning(
+                    $"FUSE legacy support skipped old-loader package '{manifest.Id}' because its conflictsWith " +
+                    $"reference '{conflict}' matches an enabled package. Disable one of the declared incompatible packages.");
                 return false;
             }
 
             return true;
+        }
+
+        private static bool IsLegacyReferencePresent(FuseLegacyAssemblyManifest manifest, ModReference reference)
+        {
+            if (manifest == null || string.IsNullOrWhiteSpace(reference.Id))
+            {
+                return false;
+            }
+
+            if (FuseReplacementCapabilityCatalog.IsProvided(reference.Id))
+            {
+                return true;
+            }
+
+            var modsRoot = Directory.GetParent(manifest.FolderPath)?.FullName;
+            if (string.IsNullOrWhiteSpace(modsRoot) || !Directory.Exists(modsRoot))
+            {
+                return false;
+            }
+
+            foreach (var packagePath in Directory.GetDirectories(modsRoot))
+            {
+                if (!TryReadLegacyManifest(packagePath, out var candidate) ||
+                    !FuseDeclaredPackageRelationship.SamePackageId(candidate.Id, reference.Id) ||
+                    FuseUmmState.TryGetDisabledReason(candidate.FolderPath, candidate.Id, out _) ||
+                    !FuseModSetService.IsPackageEnabledByActiveSet(candidate.Id, candidate.FolderPath))
+                {
+                    continue;
+                }
+
+                if (!FuseModRequirementResolver.TryParseVersion(candidate.Version, out var installedVersion))
+                {
+                    return true;
+                }
+
+                return (reference.NotBefore == null || installedVersion.CompareTo(reference.NotBefore) >= 0) &&
+                       (reference.NotAfter == null || installedVersion.CompareTo(reference.NotAfter) <= 0);
+            }
+
+            return false;
         }
 
         private static bool IsLegacyRequirementPresent(FuseLegacyAssemblyManifest manifest, string requirementId)
@@ -861,7 +1357,7 @@ namespace FUSE.Loading
             FuseLog.Warning($"FUSE legacy support console command registration is unavailable: {detail}");
         }
 
-        private static IEnumerable<string> EnumerateMixintoReferences(JToken token)
+        private static IEnumerable<FuseLegacyMixintoEntry> EnumerateMixintoEntries(JToken token)
         {
             if (token == null || token.Type == JTokenType.Null)
             {
@@ -873,7 +1369,7 @@ namespace FUSE.Loading
                 var reference = ExtractFileReference(token.Value<string>());
                 if (!string.IsNullOrWhiteSpace(reference))
                 {
-                    yield return reference;
+                    yield return new FuseLegacyMixintoEntry { Reference = reference };
                 }
 
                 yield break;
@@ -883,7 +1379,7 @@ namespace FUSE.Loading
             {
                 foreach (var item in array)
                 {
-                    foreach (var reference in EnumerateMixintoReferences(item))
+                    foreach (var reference in EnumerateMixintoEntries(item))
                     {
                         yield return reference;
                     }
@@ -900,13 +1396,20 @@ namespace FUSE.Loading
                     var reference = ExtractFileReference(direct);
                     if (!string.IsNullOrWhiteSpace(reference))
                     {
-                        yield return reference;
+                        yield return new FuseLegacyMixintoEntry
+                        {
+                            Reference = reference,
+                            Requires = ReadLegacyModReferences(obj["requires"] ?? obj["Requires"]).ToArray(),
+                            ConflictsWith = ReadLegacyModReferences(obj["conflictsWith"] ?? obj["ConflictsWith"]).ToArray()
+                        };
                     }
+
+                    yield break;
                 }
 
                 foreach (var property in obj.Properties())
                 {
-                    foreach (var reference in EnumerateMixintoReferences(property.Value))
+                    foreach (var reference in EnumerateMixintoEntries(property.Value))
                     {
                         yield return reference;
                     }
@@ -1121,16 +1624,120 @@ namespace FUSE.Loading
 
         private sealed class HostedLegacyPlugin
         {
+            private readonly IUpdateHandler _typedUpdateHandler;
+            private readonly MethodInfo _reflectedUpdateMethod;
+
             public HostedLegacyPlugin(FuseLegacyAssemblyManifest manifest, Type type, object plugin)
             {
                 Manifest = manifest;
                 Type = type;
                 Plugin = plugin;
+                _typedUpdateHandler = plugin as IUpdateHandler;
+                if (_typedUpdateHandler == null && ImplementsLegacyUpdateHandler(type))
+                {
+                    _reflectedUpdateMethod = type.GetMethod(
+                        nameof(IUpdateHandler.Update),
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                        null,
+                        Type.EmptyTypes,
+                        null);
+                }
             }
 
             public FuseLegacyAssemblyManifest Manifest { get; }
             public Type Type { get; }
             public object Plugin { get; }
+            public bool UpdateFaulted { get; set; }
+            public bool HasUpdateHandler => _typedUpdateHandler != null || _reflectedUpdateMethod != null;
+
+            public void InvokeUpdate()
+            {
+                if (_typedUpdateHandler != null)
+                {
+                    _typedUpdateHandler.Update();
+                    return;
+                }
+
+                _reflectedUpdateMethod?.Invoke(Plugin, Array.Empty<object>());
+            }
+        }
+
+        private static bool IsLegacyMixintoActive(
+            FuseLegacyAssemblyManifest manifest,
+            FuseLegacyMixintoEntry entry)
+        {
+            if (entry == null)
+            {
+                return false;
+            }
+
+            foreach (var requirement in entry.Requires ?? Array.Empty<ModReference>())
+            {
+                if (!IsLegacyReferencePresent(manifest, requirement))
+                {
+                    return false;
+                }
+            }
+
+            foreach (var conflict in entry.ConflictsWith ?? Array.Empty<ModReference>())
+            {
+                if (IsLegacyReferencePresent(manifest, conflict))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private sealed class FuseLegacyMixintoEntry
+        {
+            public string Reference { get; set; }
+            public ModReference[] Requires { get; set; } = Array.Empty<ModReference>();
+            public ModReference[] ConflictsWith { get; set; } = Array.Empty<ModReference>();
+        }
+
+        private static IEnumerable<ModReference> ReadLegacyModReferences(JToken token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                yield break;
+            }
+
+            if (token is JArray array)
+            {
+                foreach (var item in array)
+                {
+                    foreach (var reference in ReadLegacyModReferences(item))
+                    {
+                        yield return reference;
+                    }
+                }
+
+                yield break;
+            }
+
+            var id = ReadLegacyRequirementId(token);
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                yield break;
+            }
+
+            var obj = token as JObject;
+            var notBeforeText = ReadString(obj, "notBefore", "NotBefore");
+            var notAfterText = ReadString(obj, "notAfter", "NotAfter");
+            var notBefore = FuseModRequirementResolver.TryParseVersion(notBeforeText, out var parsedNotBefore)
+                ? parsedNotBefore
+                : null;
+            var notAfter = FuseModRequirementResolver.TryParseVersion(notAfterText, out var parsedNotAfter)
+                ? parsedNotAfter
+                : null;
+            yield return new ModReference
+            {
+                Id = id,
+                NotBefore = notBefore,
+                NotAfter = notAfter
+            };
         }
 
         private sealed class LegacyInterfaceProxy : RealProxy
@@ -1192,6 +1799,10 @@ namespace FUSE.Loading
             // UnityModManager._Start's foreach has released its enumerator.
             FUSE.Infrastructure.FuseUmmInjector.FlushPendingInjection();
             FuseLegacyAssemblyHost.LoadAllAvailableAssemblies("legacy support startup");
+            // Dual-format packages need their RailLoader plugin instance first:
+            // its singleton/context is part of the UMM patch side's runtime
+            // contract. Recover the failed UMM entry only after hosting succeeds.
+            FUSE.Compatibility.FuseLegacyUmmRecovery.RecoverFailedEntries();
         }
 #pragma warning restore CA1822
     }
@@ -1204,6 +1815,10 @@ namespace FUSE.Loading
         public string FolderPath { get; set; }
         public string[] Assemblies { get; set; } = Array.Empty<string>();
         public string[] Requires { get; set; } = Array.Empty<string>();
+        public ModReference[] RequiredReferences { get; set; } = Array.Empty<ModReference>();
+        public ModReference[] LoadAfter { get; set; } = Array.Empty<ModReference>();
+        public string[] LoadBefore { get; set; } = Array.Empty<string>();
+        public ModReference[] ConflictsWith { get; set; } = Array.Empty<ModReference>();
         public JObject RawDefinition { get; set; }
     }
 
@@ -1215,9 +1830,10 @@ namespace FUSE.Loading
             Name = manifest?.Name ?? Id;
             Version = manifest?.Version ?? string.Empty;
             Directory = manifest?.FolderPath ?? string.Empty;
-            Requires = (manifest?.Requires ?? Array.Empty<string>())
-                .Select(static r => (ModReference)r)
-                .ToArray();
+            Requires = manifest?.RequiredReferences ?? Array.Empty<ModReference>();
+            LoadAfter = manifest?.LoadAfter ?? Array.Empty<ModReference>();
+            LoadBefore = manifest?.LoadBefore ?? Array.Empty<string>();
+            ConflictsWith = manifest?.ConflictsWith ?? Array.Empty<ModReference>();
         }
 
         public string Id { get; }
@@ -1225,10 +1841,10 @@ namespace FUSE.Loading
         public string Version { get; }
         public string Directory { get; }
 
-        public string[] LoadBefore => Array.Empty<string>();
-        public ModReference[] LoadAfter => Array.Empty<ModReference>();
+        public string[] LoadBefore { get; }
+        public ModReference[] LoadAfter { get; }
         public ModReference[] Requires { get; }
-        public ModReference[] ConflictsWith => Array.Empty<ModReference>();
+        public ModReference[] ConflictsWith { get; }
 
         // We host the assembly so by definition it loaded and enabled. We do not
         // track per-plugin fault state from the IMod shim; callers that need it
@@ -1266,7 +1882,7 @@ namespace FUSE.Loading
 
         public System.Version RailloaderVersion => LegacyRailloaderVersion;
         public string ModsBaseDirectory { get; }
-        public IReadOnlyCollection<IMod> Mods => Array.Empty<IMod>();
+        public IReadOnlyCollection<IMod> Mods => FuseLegacyAssemblyHost.EnumerateInstalledMods(ModsBaseDirectory);
 
         public void RegisterConsoleCommand(IConsoleCommand command)
         {
@@ -1511,19 +2127,19 @@ namespace FUSE.Loading
 
         public void RegisterSubTypeOverload<TBaseClass, TImplementation>(string identifier)
         {
-            FuseLog.Warning($"FUSE legacy IModdingContext.RegisterSubTypeOverload<{typeof(TBaseClass).Name}, {typeof(TImplementation).Name}>('{identifier}') is not wired; no-op. Migrate to FUSE registration API.");
+            FuseLegacyTypeRegistry.RegisterSubType(typeof(TBaseClass), identifier, typeof(TImplementation));
         }
 
         public void RegisterSubTypeOverload(System.Type baseClass, string identifier, System.Type implementation)
         {
-            FuseLog.Warning($"FUSE legacy IModdingContext.RegisterSubTypeOverload('{baseClass?.Name}', '{identifier}', '{implementation?.Name}') is not wired; no-op. Migrate to FUSE registration API.");
+            FuseLegacyTypeRegistry.RegisterSubType(baseClass, identifier, implementation);
         }
 
         public void RegisterComponent<TComponent, TComponentBuilder>(string kind)
-            where TComponent : Component
-            where TComponentBuilder : IComponentBuilder
+            where TComponent : Model.Definition.Component
+            where TComponentBuilder : Model.IComponentBuilder
         {
-            FuseLog.Warning($"FUSE legacy IModdingContext.RegisterComponent<{typeof(TComponent).Name}, {typeof(TComponentBuilder).Name}>('{kind}') is not wired; no-op. Migrate to FUSE component registration API.");
+            FuseLegacyTypeRegistry.RegisterComponent(typeof(TComponent), typeof(TComponentBuilder), kind);
         }
     }
 }

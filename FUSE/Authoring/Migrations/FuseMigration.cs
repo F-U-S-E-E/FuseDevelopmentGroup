@@ -70,6 +70,7 @@ namespace FUSE.Authoring.Migrations
             definition.Audio = definition.Audio ?? new FuseAudioRoot();
             definition.Progression = definition.Progression ?? new FuseProgressionRoot();
             definition.Settings = definition.Settings ?? new Dictionary<string, FuseModSettingDefinition>();
+            definition.FeatureRules = definition.FeatureRules ?? new Dictionary<string, FuseFeatureRule>();
             definition.Extensions = definition.Extensions ?? new Dictionary<string, object>();
 
             foreach (var setting in definition.Settings.Values.Where(setting => setting != null))
@@ -78,6 +79,7 @@ namespace FUSE.Authoring.Migrations
                 setting.Scope = string.IsNullOrWhiteSpace(setting.Scope) ? "user" : setting.Scope.Trim();
                 setting.Values = setting.Values ?? Array.Empty<string>();
             }
+            NormalizeFeatureRules(definition.FeatureRules);
 
             definition.Tracks.Nodes = definition.Tracks.Nodes ?? new Dictionary<string, FuseNode>();
             definition.Tracks.Segments = definition.Tracks.Segments ?? new Dictionary<string, FuseSegment>();
@@ -301,7 +303,49 @@ namespace FUSE.Authoring.Migrations
             mixinto.Target = string.IsNullOrWhiteSpace(mixinto.Target) ? null : mixinto.Target.Trim();
             mixinto.SourceFile = string.IsNullOrWhiteSpace(mixinto.SourceFile) ? null : mixinto.SourceFile.Trim();
             mixinto.Requires = mixinto.Requires ?? Array.Empty<FuseModRequirement>();
-            foreach (var requirement in mixinto.Requires)
+            mixinto.ConflictsWith = mixinto.ConflictsWith ?? Array.Empty<FuseModRequirement>();
+            NormalizeModReferences(mixinto.Requires);
+            NormalizeModReferences(mixinto.ConflictsWith);
+        }
+
+        private static void NormalizeFeatureRules(IDictionary<string, FuseFeatureRule> rules)
+        {
+            if (rules == null)
+                return;
+            foreach (var rule in rules.Values.Where(rule => rule != null))
+            {
+                rule.Operator = string.IsNullOrWhiteSpace(rule.Operator) ? "equals" : rule.Operator.Trim();
+                rule.Targets = rule.Targets ?? new FuseFeatureTargets();
+                var targets = rule.Targets;
+                targets.TrackNodes = targets.TrackNodes ?? Array.Empty<string>();
+                targets.TrackSegments = targets.TrackSegments ?? Array.Empty<string>();
+                targets.TrackSpans = targets.TrackSpans ?? Array.Empty<string>();
+                targets.TrackAreas = targets.TrackAreas ?? Array.Empty<string>();
+                targets.Loads = targets.Loads ?? Array.Empty<string>();
+                targets.Industries = targets.Industries ?? Array.Empty<string>();
+                targets.IndustryComponents = targets.IndustryComponents ?? Array.Empty<string>();
+                targets.Loaders = targets.Loaders ?? Array.Empty<string>();
+                targets.Turntables = targets.Turntables ?? Array.Empty<string>();
+                targets.Stations = targets.Stations ?? Array.Empty<string>();
+                targets.Scenery = targets.Scenery ?? Array.Empty<string>();
+                targets.Splineys = targets.Splineys ?? Array.Empty<string>();
+                targets.WaterSurfaces = targets.WaterSurfaces ?? Array.Empty<string>();
+                targets.TelegraphPoles = targets.TelegraphPoles ?? Array.Empty<string>();
+                targets.MapLabels = targets.MapLabels ?? Array.Empty<string>();
+                targets.MapMasks = targets.MapMasks ?? Array.Empty<string>();
+                targets.MapTiles = targets.MapTiles ?? Array.Empty<string>();
+                targets.SceneClones = targets.SceneClones ?? Array.Empty<string>();
+                targets.Progressions = targets.Progressions ?? Array.Empty<string>();
+                targets.MapFeatures = targets.MapFeatures ?? Array.Empty<string>();
+                targets.Whistles = targets.Whistles ?? Array.Empty<string>();
+                targets.Horns = targets.Horns ?? Array.Empty<string>();
+                targets.Bells = targets.Bells ?? Array.Empty<string>();
+            }
+        }
+
+        private static void NormalizeModReferences(FuseModRequirement[] references)
+        {
+            foreach (var requirement in references ?? Array.Empty<FuseModRequirement>())
             {
                 if (requirement == null)
                 {

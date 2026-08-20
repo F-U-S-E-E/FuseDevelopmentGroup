@@ -173,6 +173,24 @@ namespace FUSE.Tests.Validation
 
                 Assert.Contains(result.Warnings, w => w.Field == "mixinto.requires[0].id" && w.Code == "fuse.mixinto.requirement.id.blank");
             }
+
+            [Fact]
+            public void BlankConflictId_EmitsWarning()
+            {
+                var definition = MinimalValid();
+                definition.Mixinto = new FuseMixintoDefinition
+                {
+                    Target = "game-graph",
+                    SourceFile = "src.json",
+                    ConflictsWith = new[] { new FuseModRequirement { Id = "   " } }
+                };
+
+                var result = NewValidator().Validate(definition);
+
+                Assert.Contains(result.Warnings, warning =>
+                    warning.Field == "mixinto.conflictsWith[0].id" &&
+                    warning.Code == "fuse.mixinto.conflict.id.blank");
+            }
         }
 
         public class SettingsRules

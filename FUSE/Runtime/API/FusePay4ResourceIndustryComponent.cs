@@ -35,7 +35,8 @@ namespace FUSE.Runtime.API
     /// <see cref="IndustryAPI.ApplyCustomIndustryComponentFields"/> — keep
     /// the names intact.
     /// </summary>
-    public class FusePay4ResourceIndustryComponent : IndustryComponent
+    public class FusePay4ResourceIndustryComponent : IndustryComponent,
+        StrangeCustoms.Tracks.Industries.ICustomIndustryTitle
     {
         [Tooltip("Load the component will fill cars with (e.g. 'coal' for a locomotive-fuelling depot).")]
         public Load load;
@@ -83,6 +84,17 @@ namespace FUSE.Runtime.API
         private readonly Dictionary<string, float> _pendingUnitsPerCar = new Dictionary<string, float>();
 
         public override string DisplayName => string.IsNullOrWhiteSpace(title) ? name : title;
+
+        public string Title
+        {
+            get
+            {
+                var resourceName = load == null || string.IsNullOrWhiteSpace(load.description)
+                    ? "resource"
+                    : load.description;
+                return $"Acquire {resourceName} at {DisplayName}";
+            }
+        }
 
         public override bool IsVisible
         {

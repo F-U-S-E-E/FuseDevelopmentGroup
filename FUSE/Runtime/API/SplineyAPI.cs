@@ -17,6 +17,7 @@ namespace FUSE.Runtime.API
         private static readonly FieldInfo RiverBuilderSplineProfileField = typeof(RiverBuilder).GetField("splineProfile", BindingFlags.Instance | BindingFlags.NonPublic);
         private static Transform _fallbackRiverRoot;
         private static Transform _fallbackTrestleRoot;
+        private static Transform _fallbackObjectLineRoot;
         private static List<SplineProfile> _splineProfiles;
         private static List<AutoTrestleProfile> _autoTrestleProfiles;
 
@@ -34,10 +35,19 @@ namespace FUSE.Runtime.API
             }
 
             var root = new GameObject(id);
-            ApplyDefinition(root, id, definition, false);
-            FuseSplineyRuntimeIndex.Instance.Set(id, root);
-            FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Spliney, id, definition);
-            return root;
+            try
+            {
+                ApplyDefinition(root, id, definition, false);
+                FuseSplineyRuntimeIndex.Instance.Set(id, root);
+                FuseApiPersistence.RecordDefinition(FuseDefinitionKind.Spliney, id, definition);
+                return root;
+            }
+            catch
+            {
+                root.SetActive(false);
+                UnityEngine.Object.Destroy(root);
+                throw;
+            }
         }
 
         public static void UpdateSpliney(string id, FuseSpliney definition)
@@ -196,6 +206,9 @@ namespace FUSE.Runtime.API
                 case SplineyKind.Trestle:
                     ConfigureTrestle(root, definition, points);
                     break;
+                case SplineyKind.ObjectLine:
+                    ConfigureObjectLine(root, id, definition, points);
+                    break;
                 default:
                     throw new NotSupportedException($"Unsupported spliney kind '{kind}'.");
             }
@@ -218,6 +231,9 @@ namespace FUSE.Runtime.API
                 trestle?.Generate();
                 return;
             }
+
+            if (kind == SplineyKind.ObjectLine)
+                return;
 
             var builder = root.GetComponent<RiverBuilder>();
             builder?.BuildSpline();
@@ -500,6 +516,168 @@ namespace FUSE.Runtime.API
             }
         }
 
+        private static void ConfigureObjectLine(
+            GameObject root,
+            string id,
+            FuseSpliney definition,
+            IReadOnlyList<FuseSplineyPoint> points)
+        {
+            if (string.IsNullOrWhiteSpace(definition.AssetIdentifier)
+                && string.IsNullOrWhiteSpace(definition.Prefab))
+            {
+                throw new InvalidOperationException(
+                    $"Object-line spliney '{id}' requires assetIdentifier or prefab.");
+            }
+            if (!string.IsNullOrWhiteSpace(definition.AssetIdentifier)
+                && !string.IsNullOrWhiteSpace(definition.Prefab))
+            {
+                throw new InvalidOperationException(
+                    $"Object-line spliney '{id}' must use either assetIdentifier or prefab, not both.");
+            }
+
+            string assetIdentifier = null;
+            GameObject prefab = null;
+            if (!string.IsNullOrWhiteSpace(definition.AssetIdentifier))
+            {
+                var scenery = new FuseScenery
+                {
+                    AssetIdentifier = definition.AssetIdentifier,
+                };
+                if (!SceneryAPI.TryResolveAssetIdentifier(id, scenery, out assetIdentifier))
+                {
+                    throw new InvalidOperationException(
+                        $"Object-line scenery asset '{definition.AssetIdentifier}' was not found for '{id}'.");
+                }
+            }
+            else
+            {
+                prefab = FusePrefabResolver.Resolve(definition.Prefab);
+                if (prefab == null)
+                {
+                    throw new InvalidOperationException(
+                        $"Object-line prefab '{definition.Prefab}' was not found for '{id}'.");
+                }
+            }
+
+            var placements = FuseObjectLineLayout.Build(
+                points,
+                definition.Spacing,
+                definition.PlaceAtEnd,
+                definition.MaximumInstances);
+            root.transform.SetParent(GetObjectLineRoot(), false);
+            root.transform.localPosition = Vector3.zero;
+            root.transform.localRotation = Quaternion.identity;
+            root.transform.localScale = Vector3.one;
+
+            var instances = root.transform.Find("FUSE Object Line Instances");
+            if (instances == null)
+            {
+                var container = new GameObject("FUSE Object Line Instances");
+                container.transform.SetParent(root.transform, false);
+                instances = container.transform;
+            }
+
+            // Older object-line builds placed generated modules directly on
+            // the root. Remove only those named instances during migration;
+            // editor overlays and other helper children must survive a live
+            // UpdateSpliney call.
+            var generatedPrefix = id + ":";
+            for (var childIndex = root.transform.childCount - 1; childIndex >= 0; childIndex--)
+            {
+                var child = root.transform.GetChild(childIndex);
+                if (child == null
+                    || ReferenceEquals(child, instances)
+                    || !child.name.StartsWith(generatedPrefix, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                child.gameObject.SetActive(false);
+                UnityEngine.Object.Destroy(child.gameObject);
+            }
+
+            for (var childIndex = instances.childCount - 1; childIndex >= 0; childIndex--)
+            {
+                var child = instances.GetChild(childIndex);
+                if (child == null)
+                    continue;
+                child.gameObject.SetActive(false);
+                UnityEngine.Object.Destroy(child.gameObject);
+            }
+
+            for (var index = 0; index < placements.Count; index++)
+            {
+                var placement = placements[index];
+                var position = placement.Position;
+                var forward = placement.Forward;
+                if (definition.SnapToTerrain
+                    && TrySnapObjectLineToTerrain(position, out var snapped))
+                {
+                    position.y = snapped.y;
+                }
+                if (!definition.AlignToSlope)
+                {
+                    forward.y = 0f;
+                    if (forward.sqrMagnitude <= 0.0001f)
+                        forward = Vector3.forward;
+                    else
+                        forward.Normalize();
+                }
+
+                var rotation = Quaternion.LookRotation(forward, Vector3.up);
+                var right = rotation * Vector3.right;
+                position += right * definition.LateralOffset;
+                position.y += definition.VerticalOffset;
+
+                GameObject instance;
+                if (prefab != null)
+                {
+                    instance = UnityEngine.Object.Instantiate(prefab, instances);
+                }
+                else
+                {
+                    instance = new GameObject();
+                    instance.SetActive(false);
+                    instance.transform.SetParent(instances, false);
+                    instance.AddComponent<SceneryAssetInstance>().identifier = assetIdentifier;
+                }
+                instance.name = id + ":" + index.ToString("D4");
+                instance.transform.localPosition = position;
+                instance.transform.localRotation = rotation * Quaternion.Euler(definition.RotationOffset);
+                instance.transform.localScale = definition.InstanceScale == default
+                    ? Vector3.one
+                    : definition.InstanceScale;
+                instance.SetActive(true);
+            }
+
+            FuseLog.Info(
+                $"FUSE built object-line spliney '{id}' with {placements.Count} instance(s) "
+                + $"at {definition.Spacing:0.##} m spacing.");
+        }
+
+        private static bool TrySnapObjectLineToTerrain(Vector3 position, out Vector3 snapped)
+        {
+            var hits = Physics.RaycastAll(
+                    position + Vector3.up * 500f,
+                    Vector3.down,
+                    1500f)
+                .OrderBy(hit => hit.distance);
+            foreach (var hit in hits)
+            {
+                if (hit.collider == null)
+                    continue;
+                var layerName = LayerMask.LayerToName(hit.collider.gameObject.layer) ?? string.Empty;
+                if (layerName.IndexOf("terrain", StringComparison.OrdinalIgnoreCase) < 0
+                    && layerName.IndexOf("ground", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+                snapped = hit.point;
+                return true;
+            }
+            snapped = position;
+            return false;
+        }
+
         private static SplineProfile ResolveSplineProfile(string profileName, SplineyKind kind)
         {
             return ResolveNamedObject(
@@ -638,6 +816,26 @@ namespace FUSE.Runtime.API
             return _fallbackTrestleRoot;
         }
 
+        private static Transform GetObjectLineRoot()
+        {
+            var existing = GameObject.Find("World/FUSE Object Lines");
+            if (existing != null)
+                return existing.transform;
+            var world = GameObject.Find("World");
+            if (world != null)
+            {
+                var root = new GameObject("FUSE Object Lines");
+                root.transform.SetParent(world.transform, false);
+                return root.transform;
+            }
+            if (_fallbackObjectLineRoot == null)
+            {
+                _fallbackObjectLineRoot = new GameObject("FUSE Object Lines").transform;
+                UnityEngine.Object.DontDestroyOnLoad(_fallbackObjectLineRoot.gameObject);
+            }
+            return _fallbackObjectLineRoot;
+        }
+
         private static Vector3 AveragePosition(IReadOnlyList<FuseSplineyPoint> points)
         {
             var center = Vector3.zero;
@@ -651,6 +849,13 @@ namespace FUSE.Runtime.API
 
         private static SplineyKind ParseKind(string value)
         {
+            if (string.Equals(value, "objectLine", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "object-line", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "fence", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "retainingWall", StringComparison.OrdinalIgnoreCase))
+            {
+                return SplineyKind.ObjectLine;
+            }
             if (string.Equals(value, "trestle", StringComparison.OrdinalIgnoreCase))
             {
                 return SplineyKind.Trestle;
@@ -755,7 +960,8 @@ namespace FUSE.Runtime.API
             River,
             TerrainRoad,
             Waterfall,
-            Trestle
+            Trestle,
+            ObjectLine
         }
     }
 

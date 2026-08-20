@@ -15,6 +15,7 @@ namespace FUSE.Runtime.API
         public const string Scenery = "world.scenery";
         public const string SpawnPoint = "world.spawnPoint";
         public const string Spliney = "world.spliney";
+        public const string WaterSurface = "world.waterSurface";
         public const string TelegraphPoles = "world.telegraphPoles";
         public const string MapLabel = "world.mapLabel";
         public const string MapMask = "world.mapMask";

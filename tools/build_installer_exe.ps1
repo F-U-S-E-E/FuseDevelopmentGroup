@@ -84,6 +84,7 @@ $args = @(
     '--clean',
     '--noconfirm',
     '--onefile',
+    '--windowed',
     '--name', 'FUSE-Installer',
     '--icon', $IconPath,
     '--distpath', $OutputDir,
@@ -137,10 +138,14 @@ if (-not (Test-Path -LiteralPath $exePath)) {
 }
 
 Write-Host "Smoke check: running '$exePath --help'..."
-$smokeOutput = & $exePath --help 2>&1
-$smokeExit = $LASTEXITCODE
+$smokeProcess = Start-Process `
+    -FilePath $exePath `
+    -ArgumentList @('--help') `
+    -WindowStyle Hidden `
+    -Wait `
+    -PassThru
+$smokeExit = $smokeProcess.ExitCode
 if ($smokeExit -ne 0) {
-    Write-Host $smokeOutput
     throw "Smoke check failed (exit=$smokeExit)."
 }
 
@@ -152,25 +157,49 @@ if (-not [string]::IsNullOrWhiteSpace($BundledFuse)) {
     Write-Host "Self-check: installing bundled FUSE into a throwaway dir..."
     $ProbeDir = Join-Path $WorkDir 'selfcheck'
     if (Test-Path $ProbeDir) { Remove-Item $ProbeDir -Recurse -Force }
-    New-Item -ItemType Directory -Force -Path $ProbeDir | Out-Null
-    $selfOutput = & $exePath --no-pause --game-dir $ProbeDir 2>&1
-    $selfExit = $LASTEXITCODE
-    Write-Host $selfOutput
+    $ProbeUmmDir = Join-Path $ProbeDir 'Railroader_Data\Managed\UnityModManager'
+    New-Item -ItemType Directory -Force -Path $ProbeUmmDir | Out-Null
+    New-Item -ItemType File -Force -Path (Join-Path $ProbeDir 'Railroader.exe') | Out-Null
+    New-Item -ItemType File -Force -Path (Join-Path $ProbeUmmDir 'UnityModManager.dll') | Out-Null
+    # PyInstaller's windowed one-file launcher can return control to a PowerShell
+    # invocation before its extracted child process has finished. Start-Process
+    # -Wait follows the GUI process tree, so the assertions below cannot race the
+    # actual install (the old direct '& $exePath' check intermittently reported
+    # a missing Info.json while the child was still writing it).
+    $quotedProbeDir = '"' + $ProbeDir + '"'
+    $selfProcess = Start-Process `
+        -FilePath $exePath `
+        -ArgumentList @('--cli', '--no-pause', '--game-dir', $quotedProbeDir) `
+        -WindowStyle Hidden `
+        -Wait `
+        -PassThru
+    $selfExit = $selfProcess.ExitCode
     if ($selfExit -ne 0) {
         throw "Self-check failed (exit=$selfExit): bundled FUSE install did not succeed."
-    }
-    # Match the inspected package id, not just the word FUSE (which also appears
-    # in the static "bundled FUSE:" / "FUSE:" output labels), so a non-FUSE
-    # payload can't silently pass the self-check.
-    if ("$selfOutput" -notmatch 'id=FUSE(\s|$)') {
-        throw "Self-check failed: bundled package is not FUSE (id=FUSE missing from install output)."
     }
     # Confirm extraction actually wrote the mod to disk.
     $installedInfo = Join-Path $ProbeDir 'Mods\FUSE\Info.json'
     if (-not (Test-Path -LiteralPath $installedInfo -PathType Leaf)) {
         throw "Self-check failed: expected $installedInfo after installing bundled FUSE."
     }
-    Write-Host "Self-check passed: a manual run installs FUSE to Mods\FUSE."
+    $installedManifest = Get-Content -LiteralPath $installedInfo -Raw | ConvertFrom-Json
+    $installedId = if ($null -ne $installedManifest.Id) { [string]$installedManifest.Id } else { [string]$installedManifest.id }
+    if ($installedId -ne 'FUSE') {
+        throw "Self-check failed: bundled package id is '$installedId', expected 'FUSE'."
+    }
+    $assetLoaderInfo = Join-Path $ProbeDir 'Mods\AssetLoader\Info.json'
+    if (-not (Test-Path -LiteralPath $assetLoaderInfo -PathType Leaf)) {
+        throw "Self-check failed: expected FUSE's data-only AssetLoader alias at $assetLoaderInfo."
+    }
+    $assetLoaderManifest = Get-Content -LiteralPath $assetLoaderInfo -Raw | ConvertFrom-Json
+    if ([string]$assetLoaderManifest.FuseProvidedCompatibility -ne 'FUSE.AssetLoaderCompatibility') {
+        throw "Self-check failed: the AssetLoader alias is missing FUSE's compatibility marker."
+    }
+    $assetLoaderDll = Join-Path $ProbeDir 'Mods\AssetLoader\AssetLoader.dll'
+    if (Test-Path -LiteralPath $assetLoaderDll) {
+        throw "Self-check failed: old AssetLoader runtime DLL remains installed at $assetLoaderDll."
+    }
+    Write-Host "Self-check passed: FUSE and its DLL-free AssetLoader dependency alias were installed."
 }
 
 Write-Host "Built: $exePath"

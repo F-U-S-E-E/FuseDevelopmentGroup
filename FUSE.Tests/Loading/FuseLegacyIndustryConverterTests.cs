@@ -42,6 +42,135 @@ namespace FUSE.Tests.Loading
         public class TopLevelPartialPatch
         {
             [Fact]
+            public void AreaUsedOnlyAsIndustryNamespace_DoesNotEmitBaseAreaMutation()
+            {
+                // ARC Whittier and KWIX use areas.whittier only to reach the
+                // industry dictionary. It must not become an area definition at
+                // position zero, which moves the base Whittier operations root.
+                var source = new JObject
+                {
+                    ["areas"] = new JObject
+                    {
+                        ["whittier"] = new JObject
+                        {
+                            ["industries"] = new JObject
+                            {
+                                ["whittier-sawmill"] = new JObject
+                                {
+                                    ["components"] = new JObject
+                                    {
+                                        ["logs"] = new JObject
+                                        {
+                                            ["trackSpans"] = new JObject
+                                            {
+                                                ["$replace"] = new JArray("R1", "R2", "R3")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                var (root, industries) = FuseLegacyIndustryConverterTests.ConvertIndustries(source);
+
+                Assert.Null(root["tracks"]?["areas"]?["whittier"]);
+                Assert.Equal("whittier", (string)industries["whittier-sawmill"]?["areaId"]);
+                Assert.Equal(
+                    new[] { "R1", "R2", "R3" },
+                    industries["whittier-sawmill"]?["components"]?["logs"]?
+                        ["trackSpanPatch"]?["replace"]?.Values<string>());
+            }
+
+            [Fact]
+            public void ExplicitAreaMetadata_StillEmitsAreaWithoutInventingMissingFields()
+            {
+                var source = new JObject
+                {
+                    ["areas"] = new JObject
+                    {
+                        ["new-yard"] = new JObject
+                        {
+                            ["position"] = new JObject
+                            {
+                                ["x"] = 12f,
+                                ["y"] = 3f,
+                                ["z"] = -8f
+                            },
+                            ["radius"] = 250f
+                        }
+                    }
+                };
+
+                var (root, _) = FuseLegacyIndustryConverterTests.ConvertIndustries(source);
+                var area = root["tracks"]?["areas"]?["new-yard"];
+
+                Assert.NotNull(area);
+                Assert.False(((JObject)area).TryGetValue("name", out _), area.ToString());
+                Assert.Equal(12f, area["position"].Value<float>("x"));
+                Assert.Equal(250f, area.Value<float>("radius"));
+            }
+
+            [Fact]
+            public void RootLevelSpansAndAreas_ConvertTogether_ForKwixStyleFragments()
+            {
+                // Regression for issue #210. KWIX keeps each industry's spans at
+                // the document root beside the area/industry patch. Dropping the
+                // root-level spans leaves a valid-looking loader whose runtime
+                // TrackSpans array is empty, which later breaks EOD processing.
+                var source = new JObject
+                {
+                    ["spans"] = new JObject
+                    {
+                        ["KWIX_Bottling_GB-A"] = new JObject
+                        {
+                            ["upper"] = new JObject
+                            {
+                                ["segmentId"] = "SKWIX_IND_vm6e",
+                                ["distance"] = 0,
+                                ["end"] = "Start"
+                            },
+                            ["lower"] = new JObject
+                            {
+                                ["segmentId"] = "SKWIX_IND_vm6e",
+                                ["distance"] = 0,
+                                ["end"] = "End"
+                            }
+                        }
+                    },
+                    ["areas"] = new JObject
+                    {
+                        ["whittier"] = new JObject
+                        {
+                            ["industries"] = new JObject
+                            {
+                                ["kwix-bottling"] = new JObject
+                                {
+                                    ["components"] = new JObject
+                                    {
+                                        ["kwix-bottling_GB-A"] = new JObject
+                                        {
+                                            ["type"] = "Model.Ops.IndustryLoader",
+                                            ["trackSpans"] = new JArray("KWIX_Bottling_GB-A"),
+                                            ["loadId"] = "glass-bottles"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                var (root, industries) = FuseLegacyIndustryConverterTests.ConvertIndustries(source);
+
+                Assert.NotNull(root["tracks"]?["spans"]?["KWIX_Bottling_GB-A"]);
+                Assert.Equal(
+                    "KWIX_Bottling_GB-A",
+                    (string)industries["kwix-bottling"]?["components"]?["kwix-bottling_GB-A"]?["trackSpanIds"]?[0]);
+            }
+
+            [Fact]
             public void NoAreaIdNoPositionNoRotation_ConverterOmitsTransformDirectives()
             {
                 var source = new JObject
@@ -332,6 +461,162 @@ namespace FUSE.Tests.Loading
 
         public class ReplaceDirectives
         {
+            [Fact]
+            public void Dw5WhittierSawmill_MultipleAdds_PreserveBaseUnloaderAndAllAddedTracks()
+            {
+                // Issue #236's DW5 Whittier Saw Mill package patches the existing
+                // `logs` unloader with three one-value $add instructions. Treating
+                // this array as a replacement leaves only one unloading area.
+                var patch = new JObject
+                {
+                    ["areas"] = new JObject
+                    {
+                        ["whittier"] = new JObject
+                        {
+                            ["industries"] = new JObject
+                            {
+                                ["whittier-sawmill"] = new JObject
+                                {
+                                    ["components"] = new JObject
+                                    {
+                                        ["logs"] = new JObject
+                                        {
+                                            ["name"] = "Whittier Saw Mill R1/R2/R3",
+                                            ["trackSpans"] = new JArray(
+                                                new JObject { ["$add"] = "R2" },
+                                                new JObject { ["$add"] = "R3" },
+                                                new JObject { ["$add"] = "R4" }),
+                                            ["maxStorage"] = 220.0
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+                var state = new JObject
+                {
+                    ["areas"] = new JObject
+                    {
+                        ["whittier"] = new JObject
+                        {
+                            ["industries"] = new JObject
+                            {
+                                ["whittier-sawmill"] = new JObject
+                                {
+                                    ["components"] = new JObject
+                                    {
+                                        ["logs"] = new JObject
+                                        {
+                                            ["type"] = "Model.Ops.IndustryUnloader",
+                                            ["trackSpans"] = new JArray("R1"),
+                                            ["loadId"] = "logs"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                FuseLegacyJsonPatch.Apply(state, patch, "DW5SawMill.json");
+                var expandedSlice = FuseLegacyGameGraphCompatibility.BuildPatchSlice(state, patch);
+                var (root, industries) = FuseLegacyIndustryConverterTests.ConvertIndustries(expandedSlice);
+                var converted = industries["whittier-sawmill"]?["components"]?["logs"];
+
+                Assert.True(converted.Value<bool>("partial"));
+                Assert.Null(converted["type"]);
+                Assert.Equal(
+                    new[] { "R2", "R3", "R4" },
+                    converted["trackSpanPatch"]?["append"]?.Values<string>());
+
+                var definition = FuseSerializer.FromJson(root.ToString());
+                var component = definition.Operations.Industries["whittier-sawmill"].Components["logs"];
+                Assert.True(component.Partial);
+                Assert.Equal(new[] { "R2", "R3", "R4" }, component.TrackSpanPatch.Append);
+                Assert.Null(component.TrackSpanPatch.Replace);
+            }
+
+            [Fact]
+            public void SylvaIndustriesBoosted_ArrayWrappedAdd_PreservesBaseSpanAndAddsR3()
+            {
+                // Sylva Industries Boosted 0.9 uses the Strange Customs form
+                //   "trackSpans": [ { "$add": "Piei" } ]
+                // for both lime and salt. This is a patch program: retain the
+                // vanilla P3z2 span (R2) and append the re-authored Piei span
+                // (R3). Flattening it to a one-item replacement makes only one
+                // track highlight and prevents cars on the other track from
+                // being accepted at EOD.
+                var patch = new JObject
+                {
+                    ["areas"] = new JObject
+                    {
+                        ["sylva"] = new JObject
+                        {
+                            ["industries"] = new JObject
+                            {
+                                ["sylva-paperboard"] = new JObject
+                                {
+                                    ["components"] = new JObject
+                                    {
+                                        ["lime"] = new JObject
+                                        {
+                                            ["type"] = "Model.Ops.IndustryUnloader",
+                                            ["name"] = "Sylva Paperboard R2 & R3",
+                                            ["trackSpans"] = new JArray(
+                                                new JObject { ["$add"] = "Piei" }),
+                                            ["loadId"] = "lime"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+                var state = new JObject
+                {
+                    ["areas"] = new JObject
+                    {
+                        ["sylva"] = new JObject
+                        {
+                            ["industries"] = new JObject
+                            {
+                                ["sylva-paperboard"] = new JObject
+                                {
+                                    ["components"] = new JObject
+                                    {
+                                        ["lime"] = new JObject
+                                        {
+                                            ["type"] = "Model.Ops.IndustryUnloader",
+                                            ["trackSpans"] = new JArray("P3z2"),
+                                            ["loadId"] = "lime"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                FuseLegacyJsonPatch.Apply(state, patch, "SylvaIndustriesBoosted.json");
+                var expandedSlice = FuseLegacyGameGraphCompatibility.BuildPatchSlice(state, patch);
+                var preservedDirective = expandedSlice["areas"]?["sylva"]?["industries"]?
+                    ["sylva-paperboard"]?["components"]?["lime"]?["trackSpans"]?[0];
+                Assert.Equal("Piei", (string)preservedDirective?["$add"]);
+
+                var (root, industries) = FuseLegacyIndustryConverterTests.ConvertIndustries(expandedSlice);
+                var converted = industries["sylva-paperboard"]?["components"]?["lime"];
+                Assert.True(converted.Value<bool>("partial"));
+                Assert.Null(converted["type"]);
+                Assert.Equal(new[] { "Piei" }, converted["trackSpanPatch"]?["append"]?.Values<string>());
+
+                var definition = FuseSerializer.FromJson(root.ToString());
+                var component = definition.Operations.Industries["sylva-paperboard"].Components["lime"];
+                Assert.True(component.Partial);
+                Assert.Equal(new[] { "Piei" }, component.TrackSpanPatch.Append);
+                Assert.Null(component.TrackSpanPatch.Replace);
+            }
+
             [Fact]
             public void TrackSpanReplace_RoundTripsAsReplacementPatch()
             {

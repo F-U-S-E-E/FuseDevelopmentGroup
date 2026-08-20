@@ -145,13 +145,23 @@ namespace FUSE.Interface.MenuWindow
 
             foreach (var fault in report["packages"]?["faults"] as JArray ?? [])
             {
+                var faultDetail = ReadString(fault["message"], "Package failed during load/apply.") +
+                    " stage='" + ReadString(fault["stage"], "unknown") + "'" +
+                    " package='" + ReadString(fault["packageName"], ReadString(fault["packageId"], "unknown")) + "'" +
+                    " folder='" + ReadString(fault["folderPath"], "unknown") + "'" +
+                    " file='" + ReadString(fault["relativeSourceFile"], ReadString(fault["sourceFile"], "unknown")) + "'" +
+                    " jsonPath='" + ReadString(fault["jsonPath"], "<root>") + "'" +
+                    " expected='" + ReadString(fault["expectedShape"], "see validation message") + "'" +
+                    " received='" + ReadString(fault["receivedValue"], "not captured") + "'";
                 AddFinding(
                     findings,
-                    "Critical",
-                    "Package fault",
+                    "High",
+                    "Package isolated after apply fault",
                     ReadString(fault["packageId"], "(unknown package)"),
-                    ReadString(fault["message"], "Package failed during load/apply."),
-                    "Open Issues, inspect the package fault stage, then fix the source package or compatibility layer.");
+                    faultDetail,
+                    ReadString(
+                        fault["suggestedAction"],
+                        "Inspect the package fault stage, then fix the source package or compatibility layer."));
             }
 
             foreach (var asset in report["unknownSceneryAssets"] as JArray ?? [])
@@ -167,13 +177,17 @@ namespace FUSE.Interface.MenuWindow
 
             foreach (var issue in report["graphPostBindIssues"] as JArray ?? [])
             {
+                var detail = issue.ToString();
+                var isOwnedRemoval = detail.IndexOf(" was removed by '", StringComparison.OrdinalIgnoreCase) >= 0;
                 AddFinding(
                     findings,
-                    "High",
-                    "Graph post-bind issue",
+                    isOwnedRemoval ? "Medium" : "High",
+                    isOwnedRemoval ? "Track package collision" : "Graph post-bind issue",
                     "track graph",
-                    issue.ToString(),
-                    "Inspect the owning track package and verify deleted/replaced node, segment, and span ids.");
+                    detail,
+                    isOwnedRemoval
+                        ? "These packages edit the same route. Disable one package, choose a compatible option/patch, or have the authors coordinate the shared node/segment ownership."
+                        : "Inspect the owning track package and verify deleted/replaced node, segment, and span ids.");
             }
 
             foreach (var skip in report["progressionTransferSkips"] as JArray ?? [])
@@ -189,6 +203,14 @@ namespace FUSE.Interface.MenuWindow
 
             foreach (var conflict in report["conflicts"] as JArray ?? [])
             {
+                if (!ShouldAuditConflictRecord(ReadString(conflict["classification"], string.Empty)))
+                {
+                    // Successful shared industry merges are surfaced as
+                    // informational extension targets on the dedicated Mods
+                    // Fighting page. They are not audit failures.
+                    continue;
+                }
+
                 AddFinding(
                     findings,
                     "Medium",
@@ -226,13 +248,24 @@ namespace FUSE.Interface.MenuWindow
         {
             try
             {
-                foreach (var span in TrackAPI.GetAllSpans() ?? [])
+                foreach (var span in TrackAPI.GetRegisteredSpansForDiagnostics() ?? [])
                 {
                     var id = span?.id ?? "(blank span)";
+                    var owner = FuseRegistry.GetExclusiveOwner(FuseClaimKind.Span, id);
+                    if (!ShouldAuditTrackSpanOwner(owner))
+                    {
+                        // Railroader ships a number of registered placeholder or
+                        // progression spans whose serialized endpoints are empty
+                        // until the game activates them. They are base-game state,
+                        // not FUSE authoring failures. The graph post-bind audit
+                        // separately reports mod-owned spans lost during merging.
+                        continue;
+                    }
+
                     var definition = TrackAPI.GetDefinition(span);
                     if (definition?.Upper == null || definition.Lower == null)
                     {
-                        AddFinding(findings, "High", "Invalid track span", id, "Span definition has missing upper/lower location.", "Inspect the source span and repair or remove invalid endpoints.");
+                        AddFinding(findings, "High", "Invalid FUSE track span", id, $"Owner '{owner}' has a span with missing upper/lower location.", "Inspect the owning package source and repair or remove invalid endpoints.");
                         continue;
                     }
 
@@ -256,6 +289,19 @@ namespace FUSE.Interface.MenuWindow
             }
         }
 
+        internal static bool ShouldAuditConflictRecord(string classification)
+        {
+            return !string.Equals(
+                classification?.Trim(),
+                "shared-extension",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static bool ShouldAuditTrackSpanOwner(string ownerPackageId)
+        {
+            return !string.IsNullOrWhiteSpace(ownerPackageId);
+        }
+
         private static void AddIndustryAuditFindings(List<AuditFinding> findings)
         {
             try
@@ -273,11 +319,13 @@ namespace FUSE.Interface.MenuWindow
                         AddFinding(findings, "Medium", "Industry missing identifier", id, GetGameObjectPath(industry.gameObject), "Assign a stable industry identifier or remove the orphan scene object.");
                     }
 
-                    var definition = IndustryAPI.GetDefinition(industry);
-                    if (definition == null || definition.Components == null || definition.Components.Count == 0)
-                    {
-                        AddFinding(findings, "Low", "Industry has no components", id, GetGameObjectPath(industry.gameObject), "Verify whether this is scenery-only, a disabled vanilla industry, or a broken industry component binding.");
-                    }
+                    // An Industry is also the game's location container. Base
+                    // depots, passenger/scenery-only locations, fictional
+                    // destinations, and intentionally disabled industries may
+                    // legitimately contain no IndustryComponent children.
+                    // Missing referenced components are already reported by
+                    // package apply/post-bind diagnostics, so emptiness alone
+                    // is not an actionable finding.
                 }
             }
             catch (Exception ex)

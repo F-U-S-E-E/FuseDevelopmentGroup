@@ -30,6 +30,9 @@ namespace FUSE.Converter.Conversion
             public const string Route = "route";
             public const string Audio = "audio";
             public const string Asset = "asset";
+            public const string MapTile = "map_tile";
+            public const string Native = "native";
+            public const string Code = "code";
             public const string Archive = "archive";
             public const string Unknown = "unknown";
         }
@@ -74,14 +77,46 @@ namespace FUSE.Converter.Conversion
 
             if (!Directory.Exists(sourcePath)) return Kinds.Unknown;
 
+            if (ContainsNativeFuseFragment(sourcePath)) return Kinds.Native;
+            if (ContainsCompiledPlugin(sourcePath)
+                && !DetectsDirectRouteData(sourcePath)
+                && !DetectsDirectAudio(sourcePath))
+            {
+                return Kinds.Code;
+            }
             if (DetectsAudio(sourcePath) && !DetectsRouteData(sourcePath))
             {
                 return Kinds.Audio;
             }
             if (DetectsRouteData(sourcePath)) return Kinds.Route;
-            if (FindMapTileSources(sourcePath).Any()) return Kinds.Route;
-            if (FindAssetPackSources(sourcePath).Any()) return Kinds.Asset;
+            if (ContainsCompiledPlugin(sourcePath)) return Kinds.Code;
+            if (FindMapTileSources(sourcePath).Count > 0) return Kinds.MapTile;
+            if (FindAssetPackSources(sourcePath).Count > 0) return Kinds.Asset;
             return Kinds.Unknown;
+        }
+
+        private static bool ContainsNativeFuseFragment(string folder)
+        {
+            try
+            {
+                return Directory.EnumerateFiles(folder, "*.fuse.json", SearchOption.TopDirectoryOnly).Any();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool ContainsCompiledPlugin(string folder)
+        {
+            try
+            {
+                return Directory.EnumerateFiles(folder, "*.dll", SearchOption.TopDirectoryOnly).Any();
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         /// <summary>
@@ -104,6 +139,49 @@ namespace FUSE.Converter.Conversion
                 catch (Exception) { /* malformed JSON ignored — counted in conversion later */ }
             }
             return false;
+        }
+
+        private static bool DetectsDirectRouteData(string sourcePath)
+        {
+            IEnumerable<string> paths;
+            try
+            {
+                paths = Directory.EnumerateFiles(sourcePath, "*.json", SearchOption.TopDirectoryOnly);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            foreach (var path in paths)
+            {
+                if (JsonManifestNames.Contains(Path.GetFileName(path))) continue;
+                try
+                {
+                    var data = LegacyJsonReader.ReadJson(path) as JObject;
+                    if (data != null && data.Properties().Any(p => LegacyDataKeys.Contains(p.Name))) return true;
+                }
+                catch (Exception)
+                {
+                    // Malformed files are reported by conversion after the package kind is known.
+                    continue;
+                }
+            }
+            return false;
+        }
+
+        private static bool DetectsDirectAudio(string sourcePath)
+        {
+            try
+            {
+                return Directory.EnumerateFiles(sourcePath, "*.json", SearchOption.TopDirectoryOnly)
+                    .Where(path => !JsonManifestNames.Contains(Path.GetFileName(path)))
+                    .Any(DetectsAudioFile);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         public static bool DetectsAudio(string sourcePath)

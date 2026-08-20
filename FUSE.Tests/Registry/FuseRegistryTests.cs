@@ -63,6 +63,44 @@ namespace FUSE.Tests.Registry
             Assert.Empty(FuseRegistry.Conflicts);
         }
 
+        [Fact]
+        public void RecordPlannedConflict_ReportsDeleteVersusDefinitionWithoutCreatingAClaim()
+        {
+            FuseRegistry.RecordPlannedConflict(
+                FuseClaimKind.Node,
+                "node-removed",
+                "route-a.graph",
+                "route-b.patch",
+                "later package removal won; earlier package definition suppressed");
+
+            var conflict = Assert.Single(FuseRegistry.Conflicts);
+            Assert.Equal(FuseClaimKind.Node, conflict.Kind);
+            Assert.Equal("node-removed", conflict.Id);
+            Assert.Equal("route-a.graph", conflict.OwnerPackageId);
+            Assert.Equal("route-b.patch", conflict.AttemptedPackageId);
+            Assert.Contains("removal won", conflict.Resolution);
+            Assert.Equal(0, FuseRegistry.ExclusiveClaimCount);
+        }
+
+        [Fact]
+        public void RecordPlannedConflict_DeduplicatesTheSamePackagePairAcrossReapplyOrder()
+        {
+            FuseRegistry.RecordPlannedConflict(
+                FuseClaimKind.Industry,
+                "destination:type=consumer;name=MP1;spans=R2,R3",
+                "pkg-a",
+                "pkg-b",
+                "shared industry destination overlap");
+            FuseRegistry.RecordPlannedConflict(
+                FuseClaimKind.Industry,
+                "destination:type=consumer;name=MP1;spans=R2,R3",
+                "pkg-b",
+                "pkg-a",
+                "shared industry destination overlap");
+
+            Assert.Single(FuseRegistry.Conflicts);
+        }
+
         [Theory]
         [InlineData(null, "pkg")]
         [InlineData("", "pkg")]
