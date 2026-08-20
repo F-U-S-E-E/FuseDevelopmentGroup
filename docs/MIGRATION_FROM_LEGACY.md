@@ -9,9 +9,10 @@ page. See [GETTING_STARTED.md](GETTING_STARTED.md).
 
 ## What Changes
 
-Legacy data mods are **converted**, not loaded as-is. The converter reads a legacy
-mod folder and writes a `*.FUSE` package next to it, containing the same content
-expressed in the FUSE schema plus a conversion report.
+FUSE can host compatible RailLoader plugins and translate supported legacy data
+in memory. Converting a data mod to native FUSE is still recommended for authors
+because it produces validation and conversion reports, but players do not have
+to convert every compatible package before testing it.
 
 What carries over:
 
@@ -19,16 +20,18 @@ What carries over:
 | --- | --- |
 | Track / route JSON | Converted, one FUSE data file per source JSON |
 | Horn / whistle / bell packs | Converted, audio files copied |
-| Strange Customs asset packs | Converted to a FUSE asset wrapper |
+| Strange Customs asset packs | Installed directly; FUSE discovers supported legacy asset packs |
+| Alina map-tile packages | Installed directly; FUSE's Alina compatibility reads the tile data |
 | World scenery, scene clones, map masks, splines | Converted |
 | Industries, loaders, stations, team/repair tracks | Converted |
 | Progression sections and delivery phases | Converted |
 
 What does not carry over:
 
-- **Arbitrary script mods.** A legacy mod that ships `.dll` logic is not a data
-  package, and the converter cannot translate its behavior. It warns and leaves
-  the binaries alone.
+- **Unknown arbitrary script behavior.** The converter cannot translate DLL
+  logic. FUSE independently implements the legacy host APIs used by supported
+  RailLoader plugins, but a plugin using an unimplemented API is isolated and
+  reported instead of being silently converted.
 - **Rolling stock, locomotive, and car mods**, except audio definitions.
 - **Signals.**
 - **Three-way switches** — Railroader does not support them as standard graph
@@ -45,9 +48,9 @@ this situation, and it is the single most common self-inflicted problem when
 migrating.
 
 The same applies to the loaders themselves. FUSE detects a leftover
-`Railloader.dll` or `Railloader.Interchange.dll` in the install and warns about it,
-both on disk and among loaded assemblies. Take the warning seriously — it means
-two loaders are live at once.
+`Railloader.dll`, `Railloader.Injector.dll`, or `Railloader.Interchange.dll` in
+the install and warns about it, both on disk and among loaded assemblies. Take
+the warning seriously — it means two loaders are live at once.
 
 Loading both is supported only as a deliberate conflict test.
 
@@ -62,7 +65,9 @@ the step people skip and regret.
 
 List your legacy mods and sort them into three groups:
 
-- **Data mods** (routes, scenery, industries, audio, asset packs) — these convert.
+- **Convertible data mods** (routes, scenery, industries, supported audio JSON) — these convert.
+- **Direct-install data** (asset packs and Alina map tiles) — install the original
+  package through the FUSE installer; do not run it through the converter.
 - **Script mods** (`.dll` logic) — these do not convert; check whether a FUSE-native
   equivalent exists.
 - **Rolling stock** — out of scope except audio.
@@ -87,6 +92,8 @@ fuse-convert "C:\Path\To\LegacyMod" --out "C:\Steam\steamapps\common\Railroader\
 ### 4. Read the conversion report
 
 Every converted package gets `conversion-report.json` and `conversion-report.md`.
+Failed or direct-install inputs write their reports under the output root's
+`_conversion-reports` folder so the report cannot be mistaken for a package.
 **Read them.** The converter classifies each source concept rather than silently
 dropping it:
 
@@ -144,13 +151,14 @@ The legacy loader. FUSE reads Railloader's package metadata directly, including
 `RailLoadPriority`, `RailLoadAfter`, and `RailLoadBefore` for load ordering, so
 ordering relationships you already established carry across.
 
-Remove `Railloader.dll` and `Railloader.Interchange.dll` once you have migrated —
+Remove `Railloader.dll`, `Railloader.Injector.dll`, and
+`Railloader.Interchange.dll` once you have migrated —
 FUSE warns while they remain.
 
 ### Strange Customs
 
-Asset packs convert to a FUSE asset wrapper with `FuseAssetPacks` declared in
-`Info.json`. Mixin files convert through the `mixinto` mechanism; a missing mixinto
+Asset packs install directly and remain available to native or converted route
+packages. Mixin files convert through the `mixinto` mechanism; a missing mixinto
 requirement skips only that fragment rather than faulting the whole stack.
 
 ### ConfusingSupplements / For Your Convenience

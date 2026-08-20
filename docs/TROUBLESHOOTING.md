@@ -30,9 +30,29 @@ Also include console output or screenshots for:
 
 ## Common Symptoms
 
+### I Want A Live Debug Console
+
+Open **FUSE → Tools → Live Diagnostics → Open Live Console**. On Windows this
+opens a continuously scrolling mirror of `FUSE.log` for a second monitor. Stop
+it from the same page before exiting; the console's Close command is disabled so
+closing that optional diagnostics window cannot terminate Railroader. On other
+platforms, use the filtered in-game viewer or tail `FUSE.log` with a text tool.
+
+The compatibility-guard and observed-exception lists on this page are evidence,
+not automatic bug verdicts. Include them when they repeat alongside a visible
+problem.
+
 ### Faulted Package
 
 Run `/fuse.loaded` and `/fuse.report`. Check `FUSE.log` for the package id and phase. Package failures should not prevent unrelated packages from loading.
+
+For an author-ready report, open **FUSE → Mods**, select the affected package,
+and use **Copy Mod Info**. Its actionable diagnostic names the package and
+source root, shows both relative and absolute filenames, includes JSON
+property/line/position and validation code when available, contrasts the
+expected shape with the received value, and ends with the concrete correction.
+This package-scoped copy is usually easier to send to an author than the full
+health report.
 
 ### Unknown Scenery Asset
 
@@ -45,6 +65,16 @@ Check whether it is a regular asset pack item or a scene clone. For scene clones
 ### Bad Track, Missing Span, Or Broken Segment
 
 Run `/fuse.dumpgraph` and `/fuse.dumpruntimegraph`. The files are written to the main Railroader folder as `FUSE-original-graph.json` and `FUSE-runtime-graph.json`.
+
+Open **FUSE → Tools → Mod Conflicts** before assuming one track mod is broken.
+The page groups conflicts by the two packages involved and lists the exact
+objects and winning/merge behavior. "Potential track-layout overlap" is an
+advisory: FUSE found multiple nearby authored nodes but kept both packages
+because an intentional connection can look similar. If the map contains
+overlapping switches, floating rails, or dead stubs, temporarily enable only one
+primary layout for that area and retest. For example, East Whittier Yard Revamp
+and AMW East Whittier are alternative yard layouts; add East Whittier Crossover
+only when its author declares it compatible with the chosen layout.
 
 ### Company Window Or Location List Looks Wrong
 

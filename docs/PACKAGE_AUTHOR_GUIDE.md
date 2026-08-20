@@ -23,16 +23,39 @@ Every file should include:
 - Do not rename an id just to change display text.
 - Keep display names in `name`; keep identity in `id`.
 
+## Player-Selectable Features
+
+Use top-level `settings` plus `featureRules` when one package should offer
+optional track, scenery, industries, loaders, or other authored sections. The
+Tile Editor's **Options** workspace creates on/off, choice, and slider settings,
+lets you select the exact objects controlled by each option, and writes both
+dictionaries together.
+
+Feature settings must be marked `reloadRequired`; the Editor does this
+automatically. A false rule omits only the targets listed by that rule from the
+runtime definition. It does not delete those objects from the package file.
+Every target must be authored in the same definition, and an industry-component
+target uses `industryId/componentId`. See the schema guide for the full target
+list and JSON example.
+
+RailLoader output has no equivalent contract. The Editor therefore disables
+this workspace in legacy mode instead of creating a lossy or misleading export.
+
 ## Dependencies
 
 Use package metadata for required package ordering and dependencies:
 
-- `RailLoadPriority`
-- `RailLoadAfter`
-- `RailLoadBefore`
-- normal UMM `Requirements` when the mod itself requires FUSE or another mod
+- `FuseLoadPriority`
+- `FuseRequires` for hard FUSE data-package dependencies
+- `FuseLoadAfter`
+- `FuseLoadBefore`
+- `FuseConflictsWith` for explicit package incompatibilities, with optional
+  `NotBefore`/`NotAfter` bounds
+- normal UMM `Requirements`/`LoadAfter` when a UMM code mod requires FUSE or another UMM mod
 
-Use `mixinto` when converting legacy conditional mixin files. Missing mixinto requirements should skip only that fragment, not the whole stack.
+Use `mixinto` when converting legacy conditional mixin files. Missing mixinto
+requirements or matching `mixinto.conflictsWith` references skip only that
+fragment, not the whole stack.
 
 ## Optional References
 
@@ -84,6 +107,38 @@ for a map that intentionally overlays custom terrain on Bushnell/Whittier.
 
 Asset pack objects should keep their real asset identifiers. Do not alias to unrelated assets if the correct pack exists.
 
+### Asset stores and definition overrides
+
+Declare normal asset-pack roots with `FuseAssetPacks`. A runtime store is
+identified by `Catalog.json`; `Bundle` is optional for a definitions-only
+catalog whose assets are supplied by another store. FUSE reports an actual
+missing bundle if an asset from that store is requested.
+
+For the old AssetLoader pattern where a `Definitions.json` file replaces the
+definitions of an existing store (rolling-stock and tender swaps), prefer an
+explicit native manifest entry:
+
+```json
+{
+  "Requirements": ["FUSE"],
+  "FuseDefinitionOverrides": [
+    {
+      "StoreIdentifier": "fm-flatcar03",
+      "Path": "DefinitionOverrides/fm-flatcar03/Definitions.json"
+    }
+  ]
+}
+```
+
+The path must stay inside the package. An object entry names the exact existing
+store id; a string path infers the id from its parent folder. FUSE also detects
+AssetLoader's legacy immediate-child convention automatically, but native
+packages should be explicit. If two packages target the same exact store, FUSE
+chooses deterministically and reports both source files.
+
+New packages should require `FUSE`, not `AssetLoader`. The installer's data-only
+`AssetLoader` alias exists only for old manifests.
+
 ## Diagnostics
 
 Use these commands while authoring:
@@ -100,3 +155,10 @@ Use these commands while authoring:
 - `/fuse.dumpmandelas`
 
 Warnings should name package id, operation, object id, and field whenever possible.
+
+Malformed JSON and validation faults are isolated to the affected definition.
+`/fuse.report` and `/fuse.report json` include the absolute folder/file, JSON
+path, line/column when available, and a suggested action. Treat a report with a
+faulted package as an authoring failure even if unrelated packages still work.
+
+For task-based examples, see [Authoring Recipes](AUTHORING_RECIPES.md).
