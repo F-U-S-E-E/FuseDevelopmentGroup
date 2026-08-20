@@ -31,6 +31,7 @@ namespace FUSE.Interface.Console
             {
                 new FuseReportCommand(),
                 new FuseLoadedCommand(),
+                new FuseStartersCommand(),
                 new FuseUpdateCommand(),
                 new FuseMapsCommand(),
                 new FuseMapLaunchCommand(),
@@ -38,6 +39,8 @@ namespace FUSE.Interface.Console
                 new FuseGraphCommand(),
                 new FuseProgressionsCommand(),
                 new FuseOperationsCommand(),
+                new FuseLiveryRefreshCommand(),
+                new FuseLiveryReportCommand(),
                 new FuseDumpGraphCommand(),
                 new FuseDumpRuntimeGraphCommand(),
                 new FuseDumpMandelasCommand(),
@@ -147,6 +150,45 @@ namespace FUSE.Interface.Console
             }
 
             return string.Join("/", names.ToArray());
+        }
+    }
+
+    [ConsoleCommand(
+        "/cs-livery-refresh",
+        "Reload Confusing Supplements-compatible livery textures and reapply each car's saved selection.")]
+    public sealed class FuseLiveryRefreshCommand : IConsoleCommand
+    {
+        public string Execute(string[] components)
+        {
+            try
+            {
+                var refreshed = Compatibility.FuseConfusingSupplementsLiveryRegistry
+                    .RefreshLiveCars();
+                return $"FUSE refreshed Confusing Supplements-compatible liveries on {refreshed} car(s).";
+            }
+            catch (Exception ex)
+            {
+                return "FUSE livery refresh failed: " + ex.GetBaseException().Message;
+            }
+        }
+    }
+
+    [ConsoleCommand(
+        "/fuse.liveries",
+        "Report Confusing Supplements-compatible livery selections, choices, and cached textures.")]
+    public sealed class FuseLiveryReportCommand : IConsoleCommand
+    {
+        public string Execute(string[] components)
+        {
+            try
+            {
+                return Compatibility.FuseConfusingSupplementsLiveryRegistry
+                    .BuildDiagnosticReport();
+            }
+            catch (Exception ex)
+            {
+                return "FUSE livery diagnostics failed: " + ex.GetBaseException().Message;
+            }
         }
     }
 
@@ -483,6 +525,20 @@ namespace FUSE.Interface.Console
                     sb.AppendLine("  " + folder);
                 }
 
+                var definitionOverrides = FuseAssetPackRegistry.GetLegacyDefinitionOverrides();
+                var overrideIssues = FuseAssetPackRegistry.GetLegacyDefinitionOverrideIssues();
+                sb.AppendLine($"Definition overrides: active={definitionOverrides.Length}; issues={overrideIssues.Length}.");
+                foreach (var definitionOverride in definitionOverrides)
+                {
+                    sb.AppendLine(
+                        $"  {definitionOverride.StoreIdentifier} <- {definitionOverride.DefinitionsPath} " +
+                        $"(package {definitionOverride.PackageId})");
+                }
+                foreach (var issue in overrideIssues)
+                {
+                    sb.AppendLine("  ISSUE: " + issue);
+                }
+
                 return sb.ToString();
             }
             catch (Exception ex)
@@ -706,6 +762,18 @@ namespace FUSE.Interface.Console
             }
 
             return FuseLoadReport.GetLastDetailReport();
+        }
+    }
+
+    [ConsoleCommand(
+        "/fuse.starters",
+        "Resume placement of retained Appalachian Railway starter equipment.")]
+    public sealed class FuseStartersCommand : IConsoleCommand
+    {
+        public string Execute(string[] components)
+        {
+            return FuseCompanyStarterPlacementPatch
+                .ResumePendingPlacements();
         }
     }
 
@@ -1182,14 +1250,17 @@ namespace FUSE.Interface.Console
         public string Execute(string[] components)
         {
             var conflicts = FuseRegistry.Conflicts;
+            var actionable = conflicts.Count(conflict => !conflict.IsCooperativeMerge);
+            var cooperative = conflicts.Count(conflict => conflict.IsCooperativeMerge);
             var sb = new StringBuilder();
             sb.AppendLine(
                 $"FUSE registry: exclusive={FuseRegistry.ExclusiveClaimCount} shared={FuseRegistry.SharedClaimCount} " +
-                $"conflicts={conflicts.Count}");
+                $"conflicts={actionable} sharedExtensionTargets={cooperative} records={conflicts.Count}");
             foreach (var conflict in conflicts.OrderByDescending(c => c.AtUtc))
             {
+                var classification = conflict.IsCooperativeMerge ? "shared-extension" : "actionable";
                 sb.AppendLine(
-                    $"  target='{conflict.Target ?? conflict.Kind.ToString()}' kind='{conflict.Kind}' id='{conflict.Id}': " +
+                    $"  [{classification}] target='{conflict.Target ?? conflict.Kind.ToString()}' kind='{conflict.Kind}' id='{conflict.Id}': " +
                     $"owner='{conflict.OwnerPackageId}' attempted='{conflict.AttemptedPackageId}' " +
                     $"resolution='{conflict.Resolution ?? "claim skipped"}' at={conflict.AtUtc:HH:mm:ss}Z");
             }

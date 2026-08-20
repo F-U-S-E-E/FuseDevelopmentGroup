@@ -23,6 +23,24 @@
     "FrameSpikeThresholdMs": 100,
     "ForceConstrainedVramMode": false,
     "EnableNativeLeakStackTraces": false,
-    "EnableUpdateCheck": true
+    "EnableUpdateCheck": true,
+    "GraceMinimumDays": 0,
+    "GraceMultiplier": 1,
+    "GraceAddedDays": 0,
+    "InterchangeServiceIntervalMinutes": 150,
+    "InterchangeContinuousService": false,
+    "InterchangeNotBeforeHour": 0,
+    "InterchangeNotAfterHour": 24,
+    "EnableOutboundIndustryRerouting": false,
+    "OutboundIndustryRerouteChance": 0.25,
+    "OutboundIndustryFillFactor": 1,
+    "OutboundIndustryPaymentMultiplier": 1,
+    "OutboundIndustryAllowShortTrips": false,
+    "OutboundIndustryIgnoreOrigin": false,
+    "OutboundIndustryPreventBlocking": false,
+    "InterchangeToInterchangeMaximumCars": 30,
+    "ForYourConvenienceShowCabooseIcons": false,
+    "ForYourConvenienceShowCarTagMph": false,
+    "ForYourConvenienceShowCarTagLoads": false
   }
 }

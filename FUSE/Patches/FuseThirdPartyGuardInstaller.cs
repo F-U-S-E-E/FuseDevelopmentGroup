@@ -175,6 +175,39 @@ namespace FUSE.Patches
                 bmanLocomotiveAudioStatus = "failed";
             }
 
+            string legosLibraryStatus;
+            try
+            {
+                legosLibraryStatus = FuseLegosLibraryCompatibility.EnsureInstalled(_harmony);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE Legos Library compatibility failed to install", ex);
+                legosLibraryStatus = "failed";
+            }
+
+            string assetLoaderStatus;
+            try
+            {
+                assetLoaderStatus = FuseAssetLoaderReplacementCompatibility.EnsureInstalled(_harmony);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE AssetLoader replacement compatibility failed", ex);
+                assetLoaderStatus = "failed";
+            }
+
+            string alinasUtilitiesStatus;
+            try
+            {
+                alinasUtilitiesStatus = FuseAlinasUtilitiesCompatibility.EnsureInstalled();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE Alina Utilities compatibility failed", ex);
+                alinasUtilitiesStatus = "failed";
+            }
+
             var summary =
                 $"FUSE third-party guards: mapEnhancerCulling='{mapEnhancerStatus}' " +
                 $"rebillIndustryCars='{rebillStatus}' brssModMenu='{brssStatus}' " +
@@ -183,7 +216,10 @@ namespace FUSE.Patches
                 $"utilitiesMapLoad='{utilitiesMapLoadStatus}' " +
                 $"realisticRerail='{realisticRerailStatus}' " +
                 $"memoryLeakFps='{memoryLeakFpsStatus}' " +
-                $"bmanLocomotiveAudio='{bmanLocomotiveAudioStatus}'.";
+                $"bmanLocomotiveAudio='{bmanLocomotiveAudioStatus}' " +
+                $"legosLibrary='{legosLibraryStatus}' " +
+                $"assetLoader='{assetLoaderStatus}' " +
+                $"alinasUtilities='{alinasUtilitiesStatus}'.";
             if (!string.Equals(summary, _lastSummary, StringComparison.Ordinal))
             {
                 _lastSummary = summary;
@@ -210,7 +246,15 @@ namespace FUSE.Patches
                 assemblyName,
                 "GP38Scripts",
                 StringComparison.Ordinal);
-            if (!isRealisticRerail && !isUtilities && !isMemoryLeakFps && !isBmanLocomotiveAudio)
+            var isLegosLibrary = string.Equals(
+                assemblyName,
+                "LegosLibraryOfStuff",
+                StringComparison.Ordinal);
+            var isAssetLoader = FuseAssetLoaderReplacementCompatibility.IsTargetAssemblyName(assemblyName);
+            var isAlinasUtilities = FuseAlinasUtilitiesCompatibility.IsTargetAssemblyName(assemblyName);
+            if (!isRealisticRerail && !isUtilities && !isMemoryLeakFps &&
+                !isBmanLocomotiveAudio && !isLegosLibrary && !isAssetLoader &&
+                !isAlinasUtilities)
             {
                 return;
             }

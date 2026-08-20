@@ -1,0 +1,63 @@
+using FUSE.Patches;
+using Xunit;
+
+namespace FUSE.Tests.Patches
+{
+    public sealed class FuseCompanyStarterPlacementPatchTests
+    {
+        [Fact]
+        public void StarterPool_RequiresAppalachianWhittierStartDefinition()
+        {
+            Assert.False(
+                FuseCompanyStarterPlacementPatch.ShouldQueueStarterSetup(
+                    "ewh-company",
+                    new[] { "FUSE", "Some.Other.Mod" }));
+            Assert.True(
+                FuseCompanyStarterPlacementPatch.ShouldQueueStarterSetup(
+                    "ewh-company",
+                    new[]
+                    {
+                        "FUSE",
+                        "KingG.Appalachian-Railway.start-whit",
+                    }));
+        }
+
+        [Fact]
+        public void StarterPool_DoesNotAffectOtherCompanyStarts()
+        {
+            var loaded = new[]
+            {
+                "KingG.Appalachian-Railway.start-whit",
+            };
+
+            Assert.False(
+                FuseCompanyStarterPlacementPatch.ShouldQueueStarterSetup(
+                    "ela-company",
+                    loaded));
+            Assert.False(
+                FuseCompanyStarterPlacementPatch.ShouldQueueStarterSetup(
+                    "",
+                    loaded));
+        }
+
+        [Theory]
+        [InlineData(false, 3, 0, false)]
+        [InlineData(true, 3, 0, false)]
+        [InlineData(true, 3, 2, false)]
+        [InlineData(true, 3, 3, true)]
+        [InlineData(true, 0, 0, false)]
+        public void StarterPool_ConsumesCutOnlyAfterConfirmedCompletePlacement(
+            bool callbackReportedPlaced,
+            int expectedCarCount,
+            int placedCarCount,
+            bool expected)
+        {
+            Assert.Equal(
+                expected,
+                FuseCompanyStarterPlacementPatch.WasPlacementCommitted(
+                    callbackReportedPlaced,
+                    expectedCarCount,
+                    placedCarCount));
+        }
+    }
+}

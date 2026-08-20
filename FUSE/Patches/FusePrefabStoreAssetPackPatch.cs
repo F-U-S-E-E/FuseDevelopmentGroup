@@ -29,6 +29,7 @@ namespace FUSE.Patches
             {
                 // Even a partial store add changes the identifier population.
                 FUSE.Runtime.API.SceneryAPI.InvalidateKnownSceneryIdentifierIndex();
+                FuseEquipmentCatalogWarmup.Schedule(__result);
             }
         }
     }

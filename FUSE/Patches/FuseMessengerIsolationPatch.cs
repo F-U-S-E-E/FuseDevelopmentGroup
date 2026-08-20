@@ -8,7 +8,7 @@ using HarmonyLib;
 namespace FUSE.Patches
 {
     /// <summary>
-    /// Contains exceptions thrown by map lifecycle event listeners so one broken
+    /// Contains exceptions thrown by guarded messenger event listeners so one broken
     /// listener can never disturb delivery to anyone else — and so the offender is
     /// actually NAMED in the log.
     ///
@@ -28,9 +28,9 @@ namespace FUSE.Patches
     /// (throttled) with the recipient type and handler method name, and dispatch
     /// continues so later-registered listeners still receive the event.
     ///
-    /// Deliberately scoped to the four map lifecycle events only — this is not a
-    /// blanket "never throw from Messenger" patch; every other event keeps its
-    /// stock semantics.
+    /// Deliberately scoped to map lifecycle events and the legacy debug-report
+    /// contribution event — this is not a blanket "never throw from Messenger"
+    /// patch; every other event keeps its stock semantics.
     ///
     /// Generic-method caveat: this targets the CONSTRUCTED <c>WeakAction&lt;T&gt;</c>
     /// methods, one instantiation per event type. That is only reliable because
@@ -49,12 +49,13 @@ namespace FUSE.Patches
         // whole patch class. (If EVERY entry failed to resolve, the empty target
         // set would make Harmony reject the class as a whole — FusePatchResilience
         // contains that to a logged skip of this one class.)
-        private static readonly string[] LifecycleEventTypeNames =
+        private static readonly string[] GuardedEventTypeNames =
         {
             "Game.Events.MapWillLoadEvent",
             "Game.Events.MapDidLoadEvent",
             "Game.Events.MapWillUnloadEvent",
-            "Game.Events.MapDidUnloadEvent"
+            "Game.Events.MapDidUnloadEvent",
+            "Railloader.Events.WillCopyDebugInformation"
         };
 
         private static long _suppressed;
@@ -80,7 +81,7 @@ namespace FUSE.Patches
         internal static IEnumerable<MethodBase> TargetMethods()
         {
             var targets = new HashSet<MethodBase>();
-            foreach (var eventTypeName in LifecycleEventTypeNames)
+            foreach (var eventTypeName in GuardedEventTypeNames)
             {
                 // WeakAction<T> and the lifecycle event structs are defined in the
                 // SAME assembly: MvvmLight is compiled into the game's Assembly-CSharp
@@ -168,7 +169,7 @@ namespace FUSE.Patches
                 // BEFORE the throttle decision so every containment is counted
                 // even when its log line below is suppressed.
                 FuseModExceptionRegistry.RecordContained(
-                    __exception, ResolveRecipientType(__instance), "map lifecycle listener");
+                    __exception, ResolveRecipientType(__instance), "messenger listener");
 
                 // First few individually, every previously-unseen offender once, then
                 // heartbeat only — a permanently-broken listener re-throws on every
@@ -180,7 +181,7 @@ namespace FUSE.Patches
                 if (_suppressed <= 5 || newOffender || _suppressed % 100 == 0)
                 {
                     FuseLog.Exception(
-                        $"FUSE contained map lifecycle listener exception #{_suppressed} from {listener}; " +
+                        $"FUSE contained messenger listener exception #{_suppressed} from {listener}; " +
                         "the exception was suppressed and dispatch continued, so later-registered listeners " +
                         "still received the event", __exception);
                     _logged++;
