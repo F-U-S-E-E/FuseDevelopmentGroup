@@ -55,6 +55,9 @@
     <None Include="..\schemas\fuse-mod.example.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="..\schemas\fuse-mod.schema.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!-- The main FUSE project references game-shipped assemblies with <Private>false</Private>
@@ -116,6 +119,14 @@
     </Reference>
     <Reference Include="AssetPack.Common" Condition="Exists('$(UnityManagedDir)\AssetPack.Common.dll')">
       <HintPath>$(UnityManagedDir)\AssetPack.Common.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="KeyValue.Runtime" Condition="Exists('$(UnityManagedDir)\KeyValue.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\KeyValue.Runtime.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Unity.RenderPipelines.Universal.Runtime" Condition="Exists('$(UnityManagedDir)\Unity.RenderPipelines.Universal.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\Unity.RenderPipelines.Universal.Runtime.dll</HintPath>
       <Private>true</Private>
     </Reference>
     <Reference Include="UnityEngine.AssetBundleModule" Condition="Exists('$(UnityManagedDir)\UnityEngine.AssetBundleModule.dll')">

@@ -75,6 +75,94 @@ namespace FUSE.Tests.Converter
         }
 
         [Fact]
+        public void ConvertMod_preserves_issue_240_hard_dependencies_and_object_load_after_ids()
+        {
+            var modFolder = Path.Combine(_workspace, "Katers.SylvaYardTurntable");
+            Directory.CreateDirectory(modFolder);
+
+            // Regression fixture reduced from issue #240. Both dependency lists use
+            // the Railloader object form, and the real package contains a trailing
+            // comma in loadAfter. Older converter builds stringified those objects
+            // into entries such as "{'id': 'Katers.SylvaInterchange'}.FUSE" and
+            // incorrectly treated every hard requirement as advisory ordering.
+            File.WriteAllText(Path.Combine(modFolder, "Definition.json"), @"{
+                ""manifestVersion"": 5,
+                ""id"": ""Katers.SylvaYardTurntable"",
+                ""name"": ""Katers Sylva Yard Turntable"",
+                ""version"": ""1.2.6"",
+                ""requires"": [
+                    { ""id"": ""railloader"", ""notBefore"": ""1.10.0.2"" },
+                    { ""id"": ""Zamu.StrangeCustoms"", ""notBefore"": ""1.10.25017.313"" },
+                    { ""id"": ""AlinaNova21.AlinasMapMod"", ""notBefore"": ""1.5.25131.608"" },
+                    { ""id"": ""C_L_B.ASSETS01"", ""notBefore"": ""2.5.4"" },
+                    { ""id"": ""Katers.SylvaInterchange"", ""notBefore"": ""3.0"" },
+                    { ""id"": ""C_L_B.DKW"", ""notBefore"": ""1.1"" }
+                ],
+                ""loadAfter"": [
+                    { ""id"": ""Katers.SylvaInterchange"", },
+                    { ""id"": ""Katers.SylvaYPassingext"" }
+                ]
+            }");
+            File.WriteAllText(Path.Combine(modFolder, "SylvaYardTurntable.json"),
+                "{ \"tracks\": { \"nodes\": { \"n\": { \"position\": { \"x\": 0, \"y\": 0, \"z\": 0 } } } } }");
+
+            var outputFolder = Path.Combine(_workspace, "Katers.SylvaYardTurntable.FUSE");
+            var result = FuseLegacyConverter.ConvertMod(modFolder, outputFolder);
+
+            Assert.True(result.Success);
+            var info = JObject.Parse(File.ReadAllText(Path.Combine(outputFolder, "Info.json")));
+            Assert.Equal(new[]
+            {
+                "C_L_B.ASSETS01.FUSE",
+                "Katers.SylvaInterchange.FUSE",
+                "C_L_B.DKW.FUSE"
+            }, info.Value<JArray>("FuseRequires").Values<string>());
+            Assert.Equal(new[]
+            {
+                "Katers.SylvaInterchange.FUSE",
+                "Katers.SylvaYPassingext.FUSE"
+            }, info.Value<JArray>("FuseLoadAfter").Values<string>());
+            Assert.DoesNotContain(
+                info.Value<JArray>("FuseLoadAfter").Values<string>(),
+                dependency => dependency.IndexOf("{'id'", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        [Fact]
+        public void ConvertMod_preserves_top_level_and_conditional_conflictsWith()
+        {
+            var modFolder = Path.Combine(_workspace, "conflicting.mod");
+            Directory.CreateDirectory(modFolder);
+            File.WriteAllText(Path.Combine(modFolder, "Definition.json"), @"{
+                ""id"": ""Author.Conflict"",
+                ""name"": ""Conflict Fixture"",
+                ""version"": ""1.0"",
+                ""conflictsWith"": [ { ""id"": ""Other.Route"", ""notBefore"": ""2.0"" } ],
+                ""mixintos"": {
+                    ""game-graph"": {
+                        ""mixinto"": ""file(track.json)"",
+                        ""conflictsWith"": [ ""Conditional.Route"" ]
+                    }
+                }
+            }");
+            File.WriteAllText(
+                Path.Combine(modFolder, "track.json"),
+                "{ \"nodes\": { \"N1\": { \"position\": { \"x\": 0, \"y\": 0, \"z\": 0 } } } }");
+
+            var outputFolder = Path.Combine(_workspace, "conflicting.mod.FUSE");
+            var result = FuseLegacyConverter.ConvertMod(modFolder, outputFolder);
+
+            Assert.True(result.Success);
+            var info = JObject.Parse(File.ReadAllText(Path.Combine(outputFolder, "Info.json")));
+            var manifestConflict = Assert.Single((JArray)info["FuseConflictsWith"]);
+            Assert.Equal("Other.Route", manifestConflict.Value<string>("Id"));
+            Assert.Equal("2.0", manifestConflict.Value<string>("NotBefore"));
+
+            var fragment = JObject.Parse(File.ReadAllText(Path.Combine(outputFolder, "track.fuse.json")));
+            var conditionalConflict = Assert.Single((JArray)fragment["mixinto"]["conflictsWith"]);
+            Assert.Equal("Conditional.Route", conditionalConflict.Value<string>("id"));
+        }
+
+        [Fact]
         public void ConvertMod_refuses_when_output_overlaps_source()
         {
             var modFolder = Path.Combine(_workspace, "inplace.mod");
@@ -174,6 +262,46 @@ namespace FUSE.Tests.Converter
 
             Assert.False(result.Success);
             Assert.Contains(result.Report, r => r.Level == FuseConversionReportLevel.Error);
+        }
+
+        [Fact]
+        public void ConvertPackage_rejects_asset_only_package_with_install_guidance()
+        {
+            var modFolder = Path.Combine(_workspace, "asset.mod");
+            Directory.CreateDirectory(modFolder);
+            File.WriteAllText(Path.Combine(modFolder, "bundle"), "asset");
+            File.WriteAllText(Path.Combine(modFolder, "Catalog.json"), "{}");
+            File.WriteAllText(Path.Combine(modFolder, "Definitions.json"), "{}");
+            var outputFolder = Path.Combine(_workspace, "asset.mod.FUSE");
+
+            var result = FuseLegacyConverter.ConvertPackage(modFolder, outputFolder);
+
+            Assert.False(result.Success);
+            Assert.Empty(result.WrittenFragments);
+            Assert.False(Directory.Exists(outputFolder));
+            Assert.Contains(result.Report, entry =>
+                entry.Level == FuseConversionReportLevel.Error
+                && entry.Message.IndexOf("install this package", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        [Fact]
+        public void ConvertPackage_rejects_compiled_code_instead_of_reporting_zero_fragment_success()
+        {
+            var modFolder = Path.Combine(_workspace, "code.mod");
+            Directory.CreateDirectory(modFolder);
+            File.WriteAllText(Path.Combine(modFolder, "Info.json"),
+                "{ \"Id\": \"code.mod\", \"DisplayName\": \"Code Mod\", \"AssemblyName\": \"Code.dll\" }");
+            File.WriteAllText(Path.Combine(modFolder, "Code.dll"), "not-a-real-assembly");
+            var outputFolder = Path.Combine(_workspace, "code.mod.FUSE");
+
+            var result = FuseLegacyConverter.ConvertPackage(modFolder, outputFolder);
+
+            Assert.False(result.Success);
+            Assert.Empty(result.WrittenFragments);
+            Assert.False(Directory.Exists(outputFolder));
+            Assert.Contains(result.Report, entry =>
+                entry.Level == FuseConversionReportLevel.Error
+                && entry.Message.IndexOf("cannot reproduce DLL behavior", StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         [Fact]

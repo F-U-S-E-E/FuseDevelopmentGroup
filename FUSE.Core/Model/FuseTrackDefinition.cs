@@ -24,6 +24,7 @@ namespace Fuse.Core.Model
         public FuseVector3 Position { get; set; }
         public FuseVector3 Rotation { get; set; }
         public bool FlipSwitchStand { get; set; }
+        public bool IsDiamond { get; set; }
         public string GroupId { get; set; }
         public string[] Tags { get; set; }
     }
@@ -39,8 +40,12 @@ namespace Fuse.Core.Model
         public string GroupId { get; set; }
         public string[] Tags { get; set; }
         public string Gauge { get; set; }
+        public bool BridgeSupportsSteel { get; set; }
+        public bool Yard { get; set; }
         public bool Partial { get; set; }
         public bool PreserveStyle { get; set; }
+        public bool PreserveBridgeSupportsSteel { get; set; }
+        public bool PreserveYard { get; set; }
         public bool PreserveTrackClass { get; set; }
         public bool PreserveSpeedLimit { get; set; }
         public bool PreservePriority { get; set; }

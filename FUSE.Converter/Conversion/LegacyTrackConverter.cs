@@ -31,6 +31,7 @@ namespace FUSE.Converter.Conversion
                 ["position"] = VectorHelper.Vector(obj?["position"] ?? obj?["localPosition"]),
                 ["rotation"] = VectorHelper.Vector(obj?["rotation"] ?? obj?["localRotation"]),
                 ["flipSwitchStand"] = obj?.Value<bool?>("flipSwitchStand") ?? false,
+                ["isDiamond"] = obj?.Value<bool?>("isDiamond") ?? obj?.Value<bool?>("IsDiamond") ?? false,
             };
         }
 
@@ -58,15 +59,20 @@ namespace FUSE.Converter.Conversion
             }
 
             var partial = string.IsNullOrEmpty(startNodeId) || string.IsNullOrEmpty(endNodeId);
+            var flags = FirstInt(obj, 0, "flags", "Flags");
+            var hasFlags = obj.ContainsKey("flags") || obj.ContainsKey("Flags");
+            var style = obj.Value<string>("Style") ?? obj.Value<string>("style");
 
             var result = new JObject
             {
-                ["style"] = obj.Value<string>("Style") ?? obj.Value<string>("style") ?? "standard",
+                ["style"] = style ?? StyleFromFlags(flags),
                 ["trackClass"] = obj.Value<string>("trackClass") ?? obj.Value<string>("TrackClass") ?? "main",
                 ["speedLimit"] = FirstInt(obj, 45, "speedLimit", "SpeedLimit"),
                 ["priority"] = obj.Value<int?>("priority") ?? 0,
                 ["groupId"] = groupId,
                 ["gauge"] = obj.Value<string>("gauge") ?? obj.Value<string>("Gauge"),
+                ["bridgeSupportsSteel"] = hasFlags && (flags & 4) != 0,
+                ["yard"] = hasFlags && (flags & 16) != 0,
             };
 
             if (!string.IsNullOrEmpty(startNodeId))
@@ -86,6 +92,8 @@ namespace FUSE.Converter.Conversion
                 // overwrite values the original author committed to.
                 result["partial"] = true;
                 result["preserveStyle"] = !obj.ContainsKey("Style") && !obj.ContainsKey("style");
+                result["preserveBridgeSupportsSteel"] = !hasFlags && string.IsNullOrEmpty(style);
+                result["preserveYard"] = !hasFlags && string.IsNullOrEmpty(style);
                 result["preserveTrackClass"] = !obj.ContainsKey("trackClass") && !obj.ContainsKey("TrackClass");
                 result["preserveSpeedLimit"] = !obj.ContainsKey("speedLimit") && !obj.ContainsKey("SpeedLimit");
                 result["preservePriority"] = !obj.ContainsKey("priority");
@@ -364,6 +372,14 @@ namespace FUSE.Converter.Conversion
                 }
             }
             return fallback;
+        }
+
+        private static string StyleFromFlags(int flags)
+        {
+            if ((flags & 8) != 0) return "tunnel";
+            if ((flags & 2) != 0) return "bridge";
+            if ((flags & 16) != 0) return "yard";
+            return "standard";
         }
     }
 }

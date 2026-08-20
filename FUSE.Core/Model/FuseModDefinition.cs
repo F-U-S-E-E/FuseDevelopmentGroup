@@ -26,6 +26,7 @@ namespace Fuse.Core.Model
         public FuseAudioRoot Audio { get; set; } = new FuseAudioRoot();
         public FuseProgressionRoot Progression { get; set; } = new FuseProgressionRoot();
         public Dictionary<string, FuseModSettingDefinition> Settings { get; set; } = new Dictionary<string, FuseModSettingDefinition>();
+        public Dictionary<string, FuseFeatureRule> FeatureRules { get; set; } = new Dictionary<string, FuseFeatureRule>();
         public FuseEditorState Editor { get; set; }
         public Dictionary<string, object> Extensions { get; set; } = new Dictionary<string, object>();
     }
@@ -50,6 +51,12 @@ namespace Fuse.Core.Model
         /// instead of treating it as a package fault.
         /// </summary>
         public FuseModRequirement[] Requires { get; set; }
+
+        /// <summary>
+        /// Optional legacy incompatibility references. If any matching package
+        /// is enabled, only this conditional fragment is skipped.
+        /// </summary>
+        public FuseModRequirement[] ConflictsWith { get; set; }
     }
 
     public sealed class FuseModRequirement

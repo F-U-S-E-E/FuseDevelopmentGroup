@@ -41,6 +41,78 @@
     "fix": "Make the top level of the file a JSON object, with at least id and name set.",
     "example": "{\"id\":\"my-mod\",\"name\":\"My Mod\"}"
   },
+  "fuse.featureRule.id.blank": {
+    "title": "Feature rule ID is blank",
+    "why": "A key under featureRules is empty or whitespace, so FUSE cannot identify the rule or report which player option controls it. This is an error and the definition does not pass validation.",
+    "fix": "Give every feature rule a non-empty, unique key that describes the option-controlled feature.",
+    "example": "{\"featureRules\":{\"enable-yard\":{\"setting\":\"yardEnabled\",\"operator\":\"equals\",\"value\":true,\"targets\":{\"trackSegments\":[\"yard-1\"]}}}}"
+  },
+  "fuse.featureRule.operator": {
+    "title": "Feature rule operator is unsupported",
+    "why": "The operator is not one of equals, notEquals, greaterThan, greaterThanOrEqual, lessThan, or lessThanOrEqual, so FUSE cannot evaluate the rule deterministically.",
+    "fix": "Replace operator with one of the supported names; use equals for a normal on/off or choice setting.",
+    "example": "{\"featureRules\":{\"enable-yard\":{\"setting\":\"yardEnabled\",\"operator\":\"equals\",\"value\":true,\"targets\":{\"trackSegments\":[\"yard-1\"]}}}}"
+  },
+  "fuse.featureRule.operator.type": {
+    "title": "Numeric feature comparison uses a non-number setting",
+    "why": "greaterThan, greaterThanOrEqual, lessThan, and lessThanOrEqual compare numbers, but the referenced setting is not type number. The comparison cannot have a reliable meaning.",
+    "fix": "Change the setting to type number, or use equals/notEquals for bool, enum, or text settings.",
+    "example": "{\"settings\":{\"yardSize\":{\"type\":\"number\",\"default\":1,\"reloadRequired\":true}},\"featureRules\":{\"large-yard\":{\"setting\":\"yardSize\",\"operator\":\"greaterThanOrEqual\",\"value\":2,\"targets\":{\"trackSegments\":[\"yard-2\"]}}}}"
+  },
+  "fuse.featureRule.required": {
+    "title": "Feature rule definition is null",
+    "why": "A key under featureRules maps to JSON null instead of a rule object, so it has no setting, comparison, or targets to evaluate.",
+    "fix": "Remove the null entry, or replace it with a rule object containing setting, operator, value, and targets.",
+    "example": "{\"featureRules\":{\"enable-yard\":{\"setting\":\"yardEnabled\",\"operator\":\"equals\",\"value\":true,\"targets\":{\"trackSegments\":[\"yard-1\"]}}}}"
+  },
+  "fuse.featureRule.setting.missing": {
+    "title": "Feature rule references a missing setting",
+    "why": "The rule's setting is blank or does not name a setting declared in this same definition. Without that option FUSE has no player value to evaluate.",
+    "fix": "Add the setting under settings, or correct featureRules.<id>.setting to the exact declared setting ID.",
+    "example": "{\"settings\":{\"yardEnabled\":{\"type\":\"bool\",\"default\":true,\"reloadRequired\":true}},\"featureRules\":{\"enable-yard\":{\"setting\":\"yardEnabled\",\"operator\":\"equals\",\"value\":true,\"targets\":{\"trackSegments\":[\"yard-1\"]}}}}"
+  },
+  "fuse.featureRule.setting.reloadRequired": {
+    "title": "Feature-controlled setting is not marked reload-required",
+    "why": "Feature rules change which authored objects are applied during map load. A setting used by a rule cannot safely rebuild that content immediately, so leaving reloadRequired false would mislead players about when the option takes effect.",
+    "fix": "Set reloadRequired to true on the referenced setting and mention the reload in its description.",
+    "example": "{\"settings\":{\"yardEnabled\":{\"type\":\"bool\",\"default\":true,\"reloadRequired\":true,\"description\":\"Reload the map after changing this option.\"}}}"
+  },
+  "fuse.featureRule.target.blank": {
+    "title": "Feature rule contains a blank target ID",
+    "why": "One of the rule's target arrays contains an empty or whitespace-only value. A blank value cannot name an authored object and would never control anything.",
+    "fix": "Remove the blank array entry, or replace it with the exact ID of an object authored in this definition.",
+    "example": "{\"featureRules\":{\"enable-yard\":{\"setting\":\"yardEnabled\",\"operator\":\"equals\",\"value\":true,\"targets\":{\"trackSegments\":[\"yard-1\"]}}}}"
+  },
+  "fuse.featureRule.target.duplicate": {
+    "title": "Feature rule lists the same target more than once",
+    "why": "The same object ID appears repeatedly in one target array. FUSE can still evaluate the rule, but the duplicate adds noise and commonly indicates a copy/paste mistake.",
+    "fix": "Keep each target ID only once in that rule's target array.",
+    "example": "{\"featureRules\":{\"enable-yard\":{\"setting\":\"yardEnabled\",\"operator\":\"equals\",\"value\":true,\"targets\":{\"trackSegments\":[\"yard-1\",\"yard-2\"]}}}}"
+  },
+  "fuse.featureRule.target.missing": {
+    "title": "Feature rule target does not exist",
+    "why": "A target ID does not name an object authored in this definition. Feature rules intentionally do not guess at dependency-owned or base-game objects, so the target could never be enabled or disabled by this package.",
+    "fix": "Correct the ID and target category, or author the referenced object in this definition before targeting it.",
+    "example": "{\"tracks\":{\"segments\":{\"yard-1\":{\"startNodeId\":\"n1\",\"endNodeId\":\"n2\"}}},\"featureRules\":{\"enable-yard\":{\"setting\":\"yardEnabled\",\"operator\":\"equals\",\"value\":true,\"targets\":{\"trackSegments\":[\"yard-1\"]}}}}"
+  },
+  "fuse.featureRule.targets.empty": {
+    "title": "Feature rule has no targets",
+    "why": "The targets object exists but all of its arrays are empty, so changing the setting would not enable or disable any authored content.",
+    "fix": "Add at least one valid object ID to the appropriate target category, or remove the unused rule.",
+    "example": "{\"featureRules\":{\"enable-yard\":{\"setting\":\"yardEnabled\",\"operator\":\"equals\",\"value\":true,\"targets\":{\"trackSegments\":[\"yard-1\"]}}}}"
+  },
+  "fuse.featureRule.targets.required": {
+    "title": "Feature rule targets are missing",
+    "why": "The rule's targets value is null, so the rule cannot identify which authored objects it controls.",
+    "fix": "Add a targets object with at least one supported category and authored object ID.",
+    "example": "{\"featureRules\":{\"enable-yard\":{\"setting\":\"yardEnabled\",\"operator\":\"equals\",\"value\":true,\"targets\":{\"trackSegments\":[\"yard-1\"]}}}}"
+  },
+  "fuse.featureRule.value.required": {
+    "title": "Feature rule comparison value is missing",
+    "why": "The rule has no value to compare with the selected setting. FUSE cannot decide whether the rule is active without a bool, number, string, or enum value.",
+    "fix": "Set value to the setting value that should activate this rule, such as true, 2, or \"large\".",
+    "example": "{\"featureRules\":{\"enable-yard\":{\"setting\":\"yardEnabled\",\"operator\":\"equals\",\"value\":true,\"targets\":{\"trackSegments\":[\"yard-1\"]}}}}"
+  },
   "fuse.map.displayName.blank": {
     "title": "Map displayName is blank",
     "why": "The map declaration has no displayName, so wherever the map is offered for selection (console listings, menus) FUSE falls back to the package name. That usually reads worse than a purpose-written map title.",
@@ -88,18 +160,6 @@
     "why": "An entry under world.mapTiles maps to null instead of a tile source object, so FUSE has no directory or sourceFolder to load map tiles from. This is an error until the entry is a real object.",
     "fix": "Replace the null value with an object that sets directory and sourceFolder.",
     "example": "{\"world\":{\"mapTiles\":{\"newValley\":{\"directory\":\"mapTiles\",\"sourceFolder\":\"newValley\"}}}}"
-  },
-  "fuse.mixinto.requirement.id.blank": {
-    "title": "Mixinto requirement id is blank",
-    "why": "An entry in mixinto.requires has a blank or whitespace-only id, so FUSE ignores that requirement entirely. The fragment will not be gated on the mod you meant to require and may apply even when that mod is absent.",
-    "fix": "Set the requirement's id to the identifier of the mod this fragment depends on, or delete the entry if no dependency is intended.",
-    "example": "{\"mixinto\": {\"requires\": [{\"id\": \"ExampleMod\"}]}}"
-  },
-  "fuse.mixinto.requirement.null": {
-    "title": "Null mixinto requirement entry",
-    "why": "The mixinto.requires array contains a null entry, which FUSE skips at load. A null requirement cannot gate the fragment, so any conditional-loading intent behind it is silently lost.",
-    "fix": "Remove the null entry from the requires array, or replace it with a requirement object that has an id.",
-    "example": "{\"mixinto\": {\"requires\": [{\"id\": \"ExampleMod\"}]}}"
   },
   "fuse.mixinto.sourceFile.blank": {
     "title": "Mixinto sourceFile is blank",
@@ -413,11 +473,35 @@
     "fix": "Document the reload requirement in the setting's description so multiplayer users know a reload is needed. Alternatively drop reloadRequired or move the setting off server scope if either is unnecessary.",
     "example": "{\"settings\": {\"trackGauge\": {\"type\": \"number\", \"scope\": \"server\", \"reloadRequired\": true, \"description\": \"Synced to all players; requires a reload to apply.\"}}}"
   },
+  "fuse.spliney.objectLine.maximumInstances": {
+    "title": "Object line instance limit is out of range",
+    "why": "maximumInstances is below 1 or above 4096. A non-positive limit cannot place an object, while an unbounded repeated line can freeze or exhaust the game.",
+    "fix": "Set maximumInstances between 1 and 4096; use the smallest limit that safely covers the authored line.",
+    "example": "{\"world\":{\"splineys\":{\"yard-fence\":{\"type\":\"objectLine\",\"assetIdentifier\":\"FencePanel\",\"spacing\":3,\"maximumInstances\":500,\"points\":[{\"position\":{\"x\":0,\"y\":560,\"z\":0}},{\"position\":{\"x\":30,\"y\":560,\"z\":0}}]}}}}"
+  },
+  "fuse.spliney.objectLine.source": {
+    "title": "Object line needs exactly one model source",
+    "why": "An objectLine has neither assetIdentifier nor prefab, or it sets both. FUSE needs one unambiguous source for the repeated fence, wall, pipe, or other rigid module.",
+    "fix": "Set exactly one of assetIdentifier (PrefabStore asset) or prefab (loaded scene prefab path), and remove the other field.",
+    "example": "{\"world\":{\"splineys\":{\"yard-fence\":{\"type\":\"objectLine\",\"assetIdentifier\":\"FencePanel\",\"spacing\":3,\"points\":[{\"position\":{\"x\":0,\"y\":560,\"z\":0}},{\"position\":{\"x\":30,\"y\":560,\"z\":0}}]}}}}"
+  },
+  "fuse.spliney.objectLine.spacing": {
+    "title": "Object line spacing is not positive",
+    "why": "spacing is zero or negative, so FUSE cannot advance along the path while placing repeated modules.",
+    "fix": "Set spacing to a positive distance in metres that matches the module length or desired gap.",
+    "example": "{\"world\":{\"splineys\":{\"yard-fence\":{\"type\":\"objectLine\",\"assetIdentifier\":\"FencePanel\",\"spacing\":3,\"points\":[{\"position\":{\"x\":0,\"y\":560,\"z\":0}},{\"position\":{\"x\":30,\"y\":560,\"z\":0}}]}}}}"
+  },
   "fuse.spliney.points": {
     "title": "Spliney needs at least two points",
     "why": "The spliney's points array is missing or has fewer than two entries. Spliney objects require at least two points to define a path; this is an error and must be fixed.",
     "fix": "Add a points array with two or more point entries (each with a position) tracing the spliney's path.",
     "example": "{\"world\": {\"splineys\": {\"yardFence\": {\"type\": \"fence\", \"points\": [{\"position\": {\"x\": 0, \"y\": 560, \"z\": 0}}, {\"position\": {\"x\": 25, \"y\": 560, \"z\": 10}}]}}}}"
+  },
+  "fuse.spliney.required": {
+    "title": "Spliney definition is null",
+    "why": "A key under world.splineys maps to JSON null instead of a spline definition, so there is no type or path to build.",
+    "fix": "Remove the null entry, or replace it with a spliney object containing type and at least two points.",
+    "example": "{\"world\":{\"splineys\":{\"yard-road\":{\"type\":\"road\",\"points\":[{\"position\":{\"x\":0,\"y\":560,\"z\":0}},{\"position\":{\"x\":30,\"y\":560,\"z\":0}}]}}}}"
   },
   "fuse.telegraph.points": {
     "title": "Telegraph pole set needs two points",
@@ -598,6 +682,36 @@
     "why": "Error: the turntable's subdivisions value is below 4 or above 32, outside the range the validator allows. The document fails validation, so the turntable definition is rejected.",
     "fix": "Set subdivisions to a whole number between 4 and 32 (inclusive) under operations.turntables.<id>. The default is 16 if you have no specific need.",
     "example": "{\"operations\": {\"turntables\": {\"ewh-turntable\": {\"radius\": 12.5, \"subdivisions\": 16}}}}"
+  },
+  "fuse.waterSurface.maximumTriangleArea": {
+    "title": "Water surface maximum triangle area is not positive",
+    "why": "maximumTriangleArea is zero or negative, so the mesh generator has no valid upper bound for water-surface triangles.",
+    "fix": "Set maximumTriangleArea to a positive square-metre value; 50 is a practical starting point for a lake.",
+    "example": "{\"world\":{\"waterSurfaces\":{\"mill-pond\":{\"points\":[{\"x\":0,\"y\":550,\"z\":0},{\"x\":50,\"y\":550,\"z\":0},{\"x\":25,\"y\":550,\"z\":40}],\"maximumTriangleArea\":50}}}}"
+  },
+  "fuse.waterSurface.points": {
+    "title": "Water surface needs at least three boundary points",
+    "why": "The water surface has fewer than three points, so its boundary cannot form a polygon and no visible lake mesh can be generated.",
+    "fix": "Add at least three non-collinear world-space boundary points in perimeter order.",
+    "example": "{\"world\":{\"waterSurfaces\":{\"mill-pond\":{\"points\":[{\"x\":0,\"y\":550,\"z\":0},{\"x\":50,\"y\":550,\"z\":0},{\"x\":25,\"y\":550,\"z\":40}]}}}}"
+  },
+  "fuse.waterSurface.required": {
+    "title": "Water surface definition is null",
+    "why": "A key under world.waterSurfaces maps to JSON null instead of a water-surface object, so FUSE has no boundary or rendering profile to build.",
+    "fix": "Remove the null entry, or replace it with a water-surface object containing at least three points.",
+    "example": "{\"world\":{\"waterSurfaces\":{\"mill-pond\":{\"points\":[{\"x\":0,\"y\":550,\"z\":0},{\"x\":50,\"y\":550,\"z\":0},{\"x\":25,\"y\":550,\"z\":40}]}}}}"
+  },
+  "fuse.waterSurface.triangleDensity": {
+    "title": "Water surface triangle density is out of range",
+    "why": "triangleDensity must be greater than 0 and no more than 1. Values outside that range cannot produce the bounded tessellation FUSE expects.",
+    "fix": "Set triangleDensity within (0, 1]; 0.2 is the default and a useful starting point.",
+    "example": "{\"world\":{\"waterSurfaces\":{\"mill-pond\":{\"points\":[{\"x\":0,\"y\":550,\"z\":0},{\"x\":50,\"y\":550,\"z\":0},{\"x\":25,\"y\":550,\"z\":40}],\"triangleDensity\":0.2}}}}"
+  },
+  "fuse.waterSurface.uvScale": {
+    "title": "Water surface UV scale is not positive",
+    "why": "uvScale is zero or negative, so the lake material cannot receive a valid repeating texture coordinate scale.",
+    "fix": "Set uvScale to a positive number; 1 uses the source material's normal scale.",
+    "example": "{\"world\":{\"waterSurfaces\":{\"mill-pond\":{\"points\":[{\"x\":0,\"y\":550,\"z\":0},{\"x\":50,\"y\":550,\"z\":0},{\"x\":25,\"y\":550,\"z\":40}],\"uvScale\":1}}}}"
   },
   "fuse.world.removal.blank": {
     "title": "Blank world removal ID",

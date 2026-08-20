@@ -12,6 +12,13 @@ namespace FUSE.Authoring.Validation
 {
     public sealed class FuseDefinitionValidator : IValidator<FuseModDefinition>
     {
+        private static readonly HashSet<string> ValidFeatureRuleOperators =
+            new HashSet<string>(new[]
+            {
+                "equals", "notEquals", "greaterThan", "greaterThanOrEqual",
+                "lessThan", "lessThanOrEqual"
+            }, StringComparer.OrdinalIgnoreCase);
+
         public ValidationResult Validate(FuseModDefinition value)
         {
             var result = new ValidationResult();
@@ -49,6 +56,7 @@ namespace FUSE.Authoring.Validation
             ValidateAudio(result, value.Audio);
             ValidateProgression(result, value.Progression);
             ValidateSettings(result, value.Settings);
+            ValidateFeatureRules(result, value);
             return result;
         }
 
@@ -97,20 +105,30 @@ namespace FUSE.Authoring.Validation
                 result.AddWarning("mixinto.sourceFile", "Mixinto sourceFile is blank; conversion provenance will be less clear.", "fuse.mixinto.sourceFile.blank");
             }
 
-            var requirements = mixinto.Requires ?? Array.Empty<FuseModRequirement>();
-            for (var index = 0; index < requirements.Length; index++)
+            ValidateMixintoReferences(result, mixinto.Requires, "requires", "requirement");
+            ValidateMixintoReferences(result, mixinto.ConflictsWith, "conflictsWith", "conflict");
+        }
+
+        private static void ValidateMixintoReferences(
+            ValidationResult result,
+            FuseModRequirement[] references,
+            string propertyName,
+            string kind)
+        {
+            var materialized = references ?? Array.Empty<FuseModRequirement>();
+            for (var index = 0; index < materialized.Length; index++)
             {
-                var requirement = requirements[index];
-                var path = $"mixinto.requires[{index}]";
+                var requirement = materialized[index];
+                var path = $"mixinto.{propertyName}[{index}]";
                 if (requirement == null)
                 {
-                    result.AddWarning(path, "Null mixinto requirement will be ignored.", "fuse.mixinto.requirement.null");
+                    result.AddWarning(path, $"Null mixinto {kind} will be ignored.", $"fuse.mixinto.{kind}.null");
                     continue;
                 }
 
                 if (string.IsNullOrWhiteSpace(requirement.Id))
                 {
-                    result.AddWarning($"{path}.id", "Mixinto requirement id is blank and will be ignored.", "fuse.mixinto.requirement.id.blank");
+                    result.AddWarning($"{path}.id", $"Mixinto {kind} id is blank and will be ignored.", $"fuse.mixinto.{kind}.id.blank");
                 }
             }
         }
@@ -160,6 +178,111 @@ namespace FUSE.Authoring.Validation
                     result.AddWarning(path, "Server-scoped reload-required settings should be documented for multiplayer profile sharing.", "fuse.settings.server.reloadRequired", pair.Key);
                 }
             }
+        }
+
+        private static void ValidateFeatureRules(ValidationResult result, FuseModDefinition definition)
+        {
+            var rules = definition.FeatureRules;
+            if (rules == null)
+                return;
+            foreach (var pair in rules)
+            {
+                var path = $"featureRules.{pair.Key}";
+                if (string.IsNullOrWhiteSpace(pair.Key))
+                {
+                    result.AddError("featureRules", "Feature rule IDs must not be blank.", "fuse.featureRule.id.blank");
+                    continue;
+                }
+                var rule = pair.Value;
+                if (rule == null)
+                {
+                    result.AddError(path, "Feature rule definition is required.", "fuse.featureRule.required");
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(rule.Setting) ||
+                    !definition.Settings.TryGetValue(rule.Setting, out var setting) || setting == null)
+                {
+                    result.AddError($"{path}.setting", "Feature rule must reference a setting declared by this definition.", "fuse.featureRule.setting.missing", rule.Setting);
+                }
+                else
+                {
+                    var normalizedOperator = (rule.Operator ?? "equals").Trim();
+                    if ((normalizedOperator.Equals("greaterThan", StringComparison.OrdinalIgnoreCase) ||
+                         normalizedOperator.Equals("greaterThanOrEqual", StringComparison.OrdinalIgnoreCase) ||
+                         normalizedOperator.Equals("lessThan", StringComparison.OrdinalIgnoreCase) ||
+                         normalizedOperator.Equals("lessThanOrEqual", StringComparison.OrdinalIgnoreCase)) &&
+                        FuseModSettingsStore.NormalizeType(setting.Type) != "number")
+                    {
+                        result.AddError($"{path}.operator", "Numeric feature-rule comparisons require a number setting.", "fuse.featureRule.operator.type", rule.Operator);
+                    }
+                    if (!setting.ReloadRequired)
+                    {
+                        result.AddWarning($"settings.{rule.Setting}.reloadRequired", "Settings used by feature rules take effect on map reload; set reloadRequired to true so players are told clearly.", "fuse.featureRule.setting.reloadRequired", rule.Setting);
+                    }
+                }
+                if (!ValidFeatureRuleOperators.Contains((rule.Operator ?? "equals").Trim()))
+                    result.AddError($"{path}.operator", "Feature rule operator is not supported.", "fuse.featureRule.operator", rule.Operator);
+                if (rule.Value == null)
+                    result.AddError($"{path}.value", "Feature rule comparison value is required.", "fuse.featureRule.value.required");
+                ValidateFeatureTargets(result, definition, path, rule.Targets);
+            }
+        }
+
+        private static void ValidateFeatureTargets(ValidationResult result, FuseModDefinition definition, string path, FuseFeatureTargets targets)
+        {
+            if (targets == null)
+            {
+                result.AddError($"{path}.targets", "Feature rule targets are required.", "fuse.featureRule.targets.required");
+                return;
+            }
+            var componentIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var industry in definition.Operations.Industries)
+                foreach (var component in industry.Value?.Components ?? new Dictionary<string, FuseIndustryComponent>())
+                    componentIds.Add(industry.Key + "/" + component.Key);
+            var count = 0;
+            count += ValidateFeatureTargetIds(result, path, "trackNodes", targets.TrackNodes, definition.Tracks.Nodes.Keys);
+            count += ValidateFeatureTargetIds(result, path, "trackSegments", targets.TrackSegments, definition.Tracks.Segments.Keys);
+            count += ValidateFeatureTargetIds(result, path, "trackSpans", targets.TrackSpans, definition.Tracks.Spans.Keys);
+            count += ValidateFeatureTargetIds(result, path, "trackAreas", targets.TrackAreas, definition.Tracks.Areas.Keys);
+            count += ValidateFeatureTargetIds(result, path, "loads", targets.Loads, definition.Operations.Loads.Keys);
+            count += ValidateFeatureTargetIds(result, path, "industries", targets.Industries, definition.Operations.Industries.Keys);
+            count += ValidateFeatureTargetIds(result, path, "industryComponents", targets.IndustryComponents, componentIds);
+            count += ValidateFeatureTargetIds(result, path, "loaders", targets.Loaders, definition.Operations.Loaders.Keys);
+            count += ValidateFeatureTargetIds(result, path, "turntables", targets.Turntables, definition.Operations.Turntables.Keys);
+            count += ValidateFeatureTargetIds(result, path, "stations", targets.Stations, definition.Operations.Stations.Keys);
+            count += ValidateFeatureTargetIds(result, path, "scenery", targets.Scenery, definition.World.Scenery.Keys);
+            count += ValidateFeatureTargetIds(result, path, "splineys", targets.Splineys, definition.World.Splineys.Keys);
+            count += ValidateFeatureTargetIds(result, path, "waterSurfaces", targets.WaterSurfaces, definition.World.WaterSurfaces.Keys);
+            count += ValidateFeatureTargetIds(result, path, "telegraphPoles", targets.TelegraphPoles, definition.World.TelegraphPoles.Keys);
+            count += ValidateFeatureTargetIds(result, path, "mapLabels", targets.MapLabels, definition.World.MapLabels.Keys);
+            count += ValidateFeatureTargetIds(result, path, "mapMasks", targets.MapMasks, definition.World.MapMasks.Keys);
+            count += ValidateFeatureTargetIds(result, path, "mapTiles", targets.MapTiles, definition.World.MapTiles.Keys);
+            count += ValidateFeatureTargetIds(result, path, "sceneClones", targets.SceneClones, definition.World.SceneClones.Keys);
+            count += ValidateFeatureTargetIds(result, path, "progressions", targets.Progressions, definition.Progression.Progressions.Keys);
+            count += ValidateFeatureTargetIds(result, path, "mapFeatures", targets.MapFeatures, definition.Progression.MapFeatures.Keys);
+            count += ValidateFeatureTargetIds(result, path, "whistles", targets.Whistles, definition.Audio.Whistles.Keys);
+            count += ValidateFeatureTargetIds(result, path, "horns", targets.Horns, definition.Audio.Horns.Keys);
+            count += ValidateFeatureTargetIds(result, path, "bells", targets.Bells, definition.Audio.Bells.Keys);
+            if (count == 0)
+                result.AddError($"{path}.targets", "Feature rule must target at least one authored object.", "fuse.featureRule.targets.empty");
+        }
+
+        private static int ValidateFeatureTargetIds(ValidationResult result, string path, string property, IEnumerable<string> values, IEnumerable<string> defined)
+        {
+            var ids = (values ?? Array.Empty<string>()).ToArray();
+            var known = new HashSet<string>(defined ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (var index = 0; index < ids.Length; index++)
+            {
+                var id = ids[index];
+                if (string.IsNullOrWhiteSpace(id))
+                    result.AddError($"{path}.targets.{property}[{index}]", "Feature target ID must not be blank.", "fuse.featureRule.target.blank");
+                else if (!known.Contains(id))
+                    result.AddError($"{path}.targets.{property}[{index}]", "Feature target must name an object authored in this definition.", "fuse.featureRule.target.missing", id);
+                else if (!seen.Add(id))
+                    result.AddWarning($"{path}.targets.{property}[{index}]", "Feature target is listed more than once in this rule.", "fuse.featureRule.target.duplicate", id);
+            }
+            return ids.Length;
         }
 
         private static void ValidateTrack(ValidationResult result, FuseTrackDefinition tracks, FuseOperationsDefinition operations)
@@ -546,6 +669,7 @@ namespace FUSE.Authoring.Validation
             {
                 ValidateWorldRemovalTargets(result, "world.removals.scenery", world.Removals.Scenery, world.Scenery.Keys);
                 ValidateWorldRemovalTargets(result, "world.removals.splineys", world.Removals.Splineys, world.Splineys.Keys);
+                ValidateWorldRemovalTargets(result, "world.removals.waterSurfaces", world.Removals.WaterSurfaces, world.WaterSurfaces.Keys);
                 ValidateWorldRemovalTargets(result, "world.removals.telegraphPoles", world.Removals.TelegraphPoles, world.TelegraphPoles.Keys);
                 ValidateWorldRemovalTargets(result, "world.removals.mapLabels", world.Removals.MapLabels, world.MapLabels.Keys);
                 ValidateWorldRemovalTargets(result, "world.removals.mapMasks", world.Removals.MapMasks, world.MapMasks.Keys);
@@ -596,11 +720,52 @@ namespace FUSE.Authoring.Validation
 
             foreach (var spliney in world.Splineys)
             {
-                Required(result, $"world.splineys.{spliney.Key}.type", spliney.Value.Type);
-                if (spliney.Value.Points == null || spliney.Value.Points.Length < 2)
+                var path = $"world.splineys.{spliney.Key}";
+                var value = spliney.Value;
+                if (value == null)
                 {
-                    result.AddError($"world.splineys.{spliney.Key}.points", "Spliney objects require at least two points.", "fuse.spliney.points");
+                    result.AddError(path, "Spliney definition is required.", "fuse.spliney.required");
+                    continue;
                 }
+                Required(result, $"{path}.type", value.Type);
+                if (value.Points == null || value.Points.Length < 2)
+                {
+                    result.AddError($"{path}.points", "Spliney objects require at least two points.", "fuse.spliney.points");
+                }
+                if (IsObjectLine(value.Type))
+                {
+                    if (string.IsNullOrWhiteSpace(value.AssetIdentifier)
+                        == string.IsNullOrWhiteSpace(value.Prefab))
+                    {
+                        result.AddError(
+                            path,
+                            "Object-line splineys require exactly one of assetIdentifier or prefab.",
+                            "fuse.spliney.objectLine.source");
+                    }
+                    if (value.Spacing <= 0f)
+                        result.AddError($"{path}.spacing", "Object-line spacing must be greater than 0.", "fuse.spliney.objectLine.spacing", value.Spacing);
+                    if (value.MaximumInstances < 1 || value.MaximumInstances > 4096)
+                        result.AddError($"{path}.maximumInstances", "Object-line maximumInstances must be between 1 and 4096.", "fuse.spliney.objectLine.maximumInstances", value.MaximumInstances);
+                }
+            }
+
+            foreach (var waterSurface in world.WaterSurfaces)
+            {
+                var path = $"world.waterSurfaces.{waterSurface.Key}";
+                var value = waterSurface.Value;
+                if (value == null)
+                {
+                    result.AddError(path, "Water surface definition is required.", "fuse.waterSurface.required");
+                    continue;
+                }
+                if (value.Points == null || value.Points.Length < 3)
+                    result.AddError($"{path}.points", "Water surfaces require at least three boundary points.", "fuse.waterSurface.points");
+                if (value.TriangleDensity <= 0f || value.TriangleDensity > 1f)
+                    result.AddError($"{path}.triangleDensity", "Triangle density must be greater than 0 and at most 1.", "fuse.waterSurface.triangleDensity", value.TriangleDensity);
+                if (value.MaximumTriangleArea <= 0f)
+                    result.AddError($"{path}.maximumTriangleArea", "Maximum triangle area must be greater than 0.", "fuse.waterSurface.maximumTriangleArea", value.MaximumTriangleArea);
+                if (value.UvScale <= 0f)
+                    result.AddError($"{path}.uvScale", "UV scale must be greater than 0.", "fuse.waterSurface.uvScale", value.UvScale);
             }
 
             foreach (var telegraph in world.TelegraphPoles)
@@ -703,6 +868,14 @@ namespace FUSE.Authoring.Validation
 
                 Required(result, $"world.sceneClones.{sceneClone.Key}.targetPath", sceneClone.Value.TargetPath);
             }
+        }
+
+        private static bool IsObjectLine(string type)
+        {
+            return string.Equals(type, "objectLine", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(type, "object-line", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(type, "fence", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(type, "retainingWall", StringComparison.OrdinalIgnoreCase);
         }
 
         private static void ValidateWorldRemovalTargets(ValidationResult result, string path, IEnumerable<string> removals, IEnumerable<string> definitions)

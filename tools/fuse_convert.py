@@ -310,12 +310,32 @@ CORE_LEGACY_REQUIREMENTS = {
     "railroader",
     "railloader",
     "rail-loader",
+    "railloader.injector",
+    "railloader.interchange",
+    "assetloader",
+    "alinanova21.alinasmapmod",
+    "alinasmapmod",
+    "alinamapmod",
+    "alinanova21.mapeditor",
+    "mapeditor",
+    "mmapeditor",
     "zamu.strangecustoms",
     "strangecustoms",
     "zamu.confusingsupplements",
     "confusingsupplements",
+    "zamu.foryourconvenience",
+    "foryourconvenience",
     "fuse",
 }
+
+
+def is_core_legacy_requirement(package_id: object) -> bool:
+    value = str(package_id or "").strip()
+    lowered = value.lower()
+    while lowered.endswith(".fuse") or lowered.endswith(".rail"):
+        value = value[:-5]
+        lowered = value.lower()
+    return lowered in CORE_LEGACY_REQUIREMENTS
 
 
 def extract_file_reference(value):
@@ -327,10 +347,12 @@ def extract_file_reference(value):
     return match.group(1).strip().strip("\"'")
 
 
-def convert_requirement(item):
+def convert_requirement(item, *, filter_replacement_capabilities=True):
     if isinstance(item, str):
         requirement_id = item.strip()
-        if not requirement_id or requirement_id.lower() in CORE_LEGACY_REQUIREMENTS:
+        if not requirement_id or (
+            filter_replacement_capabilities and is_core_legacy_requirement(requirement_id)
+        ):
             return None
         return {"id": requirement_id}
 
@@ -338,7 +360,9 @@ def convert_requirement(item):
         return None
 
     requirement_id = str(item.get("id") or item.get("Id") or "").strip()
-    if not requirement_id or requirement_id.lower() in CORE_LEGACY_REQUIREMENTS:
+    if not requirement_id or (
+        filter_replacement_capabilities and is_core_legacy_requirement(requirement_id)
+    ):
         return None
 
     result = {
@@ -361,11 +385,23 @@ def convert_requirements(value):
     return result
 
 
+def convert_conflict_references(value):
+    if not isinstance(value, list):
+        return []
+
+    result = []
+    for item in value:
+        converted = convert_requirement(item, filter_replacement_capabilities=False)
+        if converted:
+            result.append(converted)
+    return result
+
+
 def fuse_package_id(requirement_id):
     text = str(requirement_id or "").strip()
     if not text:
         return None
-    if text.lower() in CORE_LEGACY_REQUIREMENTS:
+    if is_core_legacy_requirement(text):
         return None
     if text.lower().endswith(".fuse"):
         return text
@@ -373,12 +409,18 @@ def fuse_package_id(requirement_id):
 
 
 def legacy_load_after(mod_folder):
+    required, load_after = legacy_dependencies(mod_folder)
+    return _dedupe_dependency_ids(required + load_after)
+
+
+def legacy_dependencies(mod_folder):
     path = mod_folder / "Definition.json"
     if not path.exists():
-        return []
+        return [], []
 
     definition = load_json(path)
-    result = []
+    required = []
+    ordered_after = []
 
     requirements = (
         definition.get("requires")
@@ -390,20 +432,73 @@ def legacy_load_after(mod_folder):
     for requirement in convert_requirements(requirements):
         package_id = fuse_package_id(requirement.get("id"))
         if package_id:
-            result.append(package_id)
+            required.append(package_id)
 
     load_after = definition.get("loadAfter") or definition.get("LoadAfter") or []
     if isinstance(load_after, str):
         load_after = [load_after]
     if isinstance(load_after, list):
         for item in load_after:
-            package_id = fuse_package_id(item)
+            item_id = item
+            if isinstance(item, dict):
+                item_id = item.get("id") or item.get("Id")
+            package_id = fuse_package_id(item_id)
             if package_id:
-                result.append(package_id)
+                ordered_after.append(package_id)
 
+    mixintos = definition.get("mixintos") or definition.get("Mixintos")
+    for requirement_id in _mixinto_requirement_ids(mixintos):
+        package_id = fuse_package_id(requirement_id)
+        if package_id:
+            ordered_after.append(package_id)
+
+    return _dedupe_dependency_ids(required), _dedupe_dependency_ids(ordered_after)
+
+
+def legacy_conflicts_with(mod_folder):
+    path = mod_folder / "Definition.json"
+    if not path.exists():
+        return []
+
+    definition = load_json(path)
+    conflicts = definition.get("conflictsWith") or definition.get("ConflictsWith") or []
+    return [
+        clean(
+            {
+                "Id": reference.get("id"),
+                "NotBefore": reference.get("notBefore"),
+                "NotAfter": reference.get("notAfter"),
+            }
+        )
+        for reference in convert_conflict_references(conflicts)
+    ]
+
+
+def _mixinto_requirement_ids(value):
+    if isinstance(value, list):
+        for item in value:
+            yield from _mixinto_requirement_ids(item)
+        return
+
+    if not isinstance(value, dict):
+        return
+
+    requirements = value.get("requires") or value.get("Requires") or []
+    for requirement in convert_requirements(requirements):
+        requirement_id = requirement.get("id")
+        if requirement_id:
+            yield requirement_id
+
+    for key, child in value.items():
+        if key.lower() == "requires":
+            continue
+        yield from _mixinto_requirement_ids(child)
+
+
+def _dedupe_dependency_ids(values):
     seen = set()
     ordered = []
-    for item in result:
+    for item in values:
         key = item.lower()
         if key not in seen:
             seen.add(key)
@@ -420,7 +515,7 @@ def mixinto_metadata(mod_folder):
     metadata = {}
     ordered_files = []
 
-    def record(target, reference, requirements):
+    def record(target, reference, requirements, conflicts_with):
         referenced_file = extract_file_reference(reference)
         if not referenced_file:
             return
@@ -433,11 +528,12 @@ def mixinto_metadata(mod_folder):
             "target": str(target or "").strip(),
             "sourceFile": source_file,
             "requires": requirements or [],
+            "conflictsWith": conflicts_with or [],
         })
 
     def visit_target(target, value):
         if isinstance(value, str):
-            record(target, value, [])
+            record(target, value, [], [])
             return
 
         if isinstance(value, list):
@@ -449,8 +545,11 @@ def mixinto_metadata(mod_folder):
             return
 
         requirements = convert_requirements(value.get("requires") or value.get("Requires"))
+        conflicts_with = convert_conflict_references(
+            value.get("conflictsWith") or value.get("ConflictsWith")
+        )
         reference = value.get("mixinto") or value.get("Mixinto")
-        record(target, reference, requirements)
+        record(target, reference, requirements, conflicts_with)
 
     mixintos = definition.get("mixintos") or definition.get("Mixintos") or {}
     if isinstance(mixintos, dict):
@@ -2226,7 +2325,8 @@ def _emit_track_group_coverage_warning(declared_initial_groups: set[str]) -> Non
 
 def convert_mod(mod_folder, out_folder):
     mod_id, mod_name, version, author = meta(mod_folder)
-    load_after = legacy_load_after(mod_folder)
+    required, load_after = legacy_dependencies(mod_folder)
+    conflicts_with = legacy_conflicts_with(mod_folder)
     mixinto_sources, mixinto_order = mixinto_metadata(mod_folder)
     mixinto_order_index = {name: index for index, name in enumerate(mixinto_order)}
     source_files = sorted(
@@ -2302,7 +2402,10 @@ def convert_mod(mod_folder, out_folder):
         "Version": version,
         "ManagerVersion": "0.27.10",
         "Requirements": ["FUSE"],
-        "LoadAfter": ["FUSE"] + load_after,
+        "LoadAfter": ["FUSE"],
+        "FuseRequires": required,
+        "FuseLoadAfter": load_after,
+        "FuseConflictsWith": conflicts_with,
         "FuseDataFiles": rail_data_files,
     }
     save_json(out_folder / "Info.json", info)
