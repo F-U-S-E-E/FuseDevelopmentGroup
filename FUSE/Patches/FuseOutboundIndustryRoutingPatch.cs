@@ -157,6 +157,7 @@ namespace FUSE.Patches
                     var component = pair.Item1;
                     var componentContext = pair.Item2;
                     if (component == null || component.ProgressionDisabled ||
+                        component.carTypeFilter == null ||
                         !component.carTypeFilter.Matches(car.CarType) ||
                         !TryGetTarget(component, loaded, out var load, out var maxStorage))
                     {

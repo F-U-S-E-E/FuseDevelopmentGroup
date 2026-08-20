@@ -15,6 +15,7 @@ namespace FUSE.Tests.Patches
         [InlineData(2, 0, 2, 1, 5)]
         [InlineData(0, 3, 1, 0, 3)]
         [InlineData(2, 0, int.MaxValue, int.MaxValue, int.MaxValue)]
+        [InlineData(int.MaxValue, int.MinValue, -2, 0, int.MinValue)]
         public void Grace_adjustment_is_identity_configurable_and_overflow_safe(
             int baseDays,
             int minimum,

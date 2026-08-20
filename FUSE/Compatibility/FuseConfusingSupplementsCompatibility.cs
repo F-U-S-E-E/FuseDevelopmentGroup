@@ -79,7 +79,7 @@ namespace FUSE.Compatibility
             {
                 var field = typeof(Car).GetField(
                     "TrainmasterPrefixes",
-                    BindingFlags.Static | BindingFlags.NonPublic);
+                    BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
                 var current = field?.GetValue(null) as string[];
                 if (field == null || current == null)
                 {

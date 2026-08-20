@@ -39,7 +39,7 @@ namespace FUSE.Patches
                 return;
             }
 
-            foreach (var span in spans.Where(span => !IsUsable(span)))
+            foreach (var span in spans.Where(span => span != null && !IsUsable(span)))
             {
                 var id = span?.id ?? "<unknown>";
                 try

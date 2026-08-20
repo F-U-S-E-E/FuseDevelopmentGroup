@@ -34,11 +34,11 @@ namespace FUSE.Patches
     ///
     /// Generic-method caveat: this targets the CONSTRUCTED <c>WeakAction&lt;T&gt;</c>
     /// methods, one instantiation per event type. That is only reliable because
-    /// every lifecycle event is a struct: each value-type instantiation gets its own
+    /// every guarded event is a struct: each value-type instantiation gets its own
     /// unshared method body, so the patch lands on exactly that instantiation.
     /// Reference-type arguments share one canonical body — patching it is unreliable
     /// and can bleed into unrelated instantiations — so a class-typed event must
-    /// never be added to <see cref="LifecycleEventTypeNames"/>; TargetMethods
+    /// never be added to <see cref="GuardedEventTypeNames"/>; TargetMethods
     /// enforces this with an IsValueType guard.
     /// </summary>
     [HarmonyPatch]
@@ -83,20 +83,17 @@ namespace FUSE.Patches
             var targets = new HashSet<MethodBase>();
             foreach (var eventTypeName in GuardedEventTypeNames)
             {
-                // WeakAction<T> and the lifecycle event structs are defined in the
-                // SAME assembly: MvvmLight is compiled into the game's Assembly-CSharp
-                // rather than shipped as a separate DLL, so only the namespace differs
-                // (GalaSoft.MvvmLight.Helpers vs Game.Events), not the assembly. That
-                // makes typeof(WeakAction<>).Assembly.GetType the path actually taken;
-                // AccessTools.TypeByName is a cross-assembly fallback that only engages
-                // if a future game build relocates the events.
+                // WeakAction<T> and the map lifecycle event structs are defined in
+                // Assembly-CSharp, so the assembly lookup resolves those types. The
+                // Railloader debug-report event lives in a separate assembly and
+                // intentionally uses the cross-assembly AccessTools fallback.
                 var eventType = typeof(WeakAction<>).Assembly.GetType(eventTypeName)
                                 ?? AccessTools.TypeByName(eventTypeName);
                 if (eventType == null)
                 {
                     FuseLog.Warning(
-                        $"FUSE messenger isolation could not resolve lifecycle event type '{eventTypeName}'; " +
-                        "listeners for that event stay unguarded. Remaining lifecycle events are still patched.");
+                        $"FUSE messenger isolation could not resolve guarded event type '{eventTypeName}'; " +
+                        "listeners for that event stay unguarded. Remaining guarded events are still patched.");
                     continue;
                 }
 

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Effects.Decals;
 using FUSE.Compatibility;
 using FUSE.Interface.Console;
 using KeyValue.Runtime;
@@ -140,25 +141,50 @@ namespace FUSE.Tests.Compatibility
             Assert.Contains("/fuse.liveries", keywords);
         }
 
-        [Fact]
-        public void RefillerCompatibility_MatchesLoadIdentifiersCaseInsensitively()
+        [Theory]
+        [InlineData("diesel", "DIESEL", true)]
+        [InlineData("diesel", "coal", false)]
+        [InlineData(null, "diesel", false)]
+        [InlineData("diesel", null, false)]
+        [InlineData("", "diesel", false)]
+        [InlineData("diesel", "", false)]
+        public void RefillerCompatibility_MatchesLoadIdentifiersCaseInsensitively(
+            string sourceIdentifier,
+            string targetIdentifier,
+            bool expected)
         {
             var source = new CarDefinition
             {
                 LoadSlots = new List<LoadSlot>
                 {
-                    new LoadSlot { RequiredLoadIdentifier = "diesel" }
+                    new LoadSlot { RequiredLoadIdentifier = sourceIdentifier }
                 }
             };
             var target = new CarDefinition
             {
                 LoadSlots = new List<LoadSlot>
                 {
-                    new LoadSlot { RequiredLoadIdentifier = "DIESEL" }
+                    new LoadSlot { RequiredLoadIdentifier = targetIdentifier }
                 }
             };
 
-            Assert.True(FuseConfusingSupplementsRefillerRuntime.CanReceiveFrom(source, target));
+            Assert.Equal(expected, FuseConfusingSupplementsRefillerRuntime.CanReceiveFrom(source, target));
+        }
+
+        [Fact]
+        public void LabelPrinter_RejectsUnsupportedDecalContentWithoutThrowing()
+        {
+            var supported = FuseConfusingSupplementsLabelPrinterBuilder.TryGetTemplateName(
+                DecalContent.RoadNumber,
+                out var supportedTemplate);
+            var unsupported = FuseConfusingSupplementsLabelPrinterBuilder.TryGetTemplateName(
+                (DecalContent)int.MaxValue,
+                out var unsupportedTemplate);
+
+            Assert.True(supported);
+            Assert.Equal("Number", supportedTemplate);
+            Assert.False(unsupported);
+            Assert.Null(unsupportedTemplate);
         }
 
         [Fact]

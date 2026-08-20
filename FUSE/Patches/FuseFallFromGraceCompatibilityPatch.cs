@@ -43,7 +43,7 @@ namespace FUSE.Patches
     {
         private static void Postfix(UIPanelBuilder builder, Waybill waybill)
         {
-            if (waybill.PaymentOnArrival <= 0)
+            if (waybill == null || waybill.PaymentOnArrival <= 0)
             {
                 return;
             }

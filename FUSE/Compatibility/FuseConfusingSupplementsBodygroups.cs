@@ -69,8 +69,10 @@ namespace FUSE.Compatibility
                 var group = groupEntry.Value;
                 if (string.IsNullOrWhiteSpace(groupId) || group?.Options == null || group.Options.Count == 0)
                 {
+                    var rejectedGroupId = string.IsNullOrWhiteSpace(groupId) ? "<blank>" : groupId;
                     FuseLog.Warning(
-                        $"FUSE ignored an empty legacy bodygroup on '{context.ObjectName ?? "<unknown car>"}'.");
+                        $"FUSE ignored legacy bodygroup '{rejectedGroupId}' on " +
+                        $"'{context.ObjectName ?? "<unknown car>"}' because its id is blank or it has no options.");
                     continue;
                 }
 

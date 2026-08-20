@@ -36,14 +36,17 @@ namespace FUSE.Tests.Patches
         [Fact]
         public void Schedule_policy_rejects_non_positive_interval_without_hanging()
         {
+            var expected = new GameDateTime(2, 8f)
+                .AddingMinutes(FuseSettings.NormalizeInterchangeServiceIntervalMinutes(0))
+                .RoundingMinutes(5);
             var actual = FuseC1CdSchedulePolicy.CalculateNextServiceTime(
                 new GameDateTime(2, 8f),
                 0,
                 0f,
                 24f);
 
-            Assert.Equal(2, actual.Day);
-            Assert.Equal(10.5f, actual.Hours, 3);
+            Assert.Equal(expected.Day, actual.Day);
+            Assert.Equal(expected.Hours, actual.Hours, 3);
         }
 
         [Fact]

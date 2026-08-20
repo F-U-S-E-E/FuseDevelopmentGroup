@@ -168,6 +168,7 @@ namespace FUSE.Interface.Console
             }
             catch (Exception ex)
             {
+                FuseLog.Exception("FUSE livery refresh console command failed.", ex);
                 return "FUSE livery refresh failed: " + ex.GetBaseException().Message;
             }
         }
@@ -187,6 +188,7 @@ namespace FUSE.Interface.Console
             }
             catch (Exception ex)
             {
+                FuseLog.Exception("FUSE livery diagnostics console command failed.", ex);
                 return "FUSE livery diagnostics failed: " + ex.GetBaseException().Message;
             }
         }
@@ -772,8 +774,16 @@ namespace FUSE.Interface.Console
     {
         public string Execute(string[] components)
         {
-            return FuseCompanyStarterPlacementPatch
-                .ResumePendingPlacements();
+            try
+            {
+                return FuseCompanyStarterPlacementPatch
+                    .ResumePendingPlacements();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception("FUSE starters console command failed.", ex);
+                return "FUSE starters failed: " + ex.GetBaseException().Message;
+            }
         }
     }
 

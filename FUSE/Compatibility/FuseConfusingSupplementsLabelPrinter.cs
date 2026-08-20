@@ -50,6 +50,15 @@ namespace FUSE.Compatibility
                 return;
             }
 
+            if (!TryGetTemplateName(component.Content, out var templateName))
+            {
+                FuseLog.Warning(
+                    $"FUSE ignored legacy label-printer '{savedPropertyId}' on " +
+                    $"'{context.ObjectName ?? "<unknown car>"}' because decal content " +
+                    $"'{component.Content}' is unsupported.");
+                return;
+            }
+
             var projector = context.GameObject.AddComponent<DecalProjector>();
             projector.size = component.Size;
             projector.pivot = Vector3.zero;
@@ -59,7 +68,7 @@ namespace FUSE.Compatibility
 
             var helper = context.GameObject.AddComponent<DecalProjectorHelper>();
             helper.decalRenderer = CanvasDecalRenderer.Shared;
-            helper.templateName = TemplateName(component.Content);
+            helper.templateName = templateName;
             if (!string.IsNullOrWhiteSpace(component.ForceColor))
             {
                 var color = ColorHelper.ColorFromHex(component.ForceColor);
@@ -84,16 +93,19 @@ namespace FUSE.Compatibility
                 : string.Empty;
         }
 
-        private static string TemplateName(DecalContent content)
+        internal static bool TryGetTemplateName(DecalContent content, out string templateName)
         {
             switch (content)
             {
                 case DecalContent.RoadNumber:
-                    return "Number";
+                    templateName = "Number";
+                    return true;
                 case DecalContent.Lettering:
-                    return "Tender";
+                    templateName = "Tender";
+                    return true;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(content), content, "Unsupported label-printer content type.");
+                    templateName = null;
+                    return false;
             }
         }
     }

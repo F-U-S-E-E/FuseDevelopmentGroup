@@ -5,7 +5,10 @@ using Model.Ops;
 
 namespace FUSE.Patches
 {
-    [HarmonyPatch(typeof(Interchange), nameof(Interchange.NextAvailableServiceTime))]
+    [HarmonyPatch(
+        typeof(Interchange),
+        nameof(Interchange.NextAvailableServiceTime),
+        new[] { typeof(GameDateTime) })]
     internal static class FuseC1CdNextServiceTimePatch
     {
         private static bool Prefix(GameDateTime now, ref GameDateTime __result)

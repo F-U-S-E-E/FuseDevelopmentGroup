@@ -112,7 +112,6 @@ namespace FUSE.Patches
             }
 
             var queued = 0;
-            var retained = new List<SetupDescriptor.CarPlacement>(source.Length);
             foreach (var placement in source)
             {
                 placementQueue?.Enqueue(placement);
@@ -123,7 +122,8 @@ namespace FUSE.Patches
                     "The local player will choose its track location.");
             }
 
-            setupDescriptor.placements = retained.ToArray();
+            // Every placement moves to the interactive queue, so the setup keeps none.
+            setupDescriptor.placements = Array.Empty<SetupDescriptor.CarPlacement>();
             return queued;
         }
 

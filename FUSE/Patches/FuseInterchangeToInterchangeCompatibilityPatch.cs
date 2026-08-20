@@ -31,7 +31,7 @@ namespace FUSE.Patches
             return Mathf.Clamp(
                 Mathf.RoundToInt(configuredMaximum * contractMultiplier),
                 0,
-                200);
+                FuseSettings.InterchangeToInterchangeMaximumCarsLimit);
         }
     }
 
@@ -198,8 +198,11 @@ namespace FUSE.Patches
     {
         private static MethodBase TargetMethod()
         {
-            return AccessTools.GetDeclaredMethods(typeof(CarInspector))
-                .FirstOrDefault(method => method.Name.IndexOf("ShouldShowIndustry", StringComparison.Ordinal) >= 0);
+            var method = AccessTools.DeclaredMethod(
+                typeof(CarInspector),
+                "ShouldShowIndustry",
+                new[] { typeof(Industry) });
+            return method?.ReturnType == typeof(bool) ? method : null;
         }
 
         private static void Postfix(Industry industry, ref bool __result)

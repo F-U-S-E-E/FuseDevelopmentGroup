@@ -86,6 +86,7 @@ namespace FUSE.Infrastructure
         public const bool DefaultOutboundIndustryIgnoreOrigin = false;
         public const bool DefaultOutboundIndustryPreventBlocking = false;
         public const int DefaultInterchangeToInterchangeMaximumCars = 30;
+        internal const int InterchangeToInterchangeMaximumCarsLimit = 200;
         public const bool DefaultForYourConvenienceShowCabooseIcons = false;
         public const bool DefaultForYourConvenienceShowCarTagMph = false;
         public const bool DefaultForYourConvenienceShowCarTagLoads = false;
@@ -854,7 +855,7 @@ namespace FUSE.Infrastructure
 
         internal static int ClampInterchangeToInterchangeMaximumCars(int value)
         {
-            return Mathf.Clamp(value, 0, 200);
+            return Mathf.Clamp(value, 0, InterchangeToInterchangeMaximumCarsLimit);
         }
 
         public static void SetForYourConvenienceShowCabooseIcons(bool enabled)
