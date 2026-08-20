@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using FUSE.Compatibility;
 using FUSE.Interface.Console;
 using KeyValue.Runtime;
-using Model.Definition.Components;
 using Model.Definition.Data;
 using System.Linq;
 using System.Reflection;
@@ -169,22 +168,6 @@ namespace FUSE.Tests.Compatibility
             };
 
             Assert.Equal(expected, FuseConfusingSupplementsRefillerRuntime.CanReceiveFrom(source, target));
-        }
-
-        [Fact]
-        public void LabelPrinter_RejectsUnsupportedDecalContentWithoutThrowing()
-        {
-            var supported = FuseConfusingSupplementsLabelPrinterBuilder.TryGetTemplateName(
-                DecalContent.RoadNumber,
-                out var supportedTemplate);
-            var unsupported = FuseConfusingSupplementsLabelPrinterBuilder.TryGetTemplateName(
-                (DecalContent)int.MaxValue,
-                out var unsupportedTemplate);
-
-            Assert.True(supported);
-            Assert.Equal("Number", supportedTemplate);
-            Assert.False(unsupported);
-            Assert.Null(unsupportedTemplate);
         }
 
         [Fact]

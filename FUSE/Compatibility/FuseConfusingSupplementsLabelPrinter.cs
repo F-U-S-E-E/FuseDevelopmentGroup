@@ -93,7 +93,7 @@ namespace FUSE.Compatibility
                 : string.Empty;
         }
 
-        internal static bool TryGetTemplateName(DecalContent content, out string templateName)
+        private static bool TryGetTemplateName(DecalContent content, out string templateName)
         {
             switch (content)
             {
