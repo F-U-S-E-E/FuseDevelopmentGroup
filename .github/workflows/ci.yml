@@ -45,6 +45,29 @@ jobs:
           # checkout token persisted in .git/config on the runner.
           persist-credentials: false
 
+      - name: Validate optional-mod release metadata
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File "scripts\Resolve-OptionalModRelease.ps1" `
+            -ConfigPath ".github\optional-mod-releases.json" `
+            -ValidateOnly
+          if ($LASTEXITCODE -ne 0) {
+            throw "Optional-mod release metadata validation failed."
+          }
+
+          $metadata = Get-Content ".github\optional-mod-releases.json" -Raw | ConvertFrom-Json
+          foreach ($mod in @($metadata.mods | Where-Object { $_.promotionReady })) {
+            $tag = "$($mod.tagPrefix)$($mod.version)"
+            powershell -NoProfile -ExecutionPolicy Bypass `
+              -File "scripts\Resolve-OptionalModRelease.ps1" `
+              -ConfigPath ".github\optional-mod-releases.json" `
+              -Tag $tag | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not resolve promotion-ready optional-mod tag '$tag'."
+            }
+          }
+
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:

@@ -1,0 +1,163 @@
+name: Release Optional Mod
+
+on:
+  push:
+    tags:
+      - "tileeditorsuite-v*"
+      - "toolshed-v*"
+      - "narrowgauge-v*"
+
+permissions:
+  contents: write
+
+# A release is a promotion of one immutable asset. Serialize the lane so a
+# rerun and a new optional-mod release cannot race on GitHub/Nexus state.
+concurrency:
+  group: release-optional-mod
+  cancel-in-progress: false
+
+jobs:
+  promote-release:
+    # No game assemblies are needed: the selected source repository has already
+    # built and published the asset. Keep deployment and its Nexus credential on
+    # the organization's self-hosted Railroader runner with the core FUSE lane.
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout FUSE release configuration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve locked optional-mod release
+        id: release
+        shell: powershell
+        env:
+          # Keep the untrusted tag out of the script source. The resolver applies
+          # anchored tag/version checks before writing any value to GITHUB_OUTPUT.
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File "scripts\Resolve-OptionalModRelease.ps1" `
+            -ConfigPath ".github\optional-mod-releases.json" `
+            -Tag $env:TAG_NAME `
+            -GitHubOutputPath $env:GITHUB_OUTPUT
+
+      - name: Preflight Nexus configuration
+        id: nexus
+        shell: powershell
+        env:
+          IS_GA: ${{ steps.release.outputs.is_ga }}
+          NEXUS_VARIABLE: ${{ steps.release.outputs.nexus_variable }}
+          NEXUS_API_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
+          TILE_EDITOR_FILE_GROUP_ID: ${{ vars.NEXUS_TILE_EDITOR_FILE_GROUP_ID }}
+          TOOLSHED_FILE_GROUP_ID: ${{ vars.NEXUS_TOOLSHED_FILE_GROUP_ID }}
+          NARROW_GAUGE_FILE_GROUP_ID: ${{ vars.NEXUS_NARROW_GAUGE_FILE_GROUP_ID }}
+        run: |
+          $fileGroupId = switch ($env:NEXUS_VARIABLE) {
+            "NEXUS_TILE_EDITOR_FILE_GROUP_ID" { $env:TILE_EDITOR_FILE_GROUP_ID }
+            "NEXUS_TOOLSHED_FILE_GROUP_ID" { $env:TOOLSHED_FILE_GROUP_ID }
+            "NEXUS_NARROW_GAUGE_FILE_GROUP_ID" { $env:NARROW_GAUGE_FILE_GROUP_ID }
+            default { throw "Unsupported Nexus variable '$env:NEXUS_VARIABLE'." }
+          }
+
+          if ($env:IS_GA -eq "true") {
+            if ([string]::IsNullOrWhiteSpace($fileGroupId)) {
+              throw "Repository variable $env:NEXUS_VARIABLE is not configured."
+            }
+            if ($fileGroupId -notmatch '^[1-9][0-9]*$') {
+              throw "Repository variable $env:NEXUS_VARIABLE must be a numeric Nexus API Info ID."
+            }
+            if ([string]::IsNullOrWhiteSpace($env:NEXUS_API_KEY)) {
+              throw "Repository secret NEXUSMODS_API_KEY is not configured."
+            }
+          }
+
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          [System.IO.File]::AppendAllText(
+            $env:GITHUB_OUTPUT,
+            "file_group_id=$fileGroupId$([Environment]::NewLine)",
+            $utf8NoBom
+          )
+
+      - name: Download pinned upstream release asset
+        id: package
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ steps.release.outputs.source_repository }}
+          SOURCE_TAG: ${{ steps.release.outputs.source_tag }}
+          ASSET_NAME: ${{ steps.release.outputs.asset_name }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
+            throw "RUNNER_TEMP is not available."
+          }
+          $downloadRoot = Join-Path $env:RUNNER_TEMP "optional-release-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          New-Item -ItemType Directory -Path $downloadRoot | Out-Null
+
+          gh release download $env:SOURCE_TAG `
+            --repo $env:SOURCE_REPOSITORY `
+            --pattern $env:ASSET_NAME `
+            --dir $downloadRoot
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not download '$env:ASSET_NAME' from $env:SOURCE_REPOSITORY release $env:SOURCE_TAG."
+          }
+
+          $archives = @(Get-ChildItem -LiteralPath $downloadRoot -File)
+          if ($archives.Count -ne 1 -or $archives[0].Name -cne $env:ASSET_NAME) {
+            throw "Expected exactly '$env:ASSET_NAME'; downloaded: $($archives.Name -join ', ')."
+          }
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          [System.IO.File]::AppendAllText(
+            $env:GITHUB_OUTPUT,
+            "archive_path=$($archives[0].FullName)$([Environment]::NewLine)",
+            $utf8NoBom
+          )
+
+      - name: Validate package identity, layout, version, and digest
+        shell: powershell
+        env:
+          ARCHIVE_PATH: ${{ steps.package.outputs.archive_path }}
+          MOD_VERSION: ${{ steps.release.outputs.version }}
+          ARCHIVE_PROFILE: ${{ steps.release.outputs.archive_profile }}
+          EXPECTED_SHA256: ${{ steps.release.outputs.asset_sha256 }}
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File "scripts\Validate-OptionalModPackage.ps1" `
+            -ArchivePath $env:ARCHIVE_PATH `
+            -Version $env:MOD_VERSION `
+            -Profile $env:ARCHIVE_PROFILE `
+            -ExpectedSha256 $env:EXPECTED_SHA256
+
+      - name: Create FUSE repository release record
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ steps.release.outputs.release_display_name }} v${{ steps.release.outputs.version }}
+          prerelease: ${{ steps.release.outputs.is_ga != 'true' }}
+          generate_release_notes: false
+          # Optional releases must never take the Latest badge from mod-v*,
+          # because FUSE's update and converter links depend on that release.
+          make_latest: false
+          body: |
+            Nexus promotion of `${{ steps.release.outputs.asset_name }}` from
+            [${{ steps.release.outputs.source_repository }} ${{ steps.release.outputs.source_tag }}](${{ steps.release.outputs.source_release_url }}).
+
+            The upstream ZIP is attached unchanged and was verified against the SHA-256 digest locked in `.github/optional-mod-releases.json`.
+          files: ${{ steps.package.outputs.archive_path }}
+          fail_on_unmatched_files: true
+
+      - name: Upload stable release to Nexus Mods
+        if: ${{ steps.release.outputs.is_ga == 'true' }}
+        uses: Nexus-Mods/upload-action@0bf670d75d46988c176c9bfacc94ca0144e0fe3f # v1.0.0-beta.7
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_group_id: ${{ steps.nexus.outputs.file_group_id }}
+          filename: ${{ steps.package.outputs.archive_path }}
+          version: ${{ steps.release.outputs.version }}
+          display_name: ${{ steps.release.outputs.nexus_display_name }} ${{ steps.release.outputs.version }}
+          description: |
+            Release ${{ steps.release.outputs.version }}.
+            Source release: ${{ steps.release.outputs.source_release_url }}
+          file_category: main
+          archive_existing_file: true

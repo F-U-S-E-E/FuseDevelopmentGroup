@@ -112,7 +112,6 @@ def find_git_executable() -> str | None:
 _FILESYSTEM_WALK_SKIP_DIRS = frozenset(
     name.lower() for name in (
         ".git",
-        ".github",  # only the workflow yml lives here, no .json
         ".vs",
         ".vscode",
         ".idea",
