@@ -16,7 +16,9 @@ namespace FUSE.Runtime.Lifecycle
     /// zero records, toasts, or quarantines, while the enqueue-side counters
     /// kept climbing). Queue-consuming work now lives here, on a host created
     /// unconditionally at plugin load, so a UI refactor can never silently
-    /// starve it again. Cost when idle: two lock-free queue-empty snapshots.
+    /// starve it again. Every driven subsystem has a constant-time idle guard;
+    /// the pump does not enumerate packages, scene objects, or asset stores while
+    /// no work is pending.
     /// </summary>
     internal static class FuseRuntimePump
     {
@@ -83,6 +85,11 @@ namespace FUSE.Runtime.Lifecycle
                 // discovery and Harmony mutation are coalesced and replayed here.
                 FUSE.Patches.FuseThirdPartyGuardInstaller.DrainPending();
 
+                // RailLoader plugins that implement IUpdateHandler expect their
+                // callback every Unity frame. Hosting only OnEnable made those
+                // plugins appear loaded while their runtime behavior stayed inert.
+                FUSE.Loading.FuseLegacyAssemblyHost.UpdateHostedPlugins();
+
                 // TimeSync Mod's ten-minute System.Threading.Timer callback
                 // arrives on a worker thread. Replay it here before it can
                 // touch StateManager and the Unity-backed in-game console.
@@ -113,6 +120,13 @@ namespace FUSE.Runtime.Lifecycle
                 // teleport. Finish only a bounded number of car bodies,
                 // trucks, unique materials, and load models per frame.
                 FUSE.Patches.FuseCarModelCompletionScheduler.Update();
+
+                // EquipmentWindow synchronously enumerates every mounted
+                // Definitions.json the first time it opens. Warm one cold
+                // store per frame so legacy container edit patches (notably
+                // Lego's large definition set) cannot produce a multi-second
+                // buy-menu stall.
+                FUSE.Patches.FuseEquipmentCatalogWarmup.Update();
             }
         }
     }

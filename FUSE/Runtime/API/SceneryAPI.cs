@@ -17,6 +17,8 @@ namespace FUSE.Runtime.API
     public static class SceneryAPI
     {
         private static Transform _fallbackRoot;
+        private static readonly HashSet<string> LoggedUnverifiedLegacyAssets =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, string> LegacySceneryAssetAliases =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -49,7 +51,11 @@ namespace FUSE.Runtime.API
                 "rlw Spen"
             };
 
-        public static SceneryAssetInstance AddScenery(string id, FuseScenery definition, Action onDeferredActivated = null)
+        public static SceneryAssetInstance AddScenery(
+            string id,
+            FuseScenery definition,
+            Action onDeferredActivated = null,
+            bool allowUnverifiedLegacyAsset = false)
         {
             RequireId(id, nameof(id));
             if (definition == null)
@@ -63,12 +69,23 @@ namespace FUSE.Runtime.API
             }
 
             string assetIdentifier;
-            if (!TryResolveAssetIdentifier(id, definition, out assetIdentifier))
+            if (!TryResolveAssetIdentifier(id, definition, out assetIdentifier) &&
+                !(allowUnverifiedLegacyAsset && TryGetLegacyUnverifiedAssetIdentifier(definition, out assetIdentifier)))
             {
                 FuseLog.Warning(
                     $"FUSE skipped AddScenery '{id}' because no valid asset identifier could be resolved " +
                     $"(AssetIdentifier='{definition.AssetIdentifier ?? string.Empty}', Model='{definition.Model ?? string.Empty}').");
                 return null;
+            }
+
+            if (allowUnverifiedLegacyAsset && !IsCachedKnownResolution(assetIdentifier))
+            {
+                if (LoggedUnverifiedLegacyAssets.Add(assetIdentifier))
+                {
+                    FuseLog.Info(
+                        $"FUSE legacy scenery will attempt guarded runtime asset '{assetIdentifier}' (first placement '{id}') even though it is not in the mounted asset-pack index. " +
+                        "A genuine load failure will be reported and quarantined without stopping other scenery or menus.");
+                }
             }
 
             var gameObject = new GameObject(id);
@@ -171,7 +188,10 @@ namespace FUSE.Runtime.API
             public bool IsPriorityStructure;
         }
 
-        public static void UpdateScenery(string id, FuseScenery definition)
+        public static void UpdateScenery(
+            string id,
+            FuseScenery definition,
+            bool allowUnverifiedLegacyAsset = false)
         {
             var scenery = RequireScenery(id);
             if (definition == null)
@@ -180,7 +200,8 @@ namespace FUSE.Runtime.API
             }
 
             string assetIdentifier;
-            if (!TryResolveAssetIdentifier(id, definition, out assetIdentifier))
+            if (!TryResolveAssetIdentifier(id, definition, out assetIdentifier) &&
+                !(allowUnverifiedLegacyAsset && TryGetLegacyUnverifiedAssetIdentifier(definition, out assetIdentifier)))
             {
                 FuseLog.Warning(
                     $"FUSE skipped UpdateScenery '{id}' because no valid asset identifier could be resolved " +
@@ -341,6 +362,26 @@ namespace FUSE.Runtime.API
             return false;
         }
 
+        private static bool TryGetLegacyUnverifiedAssetIdentifier(
+            FuseScenery definition,
+            out string assetIdentifier)
+        {
+            assetIdentifier = NormalizeSceneryIdentifier(definition?.AssetIdentifier);
+            if (!string.IsNullOrWhiteSpace(assetIdentifier))
+            {
+                return true;
+            }
+
+            assetIdentifier = NormalizeSceneryIdentifier(definition?.Model);
+            return !string.IsNullOrWhiteSpace(assetIdentifier);
+        }
+
+        private static bool IsCachedKnownResolution(string candidate)
+        {
+            return TryGetCachedIdentifierResolution(candidate, out var resolved) &&
+                   !string.IsNullOrWhiteSpace(resolved);
+        }
+
         public static bool IsKnownOptionalLegacyAssetReference(FuseScenery definition)
         {
             if (definition == null)
@@ -350,6 +391,31 @@ namespace FUSE.Runtime.API
 
             return IsKnownOptionalLegacyAssetReference(definition.AssetIdentifier) ||
                    IsKnownOptionalLegacyAssetReference(definition.Model);
+        }
+
+        /// <summary>
+        /// Identifies editor-only legacy helper models that must never be
+        /// instantiated in a playable map. Alina's editor used the bright
+        /// yellow turntable measurement plate as an authoring aid; loading it
+        /// as ordinary scenery leaves the yellow "Pac-Man" shape reported at
+        /// Stryker/Bryson and East Whittier.
+        /// </summary>
+        public static bool IsEditorOnlyLegacySceneryReference(FuseScenery definition)
+        {
+            if (definition == null)
+            {
+                return false;
+            }
+
+            return IsEditorOnlyLegacySceneryReference(definition.AssetIdentifier) ||
+                   IsEditorOnlyLegacySceneryReference(definition.Model);
+        }
+
+        private static bool IsEditorOnlyLegacySceneryReference(string value)
+        {
+            var key = NormalizeLegacyAssetKey(value);
+            return string.Equals(key, "TurntableMeasurementTool", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(key, "ALW_ModRes_TurntableMeasurementTool", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool TryResolveKnownSceneryAssetIdentifier(string candidate, out string resolvedIdentifier)

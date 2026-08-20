@@ -449,15 +449,24 @@ namespace FUSE.Loading
                 return true;
             }
 
-            if (CanReplaceSiblingClaim(owner, packageId))
+            var siblingHandoff = CanReplaceSiblingClaim(owner, packageId);
+            var declaredLayeringHandoff = !siblingHandoff && IsExpectedDeclaredLayering(owner, packageId);
+            if (siblingHandoff || declaredLayeringHandoff)
             {
                 var previousOwner = owner;
                 FuseRegistry.Release(kind, id, owner);
                 if (FuseRegistry.TryClaim(kind, id, packageId, out owner))
                 {
-                    FuseLog.Info(
-                        $"FUSE reassigned sibling claim package='{packageId}' operation='claim runtime object' " +
-                        $"kind='{transactionKind}' id='{id}' previousOwner='{previousOwner ?? string.Empty}'.");
+                    if (declaredLayeringHandoff)
+                    {
+                        LogExpectedDeclaredLayering(previousOwner, packageId);
+                    }
+                    else
+                    {
+                        FuseLog.Info(
+                            $"FUSE reassigned sibling claim package='{packageId}' operation='claim runtime object' " +
+                            $"kind='{transactionKind}' id='{id}' previousOwner='{previousOwner ?? string.Empty}'.");
+                    }
                     return true;
                 }
             }
@@ -772,6 +781,10 @@ namespace FUSE.Loading
                     }
 
                     var industryDefinition = industry.Value;
+                    RecordIndustryComponentOwnership(
+                        definition.Id,
+                        industry.Key,
+                        industryDefinition);
                     var exists = IndustryAPI.GetIndustry(industry.Key) != null;
                     // Diagnostic: surface the actual deserialized flag values so we
                     // can match converter intent against what the apply path sees.
@@ -885,6 +898,124 @@ namespace FUSE.Loading
             }
         }
 
+        private static void RecordIndustryComponentOwnership(
+            string packageId,
+            string industryId,
+            FuseIndustry industry)
+        {
+            if (string.IsNullOrWhiteSpace(packageId) || industry?.Components == null)
+            {
+                return;
+            }
+
+            foreach (var component in industry.Components)
+            {
+                var target = BuildIndustryComponentClaimId(industryId, component.Key, component.Value);
+                if (string.IsNullOrWhiteSpace(target))
+                {
+                    continue;
+                }
+
+                var existingOwners = new List<string>();
+                foreach (var owner in FuseRegistry.GetSharedOwners(FuseClaimKind.Industry, target))
+                {
+                    if (string.Equals(owner, packageId, StringComparison.OrdinalIgnoreCase) ||
+                        CanReplaceSiblingClaim(owner, packageId))
+                    {
+                        continue;
+                    }
+
+                    if (IsExpectedDeclaredLayering(owner, packageId))
+                    {
+                        LogExpectedDeclaredLayering(owner, packageId);
+                        continue;
+                    }
+
+                    existingOwners.Add(owner);
+                }
+
+                FuseRegistry.TryClaim(FuseClaimKind.Industry, target, packageId);
+                foreach (var owner in existingOwners)
+                {
+                    var resolution = component.Value?.Remove == true
+                        ? "shared industry component removal overlap; later removal applied"
+                        : "shared industry destination overlap; definitions merged into the same runtime location";
+                    FuseRegistry.RecordPlannedConflict(
+                        FuseClaimKind.Industry,
+                        target,
+                        owner,
+                        packageId,
+                        resolution);
+                }
+            }
+        }
+
+        internal static string BuildIndustryComponentClaimId(
+            string industryId,
+            string componentId,
+            FuseIndustryComponent component)
+        {
+            var directId = $"component:{industryId ?? string.Empty}.{componentId ?? string.Empty}";
+            if (component == null || component.Remove)
+            {
+                return directId;
+            }
+
+            var spanIds = EnumerateComponentClaimSpanIds(component)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(id => id.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var name = component.Name?.Trim();
+            if (spanIds.Length == 0 || string.IsNullOrWhiteSpace(name))
+            {
+                return directId;
+            }
+
+            return
+                $"destination:type={component.Type?.Trim() ?? "component"};" +
+                $"name={name};spans={string.Join(",", spanIds)}";
+        }
+
+        private static IEnumerable<string> EnumerateComponentClaimSpanIds(
+            FuseIndustryComponent component)
+        {
+            if (component?.TrackSpanIds != null)
+            {
+                foreach (var id in component.TrackSpanIds)
+                {
+                    yield return id;
+                }
+            }
+
+            var patch = component?.TrackSpanPatch;
+            if (patch == null)
+            {
+                yield break;
+            }
+
+            foreach (var values in new[]
+            {
+                patch.Replace,
+                patch.Add,
+                patch.Append,
+                patch.Prepend,
+                patch.Insert
+            })
+            {
+                if (values == null)
+                {
+                    continue;
+                }
+
+                foreach (var id in values)
+                {
+                    yield return id;
+                }
+            }
+        }
+
         private static bool LoaderDependenciesAvailable(FuseLoader loader, out string reason)
         {
             reason = string.Empty;
@@ -945,6 +1076,16 @@ namespace FUSE.Loading
             {
                 foreach (var scenery in definition.World.Scenery)
                 {
+                    var allowUnverifiedLegacyAsset = false;
+                    if (SceneryAPI.IsEditorOnlyLegacySceneryReference(scenery.Value))
+                    {
+                        FuseLog.Info(
+                            $"FUSE omitted editor-only turntable measurement helper '{scenery.Key}' " +
+                            $"from runtime package '{definition.Id}'.");
+                        transaction.Skipped("scenery", scenery.Key, "editor-only legacy measurement helper");
+                        continue;
+                    }
+
                     if (!SceneryAPI.TryResolveAssetIdentifier(scenery.Key, scenery.Value, out _))
                     {
                         if (SceneryAPI.IsKnownOptionalLegacyAssetReference(scenery.Value))
@@ -956,17 +1097,25 @@ namespace FUSE.Loading
                             continue;
                         }
 
-                        FuseLog.Warning(
-                            $"FUSE skipping scenery '{scenery.Key}' in package '{definition.Id}': " +
-                            $"AssetIdentifier='{scenery.Value?.AssetIdentifier ?? string.Empty}', " +
-                            $"Model='{scenery.Value?.Model ?? string.Empty}' did not resolve to a known PrefabStore asset.");
-                        FuseLoadReport.RecordUnknownSceneryAsset(
-                            definition.Id,
-                            scenery.Key,
-                            scenery.Value?.AssetIdentifier,
-                            scenery.Value?.Model);
-                        transaction.Skipped("scenery", scenery.Key, "unknown asset identifier");
-                        continue;
+                        if (!string.IsNullOrWhiteSpace(definitionPath) &&
+                            definitionPath.StartsWith("legacy://", StringComparison.OrdinalIgnoreCase))
+                        {
+                            allowUnverifiedLegacyAsset = true;
+                        }
+                        else
+                        {
+                            FuseLog.Warning(
+                                $"FUSE skipping scenery '{scenery.Key}' in package '{definition.Id}': " +
+                                $"AssetIdentifier='{scenery.Value?.AssetIdentifier ?? string.Empty}', " +
+                                $"Model='{scenery.Value?.Model ?? string.Empty}' did not resolve to a known PrefabStore asset.");
+                            FuseLoadReport.RecordUnknownSceneryAsset(
+                                definition.Id,
+                                scenery.Key,
+                                scenery.Value?.AssetIdentifier,
+                                scenery.Value?.Model);
+                            transaction.Skipped("scenery", scenery.Key, "unknown asset identifier");
+                            continue;
+                        }
                     }
 
                     if (!TryClaimOrSkip(FuseClaimKind.Scenery, "scenery", scenery.Key, definition.Id, transaction))
@@ -981,6 +1130,7 @@ namespace FUSE.Loading
                                      new FuseSceneryEntity(scenery.Key, definition.Id);
                         entity.InitializeIdentity(scenery.Key, definition.Id);
                         entity.BindDefinition(definition, definitionPath);
+                        entity.AllowUnverifiedLegacyAsset = allowUnverifiedLegacyAsset;
                         entity.LoadDefinition(scenery.Value);
                         if (!FuseAuthoringPersistenceService.ApplyPackageEntityToRuntime(entity))
                         {
@@ -1043,6 +1193,21 @@ namespace FUSE.Loading
                         {
                             SplineyAPI.AddSpliney(spliney.Key, spliney.Value);
                         }
+                    });
+                }
+            }
+
+            if (definition.World.WaterSurfaces != null)
+            {
+                foreach (var waterSurface in definition.World.WaterSurfaces)
+                {
+                    var exists = WaterSurfaceAPI.GetWaterSurface(waterSurface.Key) != null;
+                    transaction.TryApply("water surface", waterSurface.Key, exists, () =>
+                    {
+                        if (exists)
+                            WaterSurfaceAPI.UpdateWaterSurface(waterSurface.Key, waterSurface.Value);
+                        else
+                            WaterSurfaceAPI.AddWaterSurface(waterSurface.Key, waterSurface.Value);
                     });
                 }
             }
@@ -1158,6 +1323,7 @@ namespace FUSE.Loading
             RemoveWorldItems("scene clone", removals.SceneClones, SceneCloneAPI.TryRemoveSceneClone, transaction);
             RemoveWorldItems("scenery", removals.Scenery, SceneryAPI.TryRemoveScenery, transaction);
             RemoveWorldItems("spliney", removals.Splineys, SplineyAPI.TryRemoveSpliney, transaction);
+            RemoveWorldItems("water surface", removals.WaterSurfaces, WaterSurfaceAPI.TryRemoveWaterSurface, transaction);
             RemoveWorldItems("telegraph pole set", removals.TelegraphPoles, MapAPI.TryRemoveTelegraphPoles, transaction);
             RemoveWorldItems("map label", removals.MapLabels, MapAPI.TryRemoveMapLabel, transaction);
             RemoveWorldItems("map mask", removals.MapMasks, MapAPI.TryRemoveMapMask, transaction);

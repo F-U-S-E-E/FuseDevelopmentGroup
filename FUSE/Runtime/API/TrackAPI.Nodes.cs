@@ -9,6 +9,7 @@ using FUSE.Authoring.Data;
 using FUSE.Authoring.Data.Common;
 using FUSE.Runtime.Events;
 using FUSE.Infrastructure;
+using FUSE.Compatibility;
 using Track;
 using Track.Signals;
 using UnityEngine;
@@ -49,6 +50,7 @@ namespace FUSE.Runtime.API
             }
 
             var node = AddNode(id, definition.Position, definition.Rotation, definition.FlipSwitchStand, definition.GroupId);
+            RailroaderTrackContract.SetNodeIsDiamond(node, definition.IsDiamond);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackNode, id, definition);
             return node;
         }
@@ -78,6 +80,7 @@ namespace FUSE.Runtime.API
             }
 
             UpdateNode(id, definition.Position, definition.Rotation, definition.FlipSwitchStand);
+            RailroaderTrackContract.SetNodeIsDiamond(RequireNode(id), definition.IsDiamond);
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackNode, id, definition);
         }
 
@@ -126,6 +129,7 @@ namespace FUSE.Runtime.API
             definition.Position = node.transform.localPosition;
             definition.Rotation = node.transform.localEulerAngles;
             definition.FlipSwitchStand = node.flipSwitchStand;
+            definition.IsDiamond = RailroaderTrackContract.GetNodeIsDiamond(node);
             return definition;
         }
     }

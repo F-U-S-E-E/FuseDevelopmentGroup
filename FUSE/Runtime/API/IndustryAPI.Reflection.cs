@@ -105,6 +105,16 @@ namespace FUSE.Runtime.API
                 return typeof(FusePay4ResourceIndustryComponent);
             }
 
+            if (string.Equals(normalized, "ConfusingSupplements.IndustryComponents.CaptiveConversionLoader", StringComparison.OrdinalIgnoreCase))
+            {
+                return typeof(FuseCaptiveConversionLoader);
+            }
+
+            if (string.Equals(normalized, "ConfusingSupplements.IndustryComponents.CaptiveConversionUnloader", StringComparison.OrdinalIgnoreCase))
+            {
+                return typeof(FuseCaptiveConversionUnloader);
+            }
+
             var reflected = TryResolveIndustryComponentType(normalized);
             if (reflected == null && !string.Equals(normalized, type, StringComparison.OrdinalIgnoreCase))
             {
@@ -225,6 +235,21 @@ namespace FUSE.Runtime.API
             if (component is FuseLegacyPlaceholderIndustryComponent)
             {
                 return LegacyEmptyComponentType;
+            }
+
+            if (component is FuseCaptiveConversionLoader)
+            {
+                return "ConfusingSupplements.IndustryComponents.CaptiveConversionLoader";
+            }
+
+            if (component is FuseCaptiveConversionUnloader)
+            {
+                return "ConfusingSupplements.IndustryComponents.CaptiveConversionUnloader";
+            }
+
+            if (component is FusePay4ResourceIndustryComponent)
+            {
+                return "ConfusingSupplements.IndustryComponents.Pay4Resource";
             }
 
             return component.GetType().FullName;
@@ -515,6 +540,14 @@ namespace FUSE.Runtime.API
                     continue;
                 }
 
+                if (!IsUsableTrackSpan(span))
+                {
+                    FuseLog.Warning(
+                        $"FUSE track span '{id}' has a missing or invalid endpoint after graph conflict resolution; " +
+                        "it was omitted from the industry component so opening operations UI cannot crash.");
+                    continue;
+                }
+
                 spans.Add(span);
             }
 
@@ -537,7 +570,7 @@ namespace FUSE.Runtime.API
             var result = new List<TrackSpan>();
             foreach (var span in existing.Concat(additions))
             {
-                if (span == null)
+                if (!IsUsableTrackSpan(span))
                 {
                     continue;
                 }
@@ -550,6 +583,23 @@ namespace FUSE.Runtime.API
             }
 
             return result.ToArray();
+        }
+
+        internal static bool IsUsableTrackSpan(TrackSpan span)
+        {
+            if (span == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return span.IsValid;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static Load ResolveLoad(string loadId)

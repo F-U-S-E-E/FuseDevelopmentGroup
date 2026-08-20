@@ -8,7 +8,8 @@ using UnityEngine;
 namespace FUSE.Compatibility
 {
     // Detects when the legacy Railloader install is left in place alongside
-    // FUSE. The bad state is Railloader.dll and/or Railloader.Interchange.dll
+    // FUSE. The bad state is Railloader.dll, Railloader.Injector.dll, and/or
+    // Railloader.Interchange.dll
     // sitting in Railroader_Data\Managed\: Unity's assembly loader resolves
     // them before FuseLegacySupportAssemblyShim's AssemblyResolve hook fires,
     // so legacy mod IL binds to the real old-loader types instead of FUSE's
@@ -17,7 +18,9 @@ namespace FUSE.Compatibility
     internal static class FuseLegacyInstallDetector
     {
         private const string LegacyRailloaderDll = "Railloader.dll";
+        private const string LegacyInjectorDll = "Railloader.Injector.dll";
         private const string LegacyInterchangeDll = "Railloader.Interchange.dll";
+        private const string LegacyStrangeCustomsDll = "StrangeCustoms.dll";
 
         internal static IReadOnlyList<string> DetectConflictingFiles()
         {
@@ -39,7 +42,9 @@ namespace FUSE.Compatibility
 
                 var managedDir = Path.Combine(dataPath, "Managed");
                 AddIfFileExists(results, Path.Combine(managedDir, LegacyRailloaderDll));
+                AddIfFileExists(results, Path.Combine(managedDir, LegacyInjectorDll));
                 AddIfFileExists(results, Path.Combine(managedDir, LegacyInterchangeDll));
+                AddIfFileExists(results, Path.Combine(managedDir, LegacyStrangeCustomsDll));
             }
             catch (Exception ex)
             {
@@ -120,17 +125,9 @@ namespace FUSE.Compatibility
             }
         }
 
-        private static bool IsLegacyLoaderAssemblyName(string assemblyName)
+        internal static bool IsLegacyLoaderAssemblyName(string assemblyName)
         {
             if (string.IsNullOrWhiteSpace(assemblyName))
-            {
-                return false;
-            }
-
-            // Railloader.Injector is the Doorstop-style native-side hook that
-            // ships with the standard FUSE-compatible install — it is NOT the
-            // legacy managed loader API and must not be flagged as a conflict.
-            if (assemblyName.Equals("Railloader.Injector", StringComparison.OrdinalIgnoreCase))
             {
                 return false;
             }

@@ -215,6 +215,12 @@ namespace FUSE.Infrastructure
 
         private static void WriteFile(string level, string message)
         {
+            var timestamp = DateTime.Now;
+            var normalizedMessage = message ?? string.Empty;
+            var line = $"[{timestamp:HH:mm:ss.fff}] [{level}] {normalizedMessage}";
+            FuseLiveLogBuffer.Append(timestamp, level, normalizedMessage);
+            FuseLiveConsole.WriteLine(line);
+
             if (!_fileLoggingAvailable)
             {
                 return;
@@ -232,7 +238,7 @@ namespace FUSE.Infrastructure
             // no file I/O runs on the caller.
             try
             {
-                queue.Add($"[{DateTime.Now:HH:mm:ss.fff}] [{level}] {message ?? string.Empty}");
+                queue.Add(line);
             }
             catch (InvalidOperationException)
             {

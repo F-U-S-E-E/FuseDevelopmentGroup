@@ -1,7 +1,12 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.Serialization;
+using FUSE.Infrastructure;
+using FUSE.Authoring.Data;
+using FUSE.Loading;
+using FUSE.Runtime.API;
 using Helpers;
 using Model;
 using Model.Definition.Data;
@@ -14,6 +19,7 @@ using Track;
 using UI.Builder;
 using UI.Console;
 using UnityEngine;
+using UnityEngine.Networking;
 
 // Interop declarations matching the StrangeCustoms public-API shape that the
 // old-loader plugin ecosystem (DKW, ModularScenery, Alina's Map Mod, etc.) was
@@ -69,10 +75,10 @@ namespace StrangeCustoms
     }
 
     /// <summary>
-    /// File-cache shape that legacy plugins use to fetch external assets at
-    /// runtime. The shim declares the surface so plugin IL JITs cleanly;
-    /// FUSE's asset pipeline does not populate <see cref="Instance"/>, so any
-    /// runtime call goes through the no-op bodies below.
+    /// FUSE-owned implementation of the loose-file cache used by legacy
+    /// Strange Customs consumers. It preserves the public ABI while keeping
+    /// cache ownership, loading, invalidation, and callback containment inside
+    /// FUSE.
     /// </summary>
     [Obsolete(LegacyShim.Message)]
     public class FileCache : MonoBehaviour
@@ -97,7 +103,8 @@ namespace StrangeCustoms
                 {
                     try
                     {
-                        return File.GetLastWriteTime(FileName) >= LastUpdate;
+                        return !File.Exists(FileName)
+                               || File.GetLastWriteTimeUtc(FileName) > LastUpdate;
                     }
                     catch
                     {
@@ -135,12 +142,31 @@ namespace StrangeCustoms
             public void Set(T value)
             {
                 Value = value;
-                LastUpdate = DateTime.UtcNow;
+                LastUpdate = File.Exists(FileName)
+                    ? File.GetLastWriteTimeUtc(FileName)
+                    : DateTime.UtcNow;
                 IsValid = true;
                 IsLoading = false;
                 var handler = Loaded;
                 Loaded = null;
-                handler?.Invoke(value);
+                if (handler == null)
+                {
+                    return;
+                }
+
+                foreach (Action<T> callback in handler.GetInvocationList())
+                {
+                    try
+                    {
+                        callback(value);
+                    }
+                    catch (Exception ex)
+                    {
+                        FuseLog.Warning(
+                            $"FUSE contained a Strange Customs file-cache callback error for '{FileName}': " +
+                            ex.GetBaseException().Message);
+                    }
+                }
             }
 
             /// <summary>
@@ -192,31 +218,294 @@ namespace StrangeCustoms
 
         public static FileCache Instance { get; private set; }
 
-        /// <summary>
-        /// Retains the legacy audio-load signature so plugin IL resolves; FUSE does not run that cache pipeline.
-        /// </summary>
-        public void LoadAudioClip(string fileName, Action<AudioClip> callback)
+        private readonly Dictionary<string, CacheEntry> _entries =
+            new Dictionary<string, CacheEntry>(StringComparer.OrdinalIgnoreCase);
+
+        internal static void EnsureInstance()
         {
-            // FUSE does not run the legacy file-cache pipeline. The callback is
-            // never invoked under FUSE; the method exists for interop only.
+            if (Instance != null)
+            {
+                return;
+            }
+
+            var host = new GameObject("FUSE Strange Customs File Cache");
+            UnityEngine.Object.DontDestroyOnLoad(host);
+            Instance = host.AddComponent<FileCache>();
+        }
+
+        internal static void Shutdown()
+        {
+            if (Instance == null)
+            {
+                return;
+            }
+
+            var host = Instance.gameObject;
+            Instance.Clear();
+            Instance = null;
+            if (host != null)
+            {
+                UnityEngine.Object.Destroy(host);
+            }
+        }
+
+        private void Awake()
+        {
+            if (Instance != null && Instance != this)
+            {
+                UnityEngine.Object.Destroy(gameObject);
+                return;
+            }
+
+            Instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this)
+            {
+                Clear();
+                Instance = null;
+            }
         }
 
         /// <summary>
-        /// Retains the legacy texture-load signature and reports an uncached miss because FUSE does not service it.
+        /// Loads a loose audio file asynchronously and invokes every waiting
+        /// callback exactly once, including failures (with a null clip).
+        /// </summary>
+        public void LoadAudioClip(string fileName, Action<AudioClip> callback)
+        {
+            var fullPath = NormalizePath(fileName);
+            if (fullPath.Length == 0)
+            {
+                InvokeSafely(callback, null, fileName);
+                return;
+            }
+
+            if (_entries.TryGetValue(fullPath, out var rawEntry)
+                && rawEntry is CacheEntry<AudioClip> cached)
+            {
+                if (cached.IsValid && !cached.IsExpired && cached.Value != null)
+                {
+                    InvokeSafely(callback, cached.Value, fullPath);
+                    return;
+                }
+
+                cached.Register(callback);
+                if (cached.IsLoading)
+                {
+                    return;
+                }
+
+                DestroyCachedObject(cached.Value);
+                cached.Invalidate();
+                cached.IsLoading = true;
+                StartCoroutine(LoadAudioClipCoroutine(fullPath, cached));
+                return;
+            }
+
+            var entry = new CacheEntry<AudioClip>(fullPath)
+            {
+                IsLoading = true
+            };
+            entry.Register(callback);
+            _entries[fullPath] = entry;
+            StartCoroutine(LoadAudioClipCoroutine(fullPath, entry));
+        }
+
+        /// <summary>
+        /// Loads a PNG/JPEG texture immediately, reusing it until the source
+        /// file changes.
         /// </summary>
         public Texture2D LoadTexture(string fileName, out bool wasCached)
         {
             wasCached = false;
-            return null;
+            var fullPath = NormalizePath(fileName);
+            if (fullPath.Length == 0)
+            {
+                return null;
+            }
+
+            CacheEntry<Texture2D> cached = null;
+            if (_entries.TryGetValue(fullPath, out var rawEntry)
+                && (cached = rawEntry as CacheEntry<Texture2D>) != null)
+            {
+                if (cached.IsValid && !cached.IsExpired && cached.Value != null)
+                {
+                    wasCached = true;
+                    return cached.Value;
+                }
+
+                DestroyCachedObject(cached.Value);
+                cached.Invalidate();
+            }
+
+            if (!File.Exists(fullPath))
+            {
+                FuseLog.Warning(
+                    $"FUSE Strange Customs file cache could not find texture '{fullPath}'.");
+                return null;
+            }
+
+            try
+            {
+                var texture = new Texture2D(2, 2, TextureFormat.RGBA32, true)
+                {
+                    name = Path.GetFileNameWithoutExtension(fullPath)
+                };
+                if (!ImageConversion.LoadImage(texture, File.ReadAllBytes(fullPath)))
+                {
+                    UnityEngine.Object.Destroy(texture);
+                    FuseLog.Warning(
+                        $"FUSE Strange Customs file cache could not decode texture '{fullPath}'.");
+                    return null;
+                }
+
+                var entry = cached ?? new CacheEntry<Texture2D>(fullPath);
+                entry.Set(texture);
+                _entries[fullPath] = entry;
+                return texture;
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE Strange Customs file cache could not load texture '{fullPath}': " +
+                    ex.GetBaseException().Message);
+                return null;
+            }
         }
 
         /// <summary>
-        /// Retains the legacy cache-lookup signature and reports a miss because FUSE does not populate this cache.
+        /// Returns the typed cache entry when one exists. Callers can inspect
+        /// validity/loading state or register for an in-flight completion.
         /// </summary>
         public bool TryGetValue<T>(string fileName, out CacheEntry<T> value)
         {
+            var fullPath = NormalizePath(fileName);
+            if (fullPath.Length > 0
+                && _entries.TryGetValue(fullPath, out var entry)
+                && entry is CacheEntry<T> typed)
+            {
+                value = typed;
+                return true;
+            }
+
             value = null;
             return false;
+        }
+
+        private IEnumerator LoadAudioClipCoroutine(
+            string fullPath,
+            CacheEntry<AudioClip> entry)
+        {
+            AudioClip clip = null;
+            if (!File.Exists(fullPath))
+            {
+                FuseLog.Warning(
+                    $"FUSE Strange Customs file cache could not find audio '{fullPath}'.");
+            }
+            else
+            {
+                var uri = new Uri(fullPath).AbsoluteUri;
+                using (var request = UnityWebRequestMultimedia.GetAudioClip(
+                           uri,
+                           AudioTypeForPath(fullPath)))
+                {
+                    yield return request.SendWebRequest();
+                    if (request.isNetworkError || request.isHttpError)
+                    {
+                        FuseLog.Warning(
+                            $"FUSE Strange Customs file cache could not load audio '{fullPath}': " +
+                            request.error);
+                    }
+                    else
+                    {
+                        clip = DownloadHandlerAudioClip.GetContent(request);
+                        if (clip != null)
+                        {
+                            clip.name = Path.GetFileNameWithoutExtension(fullPath);
+                        }
+                    }
+                }
+            }
+
+            entry.Set(clip);
+            if (clip == null)
+            {
+                entry.Invalidate();
+            }
+        }
+
+        private static AudioType AudioTypeForPath(string path)
+        {
+            switch ((Path.GetExtension(path) ?? string.Empty).ToLowerInvariant())
+            {
+                case ".mp3": return AudioType.MPEG;
+                case ".ogg": return AudioType.OGGVORBIS;
+                case ".wav": return AudioType.WAV;
+                case ".aif":
+                case ".aiff": return AudioType.AIFF;
+                default: return AudioType.UNKNOWN;
+            }
+        }
+
+        internal static string NormalizePath(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return Path.GetFullPath(fileName.Trim());
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static void InvokeSafely<T>(
+            Action<T> callback,
+            T value,
+            string fileName)
+        {
+            if (callback == null)
+            {
+                return;
+            }
+
+            try
+            {
+                callback(value);
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE contained a Strange Customs file-cache callback error for '{fileName}': " +
+                    ex.GetBaseException().Message);
+            }
+        }
+
+        private void Clear()
+        {
+            foreach (var entry in _entries.Values)
+            {
+                var valueProperty = entry?.GetType().GetProperty("Value");
+                DestroyCachedObject(valueProperty?.GetValue(entry, null) as UnityEngine.Object);
+                entry?.Invalidate();
+            }
+
+            _entries.Clear();
+        }
+
+        private static void DestroyCachedObject(UnityEngine.Object value)
+        {
+            if (value != null)
+            {
+                UnityEngine.Object.Destroy(value);
+            }
         }
     }
 
@@ -242,9 +531,8 @@ namespace StrangeCustoms
     }
 
     /// <summary>
-    /// Default spliney builder for "flowy" splines. FUSE does not own the
-    /// rendering, so the build method returns null; the type exists so plugin
-    /// IL that references it JITs.
+    /// Default legacy flowy-spline builder backed by FUSE's native spliney
+    /// conversion and runtime API.
     /// </summary>
     [Obsolete(LegacyShim.Message)]
     public class FlowyThingBuilder : ISplineyBuilder
@@ -254,7 +542,50 @@ namespace StrangeCustoms
         /// </summary>
         public GameObject BuildSpliney(string id, Transform parentTransform, JObject data)
         {
-            return null;
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                throw new ArgumentException("A spliney id is required.", nameof(id));
+            }
+
+            var definition = ConvertDefinition(data);
+            GameObject root;
+            if (SplineyAPI.GetSpliney(id) == null)
+            {
+                root = SplineyAPI.AddSpliney(id, definition);
+            }
+            else
+            {
+                SplineyAPI.UpdateSpliney(id, definition);
+                root = SplineyAPI.GetSpliney(id);
+            }
+
+            if (root != null
+                && parentTransform != null
+                && root.transform.parent != parentTransform)
+            {
+                root.transform.SetParent(parentTransform, true);
+            }
+
+            return root;
+        }
+
+        internal static FuseSpliney ConvertDefinition(JObject data)
+        {
+            if (data == null)
+            {
+                throw new ArgumentNullException(nameof(data));
+            }
+
+            var converted = FuseLegacyDataConverter
+                .ConvertSplineyForCompatibility(data);
+            var definition = converted.ToObject<FuseSpliney>();
+            if (definition == null)
+            {
+                throw new InvalidOperationException(
+                    "The legacy flowy-spline definition could not be converted.");
+            }
+
+            return definition;
         }
     }
 
@@ -585,12 +916,18 @@ namespace StrangeCustoms.Tracks
 
             var upper = trackSpan.upper;
             var lower = trackSpan.lower;
-            Upper = upper.HasValue
+            Upper = upper.HasValue && upper.Value.IsValid
                 ? new SerializedLocation(upper.Value.Serializable())
                 : null;
-            Lower = lower.HasValue
+            Lower = lower.HasValue && lower.Value.IsValid
                 ? new SerializedLocation(lower.Value.Serializable())
                 : null;
+            if (Upper == null || Lower == null)
+            {
+                FuseLog.Warning(
+                    $"FUSE omitted invalid endpoint data while projecting legacy track span " +
+                    $"'{trackSpan.id ?? "<unknown>"}'. A conflicting package removed one of its segments.");
+            }
         }
 
         /// <summary>

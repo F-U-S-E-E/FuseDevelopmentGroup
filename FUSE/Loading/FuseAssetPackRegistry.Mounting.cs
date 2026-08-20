@@ -312,6 +312,14 @@ namespace FUSE.Loading
             // modern saves on the modern bundle.
             var scAssetPacks = Path.Combine(packagePath, "SCAssetPacks");
 
+            // AssetLoader also accepts Catalog.json directly in the UMM
+            // package root and registers it under the package id. This shape
+            // is uncommon but is part of its observable contract.
+            if (IsAssetPackFolder(packagePath))
+            {
+                yield return packagePath;
+            }
+
             foreach (var folder in EnumerateRootAssetPackFolders(packagePath, scAssetPacks))
             {
                 yield return folder;
@@ -385,8 +393,14 @@ namespace FUSE.Loading
 
         private static bool IsAssetPackFolder(string folderPath)
         {
-            return File.Exists(Path.Combine(folderPath, "Bundle")) &&
-                   File.Exists(Path.Combine(folderPath, "Catalog.json"));
+            // AssetLoader's public wire contract is Catalog.json, not Bundle.
+            // Several real rolling-stock packages publish definitions-only or
+            // catalog-plus-definitions stores whose assets live in another pack.
+            // Requiring Bundle here made FUSE silently skip those stores while
+            // still appearing to replace AssetLoader. If a catalog actually
+            // references a missing local bundle, the normal per-asset load and
+            // bundle audit paths report that problem when the asset is requested.
+            return File.Exists(Path.Combine(folderPath, "Catalog.json"));
         }
 
         private static int MountAssetPackFolder(string sourcePath)

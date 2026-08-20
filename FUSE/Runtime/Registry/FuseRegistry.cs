@@ -296,7 +296,62 @@ namespace FUSE.Runtime.Registry
             }
         }
 
+        /// <summary>
+        /// Records a conflict discovered while constructing a merged final
+        /// state, before either package can create a normal runtime claim. This
+        /// is used for delete-vs-definition collisions where the later delete
+        /// removes the earlier package from the plan entirely.
+        /// </summary>
+        internal static void RecordPlannedConflict(
+            FuseClaimKind kind,
+            string id,
+            string ownerPackageId,
+            string attemptedPackageId,
+            string resolution)
+        {
+            if (string.IsNullOrWhiteSpace(id) ||
+                string.IsNullOrWhiteSpace(ownerPackageId) ||
+                string.IsNullOrWhiteSpace(attemptedPackageId) ||
+                string.Equals(ownerPackageId, attemptedPackageId, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            lock (Sync)
+            {
+                if (ConflictHistory.Any(existing =>
+                    existing.Kind == kind &&
+                    string.Equals(existing.Id, id, StringComparison.OrdinalIgnoreCase) &&
+                    ((string.Equals(existing.OwnerPackageId, ownerPackageId, StringComparison.OrdinalIgnoreCase) &&
+                      string.Equals(existing.AttemptedPackageId, attemptedPackageId, StringComparison.OrdinalIgnoreCase)) ||
+                     (string.Equals(existing.OwnerPackageId, attemptedPackageId, StringComparison.OrdinalIgnoreCase) &&
+                      string.Equals(existing.AttemptedPackageId, ownerPackageId, StringComparison.OrdinalIgnoreCase)))))
+                {
+                    return;
+                }
+
+                RecordConflictLocked(
+                    kind,
+                    id,
+                    ownerPackageId,
+                    attemptedPackageId,
+                    string.IsNullOrWhiteSpace(resolution)
+                        ? "merged plan collision"
+                        : resolution);
+            }
+        }
+
         private static void RecordConflictLocked(FuseClaimKind kind, string id, string owner, string attempted)
+        {
+            RecordConflictLocked(kind, id, owner, attempted, "claim skipped; existing owner retained");
+        }
+
+        private static void RecordConflictLocked(
+            FuseClaimKind kind,
+            string id,
+            string owner,
+            string attempted,
+            string resolution)
         {
             ConflictHistory.Add(new FuseRegistryConflict
             {
@@ -305,7 +360,7 @@ namespace FUSE.Runtime.Registry
                 Id = id,
                 OwnerPackageId = owner,
                 AttemptedPackageId = attempted,
-                Resolution = "claim skipped; existing owner retained",
+                Resolution = resolution,
                 AtUtc = DateTime.UtcNow
             });
 
@@ -317,7 +372,7 @@ namespace FUSE.Runtime.Registry
             FuseLog.Warning(
                 $"FUSE registry conflict package='{attempted}' operation='claim runtime object' " +
                 $"target='{kind}' kind='{kind}' id='{id}' owner='{owner}' " +
-                "resolution='claim skipped; existing owner retained'.");
+                $"resolution='{resolution}'.");
         }
 
         private static string MakeKey(FuseClaimKind kind, string id)

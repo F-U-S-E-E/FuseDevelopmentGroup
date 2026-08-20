@@ -64,6 +64,11 @@ namespace FUSE.Loading
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> SanitizedDirectContainerWarnings =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object LateComponentRegistrationLock = new object();
+        private static readonly Dictionary<string, HashSet<string>> StoresMissingComponentKind =
+            new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> StoresRequiringLateComponentReload =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly object LegacyAssetPackAliasLock = new object();
         private static Dictionary<string, string> LegacyAssetPackAliases;
         // Physical pack folder -> identifier of the store PrefabStore will
@@ -174,6 +179,11 @@ namespace FUSE.Loading
             _mountComplete = false;
             MountedAssetPackSourcesById.Clear();
             DirectAssetPackStoreIdentifiers.Clear();
+            lock (LateComponentRegistrationLock)
+            {
+                StoresMissingComponentKind.Clear();
+                StoresRequiringLateComponentReload.Clear();
+            }
             lock (LegacyAssetPackAliasLock)
             {
                 hadState |= StoreIdentifiersByPhysicalPath.Count > 0 || LegacyAssetPackAliases != null;
@@ -186,6 +196,7 @@ namespace FUSE.Loading
                 CatalogInspectionFailures.Clear();
             }
             FuseLegacyContainerMixintoRegistry.Reset();
+            ResetLegacyDefinitionOverrides();
             FuseAssetCollisionRegistry.Reset();
             FUSE.Runtime.API.SceneryAPI.InvalidateKnownSceneryIdentifierIndex();
             if (hadState)
@@ -214,7 +225,9 @@ namespace FUSE.Loading
         {
             var folders = EnumerateAvailableAssetPackFolders().ToArray();
             var firstSourceByKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var firstDefinitionByKey = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
             var duplicateKeys = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            var duplicateDefinitionsDiffer = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             var failedLookups = new List<string>();
 
             foreach (var folder in folders)
@@ -245,6 +258,7 @@ namespace FUSE.Loading
                         if (!firstSourceByKey.TryGetValue(key, out var existing))
                         {
                             firstSourceByKey[key] = folder;
+                            firstDefinitionByKey[key] = obj;
                             continue;
                         }
 
@@ -257,6 +271,13 @@ namespace FUSE.Loading
                         if (!sources.Contains(folder, StringComparer.OrdinalIgnoreCase))
                         {
                             sources.Add(folder);
+                        }
+
+                        if (!duplicateDefinitionsDiffer.TryGetValue(key, out var definitionsDiffer) || !definitionsDiffer)
+                        {
+                            duplicateDefinitionsDiffer[key] =
+                                !firstDefinitionByKey.TryGetValue(key, out var firstDefinition) ||
+                                !JToken.DeepEquals(firstDefinition, obj);
                         }
                     }
                 }
@@ -275,11 +296,48 @@ namespace FUSE.Loading
                     .Select(item => new FuseDuplicateAssetKey
                     {
                         Key = item.Key,
-                        Sources = item.Value.Select(Path.GetFileName).ToArray()
+                        Sources = item.Value.Select(DescribeAssetPackSource).ToArray(),
+                        DefinitionsDiffer = duplicateDefinitionsDiffer.TryGetValue(item.Key, out var differ) && differ
                     })
                     .ToArray(),
-                FailedDefinitionLoads = failedLookups.ToArray()
+                FailedDefinitionLoads = failedLookups.ToArray(),
+                LegacyDefinitionOverrides = GetLegacyDefinitionOverrides(),
+                LegacyDefinitionOverrideIssues = GetLegacyDefinitionOverrideIssues()
             };
+        }
+
+        private static string DescribeAssetPackSource(string folder)
+        {
+            if (string.IsNullOrWhiteSpace(folder))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var packageFolder = ReadHostingPackageFolder(folder);
+                if (!string.IsNullOrWhiteSpace(packageFolder))
+                {
+                    var packageName = Path.GetFileName(packageFolder);
+                    var relative = folder.Substring(packageFolder.Length)
+                        .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                        .Replace(Path.DirectorySeparatorChar, '/');
+                    return string.IsNullOrWhiteSpace(relative)
+                        ? packageName
+                        : packageName + "/" + relative;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Diagnostics must never make an otherwise usable asset pack
+                // fail to load, but retaining the reason avoids hiding a path
+                // or permissions problem from the live log.
+                FuseLog.Warning(
+                    $"FUSE could not build a package-relative asset source label for '{folder}': " +
+                    ex.GetBaseException().Message);
+            }
+
+            return Path.GetFileName(folder);
         }
     }
 
@@ -289,11 +347,15 @@ namespace FUSE.Loading
         public int UniqueAssetKeys { get; set; }
         public FuseDuplicateAssetKey[] DuplicateKeys { get; set; } = Array.Empty<FuseDuplicateAssetKey>();
         public string[] FailedDefinitionLoads { get; set; } = Array.Empty<string>();
+        public FuseLegacyDefinitionOverrideRegistration[] LegacyDefinitionOverrides { get; set; } =
+            Array.Empty<FuseLegacyDefinitionOverrideRegistration>();
+        public string[] LegacyDefinitionOverrideIssues { get; set; } = Array.Empty<string>();
     }
 
     internal sealed class FuseDuplicateAssetKey
     {
         public string Key { get; set; } = string.Empty;
         public string[] Sources { get; set; } = Array.Empty<string>();
+        public bool DefinitionsDiffer { get; set; }
     }
 }

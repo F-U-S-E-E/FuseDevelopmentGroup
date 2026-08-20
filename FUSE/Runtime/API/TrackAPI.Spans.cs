@@ -46,6 +46,10 @@ namespace FUSE.Runtime.API
             }
             catch
             {
+                // Unity destruction is deferred. Do not leave a failed temporary
+                // object discoverable under the requested id for the remainder
+                // of this frame, or a later retry can be mistaken for a duplicate.
+                span.id = CreateRetiredSpanId(id);
                 RemoveRuntimeObject(span);
                 throw;
             }
@@ -121,11 +125,55 @@ namespace FUSE.Runtime.API
         {
             var span = RequireSpan(id);
             UnregisterSpanWithGraph(Graph.Shared, id);
+            // Retire the identity before scheduling Unity destruction. A package
+            // can legitimately recreate this id in the same apply pass.
+            span.id = CreateRetiredSpanId(id);
             RemoveRuntimeObject(span);
             FuseSpanRuntimeIndex.Instance.Remove(id);
             FuseRuntimeDefinitionCache.Remove(FuseDefinitionKind.TrackSpan, id);
             FuseEvents.RaiseSpanRemoved(id);
             RequestRebuild();
+        }
+
+        /// <summary>
+        /// Recreates a span whose endpoint topology changed without exposing two
+        /// live scene objects under the same identifier. Existing industry and
+        /// interchange components are rebound to the replacement instance before
+        /// Unity retires the old component at the end of the frame.
+        /// </summary>
+        public static TrackSpan ReplaceSpan(string id, FuseSpan definition)
+        {
+            RequireId(id, nameof(id));
+            if (definition == null)
+            {
+                throw new ArgumentNullException(nameof(definition));
+            }
+
+            var graph = RequireGraph();
+            var previousSpan = RequireSpan(id);
+            UnregisterSpanWithGraph(graph, id);
+            FuseSpanRuntimeIndex.Instance.Remove(id);
+            previousSpan.id = CreateRetiredSpanId(id);
+
+            TrackSpan replacementSpan;
+            try
+            {
+                replacementSpan = AddSpan(id, definition);
+            }
+            catch
+            {
+                // The previous component has not been destroyed yet, so a failed
+                // replacement can be rolled back without losing the working span.
+                previousSpan.id = id;
+                FuseSpanRuntimeIndex.Instance.Set(id, previousSpan);
+                RegisterSpanWithGraph(graph, previousSpan);
+                throw;
+            }
+
+            IndustryAPI.ReplaceTrackSpanReferences(previousSpan, replacementSpan, "TrackAPI.ReplaceSpan");
+            RemoveRuntimeObject(previousSpan);
+            FuseLog.Info($"FUSE atomically replaced track span id='{id}' and rebound its runtime consumers.");
+            return replacementSpan;
         }
 
         public static TrackSpan GetSpan(string id)
@@ -169,6 +217,31 @@ namespace FUSE.Runtime.API
         {
             return UnityEngine.Object.FindObjectsOfType<TrackSpan>(true)
                 .Where(span => span != null && !string.IsNullOrWhiteSpace(span.id));
+        }
+
+        /// <summary>
+        /// Returns only spans owned by the live graph dictionary. Scene-wide
+        /// searches also find prefab/template components and objects waiting for
+        /// Unity's deferred destruction; those are useful to compatibility code
+        /// but are not broken runtime track and must not become audit findings.
+        /// </summary>
+        internal static IEnumerable<TrackSpan> GetRegisteredSpansForDiagnostics()
+        {
+            var graph = Graph.Shared;
+            var spans = graph != null
+                ? GraphSpansField?.GetValue(graph) as Dictionary<string, TrackSpan>
+                : null;
+            if (spans != null)
+            {
+                return spans.Values
+                    .Where(span => span != null && !string.IsNullOrWhiteSpace(span.id))
+                    .Distinct()
+                    .ToArray();
+            }
+
+            return GetAllSpans()
+                .Where(span => graph != null && ReferenceEquals(graph.SpanForId(span.id), span))
+                .ToArray();
         }
 
         private static TrackSpan[] GetRegisteredGraphSpans()
@@ -268,9 +341,28 @@ namespace FUSE.Runtime.API
 
             FuseRuntimeDefinitionCache.TryGet(FuseDefinitionKind.TrackSpan, span.id, out FuseSpan definition);
             definition = definition ?? new FuseSpan();
-            definition.Upper = span.upper.HasValue ? ToDefinition(span.upper.Value) : null;
-            definition.Lower = span.lower.HasValue ? ToDefinition(span.lower.Value) : null;
+
+            // Railroader's TrackSpan location getters can temporarily return
+            // null when Graph.TryResolveLocation cannot resolve an otherwise
+            // valid serialized endpoint. Keep the authored/cache endpoint in
+            // that case. The audit can then distinguish a genuinely missing
+            // endpoint from an endpoint whose referenced segment was removed.
+            if (span.upper.HasValue)
+            {
+                definition.Upper = ToDefinition(span.upper.Value);
+            }
+
+            if (span.lower.HasValue)
+            {
+                definition.Lower = ToDefinition(span.lower.Value);
+            }
+
             return definition;
+        }
+
+        private static string CreateRetiredSpanId(string id)
+        {
+            return $"__FUSE_RETIRED_SPAN__{id ?? string.Empty}__{Guid.NewGuid():N}";
         }
     }
 }

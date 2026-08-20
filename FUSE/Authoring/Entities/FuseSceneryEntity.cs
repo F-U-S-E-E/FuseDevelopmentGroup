@@ -34,6 +34,9 @@ namespace FUSE.Authoring.Entities
         [FuseHidden]
         public SceneryAssetInstance RuntimeScenery { get; private set; }
 
+        [FuseHidden]
+        public bool AllowUnverifiedLegacyAsset { get; set; }
+
         [FuseEditable("Anchor Spans", Group = "Scenery", Order = 12)]
         public string[] AnchorSpanIds { get; set; } = System.Array.Empty<string>();
 
@@ -108,11 +111,15 @@ namespace FUSE.Authoring.Entities
                 // recompute had no readers, and the per-item
                 // GetComponentsInChildren scan sat inside the post-load
                 // activation wave for nothing.
-                RuntimeScenery = SceneryAPI.AddScenery(Id, definition);
+                RuntimeScenery = SceneryAPI.AddScenery(
+                    Id,
+                    definition,
+                    onDeferredActivated: null,
+                    allowUnverifiedLegacyAsset: AllowUnverifiedLegacyAsset);
             }
             else
             {
-                SceneryAPI.UpdateScenery(Id, definition);
+                SceneryAPI.UpdateScenery(Id, definition, AllowUnverifiedLegacyAsset);
                 RuntimeScenery = SceneryAPI.GetScenery(Id);
             }
 

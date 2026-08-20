@@ -158,6 +158,10 @@
       <HintPath>$(UnityManagedDir)\UnityEngine.UnityWebRequestAudioModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Unity.RenderPipelines.Universal.Runtime" Condition="Exists('$(UnityManagedDir)\Unity.RenderPipelines.Universal.Runtime.dll')">
+      <HintPath>$(UnityManagedDir)\Unity.RenderPipelines.Universal.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.UI" Condition="Exists('$(UnityManagedDir)\UnityEngine.UI.dll')">
       <HintPath>$(UnityManagedDir)\UnityEngine.UI.dll</HintPath>
       <Private>false</Private>

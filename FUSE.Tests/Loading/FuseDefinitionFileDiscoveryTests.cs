@@ -115,5 +115,17 @@ namespace FUSE.Tests.Loading
 
             Assert.Empty(FuseDataPackageDiscovery.DiscoverPackageFolders(_root));
         }
+
+        [Fact]
+        public void NativePackageWithMalformedInfo_IsStillDiscoveredForFaultReporting()
+        {
+            var folder = CreateModFolder("BrokenNativePackage");
+            File.WriteAllText(Path.Combine(folder, "Info.json"), "{ \"Id\": \"BrokenNativePackage\", ");
+            File.WriteAllText(Path.Combine(folder, "track.fuse.json"), "{}");
+
+            var discovered = FuseDataPackageDiscovery.DiscoverPackageFolders(_root);
+
+            Assert.Equal(new[] { folder }, discovered);
+        }
     }
 }

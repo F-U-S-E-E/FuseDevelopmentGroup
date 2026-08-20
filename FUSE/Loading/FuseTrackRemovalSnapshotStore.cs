@@ -6,6 +6,7 @@ using FUSE.Authoring.Data;
 using FUSE.Authoring.Data.Common;
 using FUSE.Infrastructure;
 using FUSE.Runtime.Registry;
+using FUSE.Compatibility;
 using Track;
 using UnityEngine;
 
@@ -463,6 +464,7 @@ namespace FUSE.Loading
                 Position = node.transform.localPosition,
                 Rotation = node.transform.localEulerAngles,
                 FlipSwitchStand = node.flipSwitchStand,
+                IsDiamond = RailroaderTrackContract.GetNodeIsDiamond(node),
                 IsThrown = node.isThrown,
                 IsCtcSwitch = node.IsCTCSwitch,
                 IsCtcSwitchUnlocked = node.IsCTCSwitchUnlocked
@@ -490,7 +492,8 @@ namespace FUSE.Loading
                 Id = segment.id,
                 StartNodeId = segment.a.id,
                 EndNodeId = segment.b.id,
-                Style = segment.style.ToString(),
+                Style = RailroaderTrackContract.GetStyleName(segment),
+                StructureFlags = RailroaderTrackContract.GetStructureFlags(segment),
                 TrackClass = segment.trackClass == TrackClass.Mainline ? "main" : segment.trackClass.ToString(),
                 GroupId = segment.groupId,
                 Priority = segment.priority,
@@ -581,6 +584,7 @@ namespace FUSE.Loading
                 var restored = TrackAPI.GetNode(snapshot.Id);
                 if (restored != null)
                 {
+                    RailroaderTrackContract.SetNodeIsDiamond(restored, snapshot.IsDiamond);
                     restored.IsCTCSwitch = snapshot.IsCtcSwitch;
                     restored.IsCTCSwitchUnlocked = snapshot.IsCtcSwitchUnlocked;
                     restored.isThrown = snapshot.IsThrown;
@@ -615,6 +619,8 @@ namespace FUSE.Loading
                 StartNodeId = snapshot.StartNodeId,
                 EndNodeId = snapshot.EndNodeId,
                 Style = snapshot.Style,
+                BridgeSupportsSteel = (snapshot.StructureFlags & 4) != 0,
+                Yard = (snapshot.StructureFlags & 16) != 0,
                 TrackClass = snapshot.TrackClass,
                 SpeedLimit = snapshot.SpeedLimit,
                 Priority = snapshot.Priority,
