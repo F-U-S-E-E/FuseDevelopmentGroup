@@ -18,7 +18,7 @@ param(
     'tile-editor-suite',
     'toolshed',
     'narrow-gauge'
-  )][string]$Profile,
+  )][string]$ArchiveProfile,
   [Parameter(Mandatory)][string]$ExpectedSha256
 )
 
@@ -136,7 +136,7 @@ $profiles = @{
   }
 }
 
-$profileSpec = $profiles[$Profile]
+$profileSpec = $profiles[$ArchiveProfile]
 $archive = [System.IO.Compression.ZipFile]::OpenRead($resolvedArchive)
 try {
   $script:entryMap = @{}
@@ -187,7 +187,7 @@ try {
         throw "Archive entry '$name' contains a segment longer than 255 characters."
       }
       $deviceBaseName = @($normalizedSegment -split '\.', 2)[0]
-      if ($deviceBaseName -match '^(?i:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³])$') {
+      if ($deviceBaseName -match '^(?i:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[1-9\u00B9\u00B2\u00B3]|LPT[1-9\u00B9\u00B2\u00B3])$') {
         throw "Archive entry '$name' uses reserved Windows device name '$deviceBaseName'."
       }
       $normalizedSegments.Add($normalizedSegment)
@@ -232,7 +232,7 @@ try {
   foreach ($entry in $archive.Entries) {
     if ([string]::IsNullOrEmpty($root)) {
       if ($entry.FullName.Contains('/')) {
-        throw "Profile '$Profile' requires entries at the archive root; found '$($entry.FullName)'."
+        throw "Profile '$ArchiveProfile' requires entries at the archive root; found '$($entry.FullName)'."
       }
     }
     elseif ($entry.FullName -cne "$root/" -and
@@ -240,7 +240,7 @@ try {
           "$root/",
           [System.StringComparison]::Ordinal
         )) {
-      throw "Profile '$Profile' requires the single archive root '$root/'; found '$($entry.FullName)'."
+      throw "Profile '$ArchiveProfile' requires the single archive root '$root/'; found '$($entry.FullName)'."
     }
   }
 
@@ -284,7 +284,7 @@ try {
     throw "Assembly '$assemblyPath' is empty."
   }
 
-  if ($Profile -eq 'tile-editor-suite') {
+  if ($ArchiveProfile -eq 'tile-editor-suite') {
     $packageManifestPath = "$root/PackageManifest.json"
     try {
       $packageManifest = Read-EntryText $packageManifestPath | ConvertFrom-Json
@@ -355,4 +355,4 @@ finally {
   Remove-Variable -Name entryMap -Scope Script -ErrorAction SilentlyContinue
 }
 
-Write-Host "Validated $Profile package '$resolvedArchive' as version $Version (sha256:$actualSha256)."
+Write-Host "Validated $ArchiveProfile package '$resolvedArchive' as version $Version (sha256:$actualSha256)."

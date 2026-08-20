@@ -126,7 +126,7 @@ jobs:
             -File "scripts\Validate-OptionalModPackage.ps1" `
             -ArchivePath $env:ARCHIVE_PATH `
             -Version $env:MOD_VERSION `
-            -Profile $env:ARCHIVE_PROFILE `
+            -ArchiveProfile $env:ARCHIVE_PROFILE `
             -ExpectedSha256 $env:EXPECTED_SHA256
 
       - name: Create FUSE repository release record

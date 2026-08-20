@@ -29,7 +29,7 @@ $allowedProfiles = @{
   'narrow-gauge' = 'NEXUS_NARROW_GAUGE_FILE_GROUP_ID'
 }
 
-function Require-String {
+function Get-RequiredString {
   param(
     [Parameter(Mandatory)]$Object,
     [Parameter(Mandatory)][string]$Property,
@@ -96,20 +96,20 @@ $validatedMods = New-Object System.Collections.Generic.List[object]
 
 foreach ($mod in $mods) {
   $context = "Optional-mod entry"
-  $key = Require-String $mod 'key' $context
+  $key = Get-RequiredString -Object $mod -Property 'key' -Context $context
   $context = "Optional-mod '$key'"
-  $tagPrefix = Require-String $mod 'tagPrefix' $context
-  $version = Require-String $mod 'version' $context
-  $lastNexusVersion = Require-String $mod 'lastNexusVersion' $context
-  $blockedReason = Require-String $mod 'blockedReason' $context -AllowEmpty
-  $sourceRepository = Require-String $mod 'sourceRepository' $context
-  $sourceTag = Require-String $mod 'sourceTag' $context
-  $assetName = Require-String $mod 'assetName' $context
-  $assetSha256 = Require-String $mod 'assetSha256' $context -AllowEmpty
-  $archiveProfile = Require-String $mod 'archiveProfile' $context
-  $releaseDisplayName = Require-String $mod 'releaseDisplayName' $context
-  $nexusDisplayName = Require-String $mod 'nexusDisplayName' $context
-  $nexusVariable = Require-String $mod 'nexusVariable' $context
+  $tagPrefix = Get-RequiredString -Object $mod -Property 'tagPrefix' -Context $context
+  $version = Get-RequiredString -Object $mod -Property 'version' -Context $context
+  $lastNexusVersion = Get-RequiredString -Object $mod -Property 'lastNexusVersion' -Context $context
+  $blockedReason = Get-RequiredString -Object $mod -Property 'blockedReason' -Context $context -AllowEmpty
+  $sourceRepository = Get-RequiredString -Object $mod -Property 'sourceRepository' -Context $context
+  $sourceTag = Get-RequiredString -Object $mod -Property 'sourceTag' -Context $context
+  $assetName = Get-RequiredString -Object $mod -Property 'assetName' -Context $context
+  $assetSha256 = Get-RequiredString -Object $mod -Property 'assetSha256' -Context $context -AllowEmpty
+  $archiveProfile = Get-RequiredString -Object $mod -Property 'archiveProfile' -Context $context
+  $releaseDisplayName = Get-RequiredString -Object $mod -Property 'releaseDisplayName' -Context $context
+  $nexusDisplayName = Get-RequiredString -Object $mod -Property 'nexusDisplayName' -Context $context
+  $nexusVariable = Get-RequiredString -Object $mod -Property 'nexusVariable' -Context $context
 
   if ($null -eq $mod.PSObject.Properties['promotionReady'] -or
       $mod.promotionReady -isnot [bool]) {
@@ -173,9 +173,9 @@ foreach ($mod in $mods) {
     throw "$context is not promotion-ready and must explain why in blockedReason."
   }
 
-  Add-UniqueValue $seenKeys $key 'key'
-  Add-UniqueValue $seenPrefixes $tagPrefix 'tagPrefix'
-  Add-UniqueValue $seenNexusVariables $nexusVariable 'nexusVariable'
+  Add-UniqueValue -Seen $seenKeys -Value $key -Label 'key'
+  Add-UniqueValue -Seen $seenPrefixes -Value $tagPrefix -Label 'tagPrefix'
+  Add-UniqueValue -Seen $seenNexusVariables -Value $nexusVariable -Label 'nexusVariable'
 
   $validatedMods.Add([pscustomobject]@{
       Key = $key
