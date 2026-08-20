@@ -11,22 +11,23 @@ def test_fuse_package_id_replaces_legacy_rail_suffix():
 
 
 def test_convert_mod_normalizes_legacy_rail_suffix_in_package_id(tmp_path):
-    source = tmp_path / "LegacyRoute"
-    source.mkdir()
-    (source / "Definition.json").write_text(
-        json.dumps({"id": "acme.route.RAIL", "name": "Acme Route"}),
-        encoding="utf-8",
-    )
-    (source / "tracks.json").write_text(
-        json.dumps({"tracks": {"nodes": {}}}),
-        encoding="utf-8",
-    )
-    output = tmp_path / "LegacyRoute.FUSE"
+    for index, suffix in enumerate(("RAIL", "rail", "RaIl")):
+        source = tmp_path / f"LegacyRoute-{index}"
+        source.mkdir()
+        (source / "Definition.json").write_text(
+            json.dumps({"id": f"acme.route.{suffix}", "name": "Acme Route"}),
+            encoding="utf-8",
+        )
+        (source / "tracks.json").write_text(
+            json.dumps({"tracks": {"nodes": {}}}),
+            encoding="utf-8",
+        )
+        output = tmp_path / f"LegacyRoute-{index}.FUSE"
 
-    fuse_convert.convert_mod(source, output)
+        fuse_convert.convert_mod(source, output)
 
-    info = json.loads((output / "Info.json").read_text(encoding="utf-8"))
-    assert info["Id"] == "acme.route.FUSE"
+        info = json.loads((output / "Info.json").read_text(encoding="utf-8"))
+        assert info["Id"] == "acme.route.FUSE"
 
 
 def test_conditional_mixinto_requirement_adds_advisory_load_after(tmp_path):
@@ -83,7 +84,7 @@ def test_conflicts_with_is_preserved_in_manifest_and_conditional_mixinto(tmp_pat
         json.dumps(
             {
                 "conflictsWith": [
-                    {"id": "Other.Route", "notBefore": "2.0", "notAfter": "3.0"},
+                    {"id": "acme.route.RAIL", "notBefore": "2.0", "notAfter": "3.0"},
                     "Zamu.StrangeCustoms",
                 ],
                 "mixintos": {
@@ -101,8 +102,8 @@ def test_conflicts_with_is_preserved_in_manifest_and_conditional_mixinto(tmp_pat
     metadata, _ = fuse_convert.mixinto_metadata(tmp_path)
 
     assert manifest_conflicts == [
-        {"Id": "Other.Route", "NotBefore": "2.0", "NotAfter": "3.0"},
-        {"Id": "Zamu.StrangeCustoms"},
+        {"Id": "acme.route.FUSE", "NotBefore": "2.0", "NotAfter": "3.0"},
+        {"Id": "Zamu.StrangeCustoms.FUSE"},
     ]
     assert metadata["optional.json"]["conflictsWith"] == [
         {"id": "Conditional.Other"}

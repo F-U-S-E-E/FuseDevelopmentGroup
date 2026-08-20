@@ -172,7 +172,7 @@ namespace FUSE.Tests.Converter
             Assert.True(result.Success);
             var info = JObject.Parse(File.ReadAllText(Path.Combine(outputFolder, "Info.json")));
             var manifestConflict = Assert.Single((JArray)info["FuseConflictsWith"]);
-            Assert.Equal("Other.Route", manifestConflict.Value<string>("Id"));
+            Assert.Equal("Other.Route.FUSE", manifestConflict.Value<string>("Id"));
             Assert.Equal("2.0", manifestConflict.Value<string>("NotBefore"));
 
             var fragment = JObject.Parse(File.ReadAllText(Path.Combine(outputFolder, "track.fuse.json")));

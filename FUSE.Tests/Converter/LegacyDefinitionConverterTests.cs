@@ -247,7 +247,7 @@ namespace FUSE.Tests.Converter
         }
 
         [Fact]
-        public void LegacyConflictsWith_preserves_core_ids_and_version_bounds_for_manifest_enforcement()
+        public void LegacyConflictsWith_normalizes_ids_and_preserves_version_bounds_for_manifest_enforcement()
         {
             var temp = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             try
@@ -255,7 +255,7 @@ namespace FUSE.Tests.Converter
                 Directory.CreateDirectory(temp);
                 File.WriteAllText(Path.Combine(temp, "Definition.json"), @"{
                     ""conflictsWith"": [
-                        { ""id"": ""Other.Route"", ""notBefore"": ""2.0"", ""notAfter"": ""3.0"" },
+                        { ""id"": ""acme.route.RAIL"", ""notBefore"": ""2.0"", ""notAfter"": ""3.0"" },
                         ""Zamu.StrangeCustoms""
                     ]
                 }");
@@ -263,10 +263,10 @@ namespace FUSE.Tests.Converter
                 var result = LegacyDefinitionConverter.LegacyConflictsWith(temp);
 
                 Assert.Equal(2, result.Count);
-                Assert.Equal("Other.Route", result[0].Value<string>("Id"));
+                Assert.Equal("acme.route.FUSE", result[0].Value<string>("Id"));
                 Assert.Equal("2.0", result[0].Value<string>("NotBefore"));
                 Assert.Equal("3.0", result[0].Value<string>("NotAfter"));
-                Assert.Equal("Zamu.StrangeCustoms", result[1].Value<string>("Id"));
+                Assert.Equal("Zamu.StrangeCustoms.FUSE", result[1].Value<string>("Id"));
             }
             finally
             {

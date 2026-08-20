@@ -117,7 +117,7 @@ namespace FUSE.Converter.Conversion
                 return new JArray(converted.OfType<JObject>().Select(reference =>
                     JsonCleanHelper.CleanObject(new JObject
                     {
-                        ["Id"] = reference["id"]?.DeepClone(),
+                        ["Id"] = ConvertedPackageId(reference.Value<string>("id")),
                         ["NotBefore"] = reference["notBefore"]?.DeepClone(),
                         ["NotAfter"] = reference["notAfter"]?.DeepClone()
                     })));

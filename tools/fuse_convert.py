@@ -474,7 +474,7 @@ def legacy_conflicts_with(mod_folder):
     return [
         clean(
             {
-                "Id": reference.get("id"),
+                "Id": converted_package_id(reference.get("id")),
                 "NotBefore": reference.get("notBefore"),
                 "NotAfter": reference.get("notAfter"),
             }
