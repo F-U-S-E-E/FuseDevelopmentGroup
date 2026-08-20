@@ -1,8 +1,8 @@
 using System.Collections.Generic;
-using Effects.Decals;
 using FUSE.Compatibility;
 using FUSE.Interface.Console;
 using KeyValue.Runtime;
+using Model.Definition.Components;
 using Model.Definition.Data;
 using System.Linq;
 using System.Reflection;

@@ -1,3 +1,4 @@
+using FUSE.Infrastructure;
 using FUSE.Patches;
 using Game;
 using HarmonyLib;
