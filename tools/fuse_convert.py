@@ -332,7 +332,7 @@ CORE_LEGACY_REQUIREMENTS = {
 def is_core_legacy_requirement(package_id: object) -> bool:
     value = str(package_id or "").strip()
     lowered = value.lower()
-    while lowered.endswith(".fuse") or lowered.endswith(".rail"):
+    while lowered.endswith((".fuse", ".rail")):
         value = value[:-5]
         lowered = value.lower()
     return lowered in CORE_LEGACY_REQUIREMENTS
@@ -405,6 +405,10 @@ def fuse_package_id(requirement_id):
         return None
     if text.lower().endswith(".fuse"):
         return text
+    if text.lower().endswith(".rail"):
+        text = text[:-5].strip()
+    if not text:
+        return None
     return f"{text}.FUSE"
 
 

@@ -14,7 +14,7 @@ namespace FUSE.Tests.Validation
 
             var result = new FuseDefinitionValidator().Validate(definition);
 
-            Assert.DoesNotContain(result.Errors, error => error.Field.StartsWith("featureRules."));
+            Assert.True(result.IsValid);
         }
 
         [Fact]
@@ -74,7 +74,10 @@ namespace FUSE.Tests.Validation
                 Default = new JValue(true),
                 ReloadRequired = true
             };
-            definition.World.Scenery["optional-scenery"] = new FuseScenery();
+            definition.World.Scenery["optional-scenery"] = new FuseScenery
+            {
+                AssetIdentifier = "vanilla://optional-scenery"
+            };
             definition.FeatureRules["optional"] = new FuseFeatureRule
             {
                 Setting = "enabled",

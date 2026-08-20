@@ -621,19 +621,18 @@ def detect_kind(source: Path, requested: str) -> str:
 
     if source.is_dir() and has_direct_native_fuse_data(source):
         return "native"
+    contains_compiled_plugin = source.is_dir() and has_direct_compiled_plugin(source)
     if (
-        source.is_dir()
-        and has_direct_compiled_plugin(source)
+        contains_compiled_plugin
         and not detects_direct_route_data(source)
         and not detects_direct_audio(source)
     ):
         return "code"
-    if detects_audio(source) and not detects_route_data(source):
+    route_data = detects_route_data(source)
+    if detects_audio(source) and not route_data:
         return "audio"
-    if detects_route_data(source):
+    if route_data:
         return "route"
-    if source.is_dir() and has_direct_compiled_plugin(source):
-        return "code"
     if find_map_tile_sources(source):
         return "map_tile"
     if find_asset_pack_sources(source):

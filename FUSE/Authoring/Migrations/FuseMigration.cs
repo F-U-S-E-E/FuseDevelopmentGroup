@@ -99,6 +99,7 @@ namespace FUSE.Authoring.Migrations
             definition.World.Scenery = definition.World.Scenery ?? new Dictionary<string, FuseScenery>();
             definition.World.SpawnPoints = definition.World.SpawnPoints ?? Array.Empty<FuseSpawnPoint>();
             definition.World.Splineys = definition.World.Splineys ?? new Dictionary<string, FuseSpliney>();
+            definition.World.WaterSurfaces = definition.World.WaterSurfaces ?? new Dictionary<string, FuseWaterSurface>();
             definition.World.TelegraphPoles = definition.World.TelegraphPoles ?? new Dictionary<string, FuseTelegraphPoles>();
             definition.World.TelegraphPoleMovements = definition.World.TelegraphPoleMovements ?? Array.Empty<FuseTelegraphPoleMovement>();
             definition.World.MapLabels = definition.World.MapLabels ?? new Dictionary<string, FuseMapLabel>();
@@ -114,6 +115,7 @@ namespace FUSE.Authoring.Migrations
             definition.World.Removals = definition.World.Removals ?? new FuseWorldRemovals();
             definition.World.Removals.Scenery = definition.World.Removals.Scenery ?? Array.Empty<string>();
             definition.World.Removals.Splineys = definition.World.Removals.Splineys ?? Array.Empty<string>();
+            definition.World.Removals.WaterSurfaces = definition.World.Removals.WaterSurfaces ?? Array.Empty<string>();
             definition.World.Removals.TelegraphPoles = definition.World.Removals.TelegraphPoles ?? Array.Empty<string>();
             definition.World.Removals.MapLabels = definition.World.Removals.MapLabels ?? Array.Empty<string>();
             definition.World.Removals.MapMasks = definition.World.Removals.MapMasks ?? Array.Empty<string>();

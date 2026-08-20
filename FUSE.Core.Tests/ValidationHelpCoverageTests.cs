@@ -24,6 +24,14 @@ namespace Fuse.Core.Tests
             "ValidatorSource.Game.cs",
         };
 
+        private static readonly string[] DynamicallyEmittedCodes =
+        {
+            "fuse.mixinto.conflict.id.blank",
+            "fuse.mixinto.conflict.null",
+            "fuse.mixinto.requirement.id.blank",
+            "fuse.mixinto.requirement.null",
+        };
+
         private static HashSet<string> EmittedCodes()
         {
             var codes = new HashSet<string>();
@@ -42,7 +50,23 @@ namespace Fuse.Core.Tests
                 }
             }
 
+            foreach (var code in DynamicallyEmittedCodes)
+            {
+                codes.Add(code);
+            }
+
             return codes;
+        }
+
+        [Theory]
+        [InlineData("fuse.mixinto.conflict.id.blank")]
+        [InlineData("fuse.mixinto.conflict.null")]
+        [InlineData("fuse.mixinto.requirement.id.blank")]
+        [InlineData("fuse.mixinto.requirement.null")]
+        public void Dynamic_Mixinto_Codes_Have_Catalog_Entries(string code)
+        {
+            Assert.True(FuseValidationHelp.TryGet(code, out var entry));
+            Assert.NotNull(entry);
         }
 
         [Fact]

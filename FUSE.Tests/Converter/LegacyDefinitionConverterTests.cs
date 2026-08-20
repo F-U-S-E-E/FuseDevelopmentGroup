@@ -119,9 +119,11 @@ namespace FUSE.Tests.Converter
 
         [Theory]
         [InlineData("SomeMod", "SomeMod.FUSE")]
+        [InlineData("SomeMod.RAIL", "SomeMod.FUSE")]
+        [InlineData("somemod.rail", "somemod.FUSE")]
         [InlineData("Already.FUSE", "Already.FUSE")]
         [InlineData("ALREADY.FUSE", "ALREADY.FUSE")]
-        public void FusePackageId_appends_suffix_unless_already_present(string input, string expected)
+        public void FusePackageId_normalizes_converted_package_suffix(string input, string expected)
         {
             Assert.Equal(expected, LegacyDefinitionConverter.FusePackageId(input));
         }

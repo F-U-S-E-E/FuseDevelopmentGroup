@@ -119,7 +119,7 @@ namespace FUSE.Converter.Conversion
             var info = new JObject
             {
                 ["$schema"] = ".\\schemas\\umm-info.schema.json",
-                ["Id"] = manifest.Id + ".FUSE",
+                ["Id"] = LegacyDefinitionConverter.ConvertedPackageId(manifest.Id) ?? manifest.Id + ".FUSE",
                 ["DisplayName"] = manifest.Name + " (FUSE)",
                 ["Author"] = manifest.Author ?? string.Empty,
                 ["Version"] = manifest.Version ?? "1.0.0",
@@ -218,7 +218,7 @@ namespace FUSE.Converter.Conversion
                 var info = new JObject
                 {
                     ["$schema"] = ".\\schemas\\umm-info.schema.json",
-                    ["Id"] = manifest.Id + ".FUSE",
+                    ["Id"] = LegacyDefinitionConverter.ConvertedPackageId(manifest.Id) ?? manifest.Id + ".FUSE",
                     ["DisplayName"] = manifest.Name + " (FUSE Audio)",
                     ["Author"] = manifest.Author ?? string.Empty,
                     ["Version"] = manifest.Version ?? "1.0.0",

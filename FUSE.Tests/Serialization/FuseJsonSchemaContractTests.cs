@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using Xunit;
 
@@ -28,12 +29,22 @@ namespace FUSE.Tests.Serialization
                 .Values<string>()
                 .ToArray();
 
-            Assert.Contains("Standard", values);
-            Assert.Contains("Narrow", values);
-            Assert.Contains("DualGauge", values);
-            Assert.Contains("DualGauge_L", values);
-            Assert.Contains("DualGauge_R", values);
-            Assert.Contains("DualGauge_T", values);
+            Assert.Equal(new[]
+            {
+                "Standard",
+                "Narrow",
+                "3ft",
+                "3 ft",
+                "ThreeFoot",
+                "Three Foot",
+                "DualGauge",
+                "DualGauge_L",
+                "DualGauge_R",
+                "DualGauge_T",
+                "Dual",
+                "Mixed",
+                "MixedGauge"
+            }, values);
         }
 
         [Fact]
@@ -64,7 +75,37 @@ namespace FUSE.Tests.Serialization
             var pattern = Assert.IsType<JValue>(uri["pattern"])
                 .Value<string>();
 
-            Assert.Contains("fuse", pattern, StringComparison.Ordinal);
+            var regex = new Regex(pattern, RegexOptions.CultureInvariant);
+            Assert.True(regex.IsMatch("fuse://example-package/object"));
+            Assert.True(regex.IsMatch("path://scene/World/Example"));
+            Assert.False(regex.IsMatch("https://example.invalid/fuse"));
+            Assert.False(regex.IsMatch("not-fuse://example-package/object"));
+        }
+
+        [Fact]
+        public void SplineyContract_IncludesRuntimeObjectLineKindsAndUriPrefab()
+        {
+            var schemaPath = Path.Combine(AppContext.BaseDirectory, "fuse-mod.schema.json");
+            var schema = JObject.Parse(File.ReadAllText(schemaPath));
+            var definitions = Assert.IsType<JObject>(schema["$defs"]);
+            var properties = Assert.IsType<JObject>(definitions["spliney"]?["properties"]);
+            var kinds = Assert.IsType<JArray>(properties["type"]?["enum"])
+                .Values<string>()
+                .ToArray();
+
+            Assert.Equal(new[]
+            {
+                "river",
+                "road",
+                "terrainRoad",
+                "trestle",
+                "waterfall",
+                "objectLine",
+                "object-line",
+                "fence",
+                "retainingWall"
+            }, kinds);
+            Assert.Equal("#/$defs/uri", properties["prefab"]?["$ref"]?.Value<string>());
         }
     }
 }

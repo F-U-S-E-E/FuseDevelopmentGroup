@@ -139,9 +139,24 @@ internal static class Program
 
     private static bool LooksLikeModFolder(string folder)
     {
-        return File.Exists(Path.Combine(folder, "Definition.json"))
-            || File.Exists(Path.Combine(folder, "Info.json"))
-            || Directory.EnumerateFiles(folder, "*.dll", SearchOption.TopDirectoryOnly).Any();
+        if (File.Exists(Path.Combine(folder, "Definition.json"))
+            || File.Exists(Path.Combine(folder, "Info.json")))
+        {
+            return true;
+        }
+
+        try
+        {
+            return Directory.EnumerateFiles(folder, "*.dll", SearchOption.TopDirectoryOnly).Any();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

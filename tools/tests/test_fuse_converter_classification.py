@@ -42,8 +42,17 @@ def test_map_tiles_and_code_are_not_reported_as_converted(tmp_path):
         encoding="utf-8",
     )
 
-    assert fuse_converter.detect_kind(tiles, "auto") == "map_tile"
-    assert fuse_converter.detect_kind(code, "auto") == "code"
+    out_root = tmp_path / "out"
+    tile_report = fuse_converter.convert_input(tiles, out_root, "auto", clean_output=True)
+    code_report = fuse_converter.convert_input(code, out_root, "auto", clean_output=True)
+
+    for report, expected_kind in ((tile_report, "map_tile"), (code_report, "code")):
+        assert report.status == "failed"
+        assert report.detected_kind == expected_kind
+        assert report.errors > 0
+        assert not report.output.exists()
+        report_file = out_root / "_conversion-reports" / report.output.name / "conversion-report.json"
+        assert report_file.exists()
 
 
 def test_mixed_code_and_route_json_converts_the_data_portion(tmp_path):
@@ -55,4 +64,25 @@ def test_mixed_code_and_route_json_converts_the_data_portion(tmp_path):
         encoding="utf-8",
     )
 
-    assert fuse_converter.detect_kind(source, "auto") == "route"
+    out_root = tmp_path / "out"
+    report = fuse_converter.convert_input(source, out_root, "auto", clean_output=True)
+
+    assert report.detected_kind == "route"
+    assert report.errors == 0
+    assert report.output.exists()
+    assert (report.output / "Info.json").exists()
+    fragment_path = next(report.output.glob("*.fuse.json"))
+    fragment = json.loads(fragment_path.read_text(encoding="utf-8"))
+    assert len(fragment["tracks"]["nodes"]) == 1
+
+
+def test_mixed_code_and_audio_json_is_detected_as_audio(tmp_path):
+    source = tmp_path / "MixedAudio"
+    source.mkdir()
+    (source / "Plugin.dll").write_bytes(b"assembly")
+    (source / "horns.json").write_text(
+        json.dumps([{"layers": ["a.wav"]}]),
+        encoding="utf-8",
+    )
+
+    assert fuse_converter.detect_kind(source, "auto") == "audio"

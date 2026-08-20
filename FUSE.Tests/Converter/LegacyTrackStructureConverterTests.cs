@@ -51,5 +51,23 @@ namespace FUSE.Tests.Converter
             Assert.True(converted.Value<bool>("preserveBridgeSupportsSteel"));
             Assert.True(converted.Value<bool>("preserveYard"));
         }
+
+        [Theory]
+        [InlineData("flags")]
+        [InlineData("Flags")]
+        public void ConvertPartialSegment_TreatsNullFlagsAsUnspecified(string propertyName)
+        {
+            var legacy = new JObject
+            {
+                ["a"] = "node-a",
+                [propertyName] = JValue.CreateNull()
+            };
+
+            var converted = LegacyTrackConverter.ConvertSegment(legacy);
+
+            Assert.True(converted.Value<bool>("partial"));
+            Assert.True(converted.Value<bool>("preserveBridgeSupportsSteel"));
+            Assert.True(converted.Value<bool>("preserveYard"));
+        }
     }
 }

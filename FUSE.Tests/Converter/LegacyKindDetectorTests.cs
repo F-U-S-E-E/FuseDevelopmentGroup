@@ -127,6 +127,18 @@ namespace FUSE.Tests.Converter
         }
 
         [Fact]
+        public void DetectKind_returns_audio_for_mixed_code_and_audio_json()
+        {
+            var folder = Path.Combine(_workspace, "mixed-audio-plugin");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "Plugin.dll"), "not-a-real-assembly");
+            File.WriteAllText(Path.Combine(folder, "horns.json"),
+                "[ { \"layers\": [ \"a.wav\" ] } ]");
+
+            Assert.Equal("audio", LegacyKindDetector.DetectKind(folder, "auto"));
+        }
+
+        [Fact]
         public void DetectKind_returns_unknown_for_empty_folder()
         {
             var folder = Path.Combine(_workspace, "empty");

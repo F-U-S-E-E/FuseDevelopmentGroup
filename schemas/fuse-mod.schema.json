@@ -1705,7 +1705,10 @@
                         "terrainRoad",
                         "trestle",
                         "waterfall",
-                        "objectLine"
+                        "objectLine",
+                        "object-line",
+                        "fence",
+                        "retainingWall"
                     ]
                 },
                 "profile": {
@@ -1731,8 +1734,7 @@
                     "description": "Scenery asset repeated by an objectLine spline. Mutually exclusive with prefab."
                 },
                 "prefab": {
-                    "type": "string",
-                    "minLength": 1,
+                    "$ref": "#/$defs/uri",
                     "description": "Prefab URI such as path://scene/World/... repeated by an objectLine spline. Mutually exclusive with assetIdentifier."
                 },
                 "spacing": {

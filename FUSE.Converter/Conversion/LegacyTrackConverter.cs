@@ -60,7 +60,7 @@ namespace FUSE.Converter.Conversion
 
             var partial = string.IsNullOrEmpty(startNodeId) || string.IsNullOrEmpty(endNodeId);
             var flags = FirstInt(obj, 0, "flags", "Flags");
-            var hasFlags = obj.ContainsKey("flags") || obj.ContainsKey("Flags");
+            var hasFlags = HasNonNullValue(obj, "flags") || HasNonNullValue(obj, "Flags");
             var style = obj.Value<string>("Style") ?? obj.Value<string>("style");
 
             var result = new JObject
@@ -101,6 +101,12 @@ namespace FUSE.Converter.Conversion
             }
 
             return result;
+        }
+
+        private static bool HasNonNullValue(JObject obj, string key)
+        {
+            JToken value;
+            return obj.TryGetValue(key, out value) && value.Type != JTokenType.Null;
         }
 
         /// <summary>

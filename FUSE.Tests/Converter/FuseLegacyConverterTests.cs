@@ -75,6 +75,24 @@ namespace FUSE.Tests.Converter
         }
 
         [Fact]
+        public void ConvertMod_replaces_legacy_rail_suffix_in_package_id()
+        {
+            var modFolder = Path.Combine(_workspace, "legacy-suffix.mod");
+            Directory.CreateDirectory(modFolder);
+            File.WriteAllText(Path.Combine(modFolder, "Definition.json"),
+                "{ \"id\": \"acme.route.RAIL\", \"name\": \"Legacy Suffix\" }");
+            File.WriteAllText(Path.Combine(modFolder, "tracks.json"),
+                "{ \"tracks\": { \"nodes\": { \"node-A\": { \"position\": { \"x\": 1, \"y\": 2, \"z\": 3 } } } } }");
+
+            var outputFolder = Path.Combine(_workspace, "legacy-suffix.mod.FUSE");
+            var result = FuseLegacyConverter.ConvertMod(modFolder, outputFolder);
+
+            Assert.True(result.Success);
+            var info = JObject.Parse(File.ReadAllText(Path.Combine(outputFolder, "Info.json")));
+            Assert.Equal("acme.route.FUSE", info.Value<string>("Id"));
+        }
+
+        [Fact]
         public void ConvertMod_preserves_issue_240_hard_dependencies_and_object_load_after_ids()
         {
             var modFolder = Path.Combine(_workspace, "Katers.SylvaYardTurntable");

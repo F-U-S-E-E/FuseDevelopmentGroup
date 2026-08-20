@@ -179,6 +179,19 @@ namespace FUSE.Tests.Migrations
             }
 
             [Fact]
+            public void Initializes_NullWaterSurfaceContainers()
+            {
+                var definition = new FuseModDefinition();
+                definition.World.WaterSurfaces = null;
+                definition.World.Removals.WaterSurfaces = null;
+
+                FuseMigration.Normalize(definition);
+
+                Assert.NotNull(definition.World.WaterSurfaces);
+                Assert.NotNull(definition.World.Removals.WaterSurfaces);
+            }
+
+            [Fact]
             public void IsIdempotent_RunningTwiceProducesSameResult()
             {
                 var definition = new FuseModDefinition

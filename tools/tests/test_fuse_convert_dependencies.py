@@ -5,6 +5,11 @@ import json
 import fuse_convert
 
 
+def test_fuse_package_id_replaces_legacy_rail_suffix():
+    assert fuse_convert.fuse_package_id("SomeMod.RAIL") == "SomeMod.FUSE"
+    assert fuse_convert.fuse_package_id("somemod.rail") == "somemod.FUSE"
+
+
 def test_conditional_mixinto_requirement_adds_advisory_load_after(tmp_path):
     (tmp_path / "Definition.json").write_text(
         json.dumps(

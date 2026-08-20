@@ -402,7 +402,7 @@ namespace FUSE.Converter
                 var info = new JObject
                 {
                     ["$schema"] = ".\\schemas\\umm-info.schema.json",
-                    ["Id"] = $"{manifest.Id}.FUSE",
+                    ["Id"] = LegacyDefinitionConverter.ConvertedPackageId(manifest.Id) ?? $"{manifest.Id}.FUSE",
                     ["DisplayName"] = $"{manifest.Name} (FUSE)",
                     ["Author"] = manifest.Author ?? string.Empty,
                     ["Version"] = manifest.Version ?? "1.0.0",

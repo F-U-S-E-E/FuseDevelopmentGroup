@@ -161,6 +161,30 @@
     "fix": "Replace the null value with an object that sets directory and sourceFolder.",
     "example": "{\"world\":{\"mapTiles\":{\"newValley\":{\"directory\":\"mapTiles\",\"sourceFolder\":\"newValley\"}}}}"
   },
+  "fuse.mixinto.conflict.id.blank": {
+    "title": "Mixinto conflict id is blank",
+    "why": "An entry in mixinto.conflictsWith has a blank or whitespace-only id, so FUSE ignores that conflict entirely. The fragment may apply alongside a package it was intended to exclude.",
+    "fix": "Set the conflict's id to the identifier of the incompatible mod, or delete the entry if no conflict is intended.",
+    "example": "{\"mixinto\": {\"conflictsWith\": [{\"id\": \"IncompatibleMod\"}]}}"
+  },
+  "fuse.mixinto.conflict.null": {
+    "title": "Null mixinto conflict entry",
+    "why": "The mixinto.conflictsWith array contains a null entry, which FUSE skips at load. A null entry cannot exclude an incompatible package.",
+    "fix": "Remove the null entry from conflictsWith, or replace it with a conflict object that has an id.",
+    "example": "{\"mixinto\": {\"conflictsWith\": [{\"id\": \"IncompatibleMod\"}]}}"
+  },
+  "fuse.mixinto.requirement.id.blank": {
+    "title": "Mixinto requirement id is blank",
+    "why": "An entry in mixinto.requires has a blank or whitespace-only id, so FUSE ignores that requirement entirely. The fragment will not be gated on the mod you meant to require and may apply even when that mod is absent.",
+    "fix": "Set the requirement's id to the identifier of the mod this fragment depends on, or delete the entry if no dependency is intended.",
+    "example": "{\"mixinto\": {\"requires\": [{\"id\": \"ExampleMod\"}]}}"
+  },
+  "fuse.mixinto.requirement.null": {
+    "title": "Null mixinto requirement entry",
+    "why": "The mixinto.requires array contains a null entry, which FUSE skips at load. A null requirement cannot gate the fragment, so any conditional-loading intent behind it is silently lost.",
+    "fix": "Remove the null entry from the requires array, or replace it with a requirement object that has an id.",
+    "example": "{\"mixinto\": {\"requires\": [{\"id\": \"ExampleMod\"}]}}"
+  },
   "fuse.mixinto.sourceFile.blank": {
     "title": "Mixinto sourceFile is blank",
     "why": "The mixinto section is present but sourceFile is blank. sourceFile records which legacy file produced this converted fragment; leaving it empty makes the conversion provenance less clear when debugging the mod later.",

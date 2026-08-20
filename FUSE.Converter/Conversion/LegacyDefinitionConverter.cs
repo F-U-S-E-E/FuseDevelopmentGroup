@@ -132,7 +132,8 @@ namespace FUSE.Converter.Conversion
         /// Port of <c>fuse_package_id</c>. A legacy requirement id
         /// like "MyMod" becomes "MyMod.FUSE" (the converter shipped
         /// alongside the original package); ids already ending in
-        /// ".FUSE" pass through unchanged. Core legacy requirements
+        /// ".FUSE" pass through unchanged and legacy ".RAIL" suffixes
+        /// are replaced. Core legacy requirements
         /// return null so they get dropped from the LoadAfter chain.
         /// </summary>
         public static string FusePackageId(string requirementId)
@@ -140,7 +141,19 @@ namespace FUSE.Converter.Conversion
             var text = (requirementId ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(text)) return null;
             if (LegacyConverterConstants.IsCoreLegacyRequirement(text)) return null;
+            return ConvertedPackageId(text);
+        }
+
+        internal static string ConvertedPackageId(string packageId)
+        {
+            var text = (packageId ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(text)) return null;
             if (text.EndsWith(".FUSE", StringComparison.OrdinalIgnoreCase)) return text;
+            if (text.EndsWith(".RAIL", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text.Substring(0, text.Length - ".RAIL".Length).Trim();
+            }
+            if (string.IsNullOrEmpty(text)) return null;
             return text + ".FUSE";
         }
 

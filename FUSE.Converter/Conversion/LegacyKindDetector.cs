@@ -78,18 +78,19 @@ namespace FUSE.Converter.Conversion
             if (!Directory.Exists(sourcePath)) return Kinds.Unknown;
 
             if (ContainsNativeFuseFragment(sourcePath)) return Kinds.Native;
-            if (ContainsCompiledPlugin(sourcePath)
+            var containsCompiledPlugin = ContainsCompiledPlugin(sourcePath);
+            if (containsCompiledPlugin
                 && !DetectsDirectRouteData(sourcePath)
                 && !DetectsDirectAudio(sourcePath))
             {
                 return Kinds.Code;
             }
-            if (DetectsAudio(sourcePath) && !DetectsRouteData(sourcePath))
+            var detectsRouteData = DetectsRouteData(sourcePath);
+            if (DetectsAudio(sourcePath) && !detectsRouteData)
             {
                 return Kinds.Audio;
             }
-            if (DetectsRouteData(sourcePath)) return Kinds.Route;
-            if (ContainsCompiledPlugin(sourcePath)) return Kinds.Code;
+            if (detectsRouteData) return Kinds.Route;
             if (FindMapTileSources(sourcePath).Count > 0) return Kinds.MapTile;
             if (FindAssetPackSources(sourcePath).Count > 0) return Kinds.Asset;
             return Kinds.Unknown;

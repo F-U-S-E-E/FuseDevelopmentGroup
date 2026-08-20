@@ -36,6 +36,9 @@ public class LegacyImportServiceTests
             var projects = new ProjectService();
             var def = projects.Load(result.FirstFragmentPath!);
             Assert.False(string.IsNullOrEmpty(def.Id));
+            Assert.True(def.Tracks.Nodes.TryGetValue("n_legacy", out var legacyNode));
+            Assert.Equal(new FuseVector3(10, 20, 30), legacyNode.Position);
+            Assert.Equal(FuseVector3.zero, legacyNode.Rotation);
 
             TrackOps.AddNode(def.Tracks, "n_test", new FuseVector3(1, 2, 3), default);
             var editedPath = Path.Combine(outDir, "edited.fuse.json");
