@@ -1292,9 +1292,15 @@ def convert_input(input_path: Path, out_root: Path, kind: str, clean_output: boo
                     "unsupported-code-package",
                 )
             else:
-                raise RuntimeError("no convertible RailLoader JSON data detected; use the FUSE installer for code, asset, map-tile, or native packages")
+                report.add(
+                    "ERROR",
+                    "No convertible RailLoader JSON data detected; use the FUSE installer for code, asset, map-tile, or native packages.",
+                    working_source,
+                    "unsupported-package",
+                )
 
-            scan_legacy_warnings(working_source, report)
+            if detected in {"route", "audio"}:
+                scan_legacy_warnings(working_source, report)
         except Exception as exc:
             report.add("ERROR", str(exc), working_source, detected)
 

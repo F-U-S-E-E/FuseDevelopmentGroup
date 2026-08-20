@@ -54,6 +54,24 @@ def test_map_tiles_and_code_are_not_reported_as_converted(tmp_path):
         report_file = out_root / "_conversion-reports" / report.output.name / "conversion-report.json"
         assert report_file.exists()
 
+    assert all(entry.concept != "script-binary" for entry in code_report.entries)
+
+
+def test_unknown_package_uses_the_common_unsupported_error(tmp_path):
+    source = tmp_path / "Unknown"
+    source.mkdir()
+    (source / "readme.txt").write_text("not convertible", encoding="utf-8")
+    out_root = tmp_path / "out"
+
+    report = fuse_converter.convert_input(source, out_root, "auto", clean_output=True)
+
+    assert report.status == "failed"
+    assert report.detected_kind == "unknown"
+    assert any(entry.level == "ERROR" and entry.concept == "unsupported-package" for entry in report.entries)
+    assert not report.output.exists()
+    report_file = out_root / "_conversion-reports" / "Unknown.FUSE" / "conversion-report.json"
+    assert report_file.exists()
+
 
 def test_mixed_code_and_route_json_converts_the_data_portion(tmp_path):
     source = tmp_path / "Mixed"
