@@ -67,6 +67,10 @@ namespace FUSE.Converter.Conversion
                 {
                     return Kinds.Archive;
                 }
+                if (sourcePath.EndsWith(".fuse.json", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Kinds.Native;
+                }
                 if (sourcePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
                     && !JsonManifestNames.Contains(Path.GetFileName(sourcePath)))
                 {
@@ -100,7 +104,7 @@ namespace FUSE.Converter.Conversion
         {
             try
             {
-                return Directory.EnumerateFiles(folder, "*.fuse.json", SearchOption.TopDirectoryOnly).Any();
+                return Directory.EnumerateFiles(folder, "*.fuse.json", SearchOption.AllDirectories).Any();
             }
             catch (Exception)
             {

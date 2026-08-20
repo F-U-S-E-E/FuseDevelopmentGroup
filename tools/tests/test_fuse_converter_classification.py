@@ -104,3 +104,29 @@ def test_mixed_code_and_audio_json_is_detected_as_audio(tmp_path):
     )
 
     assert fuse_converter.detect_kind(source, "auto") == "audio"
+
+
+def test_nested_route_shaped_fuse_fragment_is_detected_as_native(tmp_path):
+    source = tmp_path / "Native"
+    nested = source / "Data"
+    nested.mkdir(parents=True)
+    (nested / "track.fuse.json").write_text(
+        json.dumps({"tracks": {"nodes": {}}}),
+        encoding="utf-8",
+    )
+
+    assert fuse_converter.detect_kind(source, "auto") == "native"
+    assert fuse_converter.detect_direct_kind(source, "auto") == "unknown"
+
+
+def test_direct_fuse_fragment_is_rejected_as_native_without_output(tmp_path):
+    source = tmp_path / "native.fuse.json"
+    source.write_text(json.dumps({"tracks": {"nodes": {}}}), encoding="utf-8")
+    out_root = tmp_path / "out"
+
+    report = fuse_converter.convert_input(source, out_root, "auto", clean_output=True)
+
+    assert report.status == "failed"
+    assert report.detected_kind == "native"
+    assert any(entry.concept == "unsupported-already-native" for entry in report.entries)
+    assert not report.output.exists()

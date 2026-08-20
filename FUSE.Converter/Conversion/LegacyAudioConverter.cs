@@ -398,10 +398,11 @@ namespace FUSE.Converter.Conversion
         public static JObject BuildAudioSkeleton(string modId, string modName, string modVersion, string author)
         {
             var rail = FuseFragmentBuilder.Build(modId, modName, modVersion, author, "audio");
+            var convertedPackageId = LegacyDefinitionConverter.ConvertedPackageId(modId) ?? $"{modId}.FUSE";
             // The audio skeleton extends the base with an audio
             // section (whistles/horns/bells dicts) plus the
             // suppressBase arrays the audio variant uses.
-            rail["id"] = $"{modId}.FUSE.Audio";
+            rail["id"] = $"{convertedPackageId}.Audio";
             rail["name"] = $"{modName} (FUSE Audio)";
             rail["audio"] = new JObject
             {

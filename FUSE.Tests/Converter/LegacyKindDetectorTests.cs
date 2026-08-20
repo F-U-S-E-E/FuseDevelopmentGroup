@@ -117,6 +117,27 @@ namespace FUSE.Tests.Converter
         }
 
         [Fact]
+        public void DetectKind_returns_native_for_nested_route_shaped_fuse_fragment()
+        {
+            var folder = Path.Combine(_workspace, "nested-native");
+            var data = Path.Combine(folder, "Data");
+            Directory.CreateDirectory(data);
+            File.WriteAllText(Path.Combine(data, "track.fuse.json"),
+                "{ \"tracks\": { \"nodes\": {} } }");
+
+            Assert.Equal("native", LegacyKindDetector.DetectKind(folder, "auto"));
+        }
+
+        [Fact]
+        public void DetectKind_returns_native_for_direct_fuse_fragment_file()
+        {
+            var fragment = Path.Combine(_workspace, "track.fuse.json");
+            File.WriteAllText(fragment, "{ \"tracks\": { \"nodes\": {} } }");
+
+            Assert.Equal("native", LegacyKindDetector.DetectKind(fragment, "auto"));
+        }
+
+        [Fact]
         public void DetectKind_returns_audio_for_horns_layered_json()
         {
             var folder = Path.Combine(_workspace, "audio");

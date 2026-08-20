@@ -550,6 +550,18 @@ def has_direct_native_fuse_data(source: Path) -> bool:
         return False
 
 
+def has_native_fuse_data(source: Path) -> bool:
+    if not source.is_dir():
+        return False
+    try:
+        return any(
+            path.is_file() and path.name.lower().endswith(".fuse.json")
+            for path in source.rglob("*")
+        )
+    except OSError:
+        return False
+
+
 def has_direct_compiled_plugin(source: Path) -> bool:
     if not source.is_dir():
         return False
@@ -619,7 +631,9 @@ def detect_kind(source: Path, requested: str) -> str:
     if requested != "auto":
         return requested
 
-    if source.is_dir() and has_direct_native_fuse_data(source):
+    if source.is_file() and source.name.lower().endswith(".fuse.json"):
+        return "native"
+    if source.is_dir() and has_native_fuse_data(source):
         return "native"
     contains_compiled_plugin = source.is_dir() and has_direct_compiled_plugin(source)
     if (

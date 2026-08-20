@@ -4,6 +4,7 @@ import json
 import math
 import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import legacy_json
@@ -397,11 +398,9 @@ def convert_conflict_references(value):
     return result
 
 
-def fuse_package_id(requirement_id):
-    text = str(requirement_id or "").strip()
+def converted_package_id(package_id: object) -> str | None:
+    text = str(package_id or "").strip()
     if not text:
-        return None
-    if is_core_legacy_requirement(text):
         return None
     if text.lower().endswith(".fuse"):
         return text
@@ -410,6 +409,12 @@ def fuse_package_id(requirement_id):
     if not text:
         return None
     return f"{text}.FUSE"
+
+
+def fuse_package_id(requirement_id: object) -> str | None:
+    if is_core_legacy_requirement(requirement_id):
+        return None
+    return converted_package_id(requirement_id)
 
 
 def legacy_load_after(mod_folder):
@@ -478,7 +483,7 @@ def legacy_conflicts_with(mod_folder):
     ]
 
 
-def _mixinto_requirement_ids(value):
+def _mixinto_requirement_ids(value) -> Iterator[str]:
     if isinstance(value, list):
         for item in value:
             yield from _mixinto_requirement_ids(item)
@@ -499,7 +504,7 @@ def _mixinto_requirement_ids(value):
         yield from _mixinto_requirement_ids(child)
 
 
-def _dedupe_dependency_ids(values):
+def _dedupe_dependency_ids(values) -> list[str]:
     seen = set()
     ordered = []
     for item in values:
@@ -519,7 +524,7 @@ def mixinto_metadata(mod_folder):
     metadata = {}
     ordered_files = []
 
-    def record(target, reference, requirements, conflicts_with):
+    def record(target, reference, requirements, conflicts_with) -> None:
         referenced_file = extract_file_reference(reference)
         if not referenced_file:
             return
@@ -535,7 +540,7 @@ def mixinto_metadata(mod_folder):
             "conflictsWith": conflicts_with or [],
         })
 
-    def visit_target(target, value):
+    def visit_target(target, value) -> None:
         if isinstance(value, str):
             record(target, value, [], [])
             return
@@ -2400,7 +2405,7 @@ def convert_mod(mod_folder, out_folder):
     rail_data_files = list(written)
     info = {
         "$schema": ".\\schemas\\umm-info.schema.json",
-        "Id": f"{mod_id}.FUSE",
+        "Id": converted_package_id(mod_id) or f"{mod_id}.FUSE",
         "DisplayName": f"{mod_name} (FUSE)",
         "Author": author,
         "Version": version,

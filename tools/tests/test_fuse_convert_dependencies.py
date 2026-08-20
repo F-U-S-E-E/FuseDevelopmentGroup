@@ -10,6 +10,25 @@ def test_fuse_package_id_replaces_legacy_rail_suffix():
     assert fuse_convert.fuse_package_id("somemod.rail") == "somemod.FUSE"
 
 
+def test_convert_mod_normalizes_legacy_rail_suffix_in_package_id(tmp_path):
+    source = tmp_path / "LegacyRoute"
+    source.mkdir()
+    (source / "Definition.json").write_text(
+        json.dumps({"id": "acme.route.RAIL", "name": "Acme Route"}),
+        encoding="utf-8",
+    )
+    (source / "tracks.json").write_text(
+        json.dumps({"tracks": {"nodes": {}}}),
+        encoding="utf-8",
+    )
+    output = tmp_path / "LegacyRoute.FUSE"
+
+    fuse_convert.convert_mod(source, output)
+
+    info = json.loads((output / "Info.json").read_text(encoding="utf-8"))
+    assert info["Id"] == "acme.route.FUSE"
+
+
 def test_conditional_mixinto_requirement_adds_advisory_load_after(tmp_path):
     (tmp_path / "Definition.json").write_text(
         json.dumps(
