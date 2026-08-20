@@ -198,11 +198,18 @@ namespace FUSE.Patches
     {
         private static MethodBase TargetMethod()
         {
-            var method = AccessTools.DeclaredMethod(
-                typeof(CarInspector),
-                "ShouldShowIndustry",
-                new[] { typeof(Industry) });
-            return method?.ReturnType == typeof(bool) ? method : null;
+            return AccessTools.GetDeclaredMethods(typeof(CarInspector))
+                .SingleOrDefault(method =>
+                {
+                    if (method.Name.IndexOf("ShouldShowIndustry", StringComparison.Ordinal) < 0 ||
+                        method.ReturnType != typeof(bool))
+                    {
+                        return false;
+                    }
+
+                    var parameters = method.GetParameters();
+                    return parameters.Length == 1 && parameters[0].ParameterType == typeof(Industry);
+                });
         }
 
         private static void Postfix(Industry industry, ref bool __result)
