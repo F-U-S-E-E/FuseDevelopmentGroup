@@ -103,6 +103,10 @@ a representative low-end system; a fast developer PC is not sufficient proof.
 
 ## Live GitHub issue intake (2026-08-19)
 
+- [ ] #249 Equipment roster will not open in single- or multiplayer — report is
+  against public 1.0.4 and contains no usable `/fuse.report` or downloadable log
+  link in the issue body. Retest the current review build after catalog warm-up;
+  capture the click-time exception and package set before attributing it to FUSE.
 - [x] #240 Convertor error — converter fix and regression fixture implemented;
   issue remains open pending release/user confirmation.
 - [x] #239 Whittier Sawmill Trackmod Issue (ARC Whittier) — span rebinding,
