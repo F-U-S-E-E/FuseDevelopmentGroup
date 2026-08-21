@@ -3,7 +3,11 @@
 FUSE ships through two build-and-release lanes plus one optional-mod promotion
 lane, each driven by a disjoint git tag. Pushing the tag is the only trigger —
 the matching workflow either builds and packages FUSE-owned code or promotes a
-checksum-pinned optional-mod release.
+checksum-pinned optional-mod release. Nexus-capable tags are promotion requests:
+the core and optional-mod jobs wait at the protected `nexus-release`
+environment before GitHub assigns the organization's self-hosted runner or
+provides the Nexus credential. One organization member other than the person
+who started the deployment must approve it.
 
 ## Mod release — `mod-v<semver>`
 
@@ -41,6 +45,16 @@ canonical for versioning; the stamp only decides which download link the notice
 shows. The stamp step is GA-only and gated on `NEXUS_FILE_GROUP_ID`, so only stable
 builds are ever stamped `nexus`. The runtime reads it in
 `FUSE.Infrastructure.FuseInstallSource`.
+
+Before a stable upload, the workflow queries the Nexus v3 file-version API for
+the exact release version. A matching live version makes a rerun a successful
+no-op; an absent version proceeds to upload. HTTP errors, authentication errors,
+and malformed responses fail closed before the upload action runs. The legacy
+repository variable name `NEXUS_FILE_GROUP_ID` is retained for compatibility,
+but its API Info value is the Nexus v3 `file_id`. This is version-level replay
+protection; Nexus does not expose the remote archive's SHA-256 in this response,
+so it complements rather than replaces the workflow's checksum validation of
+the source artifact.
 
 The mod version flows in via `-p:ModVersion=<ver>`, which stamps the assemblies
 and `Info.json` (see `Directory.Build.targets`). The release flow is the only
@@ -102,6 +116,13 @@ attaches the unchanged ZIP to a FUSE repository release record, and uploads the
 same bytes to the product's Nexus file chain. This keeps source ownership in the
 product repository while centralizing Nexus credentials and deployment in FUSE.
 
+The protected environment gate is reached before the job is assigned to the
+self-hosted runner. Matching release tags are also protected by repository tag
+rules: only release administrators can create them, they cannot be deleted or
+rewritten, and the workflow verifies that each tag resolves to a commit on
+protected `main`. The tag supplies the requested product and version; the lock
+file and release code on that reviewed commit remain the authority.
+
 Optional GitHub release records always set `make_latest: false`. They must not
 replace the `mod-v*` release behind FUSE's `/releases/latest` update and tool
 download links. Prerelease versions can create a GitHub prerelease record, but
@@ -143,16 +164,31 @@ To promote a successor:
    the deployed baseline and prevents a later lock-file rollback from being
    promoted as a successor.
 
-The repository uses the existing `NEXUSMODS_API_KEY` secret and one Nexus API
-Info file-group variable per product:
+The `nexus-release` environment holds `NEXUSMODS_API_KEY`, and the repository
+holds one Nexus API Info variable per product. The variable names predate the
+v3 API and retain `FILE_GROUP_ID` for compatibility, but their values are v3
+`file_id` values:
 
-- `NEXUS_TILE_EDITOR_FILE_GROUP_ID`
-- `NEXUS_TOOLSHED_FILE_GROUP_ID`
-- `NEXUS_NARROW_GAUGE_FILE_GROUP_ID`
+- `NEXUS_TILE_EDITOR_FILE_GROUP_ID=7822458`
+- `NEXUS_TOOLSHED_FILE_GROUP_ID=7822380`
+- `NEXUS_NARROW_GAUGE_FILE_GROUP_ID=7822374`
 
 The values are the API Info IDs from the files already uploaded to Nexus, not
 the Nexus mod page IDs. Keep the existing `NEXUS_FILE_GROUP_ID` reserved for
-the core FUSE release lane.
+the core FUSE release lane. Stable optional-mod promotions use the same
+fail-closed v3 lookup as core FUSE: an exact version already present is logged
+as a no-op, while only a missing version reaches the pinned upload action.
+
+Repository setup for Nexus publishing therefore requires all of the following:
+
+- A protected `nexus-release` environment with `NEXUSMODS_API_KEY`, required
+  organization-member reviewers, self-review prevention, and deployment tag
+  policies for `mod-v*`, `tileeditorsuite-v*`, `toolshed-v*`, and
+  `narrowgauge-v*`.
+- Active tag rules for those four patterns that restrict creation to release
+  administrators and prevent deletion or rewriting.
+- The four API Info variables described above (the three optional products plus
+  the existing core `NEXUS_FILE_GROUP_ID`).
 
 ## Notes
 

@@ -68,6 +68,15 @@ jobs:
             }
           }
 
+      - name: Test Nexus release preflight
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File "scripts\Test-NexusFileVersion.Tests.ps1"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Nexus release preflight tests failed."
+          }
+
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:

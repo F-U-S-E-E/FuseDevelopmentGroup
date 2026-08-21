@@ -17,6 +17,9 @@ concurrency:
 
 jobs:
   build-and-release:
+    # Release jobs wait for an organization reviewer before reaching the
+    # self-hosted runner or receiving the environment-scoped Nexus credential.
+    environment: nexus-release
     runs-on: self-hosted
     env:
       DOTNET_NOLOGO: "true"
@@ -26,11 +29,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           # This lane only builds and publishes release assets (via the
           # GITHUB_TOKEN env the release action receives directly); nothing
           # pushes back to the repo, so don't leave the checkout token
           # persisted in .git/config on the self-hosted runner.
           persist-credentials: false
+
+      - name: Verify release tag targets protected main
+        shell: powershell
+        env:
+          TAG_COMMIT: ${{ github.sha }}
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not fetch protected main for release-tag verification."
+          }
+
+          $tagCommit = (git rev-parse "$env:TAG_COMMIT^{commit}").Trim()
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -notmatch '^[0-9a-f]{40}$') {
+            throw "Could not resolve the release tag to a commit."
+          }
+          git merge-base --is-ancestor $tagCommit origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "FUSE release tags must point to a commit on protected main."
+          }
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -346,24 +369,42 @@ jobs:
       #
       # GA tags only. Release candidates publish as full GitHub releases, so
       # is_prerelease is false for them and gating on it would push every RC to
-      # the public mod page (and archive_existing_file below would churn the
+      # the public mod page (and archiving the existing version would churn the
       # previous file each time). Nexus tracks stable releases only.
       #
+      # NEXUS_FILE_GROUP_ID is a legacy variable name; its API Info value is the
+      # v3 file_id used by the current upload API.
+      - name: Preflight Nexus upload
+        id: nexus
+        if: ${{ vars.NEXUS_FILE_GROUP_ID != '' && steps.version.outputs.is_ga == 'true' }}
+        shell: powershell
+        env:
+          NEXUSMODS_API_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
+          NEXUS_FILE_ID: ${{ vars.NEXUS_FILE_GROUP_ID }}
+          MOD_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass `
+            -File "scripts\Test-NexusFileVersion.ps1" `
+            -FileId $env:NEXUS_FILE_ID `
+            -Version $env:MOD_VERSION `
+            -GitHubOutputPath $env:GITHUB_OUTPUT
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       # Skipped automatically until the repo variable NEXUS_FILE_GROUP_ID is set.
       # Requires:
       #   - variable NEXUS_FILE_GROUP_ID (from "API Info" on the mod's Files tab)
-      #   - secret  NEXUSMODS_API_KEY    (https://www.nexusmods.com/settings/api-keys)
+      #   - nexus-release environment secret NEXUSMODS_API_KEY
       # The secret is NOT checked in this condition: `secrets` is not an
       # available context in a step-level `if`, and referencing it there is a
       # parse error that breaks the whole workflow. With the variable set but the
       # key missing, this step fails auth and fails the release job after the
       # GitHub release has already been published — so set both together.
       - name: Upload to Nexus Mods
-        if: ${{ vars.NEXUS_FILE_GROUP_ID != '' && steps.version.outputs.is_ga == 'true' }}
-        uses: Nexus-Mods/upload-action@0bf670d75d46988c176c9bfacc94ca0144e0fe3f # v1.0.0-beta.7
+        if: ${{ vars.NEXUS_FILE_GROUP_ID != '' && steps.version.outputs.is_ga == 'true' && steps.nexus.outputs.publish_required == 'true' }}
+        uses: Nexus-Mods/upload-action@c96019556046053aa26044b44396cd38929daf23 # v1.0.0-beta.10
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}
-          file_group_id: ${{ vars.NEXUS_FILE_GROUP_ID }}
+          file_id: ${{ steps.nexus.outputs.file_id }}
           # The Source=nexus variant, not steps.package (which stays github).
           filename: ${{ steps.nexus_package.outputs.archive_path }}
           version: ${{ steps.version.outputs.version }}
@@ -371,5 +412,5 @@ jobs:
           description: |
             Release v${{ steps.version.outputs.version }}.
             See the GitHub release for the full changelog: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
-          file_category: main
-          archive_existing_file: true
+          category: main
+          archive_existing_version: true

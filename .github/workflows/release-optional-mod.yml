@@ -18,6 +18,9 @@ concurrency:
 
 jobs:
   promote-release:
+    # The static protected environment gates the job before it reaches the
+    # self-hosted runner or can read the Nexus credential.
+    environment: nexus-release
     # No game assemblies are needed: the selected source repository has already
     # built and published the asset. Keep deployment and its Nexus credential on
     # the organization's self-hosted Railroader runner with the core FUSE lane.
@@ -27,7 +30,27 @@ jobs:
       - name: Checkout FUSE release configuration
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify release tag targets protected main
+        shell: powershell
+        env:
+          TAG_COMMIT: ${{ github.sha }}
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not fetch protected main for release-tag verification."
+          }
+
+          $tagCommit = (git rev-parse "$env:TAG_COMMIT^{commit}").Trim()
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -notmatch '^[0-9a-f]{40}$') {
+            throw "Could not resolve the release tag to a commit."
+          }
+          git merge-base --is-ancestor $tagCommit origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Optional-mod release tags must point to a commit on protected main."
+          }
 
       - name: Resolve locked optional-mod release
         id: release
@@ -48,13 +71,14 @@ jobs:
         shell: powershell
         env:
           IS_GA: ${{ steps.release.outputs.is_ga }}
+          MOD_VERSION: ${{ steps.release.outputs.version }}
           NEXUS_VARIABLE: ${{ steps.release.outputs.nexus_variable }}
-          NEXUS_API_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
+          NEXUSMODS_API_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
           TILE_EDITOR_FILE_GROUP_ID: ${{ vars.NEXUS_TILE_EDITOR_FILE_GROUP_ID }}
           TOOLSHED_FILE_GROUP_ID: ${{ vars.NEXUS_TOOLSHED_FILE_GROUP_ID }}
           NARROW_GAUGE_FILE_GROUP_ID: ${{ vars.NEXUS_NARROW_GAUGE_FILE_GROUP_ID }}
         run: |
-          $fileGroupId = switch ($env:NEXUS_VARIABLE) {
+          $fileId = switch ($env:NEXUS_VARIABLE) {
             "NEXUS_TILE_EDITOR_FILE_GROUP_ID" { $env:TILE_EDITOR_FILE_GROUP_ID }
             "NEXUS_TOOLSHED_FILE_GROUP_ID" { $env:TOOLSHED_FILE_GROUP_ID }
             "NEXUS_NARROW_GAUGE_FILE_GROUP_ID" { $env:NARROW_GAUGE_FILE_GROUP_ID }
@@ -62,23 +86,26 @@ jobs:
           }
 
           if ($env:IS_GA -eq "true") {
-            if ([string]::IsNullOrWhiteSpace($fileGroupId)) {
+            if ([string]::IsNullOrWhiteSpace($fileId)) {
               throw "Repository variable $env:NEXUS_VARIABLE is not configured."
             }
-            if ($fileGroupId -notmatch '^[1-9][0-9]*$') {
+            if ($fileId -notmatch '^[1-9][0-9]*$') {
               throw "Repository variable $env:NEXUS_VARIABLE must be a numeric Nexus API Info ID."
             }
-            if ([string]::IsNullOrWhiteSpace($env:NEXUS_API_KEY)) {
-              throw "Repository secret NEXUSMODS_API_KEY is not configured."
+            if ([string]::IsNullOrWhiteSpace($env:NEXUSMODS_API_KEY)) {
+              throw "Environment secret NEXUSMODS_API_KEY is not configured."
             }
-          }
 
-          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-          [System.IO.File]::AppendAllText(
-            $env:GITHUB_OUTPUT,
-            "file_group_id=$fileGroupId$([Environment]::NewLine)",
-            $utf8NoBom
-          )
+            powershell -NoProfile -ExecutionPolicy Bypass `
+              -File "scripts\Test-NexusFileVersion.ps1" `
+              -FileId $fileId `
+              -Version $env:MOD_VERSION `
+              -GitHubOutputPath $env:GITHUB_OUTPUT
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          else {
+            Write-Host "Prerelease tag; Nexus version lookup and upload are skipped."
+          }
 
       - name: Download pinned upstream release asset
         id: package
@@ -148,16 +175,16 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Upload stable release to Nexus Mods
-        if: ${{ steps.release.outputs.is_ga == 'true' }}
-        uses: Nexus-Mods/upload-action@0bf670d75d46988c176c9bfacc94ca0144e0fe3f # v1.0.0-beta.7
+        if: ${{ steps.release.outputs.is_ga == 'true' && steps.nexus.outputs.publish_required == 'true' }}
+        uses: Nexus-Mods/upload-action@c96019556046053aa26044b44396cd38929daf23 # v1.0.0-beta.10
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}
-          file_group_id: ${{ steps.nexus.outputs.file_group_id }}
+          file_id: ${{ steps.nexus.outputs.file_id }}
           filename: ${{ steps.package.outputs.archive_path }}
           version: ${{ steps.release.outputs.version }}
           display_name: ${{ steps.release.outputs.nexus_display_name }} ${{ steps.release.outputs.version }}
           description: |
             Release ${{ steps.release.outputs.version }}.
             Source release: ${{ steps.release.outputs.source_release_url }}
-          file_category: main
-          archive_existing_file: true
+          category: main
+          archive_existing_version: true
