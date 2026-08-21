@@ -1,8 +1,13 @@
 # Releasing
 
-FUSE ships in two independent lanes, each driven by a git tag. Pushing the tag
-is the only trigger — the matching workflow does the build, packaging, and
-GitHub Release.
+FUSE ships through two build-and-release lanes plus one optional-mod promotion
+lane, each driven by a disjoint git tag. Pushing the tag is the only trigger —
+the matching workflow either builds and packages FUSE-owned code or promotes a
+checksum-pinned optional-mod release. Nexus-capable tags are promotion requests:
+the core and optional-mod jobs wait at the protected `nexus-release`
+environment before GitHub assigns the organization's self-hosted runner or
+provides the Nexus credential. One organization member other than the person
+who started the deployment must approve it.
 
 ## Mod release — `mod-v<semver>`
 
@@ -41,6 +46,16 @@ shows. The stamp step is GA-only and gated on `NEXUS_FILE_GROUP_ID`, so only sta
 builds are ever stamped `nexus`. The runtime reads it in
 `FUSE.Infrastructure.FuseInstallSource`.
 
+Before a stable upload, the workflow queries the Nexus v3 file-version API for
+the exact release version. A matching live version makes a rerun a successful
+no-op; an absent version proceeds to upload. HTTP errors, authentication errors,
+and malformed responses fail closed before the upload action runs. The legacy
+repository variable name `NEXUS_FILE_GROUP_ID` is retained for compatibility,
+but its API Info value is the Nexus v3 `file_id`. This is version-level replay
+protection; Nexus does not expose the remote archive's SHA-256 in this response,
+so it complements rather than replaces the workflow's checksum validation of
+the source artifact.
+
 The mod version flows in via `-p:ModVersion=<ver>`, which stamps the assemblies
 and `Info.json` (see `Directory.Build.targets`). The release flow is the only
 place a real version is set.
@@ -78,6 +93,104 @@ The version flows in via `-p:ExternalEditorVersion=<ver>` (see
 fall back to the dev floor in that csproj. The mod and external-editor version
 numbers are independent — bump and tag them separately.
 
+## Optional mod Nexus promotion — product tags
+
+The optional mods keep their source and build releases in their own repositories,
+but FUSE is the authority that promotes an exact release asset to Nexus:
+
+| Product | Source repository | FUSE tag |
+| --- | --- | --- |
+| Tile Editor Suite | `F-U-S-E-E/Tile_Editor` | `tileeditorsuite-v<semver>` |
+| Toolshed FUSE | `F-U-S-E-E/TheToolShed` | `toolshed-v<semver>` |
+| FUSE Narrow Gauge | `F-U-S-E-E/Narrow_Gauge` | `narrowgauge-v<semver>` |
+
+These tags run
+[`.github/workflows/release-optional-mod.yml`](../.github/workflows/release-optional-mod.yml)
+on the organization's **self-hosted** Railroader runner, keeping deployment and
+the Nexus credential on the same runner as the core FUSE lane. The workflow
+does not rebuild or edit the optional repository. It downloads one versioned
+ZIP from that repository's GitHub release, verifies the SHA-256 and
+product-specific UMM layout locked in
+[`.github/optional-mod-releases.json`](../.github/optional-mod-releases.json),
+attaches the unchanged ZIP to a FUSE repository release record, and uploads the
+same bytes to the product's Nexus file chain. This keeps source ownership in the
+product repository while centralizing Nexus credentials and deployment in FUSE.
+
+The protected environment gate is reached before the job is assigned to the
+self-hosted runner. Matching release tags are also protected by repository tag
+rules: only release administrators can create them, they cannot be deleted or
+rewritten, and the workflow verifies that each tag resolves to a commit on
+protected `main`. The tag supplies the requested product and version; the lock
+file and release code on that reviewed commit remain the authority.
+
+Optional GitHub release records always set `make_latest: false`. They must not
+replace the `mod-v*` release behind FUSE's `/releases/latest` update and tool
+download links. Prerelease versions can create a GitHub prerelease record, but
+only a plain `major.minor.patch` version is sent to Nexus.
+
+The versions already uploaded manually to Nexus are recorded as the initial
+baselines:
+
+- Hrogers.TileEditorSuite `0.26.6`
+- Toolshed FUSE `0.3.0`
+- NarrowGaugeMod `0.4.0`
+
+All three baseline entries have `promotionReady: false`, so pushing a baseline
+tag fails before it can archive or replace an existing Nexus file. Toolshed and
+Narrow Gauge have matching, checksum-pinned GitHub assets in the lock file.
+Tile Editor has an additional reconciliation block: Nexus is at `0.26.6`, but
+its public source/release metadata and ZIP are still `0.26.4`, and that ZIP uses
+Windows backslash entry names. Reconcile its six version sources, create a ZIP
+with portable `/` entry names, and cut a matching upstream release before
+enabling its next promotion. Advance the relevant lock entry to a successor and
+enable it only when that exact upstream asset is ready. The release resolver
+fails closed while a baseline is not promotion-ready.
+
+To promote a successor:
+
+1. Build and publish the optional repository's `v<semver>` GitHub release with
+   its final, versioned ZIP.
+2. Download that ZIP and compute its digest with
+   `Get-FileHash -Algorithm SHA256 <archive>`.
+3. Update that product's `version`, `sourceTag`, `assetName`, `assetSha256`, and
+   `promotionReady` fields in `.github/optional-mod-releases.json`. Keep
+   `lastNexusVersion` at the version currently live on Nexus; the resolver
+   rejects candidates that are not newer. CI validates the lock file. Merge
+   this change before tagging.
+4. Tag the locked FUSE commit with the product prefix above and push the tag.
+5. Verify both the non-latest FUSE GitHub release record and the Nexus upload.
+6. After a successful stable upload, advance `lastNexusVersion` to the published
+   version and set `promotionReady: false` in the next FUSE commit. This retains
+   the deployed baseline and prevents a later lock-file rollback from being
+   promoted as a successor.
+
+The repository retains the existing `NEXUSMODS_API_KEY` secret and one Nexus
+API Info variable per product. Release jobs can use that repository-scoped
+secret only after the protected `nexus-release` environment gate approves and
+starts the job. The variable names predate the v3 API and retain
+`FILE_GROUP_ID` for compatibility, but their values are v3 `file_id` values:
+
+- `NEXUS_TILE_EDITOR_FILE_GROUP_ID=7822458`
+- `NEXUS_TOOLSHED_FILE_GROUP_ID=7822380`
+- `NEXUS_NARROW_GAUGE_FILE_GROUP_ID=7822374`
+
+The values are the API Info IDs from the files already uploaded to Nexus, not
+the Nexus mod page IDs. Keep the existing `NEXUS_FILE_GROUP_ID` reserved for
+the core FUSE release lane. Stable optional-mod promotions use the same
+fail-closed v3 lookup as core FUSE: an exact version already present is logged
+as a no-op, while only a missing version reaches the pinned upload action.
+
+Repository setup for Nexus publishing therefore requires all of the following:
+
+- A protected `nexus-release` environment with required organization-member
+  reviewers, self-review prevention, and deployment tag policies for `mod-v*`,
+  `tileeditorsuite-v*`, `toolshed-v*`, and `narrowgauge-v*`.
+- The existing repository secret `NEXUSMODS_API_KEY`.
+- Active tag rules for those four patterns that restrict creation to release
+  administrators and prevent deletion or rewriting.
+- The four API Info variables described above (the three optional products plus
+  the existing core `NEXUS_FILE_GROUP_ID`).
+
 ## Notes
 
 - **The mod lane publishes release candidates as full releases, not GitHub
@@ -90,14 +203,19 @@ numbers are independent — bump and tag them separately.
   it rather than at the last GA, so cut the GA tag when the RCs settle.
 - The external-editor lane still treats **any** suffix as a prerelease. The two
   lanes deliberately differ here; align them if that ever becomes confusing.
-- Nothing writes a version back into the repo. There used to be a
-  `sync-info-json.yml` workflow that committed the released version into
+- For the core mod, nothing writes a version back into the repo. There used to
+  be a `sync-info-json.yml` workflow that committed the released version into
   `FUSE/Info.json` on `main`; it was removed because it fought the pinned-`0.0.0`
   rule above — with it working, a local build would report the last released
-  version and look exactly like a release in UMM. The version lives in the tag
-  and reaches artifacts through `-p:ModVersion`; the repo does not track it.
-- The tag prefixes don't collide: `mod-v*`, `externaleditor-v*`, and the
-  existing `tools-v*` are disjoint globs.
-- To dry-run a lane, push a throwaway tag (e.g. `externaleditor-v0.2.0-rc.1`),
-  confirm the release and its assets, then delete the tag and release with
-  `gh release delete <tag> --yes --cleanup-tag`.
+  version and look exactly like a release in UMM. The core version lives in the
+  tag and reaches artifacts through `-p:ModVersion`; only the optional-mod lock
+  file tracks deployed optional-product versions.
+- The tag prefixes don't collide: `mod-v*`, `externaleditor-v*`,
+  `tileeditorsuite-v*`, `toolshed-v*`, `narrowgauge-v*`, and the existing
+  `tools-v*` are disjoint globs. In particular, do not shorten `toolshed-v*`
+  to `tools-v*`; that older prefix already belongs to the converter tools.
+- To dry-run either build lane, push a throwaway tag (e.g.
+  `externaleditor-v0.2.0-rc.1`), confirm the release and its assets, then delete
+  the tag and release with `gh release delete <tag> --yes --cleanup-tag`.
+  Optional-mod tags are allow-listed by the lock file and are not throwaway
+  dry runs; validate their resolver and package locally before pushing.

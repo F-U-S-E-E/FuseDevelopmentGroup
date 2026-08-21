@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "mods": [
+    {
+      "key": "tile-editor-suite",
+      "tagPrefix": "tileeditorsuite-v",
+      "version": "0.26.6",
+      "lastNexusVersion": "0.26.6",
+      "promotionReady": false,
+      "blockedReason": "Nexus is already at 0.26.6, but F-U-S-E-E/Tile_Editor currently has only a v0.26.4 GitHub release whose ZIP uses non-portable backslash entry names. Reconcile the version and cut a portable upstream release before promoting a successor.",
+      "sourceRepository": "F-U-S-E-E/Tile_Editor",
+      "sourceTag": "v0.26.6",
+      "assetName": "Hrogers.TileEditorSuite-0.26.6.zip",
+      "assetSha256": "",
+      "archiveProfile": "tile-editor-suite",
+      "releaseDisplayName": "Tile Editor Suite",
+      "nexusDisplayName": "Hrogers.TileEditorSuite",
+      "nexusVariable": "NEXUS_TILE_EDITOR_FILE_GROUP_ID"
+    },
+    {
+      "key": "toolshed",
+      "tagPrefix": "toolshed-v",
+      "version": "0.3.0",
+      "lastNexusVersion": "0.3.0",
+      "promotionReady": false,
+      "blockedReason": "Toolshed FUSE 0.3.0 is the already-uploaded Nexus baseline. Advance this entry to a checksum-pinned successor before enabling promotion.",
+      "sourceRepository": "F-U-S-E-E/TheToolShed",
+      "sourceTag": "v0.3.0",
+      "assetName": "Toolshed-FUSE-0.3.0.zip",
+      "assetSha256": "39bad6d2b6657fe3a3e595053a252baa3b830a209fa549e47ffd64145bee1f26",
+      "archiveProfile": "toolshed",
+      "releaseDisplayName": "Toolshed FUSE",
+      "nexusDisplayName": "Toolshed FUSE",
+      "nexusVariable": "NEXUS_TOOLSHED_FILE_GROUP_ID"
+    },
+    {
+      "key": "narrow-gauge",
+      "tagPrefix": "narrowgauge-v",
+      "version": "0.4.0",
+      "lastNexusVersion": "0.4.0",
+      "promotionReady": false,
+      "blockedReason": "NarrowGaugeMod 0.4.0 is the already-uploaded Nexus baseline. Advance this entry to a checksum-pinned successor before enabling promotion.",
+      "sourceRepository": "F-U-S-E-E/Narrow_Gauge",
+      "sourceTag": "v0.4.0",
+      "assetName": "NarrowGaugeMod-0.4.0.zip",
+      "assetSha256": "6413dcb94a8431b93b2e14b9010f2332e8741be65fd4a25e6c6183bc13bc10c9",
+      "archiveProfile": "narrow-gauge",
+      "releaseDisplayName": "FUSE Narrow Gauge",
+      "nexusDisplayName": "NarrowGaugeMod",
+      "nexusVariable": "NEXUS_NARROW_GAUGE_FILE_GROUP_ID"
+    }
+  ]
+}
