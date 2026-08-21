@@ -99,6 +99,71 @@ namespace FUSE.Infrastructure
             return false;
         }
 
+        /// <summary>
+        /// Returns true when Unity Mod Manager already owns an executable package's
+        /// active lifecycle. Dual-format mods can also contain a RailLoader
+        /// Definition.json; hosting that legacy plugin after UMM has started the
+        /// same assembly invokes its startup and Harmony patches twice.
+        /// </summary>
+        public static bool HasActiveRuntimeEntry(string folderPath, string packageId)
+        {
+            try
+            {
+                var entries = ModEntriesField?.GetValue(null) as IEnumerable;
+                if (entries == null)
+                {
+                    return false;
+                }
+
+                foreach (var value in entries)
+                {
+                    if (!(value is UnityModManager.ModEntry entry))
+                    {
+                        continue;
+                    }
+
+                    var infoId = entry.Info?.Id;
+                    var samePackage = SamePath(entry.Path, folderPath) ||
+                                      (!string.IsNullOrWhiteSpace(packageId) &&
+                                       string.Equals(infoId, packageId, StringComparison.OrdinalIgnoreCase));
+                    if (!samePackage || string.IsNullOrWhiteSpace(entry.Info?.EntryMethod))
+                    {
+                        continue;
+                    }
+
+                    if (IsActiveRuntimeState(
+                        entry.Enabled,
+                        entry.Started,
+                        entry.Loaded,
+                        entry.ErrorOnLoading))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!_loggedInspectionFailure)
+                {
+                    _loggedInspectionFailure = true;
+                    FuseLog.Warning(
+                        $"FUSE could not inspect Unity Mod Manager runtime ownership for packages: " +
+                        ex.GetBaseException().Message);
+                }
+            }
+
+            return false;
+        }
+
+        internal static bool IsActiveRuntimeState(
+            bool enabled,
+            bool started,
+            bool loaded,
+            bool errorOnLoading)
+        {
+            return enabled && started && loaded && !errorOnLoading;
+        }
+
         private static IEnumerable<FuseUmmModInfo> EnumerateModEntries()
         {
             var entries = ModEntriesField?.GetValue(null) as IEnumerable;
