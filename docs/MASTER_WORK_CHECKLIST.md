@@ -51,6 +51,12 @@ These targets apply to FUSE, Tile Editor, and Toolshed. Narrow Gauge is outside
 this performance pass. Measurements must include a large real-world mod set and
 a representative low-end system; a fast developer PC is not sufficient proof.
 
+Clean-profile baseline captured 2026-08-20 on the deployed review FUSE build:
+0 FUSE data packages, 82 equipment stores prepared in 227.3 ms, worst store
+10.3 ms, no store over the 25 ms slow threshold, and one 397 ms startup frame
+whose measured FUSE-pump portion was 1.4 ms. This proves the instrumentation and
+base-game path, but does not replace the required large-mod-set/low-end run.
+
 - [ ] Attribute recurring 2–4 second game-tick stalls to a named FUSE,
   companion-mod, game, or third-party phase. No FUSE-owned periodic callback may
   perform an unbounded scene scan, package scan, file read, JSON parse, report
@@ -538,8 +544,8 @@ documented in [`BASE_GAME_MAP_AUTHORING_AUDIT.md`](BASE_GAME_MAP_AUTHORING_AUDIT
 - [x] Rewrite the local FUSE install, getting started, troubleshooting, migration,
   converter scope, package authoring, schema, operations, diagnostics, and
   command documentation.
-- [x] Complete FUSE wiki and sync published pages. Published from source
-  `d9feb6e` as wiki commit `b3c8ac4` on 2026-08-20.
+- [x] Complete FUSE wiki and sync published pages. Published 15 pages plus Home
+  and sidebar from source `0447e49` as wiki commit `3e54f4f` on 2026-08-20.
 - [x] Complete the local Tile Editor wiki source: installation/runtime prerequisite, all tabs,
   every key binding, selection, terrain/vegetation, tiles, track/grades,
   scenery/objects, roads/water, industries/operations, loaders/custom loaders,
