@@ -35,6 +35,12 @@ namespace FUSE.Loading
         private static readonly List<LegacyBuilderTask> BuilderTasks =
             new List<LegacyBuilderTask>();
 
+        // GraphDidChange must be raised after the merged graph has been committed
+        // to the live game graph, not while the legacy JSON is still being
+        // converted. Keep the state from the most recent conversion until the
+        // staged apply reaches that commit point.
+        private static StrangeCustoms.Tracks.TrackState _pendingDidChangeState;
+
         /// <summary>
         /// Defers a legacy spliney whose handler FUSE doesn't recognize natively
         /// to the GraphWillChangeEvent path so loaded old-loader plugins can
@@ -42,7 +48,7 @@ namespace FUSE.Loading
         /// pass so any hosted plugin implementing StrangeCustoms.ISplineyBuilder
         /// can spawn its own visual mesh.
         /// </summary>
-        public static void Register(string id, JObject splineyData)
+        public static void Register(string id, JObject splineyData, string packageId = null)
         {
             if (string.IsNullOrWhiteSpace(id) || splineyData == null)
             {
@@ -67,7 +73,11 @@ namespace FUSE.Loading
                     }
                 }
 
-                BuilderTasks.Add(new LegacyBuilderTask(id, handler, (JObject)clone.DeepClone()));
+                BuilderTasks.Add(new LegacyBuilderTask(
+                    id,
+                    handler,
+                    (JObject)clone.DeepClone(),
+                    packageId));
             }
         }
 
@@ -107,10 +117,14 @@ namespace FUSE.Loading
             var existingSegmentIds = new HashSet<string>(
                 state.Tracks.Segments.Keys,
                 StringComparer.OrdinalIgnoreCase);
+            var changedNodeIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var changedSegmentIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             try
             {
-                var evt = new StrangeCustoms.GraphWillChangeEvent(state, _ => { });
+                var evt = new StrangeCustoms.GraphWillChangeEvent(
+                    state,
+                    path => RecordChangedGraphPath(path, changedNodeIds, changedSegmentIds));
                 Messenger.Default.Send(evt);
             }
             catch (Exception ex)
@@ -122,15 +136,64 @@ namespace FUSE.Loading
                     ex);
             }
 
-            result.NodesAdded = MergeNewNodes(state, existingNodeIds, root);
-            result.SegmentsAdded = MergeNewSegments(state, existingSegmentIds, root);
+            result.NodesAdded = MergeNodes(state, existingNodeIds, changedNodeIds, root, out var nodesUpdated);
+            result.NodesUpdated = nodesUpdated;
+            result.SegmentsAdded = MergeSegments(state, existingSegmentIds, changedSegmentIds, root, out var segmentsUpdated);
+            result.SegmentsUpdated = segmentsUpdated;
+            _pendingDidChangeState = state;
             return result;
+        }
+
+        /// <summary>
+        /// Completes the legacy graph-event transaction after FUSE has committed
+        /// the merged track plan to the live graph. Signals Everywhere and other
+        /// hosted plugins use this notification to rebuild runtime objects.
+        /// </summary>
+        public static void NotifyGraphDidChange()
+        {
+            var state = _pendingDidChangeState ?? new StrangeCustoms.Tracks.TrackState();
+            _pendingDidChangeState = null;
+
+            try
+            {
+                Messenger.Default.Send(new StrangeCustoms.GraphDidChangeEvent(state));
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception(
+                    "FUSE spliney plugin host caught an exception while dispatching " +
+                    "GraphDidChangeEvent to legacy plugin handlers",
+                    ex);
+            }
         }
 
         public static void Reset()
         {
             Pending.Clear();
             BuilderTasks.Clear();
+            _pendingDidChangeState = null;
+        }
+
+        private static void RecordChangedGraphPath(
+            string[] path,
+            HashSet<string> changedNodeIds,
+            HashSet<string> changedSegmentIds)
+        {
+            if (path == null || path.Length < 3 ||
+                !string.Equals(path[0], "tracks", StringComparison.OrdinalIgnoreCase) ||
+                string.IsNullOrWhiteSpace(path[2]))
+            {
+                return;
+            }
+
+            if (string.Equals(path[1], "nodes", StringComparison.OrdinalIgnoreCase))
+            {
+                changedNodeIds.Add(path[2]);
+            }
+            else if (string.Equals(path[1], "segments", StringComparison.OrdinalIgnoreCase))
+            {
+                changedSegmentIds.Add(path[2]);
+            }
         }
 
         private static StrangeCustoms.Tracks.TrackState BuildState(
@@ -189,10 +252,29 @@ namespace FUSE.Loading
             {
                 StartId = segment["startNodeId"]?.Value<string>() ?? segment["startId"]?.Value<string>(),
                 EndId = segment["endNodeId"]?.Value<string>() ?? segment["endId"]?.Value<string>(),
+                Style = ParseEnum(segment["style"]?.Value<string>(), Track.TrackSegment.Style.Standard),
+                TrackClass = ParseTrackClass(segment["trackClass"]?.Value<string>()),
                 Priority = segment["priority"]?.Value<int>() ?? 0,
                 SpeedLimit = segment["speedLimit"]?.Value<int>() ?? 45,
                 GroupId = segment["groupId"]?.Value<string>(),
             };
+        }
+
+        private static TEnum ParseEnum<TEnum>(string value, TEnum fallback) where TEnum : struct
+        {
+            return !string.IsNullOrWhiteSpace(value) && Enum.TryParse(value, true, out TEnum parsed)
+                ? parsed
+                : fallback;
+        }
+
+        private static Track.TrackClass ParseTrackClass(string value)
+        {
+            if (string.Equals(value, "main", StringComparison.OrdinalIgnoreCase))
+            {
+                return Track.TrackClass.Mainline;
+            }
+
+            return ParseEnum(value, Track.TrackClass.Mainline);
         }
 
         private static Vector3 ReadVector3(JToken token)
@@ -208,11 +290,14 @@ namespace FUSE.Loading
                 obj["z"]?.Value<float>() ?? 0f);
         }
 
-        private static int MergeNewNodes(
+        private static int MergeNodes(
             StrangeCustoms.Tracks.TrackState state,
             HashSet<string> existingIds,
-            JObject root)
+            HashSet<string> changedIds,
+            JObject root,
+            out int updated)
         {
+            updated = 0;
             var rootNodes = root?["tracks"]?["nodes"] as JObject;
             if (rootNodes == null)
             {
@@ -222,23 +307,34 @@ namespace FUSE.Loading
             var added = 0;
             foreach (var entry in state.Tracks.Nodes)
             {
-                if (existingIds.Contains(entry.Key))
+                var exists = existingIds.Contains(entry.Key);
+                if (exists && !changedIds.Contains(entry.Key))
                 {
                     continue;
                 }
 
                 rootNodes[entry.Key] = SerializeNode(entry.Value);
-                added++;
+                if (exists)
+                {
+                    updated++;
+                }
+                else
+                {
+                    added++;
+                }
             }
 
             return added;
         }
 
-        private static int MergeNewSegments(
+        private static int MergeSegments(
             StrangeCustoms.Tracks.TrackState state,
             HashSet<string> existingIds,
-            JObject root)
+            HashSet<string> changedIds,
+            JObject root,
+            out int updated)
         {
+            updated = 0;
             var rootSegments = root?["tracks"]?["segments"] as JObject;
             if (rootSegments == null)
             {
@@ -248,13 +344,21 @@ namespace FUSE.Loading
             var added = 0;
             foreach (var entry in state.Tracks.Segments)
             {
-                if (existingIds.Contains(entry.Key))
+                var exists = existingIds.Contains(entry.Key);
+                if (exists && !changedIds.Contains(entry.Key))
                 {
                     continue;
                 }
 
                 rootSegments[entry.Key] = SerializeSegment(entry.Value);
-                added++;
+                if (exists)
+                {
+                    updated++;
+                }
+                else
+                {
+                    added++;
+                }
             }
 
             return added;
@@ -286,8 +390,10 @@ namespace FUSE.Loading
             {
                 ["startNodeId"] = segment.StartId,
                 ["endNodeId"] = segment.EndId,
-                ["style"] = "standard",
-                ["trackClass"] = "main",
+                ["style"] = segment.Style.ToString(),
+                ["trackClass"] = segment.TrackClass == Track.TrackClass.Mainline
+                    ? "main"
+                    : segment.TrackClass.ToString(),
                 ["speedLimit"] = segment.SpeedLimit,
                 ["priority"] = segment.Priority,
             };
@@ -359,7 +465,7 @@ namespace FUSE.Loading
                     result.FailureCount++;
                     FuseLog.Warning(
                         $"FUSE spliney plugin host caught an exception while a hosted " +
-                        $"old-loader plugin built spliney id='{task.Id}' " +
+                        $"old-loader plugin built spliney package='{task.PackageId}' id='{task.Id}' " +
                         $"handler='{task.Handler}': {ex.GetBaseException().Message}");
                 }
             }
@@ -508,23 +614,29 @@ namespace FUSE.Loading
 
         private readonly struct LegacyBuilderTask
         {
-            public LegacyBuilderTask(string id, string handler, JObject data)
+            public LegacyBuilderTask(string id, string handler, JObject data, string packageId)
             {
                 Id = id;
                 Handler = handler;
                 Data = data;
+                PackageId = string.IsNullOrWhiteSpace(packageId)
+                    ? "<unattributed>"
+                    : packageId.Trim();
             }
 
             public string Id { get; }
             public string Handler { get; }
             public JObject Data { get; }
+            public string PackageId { get; }
         }
 
         public sealed class FlushResult
         {
             public int PendingSplineyCount { get; set; }
             public int NodesAdded { get; set; }
+            public int NodesUpdated { get; set; }
             public int SegmentsAdded { get; set; }
+            public int SegmentsUpdated { get; set; }
         }
 
         public sealed class BuilderInvocationResult

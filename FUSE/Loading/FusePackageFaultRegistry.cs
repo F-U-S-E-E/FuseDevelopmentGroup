@@ -1,30 +1,129 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using FUSE.Infrastructure;
+using Newtonsoft.Json;
 
 namespace FUSE.Loading
 {
     internal sealed class FusePackageFault
     {
         public FusePackageFault(string packageId, string stage, string message, string details)
+            : this(packageId, stage, message, details, string.Empty, string.Empty, string.Empty, 0, 0, string.Empty)
+        {
+        }
+
+        public FusePackageFault(
+            string packageId,
+            string stage,
+            string message,
+            string details,
+            string folderPath,
+            string sourceFile,
+            string jsonPath,
+            int lineNumber,
+            int linePosition,
+            string suggestedAction,
+            string packageName = null,
+            string validationCode = null,
+            string expectedShape = null,
+            string receivedValue = null)
         {
             PackageId = packageId ?? string.Empty;
+            PackageName = string.IsNullOrWhiteSpace(packageName)
+                ? InferPackageName(PackageId, folderPath)
+                : packageName.Trim();
             Stage = stage ?? string.Empty;
             Message = message ?? string.Empty;
             Details = details ?? string.Empty;
+            FolderPath = folderPath ?? string.Empty;
+            SourceFile = sourceFile ?? string.Empty;
+            RelativeSourceFile = MakeRelativeSourceFile(FolderPath, SourceFile);
+            JsonPath = jsonPath ?? string.Empty;
+            LineNumber = Math.Max(0, lineNumber);
+            LinePosition = Math.Max(0, linePosition);
+            SuggestedAction = suggestedAction ?? string.Empty;
+            ValidationCode = validationCode ?? string.Empty;
+            ExpectedShape = expectedShape ?? string.Empty;
+            ReceivedValue = receivedValue ?? string.Empty;
             TimestampUtc = DateTime.UtcNow;
         }
 
         public string PackageId { get; }
+        public string PackageName { get; }
         public string Stage { get; }
         public string Message { get; }
         public string Details { get; }
+        public string FolderPath { get; }
+        public string SourceFile { get; }
+        public string RelativeSourceFile { get; }
+        public string JsonPath { get; }
+        public int LineNumber { get; }
+        public int LinePosition { get; }
+        public string SuggestedAction { get; }
+        public string ValidationCode { get; }
+        public string ExpectedShape { get; }
+        public string ReceivedValue { get; }
         public DateTime TimestampUtc { get; }
 
         public override string ToString()
         {
-            return $"package='{PackageId}' stage='{Stage}' message='{Message}' details='{Details}'";
+            return
+                $"package='{PackageId}' packageName='{PackageName}' stage='{Stage}' message='{Message}' " +
+                $"folder='{FolderPath}' file='{SourceFile}' relativeFile='{RelativeSourceFile}' jsonPath='{JsonPath}' " +
+                $"line={LineNumber} position={LinePosition} code='{ValidationCode}' expected='{ExpectedShape}' " +
+                $"received='{ReceivedValue}' action='{SuggestedAction}' details='{Details}'";
+        }
+
+        private static string InferPackageName(string packageId, string folderPath)
+        {
+            if (!string.IsNullOrWhiteSpace(folderPath))
+            {
+                try
+                {
+                    var folderName = Path.GetFileName(folderPath.TrimEnd(
+                        Path.DirectorySeparatorChar,
+                        Path.AltDirectorySeparatorChar));
+                    if (!string.IsNullOrWhiteSpace(folderName))
+                        return folderName;
+                }
+                catch (Exception ex) when (
+                    ex is ArgumentException ||
+                    ex is NotSupportedException ||
+                    ex is PathTooLongException)
+                {
+                    // Keep the package id fallback; diagnostics must not fail
+                    // while formatting an already-broken path.
+                    return packageId ?? string.Empty;
+                }
+            }
+            return packageId ?? string.Empty;
+        }
+
+        private static string MakeRelativeSourceFile(string folderPath, string sourceFile)
+        {
+            if (string.IsNullOrWhiteSpace(sourceFile))
+                return string.Empty;
+            if (string.IsNullOrWhiteSpace(folderPath))
+                return Path.GetFileName(sourceFile) ?? sourceFile;
+            try
+            {
+                var root = Path.GetFullPath(folderPath).TrimEnd(
+                    Path.DirectorySeparatorChar,
+                    Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                var file = Path.GetFullPath(sourceFile);
+                return file.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+                    ? file.Substring(root.Length)
+                    : Path.GetFileName(file);
+            }
+            catch (Exception ex) when (
+                ex is ArgumentException ||
+                ex is NotSupportedException ||
+                ex is PathTooLongException)
+            {
+                return Path.GetFileName(sourceFile) ?? sourceFile;
+            }
         }
     }
 
@@ -68,11 +167,68 @@ namespace FUSE.Loading
             AppliedPackages.Remove(packageId);
         }
 
-        public static void RecordFault(string packageId, string stage, string message, Exception exception = null)
+        public static void RecordFault(
+            string packageId,
+            string stage,
+            string message,
+            Exception exception = null,
+            string folderPath = null,
+            string sourceFile = null,
+            string jsonPath = null,
+            int lineNumber = 0,
+            int linePosition = 0,
+            string suggestedAction = null,
+            string packageName = null,
+            string validationCode = null,
+            string expectedShape = null,
+            string receivedValue = null)
         {
             packageId = NormalizePackageId(packageId);
+            ExtractJsonLocation(exception, ref jsonPath, ref lineNumber, ref linePosition);
+            if (string.IsNullOrWhiteSpace(folderPath) && !string.IsNullOrWhiteSpace(sourceFile))
+            {
+                try
+                {
+                    folderPath = Path.GetDirectoryName(sourceFile);
+                }
+                catch (Exception ex) when (
+                    ex is ArgumentException ||
+                    ex is NotSupportedException ||
+                    ex is PathTooLongException)
+                {
+                    folderPath = string.Empty;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(suggestedAction) && IsJsonException(exception))
+            {
+                suggestedAction =
+                    "Correct the JSON at the reported location, validate the file against the bundled FUSE schema, then reload the package.";
+            }
+            if (IsJsonException(exception))
+            {
+                if (string.IsNullOrWhiteSpace(expectedShape))
+                    expectedShape = "Valid JSON matching the declared FUSE or package manifest schema.";
+                if (string.IsNullOrWhiteSpace(receivedValue))
+                    receivedValue = exception.GetBaseException().Message;
+            }
+
             var details = exception == null ? string.Empty : exception.ToString();
-            var fault = new FusePackageFault(packageId, stage, message, details);
+            var fault = new FusePackageFault(
+                packageId,
+                stage,
+                message,
+                details,
+                folderPath,
+                sourceFile,
+                jsonPath,
+                lineNumber,
+                linePosition,
+                suggestedAction,
+                packageName,
+                validationCode,
+                expectedShape,
+                receivedValue);
 
             if (!Faults.TryGetValue(packageId, out var packageFaults))
             {
@@ -82,13 +238,54 @@ namespace FUSE.Loading
 
             if (packageFaults.Any(existing =>
                 string.Equals(existing.Stage, fault.Stage, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(existing.Message, fault.Message, StringComparison.Ordinal)))
+                string.Equals(existing.Message, fault.Message, StringComparison.Ordinal) &&
+                string.Equals(existing.SourceFile, fault.SourceFile, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(existing.JsonPath, fault.JsonPath, StringComparison.Ordinal)))
             {
                 return;
             }
 
             packageFaults.Add(fault);
             FuseLog.Error($"FUSE package fault recorded: {fault}");
+        }
+
+        private static void ExtractJsonLocation(
+            Exception exception,
+            ref string jsonPath,
+            ref int lineNumber,
+            ref int linePosition)
+        {
+            for (var current = exception; current != null; current = current.InnerException)
+            {
+                if (current is JsonReaderException reader)
+                {
+                    jsonPath = string.IsNullOrWhiteSpace(jsonPath) ? reader.Path : jsonPath;
+                    lineNumber = lineNumber > 0 ? lineNumber : reader.LineNumber;
+                    linePosition = linePosition > 0 ? linePosition : reader.LinePosition;
+                    return;
+                }
+
+                if (current is JsonSerializationException serialization)
+                {
+                    jsonPath = string.IsNullOrWhiteSpace(jsonPath) ? serialization.Path : jsonPath;
+                    lineNumber = lineNumber > 0 ? lineNumber : serialization.LineNumber;
+                    linePosition = linePosition > 0 ? linePosition : serialization.LinePosition;
+                    return;
+                }
+            }
+        }
+
+        private static bool IsJsonException(Exception exception)
+        {
+            for (var current = exception; current != null; current = current.InnerException)
+            {
+                if (current is JsonException)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public static void MarkDisabled(string packageId, string reason)
@@ -168,7 +365,8 @@ namespace FUSE.Loading
         public static bool IsOptionalSkipReason(string reason)
         {
             return !string.IsNullOrWhiteSpace(reason) &&
-                   (reason.StartsWith("mixinto dependency missing", StringComparison.OrdinalIgnoreCase) ||
+                   (reason.IndexOf("mixinto dependency missing", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    reason.IndexOf("mixinto conflict matched", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     reason.StartsWith(FuseMapSession.InactiveSkipReasonPrefix, StringComparison.OrdinalIgnoreCase));
         }
 

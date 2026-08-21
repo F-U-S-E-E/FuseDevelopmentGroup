@@ -9,7 +9,7 @@ namespace FUSE.Runtime.Cache
         private static readonly List<object> Caches = new List<object>();
         private static bool _isReady;
 
-        // Diagnostics: how often the full (16-index, scene-scanning) and graph-only
+        // Diagnostics: how often the full (scene-scanning) and graph-only
         // (3-index) rebuilds run. Surfaced to FUSE.log + the Health page so the cost
         // of repeated rebuilds during a single map load is measurable (issue: tile/
         // load-time bottleneck investigation).
@@ -41,6 +41,7 @@ namespace FUSE.Runtime.Cache
             Register(new FuseStationRuntimeIndex());
             Register(new FuseSceneryRuntimeIndex());
             Register(new FuseSplineyRuntimeIndex());
+            Register(new FuseWaterSurfaceRuntimeIndex());
             Register(new FuseMapLabelRuntimeIndex());
         }
 
@@ -70,6 +71,7 @@ namespace FUSE.Runtime.Cache
             FuseStationRuntimeIndex.Instance.Rebuild();
             FuseSceneryRuntimeIndex.Instance.Rebuild();
             FuseSplineyRuntimeIndex.Instance.Rebuild();
+            FuseWaterSurfaceRuntimeIndex.Instance.Rebuild();
             FuseMapLabelRuntimeIndex.Instance.Rebuild();
             // Full rebuilds mark session boundaries (map load, manual reload) where
             // SceneryAssetManager.Shared and its catalog may have been replaced
@@ -80,7 +82,7 @@ namespace FUSE.Runtime.Cache
             _fullRebuildCount++;
             FusePerformanceMetrics.RecordCount("cache full rebuilds", _fullRebuildCount);
             FuseLog.Info(
-                $"FUSE cache full rebuild #{_fullRebuildCount} (16 indexes) elapsedMs={stopwatch.ElapsedMilliseconds}.");
+                $"FUSE cache full rebuild #{_fullRebuildCount} ({Caches.Count} indexes) elapsedMs={stopwatch.ElapsedMilliseconds}.");
         }
 
         /// <summary>
@@ -128,6 +130,7 @@ namespace FUSE.Runtime.Cache
             FuseStationRuntimeIndex.Instance.Clear();
             FuseSceneryRuntimeIndex.Instance.Clear();
             FuseSplineyRuntimeIndex.Instance.Clear();
+            FuseWaterSurfaceRuntimeIndex.Instance.Clear();
             FuseMapLabelRuntimeIndex.Instance.Clear();
             _isReady = false;
         }

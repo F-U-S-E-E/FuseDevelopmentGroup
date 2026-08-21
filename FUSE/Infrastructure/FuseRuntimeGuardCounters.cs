@@ -35,6 +35,7 @@ namespace FUSE.Infrastructure
         internal static long RebillAutoConfigSuppressed { get; private set; }
         internal static long BrssModMenuDeferred { get; private set; }
         internal static long TimeSyncMainThreadMarshaled { get; private set; }
+        internal static long PassengerStopSpansSanitized { get; private set; }
 
         internal static long FrameSpikes { get; private set; }
         internal static float FrameSpikeWorstMs { get; private set; }
@@ -66,7 +67,8 @@ namespace FUSE.Infrastructure
             MapEnhancerCullingGuarded +
             RebillAutoConfigSuppressed +
             BrssModMenuDeferred +
-            TimeSyncMainThreadMarshaled;
+            TimeSyncMainThreadMarshaled +
+            PassengerStopSpansSanitized;
 
         internal static bool AllIdle => GuardTotal == 0;
 
@@ -99,6 +101,8 @@ namespace FUSE.Infrastructure
         internal static long RecordBrssModMenuDeferred() => ++BrssModMenuDeferred;
 
         internal static long RecordTimeSyncMainThreadMarshaled() => ++TimeSyncMainThreadMarshaled;
+
+        internal static long RecordPassengerStopSpanSanitized() => ++PassengerStopSpansSanitized;
 
         internal static long RecordFrameSpike(float frameMs)
         {
@@ -133,6 +137,7 @@ namespace FUSE.Infrastructure
                 $"rebillAutoConfigSuppressed={RebillAutoConfigSuppressed} " +
                 $"brssModMenuDeferred={BrssModMenuDeferred} " +
                 $"timeSyncMainThread={TimeSyncMainThreadMarshaled} " +
+                $"passengerStopSpansSanitized={PassengerStopSpansSanitized} " +
                 $"flares={FlareSuppressed} switchRailsBackfilled={SwitchGeometryRailsBackfilled} " +
                 spikes;
         }
@@ -155,6 +160,7 @@ namespace FUSE.Infrastructure
             RebillAutoConfigSuppressed = 0;
             BrssModMenuDeferred = 0;
             TimeSyncMainThreadMarshaled = 0;
+            PassengerStopSpansSanitized = 0;
             FrameSpikes = 0;
             FrameSpikeWorstMs = 0f;
             SceneryLoadWatchAttached = 0;

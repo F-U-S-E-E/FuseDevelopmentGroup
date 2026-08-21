@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -8,6 +9,7 @@ using Map.Runtime.MaskComponents;
 using FUSE.Runtime.Cache;
 using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
+using FUSE.Loading;
 using TelegraphPoles;
 using TMPro;
 using UI.Map;
@@ -48,6 +50,70 @@ namespace FUSE.Runtime.API
         private static Transform _worldRoot;
         private static Transform _indexedDecoupledMaskRoot;
         private static Sprite _speedLimitCircleSprite;
+
+        /// <summary>
+        /// Registers or refreshes one package-owned terrain tile folder and
+        /// mounts it into the active map store. This is primarily useful to
+        /// authoring tools that create the first tile in a previously empty
+        /// overlay folder while the game is running.
+        /// </summary>
+        public static int RegisterMapTileSource(
+            string packageId,
+            string packageFolder,
+            string sourceId,
+            string directory,
+            string sourceFolder,
+            int priority = 100)
+        {
+            RequireId(packageId, nameof(packageId));
+            RequireId(sourceId, nameof(sourceId));
+            if (string.IsNullOrWhiteSpace(packageFolder))
+            {
+                throw new ArgumentException(
+                    "Package folder is required.",
+                    nameof(packageFolder));
+            }
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                throw new ArgumentException(
+                    "Map directory is required.",
+                    nameof(directory));
+            }
+            if (string.IsNullOrWhiteSpace(sourceFolder))
+            {
+                throw new ArgumentException(
+                    "Tile source folder is required.",
+                    nameof(sourceFolder));
+            }
+
+            var fullPackageFolder = Path.GetFullPath(packageFolder);
+            if (!Directory.Exists(fullPackageFolder))
+            {
+                throw new DirectoryNotFoundException(
+                    "Package folder was not found: "
+                    + fullPackageFolder);
+            }
+
+            var registered = FuseMapTileRegistry.RegisterTileSource(
+                packageId,
+                fullPackageFolder,
+                sourceId,
+                new FuseMapTileSource
+                {
+                    Directory = directory,
+                    SourceFolder = sourceFolder,
+                    Priority = priority
+                });
+            if (!registered)
+            {
+                throw new InvalidOperationException(
+                    "FUSE rejected the map tile source. Keep sourceFolder "
+                    + "inside the package directory.");
+            }
+
+            return FuseMapTileRegistry.MountForActiveMapIfLoaded(
+                "MapAPI.RegisterMapTileSource");
+        }
 
         public static MapLabel AddMapLabel(string id, FuseMapLabel definition)
         {

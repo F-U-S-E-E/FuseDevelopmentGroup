@@ -537,6 +537,12 @@ namespace FUSE.Loading
                 }
             }
 
+            foreach (var waterSurfaceId in definition.World?.WaterSurfaces?.Keys ?? Enumerable.Empty<string>())
+            {
+                if (WaterSurfaceAPI.GetWaterSurface(waterSurfaceId) == null)
+                    transaction.Warning("water surface", waterSurfaceId, "missing after apply");
+            }
+
             foreach (var sceneCloneId in definition.World?.SceneClones?.Keys ?? Enumerable.Empty<string>())
             {
                 if (SceneCloneAPI.GetSceneClone(sceneCloneId) == null)

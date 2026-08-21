@@ -35,7 +35,7 @@ namespace FUSE.Loading
                 .ToArray();
         }
 
-        public static FuseLoadedMod LoadMod(string modFolder)
+        public static FuseLoadedMod LoadMod(string modFolder, string packageId = null)
         {
             if (string.IsNullOrWhiteSpace(modFolder))
             {
@@ -48,11 +48,43 @@ namespace FUSE.Loading
             for (var index = 0; index < definitionPaths.Length; index++)
             {
                 var definitionPath = definitionPaths[index];
-                var definition = FuseSerializer.Load(definitionPath);
+                FuseModDefinition definition;
+                try
+                {
+                    definition = FuseSerializer.Load(definitionPath);
+                }
+                catch (Exception ex)
+                {
+                    var reportedId = string.IsNullOrWhiteSpace(packageId)
+                        ? Path.GetFileName(modFolder)
+                        : packageId;
+                    FusePackageFaultRegistry.RecordFault(
+                        reportedId,
+                        "JSON deserialization",
+                        ex.GetBaseException().Message,
+                        ex,
+                        modFolder,
+                        definitionPath,
+                        expectedShape: "A valid native FUSE definition object matching fuse-mod.schema.json.",
+                        receivedValue: ex.GetBaseException().Message);
+                    throw;
+                }
                 var definitionId = definition?.Id;
                 if (string.IsNullOrWhiteSpace(definitionId))
                 {
-                    FusePackageFaultRegistry.RecordFault(Path.GetFileName(modFolder), "validation", $"Definition file '{definitionPath}' is missing an id.");
+                    FusePackageFaultRegistry.RecordFault(
+                        string.IsNullOrWhiteSpace(packageId) ? Path.GetFileName(modFolder) : packageId,
+                        "schema validation",
+                        "Definition is missing the required 'id' field.",
+                        null,
+                        modFolder,
+                        definitionPath,
+                        "id",
+                        suggestedAction: "Add a unique, non-empty 'id' to this definition.",
+                        packageName: definition?.Name,
+                        validationCode: "fuse.required",
+                        expectedShape: "A unique, non-empty native FUSE definition id.",
+                        receivedValue: definitionId);
                     throw new InvalidOperationException($"FUSE definition file '{definitionPath}' is missing an id.");
                 }
 
@@ -61,12 +93,24 @@ namespace FUSE.Loading
                     var message =
                         $"Duplicate FUSE definition id '{definitionId}' in package folder '{modFolder}'. " +
                         $"First file='{firstPath}', duplicate file='{definitionPath}'.";
-                    FusePackageFaultRegistry.RecordFault(definitionId, "validation", message);
+                    FusePackageFaultRegistry.RecordFault(
+                        string.IsNullOrWhiteSpace(packageId) ? Path.GetFileName(modFolder) : packageId,
+                        "schema validation",
+                        message,
+                        null,
+                        modFolder,
+                        definitionPath,
+                        "id",
+                        suggestedAction: "Give every definition file in this package a unique id.",
+                        packageName: definition?.Name,
+                        validationCode: "fuse.id.duplicate",
+                        expectedShape: "A definition id used only once in this package.",
+                        receivedValue: definitionId);
                     throw new InvalidOperationException(message);
                 }
 
                 definitionIdsInPackage.Add(definitionId, definitionPath);
-                LoadDefinition(definition, modFolder, definitionPath);
+                LoadDefinition(definition, modFolder, definitionPath, packageId);
                 loadedMod = LoadedMods[definition.Id];
             }
 
@@ -74,13 +118,27 @@ namespace FUSE.Loading
             return loadedMod;
         }
 
-        public static void LoadDefinition(FuseModDefinition definition, string folderPath = null, string definitionPath = null)
+        public static void LoadDefinition(
+            FuseModDefinition definition,
+            string folderPath = null,
+            string definitionPath = null)
+        {
+            LoadDefinition(definition, folderPath, definitionPath, null);
+        }
+
+        internal static void LoadDefinition(
+            FuseModDefinition definition,
+            string folderPath,
+            string definitionPath,
+            string packageId)
         {
             var validation = Validator.Validate(definition);
             FuseEvents.RaiseValidationCompleted(definition != null ? definition.Id : string.Empty, validation);
             if (!validation.IsValid)
             {
-                var packageId = definition?.Id ?? Path.GetFileName(folderPath ?? definitionPath ?? string.Empty);
+                var reportedPackageId = string.IsNullOrWhiteSpace(packageId)
+                    ? definition?.Id ?? Path.GetFileName(folderPath ?? definitionPath ?? string.Empty)
+                    : packageId;
 
                 // Itemize every validation error before throwing. Without this,
                 // package authors see "Definition failed validation with N error(s)"
@@ -90,8 +148,23 @@ namespace FUSE.Loading
                     var code = string.IsNullOrWhiteSpace(error.Code) ? string.Empty : $" code='{error.Code}'";
                     var value = error.Value == null ? string.Empty : $" value='{error.Value}'";
                     FuseLog.Error(
-                        $"FUSE validation error package='{packageId}' operation='load definition' " +
+                        $"FUSE validation error package='{reportedPackageId}' operation='load definition' " +
                         $"kind='{error.Field ?? string.Empty}' message='{error.Message ?? string.Empty}'{code}{value}.");
+                    FusePackageFaultRegistry.RecordFault(
+                        reportedPackageId,
+                        "schema validation",
+                        error.Message,
+                        null,
+                        folderPath,
+                        definitionPath,
+                        error.Field,
+                        suggestedAction:
+                            $"Correct '{error.Field ?? "<root>"}' in this definition" +
+                            (string.IsNullOrWhiteSpace(error.Code) ? "." : $" (validation code {error.Code})."),
+                        packageName: definition?.Name,
+                        validationCode: error.Code,
+                        expectedShape: error.Message,
+                        receivedValue: error.Value?.ToString());
                 }
 
                 foreach (var warning in validation.Warnings)
@@ -99,15 +172,27 @@ namespace FUSE.Loading
                     var code = string.IsNullOrWhiteSpace(warning.Code) ? string.Empty : $" code='{warning.Code}'";
                     var value = warning.Value == null ? string.Empty : $" value='{warning.Value}'";
                     FuseLog.Warning(
-                        $"FUSE validation warning package='{packageId}' operation='load definition' " +
+                        $"FUSE validation warning package='{reportedPackageId}' operation='load definition' " +
                         $"kind='{warning.Field ?? string.Empty}' message='{warning.Message ?? string.Empty}'{code}{value}.");
                 }
 
-                FusePackageFaultRegistry.RecordFault(packageId, "validation", $"Definition failed validation with {validation.Errors.Count} error(s).");
                 throw new InvalidOperationException($"FUSE definition '{definition?.Id ?? "<null>"}' failed validation with {validation.Errors.Count} error(s).");
             }
 
-            RegisterLoadedDefinition(definition, folderPath, definitionPath);
+            var sourceDefinition = definition;
+            var runtimeDefinition = definition;
+            var featureEvaluation = new FuseFeatureEvaluation();
+            if (definition.FeatureRules != null && definition.FeatureRules.Count > 0)
+            {
+                runtimeDefinition = FuseSerializer.FromJson(FuseSerializer.ToJson(definition));
+                featureEvaluation = FuseFeatureRuleEvaluator.Apply(runtimeDefinition);
+                FuseLog.Info(
+                    $"FUSE evaluated package feature rules package='{definition.Id}' " +
+                    $"rules={featureEvaluation.RuleCount} enabled={featureEvaluation.EnabledRuleCount} " +
+                    $"disabled={featureEvaluation.DisabledRuleCount} omittedObjects={featureEvaluation.RemovedObjectCount}.");
+            }
+
+            RegisterLoadedDefinition(runtimeDefinition, folderPath, definitionPath, sourceDefinition, featureEvaluation);
         }
 
         public static int ApplyLoadedDefinitions(string reason)
@@ -163,7 +248,14 @@ namespace FUSE.Loading
                 }
                 catch (Exception ex)
                 {
-                    FusePackageFaultRegistry.RecordFault(id, "runtime apply", ex.Message, ex);
+                    FusePackageFaultRegistry.RecordFault(
+                        id,
+                        "runtime apply",
+                        ex.Message,
+                        ex,
+                        loaded.FolderPath,
+                        loaded.DefinitionPath,
+                        suggestedAction: "Review this package file and the exception details, correct the referenced runtime definition, then reload the map.");
                     FusePackageFaultRegistry.MarkSkipped(id, "runtime apply exception");
                     outcomes.Add(PackageApplyOutcome.ForErrored(id, ex.Message));
                     FuseLog.Exception($"Failed to prepare loaded FUSE definition '{id}' for runtime apply '{reason ?? "unspecified"}'", ex);
@@ -210,7 +302,12 @@ namespace FUSE.Loading
             }
         }
 
-        private static void RegisterLoadedDefinition(FuseModDefinition definition, string folderPath, string definitionPath)
+        private static void RegisterLoadedDefinition(
+            FuseModDefinition definition,
+            string folderPath,
+            string definitionPath,
+            FuseModDefinition sourceDefinition,
+            FuseFeatureEvaluation featureEvaluation)
         {
             if (definition == null || string.IsNullOrWhiteSpace(definition.Id))
             {
@@ -231,7 +328,12 @@ namespace FUSE.Loading
                     $"FUSE definition replacement package='{definition.Id}' operation='replace loaded definition' id='{definition.Id}' releasedClaims={released}.");
             }
 
-            LoadedMods[definition.Id] = new FuseLoadedMod(folderPath, definitionPath, definition);
+            LoadedMods[definition.Id] = new FuseLoadedMod(
+                folderPath,
+                definitionPath,
+                definition,
+                sourceDefinition,
+                featureEvaluation);
             if (firstLoad && !LoadedOrder.Contains(definition.Id, StringComparer.OrdinalIgnoreCase))
             {
                 LoadedOrder.Add(definition.Id);
@@ -572,9 +674,15 @@ namespace FUSE.Loading
                 FuseWorldSuppressor.RestoreAll("unload all");
             }
             FuseMapPackageRegistry.Clear();
+            FuseOutboundRoutingEvents.Reset();
             // Per-mod claims were released in UnloadMod; reset registry to drop
             // any orphaned shared claims and the conflict history.
             FuseRegistry.Reset();
+            FuseSpatialTrackConflictDetector.Clear();
+            lock (DeclaredLayeringLogSync)
+            {
+                DeclaredLayeringLogPairs.Clear();
+            }
             if (resetDiscovery)
             {
                 FuseDataPackageDiscovery.ResetDiscovery();
@@ -658,6 +766,13 @@ namespace FUSE.Loading
                 : null;
         }
 
+        public static FuseModDefinition GetLoadedSourceDefinition(string modId)
+        {
+            return !string.IsNullOrWhiteSpace(modId) && LoadedMods.TryGetValue(modId, out var loaded)
+                ? loaded.SourceDefinition
+                : null;
+        }
+
         public static bool TryGetLoadedMod(string modId, out FuseLoadedMod loaded)
         {
             if (string.IsNullOrWhiteSpace(modId))
@@ -682,7 +797,7 @@ namespace FUSE.Loading
 
         public static void ExportToJson(string modId, string outputPath)
         {
-            var definition = GetLoadedDefinition(modId);
+            var definition = GetLoadedSourceDefinition(modId);
             if (definition == null)
             {
                 throw new InvalidOperationException($"FUSE mod '{modId}' is not loaded.");

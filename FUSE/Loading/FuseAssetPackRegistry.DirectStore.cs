@@ -21,6 +21,8 @@ namespace FUSE.Loading
         private static readonly FieldInfo PrefabStoreStoresField =
             AccessTools.Field(typeof(PrefabStore), "_stores");
 
+        private static PrefabStore _activePrefabStore;
+
         /// <summary>
         /// Mounts a FUSE-generated definitions folder (e.g. the whistle
         /// picker store) as a fuseasset:// direct store on the supplied
@@ -97,10 +99,19 @@ namespace FUSE.Loading
                 return;
             }
 
+            _activePrefabStore = prefabStore;
+
+            // AssetLoader supported definitions-only immediate child folders
+            // in addition to ordinary Catalog.json stores. Build that routing
+            // table before any store's Container is opened.
+            RefreshLegacyDefinitionOverrides();
+            InvalidateLegacyDefinitionOverrideTargetContainers(prefabStore);
+
             var sourcePaths = EnumerateAvailableAssetPackFolders().ToArray();
             if (sourcePaths.Length == 0)
             {
                 ReplaceStoreIdentifierMappings(null);
+                ValidateLegacyDefinitionOverrideTargets(prefabStore);
                 FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
                 FusePerformanceMetrics.RecordCount("direct asset pack store count", 0);
                 return;
@@ -258,6 +269,8 @@ namespace FUSE.Loading
             {
                 FuseLog.Exception("FUSE could not warm-mount the generated whistle store", ex);
             }
+
+            ValidateLegacyDefinitionOverrideTargets(prefabStore);
 
             FusePerformanceMetrics.RecordTiming("direct asset pack stores", stopwatch.ElapsedMilliseconds);
             FusePerformanceMetrics.RecordCount("direct asset pack store count", DirectAssetPackStoreIdentifiers.Count);
@@ -734,6 +747,8 @@ namespace FUSE.Loading
                 SanitizeDeserializedDirectContainer(container);
                 RuntimeStoreContainerField?.SetValue(store, container);
 
+                RecordMissingComponentKinds(store.Identifier, removedByKind.Keys);
+
                 if (removedByKind.Count > 0 && SanitizedDirectContainerWarnings.Add(store.Identifier))
                 {
                     var packId = Path.GetFileName(basePath);
@@ -762,6 +777,17 @@ namespace FUSE.Loading
 
         private static Container LoadResilientDirectContainer(string sourceText, string storeIdentifier, IDictionary<string, int> droppedByKind)
         {
+            if (ConsumeLateComponentReload(storeIdentifier) && ContainerSerializerSettingsMethod != null)
+            {
+                // The first cold load already passed its filtered text through the
+                // public ContainerSerialization entry point. Re-entering that method
+                // would make old-loader postfixes (notably Lego's definition edits)
+                // mutate the same pack twice. The newly registered subtype is visible
+                // to the identical serializer settings here, so reload the untouched
+                // source without firing those postfixes again.
+                return BypassDeserialize(sourceText);
+            }
+
             // No reflection-based strict bypass available (rare): defer to the legacy
             // deserialize path, which itself falls back to ContainerSerialization.Deserialize.
             if (ContainerSerializerSettingsMethod == null)
@@ -862,6 +888,98 @@ namespace FUSE.Loading
 
                 return BypassDeserialize(filtered);
             }
+        }
+
+        private static void RecordMissingComponentKinds(string storeIdentifier, IEnumerable<string> kinds)
+        {
+            if (string.IsNullOrWhiteSpace(storeIdentifier) || kinds == null)
+            {
+                return;
+            }
+
+            lock (LateComponentRegistrationLock)
+            {
+                foreach (var kind in kinds)
+                {
+                    if (string.IsNullOrWhiteSpace(kind))
+                    {
+                        continue;
+                    }
+
+                    if (!StoresMissingComponentKind.TryGetValue(kind, out var stores))
+                    {
+                        stores = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        StoresMissingComponentKind[kind] = stores;
+                    }
+
+                    stores.Add(storeIdentifier);
+                }
+            }
+        }
+
+        private static bool ConsumeLateComponentReload(string storeIdentifier)
+        {
+            if (string.IsNullOrWhiteSpace(storeIdentifier))
+            {
+                return false;
+            }
+
+            lock (LateComponentRegistrationLock)
+            {
+                return StoresRequiringLateComponentReload.Remove(storeIdentifier);
+            }
+        }
+
+        internal static void OnLegacyComponentKindRegistered(string kind)
+        {
+            if (string.IsNullOrWhiteSpace(kind))
+            {
+                return;
+            }
+
+            string[] affectedStoreIdentifiers;
+            lock (LateComponentRegistrationLock)
+            {
+                if (!StoresMissingComponentKind.TryGetValue(kind, out var stores) || stores.Count == 0)
+                {
+                    return;
+                }
+
+                affectedStoreIdentifiers = stores.ToArray();
+                StoresMissingComponentKind.Remove(kind);
+                foreach (var identifier in affectedStoreIdentifiers)
+                {
+                    StoresRequiringLateComponentReload.Add(identifier);
+                }
+            }
+
+            var invalidated = 0;
+            try
+            {
+                if (_activePrefabStore != null &&
+                    PrefabStoreStoresField?.GetValue(_activePrefabStore) is System.Collections.IEnumerable stores)
+                {
+                    var affected = new HashSet<string>(affectedStoreIdentifiers, StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in stores)
+                    {
+                        if (item is AssetPackRuntimeStore store && affected.Contains(store.Identifier))
+                        {
+                            RuntimeStoreContainerField?.SetValue(store, null);
+                            invalidated++;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Warning(
+                    $"FUSE could not invalidate asset packs after component kind '{kind}' registered: {ex.Message}");
+            }
+
+            FusePrefabStoreAllCarDefinitionInfosFilterPatch.InvalidateCache(_activePrefabStore);
+            FuseLog.Info(
+                $"FUSE component kind '{kind}' became available after asset-pack discovery; " +
+                $"invalidated {invalidated} affected store(s) so their full definitions load before use.");
         }
 
         private static void NoteNativeDeserializeFallback(string storeIdentifier, Exception ex)

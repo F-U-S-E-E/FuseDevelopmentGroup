@@ -6,6 +6,9 @@ using UI.Builder;
 using UI.Common;
 using UI.Console;
 using UnityEngine;
+using LegacyComponent = Model.Definition.Component;
+using LegacyComponentBuilderContext = Model.ComponentBuilderContext;
+using LegacyComponentBuilder = Model.IComponentBuilder;
 
 // Legacy support surface for assemblies compiled against the previous loader API.
 // This file reproduces the public surface of the legacy Railloader.Interchange API
@@ -112,8 +115,8 @@ namespace Railloader
         /// Preserves the legacy component-builder registration contract so plugin types can load under FUSE.
         /// </summary>
         void RegisterComponent<TComponent, TComponentBuilder>(string kind)
-            where TComponent : Component
-            where TComponentBuilder : IComponentBuilder;
+            where TComponent : LegacyComponent
+            where TComponentBuilder : LegacyComponentBuilder;
     }
 
     [Obsolete(LegacyShim.Message)]
@@ -178,7 +181,7 @@ namespace Railloader
         /// <summary>
         /// Preserves the non-generic legacy component-build entry point required by plugin IL.
         /// </summary>
-        void Build(ComponentBuilderContext ctx, Component component);
+        void Build(ComponentBuilderContext ctx, UnityEngine.Component component);
     }
 
     // Shape-only stub for interop. FUSE's legacy host does not invoke
@@ -187,6 +190,16 @@ namespace Railloader
     [Obsolete(LegacyShim.Message)]
     public class ComponentBuilderContext
     {
+        public ComponentBuilderContext()
+        {
+        }
+
+        internal ComponentBuilderContext(LegacyComponentBuilderContext inner)
+        {
+            Inner = inner;
+        }
+
+        internal LegacyComponentBuilderContext Inner { get; }
     }
 
     [Flags]
@@ -383,22 +396,73 @@ namespace Railloader
 namespace Railloader.Extensions
 {
     [Obsolete(LegacyShim.Message)]
-    public abstract class ComponentBuilder<T> : IComponentBuilder where T : Component
+    public abstract class ComponentBuilder<T> : LegacyComponentBuilder, Railloader.IComponentBuilder
+        where T : class
     {
+        [ThreadStatic]
+        private static bool _adaptingBuildContract;
+
         public System.Type ComponentType => typeof(T);
 
         /// <summary>
         /// Preserves the legacy non-generic dispatch entry point and forwards it to the typed builder contract.
         /// </summary>
-        public void Build(ComponentBuilderContext ctx, Component component)
+        public void Build(Railloader.ComponentBuilderContext ctx, UnityEngine.Component component)
+        {
+            Build(ctx, (T)(object)component);
+        }
+
+        void LegacyComponentBuilder.Build(LegacyComponentBuilderContext ctx, LegacyComponent component)
         {
             Build(ctx, (T)(object)component);
         }
 
         /// <summary>
-        /// Preserves the typed legacy component-build override implemented by existing plugin binaries.
+        /// Preserves the typed legacy component-build override implemented by existing plugin binaries,
+        /// while forwarding to a Model-context override when a newer builder supplies one.
         /// </summary>
-        protected abstract void Build(ComponentBuilderContext ctx, T component);
+        protected virtual void Build(Railloader.ComponentBuilderContext ctx, T component)
+        {
+            if (_adaptingBuildContract)
+            {
+                throw new NotSupportedException(
+                    $"Component builder '{GetType().FullName}' does not implement either supported Build contract.");
+            }
+
+            try
+            {
+                _adaptingBuildContract = true;
+                Build(
+                    ctx == null ? default(LegacyComponentBuilderContext) : ctx.Inner,
+                    component);
+            }
+            finally
+            {
+                _adaptingBuildContract = false;
+            }
+        }
+
+        /// <summary>
+        /// Adapts builders written against the current game contract back to the legacy override when needed.
+        /// </summary>
+        protected virtual void Build(LegacyComponentBuilderContext ctx, T component)
+        {
+            if (_adaptingBuildContract)
+            {
+                throw new NotSupportedException(
+                    $"Component builder '{GetType().FullName}' does not implement either supported Build contract.");
+            }
+
+            try
+            {
+                _adaptingBuildContract = true;
+                Build(new Railloader.ComponentBuilderContext(ctx), component);
+            }
+            finally
+            {
+                _adaptingBuildContract = false;
+            }
+        }
     }
 }
 

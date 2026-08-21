@@ -19,6 +19,9 @@ namespace FUSE.Loading
 {
     public static partial class FuseModLoader
     {
+        private static readonly object DeclaredLayeringLogSync = new object();
+        private static readonly HashSet<string> DeclaredLayeringLogPairs =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private sealed class FuseStagedApplyCandidate
         {
@@ -154,6 +157,8 @@ namespace FUSE.Loading
                 new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
             public readonly Dictionary<string, FuseMergedTrackRemoval> Splineys =
                 new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, FuseMergedTrackRemoval> WaterSurfaces =
+                new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
             public readonly Dictionary<string, FuseMergedTrackRemoval> MapLabels =
                 new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
             public readonly Dictionary<string, FuseMergedTrackRemoval> MapMasks =
@@ -164,7 +169,7 @@ namespace FUSE.Loading
                 new Dictionary<string, FuseMergedTrackRemoval>(StringComparer.OrdinalIgnoreCase);
 
             public bool HasAny =>
-                Scenery.Count > 0 || SceneClones.Count > 0 || Splineys.Count > 0 ||
+                Scenery.Count > 0 || SceneClones.Count > 0 || Splineys.Count > 0 || WaterSurfaces.Count > 0 ||
                 MapLabels.Count > 0 || MapMasks.Count > 0 || TelegraphPoles.Count > 0 ||
                 Industries.Count > 0;
         }
@@ -215,7 +220,14 @@ namespace FUSE.Loading
                     }
                     catch (Exception ex)
                     {
-                        FusePackageFaultRegistry.RecordFault(definition.Id, "runtime apply", ex.Message, ex);
+                        FusePackageFaultRegistry.RecordFault(
+                            definition.Id,
+                            "runtime apply",
+                            ex.Message,
+                            ex,
+                            candidate.Loaded.FolderPath,
+                            candidate.Loaded.DefinitionPath,
+                            suggestedAction: "Review this package file and the exception details, correct the referenced runtime definition, then reload the map.");
                         FusePackageFaultRegistry.MarkSkipped(definition.Id, "runtime apply exception");
                         outcomes.Add(PackageApplyOutcome.ForErrored(definition.Id, ex.Message));
                         FuseLog.Exception($"Failed to prepare FUSE definition '{definition.Id}' for staged runtime apply", ex);
@@ -254,7 +266,10 @@ namespace FUSE.Loading
                     FuseWorldSuppressor.ApplyActiveTrackGroupSuppressionsBeforeGraphRebuild(
                         "merged graph pre-apply");
 
-                    ApplyMergedTrackGraph(mergedTrackPlan, reason);
+                    if (ApplyMergedTrackGraph(mergedTrackPlan, reason))
+                    {
+                        FuseSplineyPluginHost.NotifyGraphDidChange();
+                    }
 
                     foreach (var candidate in active.Where(item => !item.Transaction.Report.IsFatal))
                     {
@@ -435,7 +450,13 @@ namespace FUSE.Loading
 
                     if (transaction.Report.IsFatal)
                     {
-                        FusePackageFaultRegistry.RecordFault(definition.Id, "runtime apply", transaction.Report.FatalReason);
+                        FusePackageFaultRegistry.RecordFault(
+                            definition.Id,
+                            "runtime apply",
+                            transaction.Report.FatalReason,
+                            folderPath: candidate.Loaded.FolderPath,
+                            sourceFile: candidate.Loaded.DefinitionPath,
+                            suggestedAction: "Review the per-object errors for this package in the health report, correct the referenced file, then reload the map.");
                         FusePackageFaultRegistry.MarkSkipped(definition.Id, transaction.Report.FatalReason);
                         if (HasRuntimeMutations(transaction.Report))
                         {
@@ -447,7 +468,13 @@ namespace FUSE.Loading
                     }
                     else if (transaction.Report.HasErrors)
                     {
-                        FusePackageFaultRegistry.RecordFault(definition.Id, "runtime apply", $"Runtime apply completed with {transaction.Report.Errors.Count} error(s).");
+                        FusePackageFaultRegistry.RecordFault(
+                            definition.Id,
+                            "runtime apply",
+                            $"Runtime apply completed with {transaction.Report.Errors.Count} error(s).",
+                            folderPath: candidate.Loaded.FolderPath,
+                            sourceFile: candidate.Loaded.DefinitionPath,
+                            suggestedAction: "Review the per-object errors for this package in the health report, correct the referenced file, then reload the map.");
                         if (HasRuntimeMutations(transaction.Report))
                         {
                             candidate.RegistryTransaction?.Commit();
@@ -518,6 +545,39 @@ namespace FUSE.Loading
                 .SelectMany(group => group.OrderBy(item => item.index))
                 .ToArray();
 
+            var manifestSnapshots = FuseDataPackageDiscovery.GetPackageManifestSnapshots() ??
+                                    Array.Empty<FusePackageManifestSnapshot>();
+            FuseSpatialTrackConflictDetector.Replace(
+                ordered
+                    .GroupBy(item => item.folder, StringComparer.OrdinalIgnoreCase)
+                    .Select(group =>
+                    {
+                        var loaded = group
+                            .Select(item => item.candidate?.Loaded)
+                            .FirstOrDefault(candidate => candidate?.Definition != null);
+                        var manifest = FindPackageManifestSnapshot(loaded, manifestSnapshots);
+                        var conditionalRequirements = group
+                            .SelectMany(item => item.candidate?.Loaded?.Definition?.Mixinto?.Requires ??
+                                                Array.Empty<FuseModRequirement>())
+                            .Select(requirement => requirement?.Id)
+                            .Where(id => !string.IsNullOrWhiteSpace(id));
+                        return new FuseSpatialTrackPackage
+                        {
+                            PackageId = manifest?.Id ?? loaded?.Definition?.Id ?? string.Empty,
+                            FolderPath = loaded?.FolderPath ?? string.Empty,
+                            RequiredPackageIds = (manifest?.RequiredPackageIds ?? Array.Empty<string>())
+                                .Concat(conditionalRequirements)
+                                .Distinct(StringComparer.OrdinalIgnoreCase)
+                                .ToArray(),
+                            LoadAfter = manifest?.LoadAfter ?? Array.Empty<string>(),
+                            LoadBefore = manifest?.LoadBefore ?? Array.Empty<string>(),
+                            TrackDefinitions = group
+                                .Select(item => item.candidate?.Loaded?.Definition?.Tracks)
+                                .Where(tracks => tracks != null)
+                                .ToArray()
+                        };
+                    }));
+
             var sequence = 0;
             var baseGraphSnapshot = TrackAPI.GetBaseGraphSnapshotDefinition();
             foreach (var item in ordered)
@@ -530,7 +590,7 @@ namespace FUSE.Loading
                 }
 
                 plan.OrderedCandidates.Add(candidate);
-                MergeFinalDefinitions(plan.Turntables, definition.Operations?.Turntables, candidate, ref sequence);
+                MergeFinalDefinitions(plan.Turntables, definition.Operations?.Turntables, candidate, FuseClaimKind.Turntable, ref sequence);
 
                 var tracks = definition.Tracks;
                 if (tracks == null)
@@ -538,13 +598,13 @@ namespace FUSE.Loading
                     continue;
                 }
 
-                MergeFinalDeletes(plan.RemovedSpans, plan.Spans, tracks.Removals?.Spans, candidate, ref sequence);
-                MergeFinalDeletes(plan.RemovedSegments, plan.Segments, tracks.Removals?.Segments, candidate, ref sequence);
-                MergeFinalDeletes(plan.RemovedNodes, plan.Nodes, tracks.Removals?.Nodes, candidate, ref sequence);
+                MergeFinalDeletes(plan.RemovedSpans, plan.Spans, tracks.Removals?.Spans, candidate, FuseClaimKind.Span, ref sequence);
+                MergeFinalDeletes(plan.RemovedSegments, plan.Segments, tracks.Removals?.Segments, candidate, FuseClaimKind.Segment, ref sequence);
+                MergeFinalDeletes(plan.RemovedNodes, plan.Nodes, tracks.Removals?.Nodes, candidate, FuseClaimKind.Node, ref sequence);
 
-                MergeFinalDefinitions(plan.Nodes, plan.RemovedNodes, tracks.Nodes, candidate, ref sequence);
+                MergeFinalDefinitions(plan.Nodes, plan.RemovedNodes, tracks.Nodes, candidate, FuseClaimKind.Node, ref sequence);
                 MergeFinalSegmentDefinitions(plan, tracks.Segments, candidate, baseGraphSnapshot, ref sequence);
-                MergeFinalDefinitions(plan.Spans, plan.RemovedSpans, tracks.Spans, candidate, ref sequence);
+                MergeFinalDefinitions(plan.Spans, plan.RemovedSpans, tracks.Spans, candidate, FuseClaimKind.Span, ref sequence);
             }
 
             FuseLog.Info(
@@ -579,11 +639,113 @@ namespace FUSE.Loading
             }
         }
 
+        private static FusePackageManifestSnapshot FindPackageManifestSnapshot(
+            FuseLoadedMod loaded,
+            IEnumerable<FusePackageManifestSnapshot> snapshots = null)
+        {
+            if (loaded == null)
+            {
+                return null;
+            }
+
+            var normalizedFolder = NormalizePackageFolder(loaded.FolderPath);
+            var available = snapshots ?? FuseDataPackageDiscovery.GetPackageManifestSnapshots() ??
+                            Array.Empty<FusePackageManifestSnapshot>();
+            var byFolder = available.FirstOrDefault(snapshot =>
+                !string.IsNullOrWhiteSpace(normalizedFolder) &&
+                string.Equals(
+                    NormalizePackageFolder(snapshot?.FolderPath),
+                    normalizedFolder,
+                    StringComparison.OrdinalIgnoreCase));
+            if (byFolder != null)
+            {
+                return byFolder;
+            }
+
+            return available.FirstOrDefault(snapshot =>
+                FuseDeclaredPackageRelationship.SamePackageId(snapshot?.Id, loaded.Definition?.Id));
+        }
+
+        private static bool IsExpectedDeclaredLayering(
+            FuseStagedApplyCandidate existing,
+            FuseStagedApplyCandidate later)
+        {
+            return IsExpectedDeclaredLayering(existing?.Loaded, later?.Loaded);
+        }
+
+        private static bool IsExpectedDeclaredLayering(string existingOwner, string laterOwner)
+        {
+            if (string.IsNullOrWhiteSpace(existingOwner) ||
+                string.IsNullOrWhiteSpace(laterOwner) ||
+                !LoadedMods.TryGetValue(existingOwner, out var existing) ||
+                !LoadedMods.TryGetValue(laterOwner, out var later))
+            {
+                return false;
+            }
+
+            return IsExpectedDeclaredLayering(existing, later);
+        }
+
+        private static bool IsExpectedDeclaredLayering(FuseLoadedMod existing, FuseLoadedMod later)
+        {
+            if (existing == null || later == null)
+            {
+                return false;
+            }
+
+            var snapshots = FuseDataPackageDiscovery.GetPackageManifestSnapshots() ??
+                            Array.Empty<FusePackageManifestSnapshot>();
+            return FuseDeclaredPackageRelationship.IsExpectedLaterOverride(
+                FindPackageManifestSnapshot(existing, snapshots),
+                FindPackageManifestSnapshot(later, snapshots),
+                later.Definition);
+        }
+
+        private static void LogExpectedDeclaredLayering(
+            FuseStagedApplyCandidate existing,
+            FuseStagedApplyCandidate later)
+        {
+            LogExpectedDeclaredLayering(existing?.Loaded, later?.Loaded);
+        }
+
+        private static void LogExpectedDeclaredLayering(string existingOwner, string laterOwner)
+        {
+            if (LoadedMods.TryGetValue(existingOwner ?? string.Empty, out var existing) &&
+                LoadedMods.TryGetValue(laterOwner ?? string.Empty, out var later))
+            {
+                LogExpectedDeclaredLayering(existing, later);
+            }
+        }
+
+        private static void LogExpectedDeclaredLayering(FuseLoadedMod existing, FuseLoadedMod later)
+        {
+            var snapshots = FuseDataPackageDiscovery.GetPackageManifestSnapshots() ??
+                            Array.Empty<FusePackageManifestSnapshot>();
+            var existingManifest = FindPackageManifestSnapshot(existing, snapshots);
+            var laterManifest = FindPackageManifestSnapshot(later, snapshots);
+            var existingId = existingManifest?.Id ?? existing?.Definition?.Id ?? string.Empty;
+            var laterId = laterManifest?.Id ?? later?.Definition?.Id ?? string.Empty;
+            var key = existingId + "\0" + laterId;
+            lock (DeclaredLayeringLogSync)
+            {
+                if (!DeclaredLayeringLogPairs.Add(key))
+                {
+                    return;
+                }
+            }
+
+            FuseLog.Info(
+                $"FUSE recognized intentional package layering base='{existingId}' extension='{laterId}' " +
+                "from the resolved requires/loadAfter/loadBefore/mixinto graph; later definitions apply in resolved order " +
+                "and this relationship is excluded from Mod Conflicts.");
+        }
+
         private static void MergeFinalDeletes<T>(
             Dictionary<string, FuseMergedTrackRemoval> removals,
             Dictionary<string, FuseMergedTrackEntry<T>> definitions,
             IEnumerable<string> ids,
             FuseStagedApplyCandidate owner,
+            FuseClaimKind claimKind,
             ref int sequence)
         {
             if (ids == null)
@@ -600,15 +762,53 @@ namespace FUSE.Loading
 
                 var id = rawId.Trim();
                 sequence++;
+                if (definitions.TryGetValue(id, out var displaced) &&
+                    IsCrossPackagePlanCollision(displaced?.Owner, owner))
+                {
+                    if (IsExpectedDeclaredLayering(displaced.Owner, owner))
+                    {
+                        LogExpectedDeclaredLayering(displaced.Owner, owner);
+                    }
+                    else
+                    {
+                        FuseRegistry.RecordPlannedConflict(
+                            claimKind,
+                            id,
+                            displaced.Owner.Loaded.Definition.Id,
+                            owner.Loaded.Definition.Id,
+                            "later package removal won; earlier package definition suppressed");
+                    }
+                }
                 definitions.Remove(id);
                 removals[id] = new FuseMergedTrackRemoval(id, owner, sequence);
             }
+        }
+
+        private static bool IsCrossPackagePlanCollision(
+            FuseStagedApplyCandidate existing,
+            FuseStagedApplyCandidate attempted)
+        {
+            var existingId = existing?.Loaded?.Definition?.Id;
+            var attemptedId = attempted?.Loaded?.Definition?.Id;
+            if (string.IsNullOrWhiteSpace(existingId) ||
+                string.IsNullOrWhiteSpace(attemptedId) ||
+                string.Equals(existingId, attemptedId, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var existingFolder = NormalizePackageFolder(existing.Loaded.FolderPath);
+            var attemptedFolder = NormalizePackageFolder(attempted.Loaded.FolderPath);
+            return string.IsNullOrWhiteSpace(existingFolder) ||
+                   string.IsNullOrWhiteSpace(attemptedFolder) ||
+                   !string.Equals(existingFolder, attemptedFolder, StringComparison.OrdinalIgnoreCase);
         }
 
         private static void MergeFinalDefinitions<T>(
             Dictionary<string, FuseMergedTrackEntry<T>> definitions,
             IDictionary<string, T> values,
             FuseStagedApplyCandidate owner,
+            FuseClaimKind claimKind,
             ref int sequence)
             where T : class
         {
@@ -626,6 +826,7 @@ namespace FUSE.Loading
 
                 var id = pair.Key.Trim();
                 sequence++;
+                RecordDefinitionReplacementConflict(definitions, id, owner, claimKind);
                 definitions[id] = new FuseMergedTrackEntry<T>(id, pair.Value, owner, sequence);
             }
         }
@@ -635,6 +836,7 @@ namespace FUSE.Loading
             Dictionary<string, FuseMergedTrackRemoval> removals,
             IDictionary<string, T> values,
             FuseStagedApplyCandidate owner,
+            FuseClaimKind claimKind,
             ref int sequence)
             where T : class
         {
@@ -653,6 +855,7 @@ namespace FUSE.Loading
                 var id = pair.Key.Trim();
                 sequence++;
                 removals.Remove(id);
+                RecordDefinitionReplacementConflict(definitions, id, owner, claimKind);
                 definitions[id] = new FuseMergedTrackEntry<T>(id, pair.Value, owner, sequence);
             }
         }
@@ -692,7 +895,33 @@ namespace FUSE.Loading
                 }
 
                 plan.RemovedSegments.Remove(id);
+                RecordDefinitionReplacementConflict(plan.Segments, id, owner, FuseClaimKind.Segment);
                 plan.Segments[id] = new FuseMergedTrackEntry<FuseSegment>(id, pair.Value, owner, sequence);
+            }
+        }
+
+        private static void RecordDefinitionReplacementConflict<T>(
+            IDictionary<string, FuseMergedTrackEntry<T>> definitions,
+            string id,
+            FuseStagedApplyCandidate owner,
+            FuseClaimKind claimKind)
+        {
+            if (definitions != null &&
+                definitions.TryGetValue(id, out var existing) &&
+                IsCrossPackagePlanCollision(existing?.Owner, owner))
+            {
+                if (IsExpectedDeclaredLayering(existing.Owner, owner))
+                {
+                    LogExpectedDeclaredLayering(existing.Owner, owner);
+                    return;
+                }
+
+                FuseRegistry.RecordPlannedConflict(
+                    claimKind,
+                    id,
+                    existing.Owner.Loaded.Definition.Id,
+                    owner.Loaded.Definition.Id,
+                    "later package definition won; earlier package definition suppressed");
             }
         }
 
@@ -814,6 +1043,7 @@ namespace FUSE.Loading
                     MergeRemovalIds(plan.Scenery, worldRemovals.Scenery, candidate, ref sequence);
                     MergeRemovalIds(plan.SceneClones, worldRemovals.SceneClones, candidate, ref sequence);
                     MergeRemovalIds(plan.Splineys, worldRemovals.Splineys, candidate, ref sequence);
+                    MergeRemovalIds(plan.WaterSurfaces, worldRemovals.WaterSurfaces, candidate, ref sequence);
                     MergeRemovalIds(plan.MapLabels, worldRemovals.MapLabels, candidate, ref sequence);
                     MergeRemovalIds(plan.MapMasks, worldRemovals.MapMasks, candidate, ref sequence);
                     MergeRemovalIds(plan.TelegraphPoles, worldRemovals.TelegraphPoles, candidate, ref sequence);
@@ -834,6 +1064,7 @@ namespace FUSE.Loading
                     CancelRemovalsByAdds(plan.Scenery, world.Scenery?.Keys, ref sequence);
                     CancelRemovalsByAdds(plan.SceneClones, world.SceneClones?.Keys, ref sequence);
                     CancelRemovalsByAdds(plan.Splineys, world.Splineys?.Keys, ref sequence);
+                    CancelRemovalsByAdds(plan.WaterSurfaces, world.WaterSurfaces?.Keys, ref sequence);
                     CancelRemovalsByAdds(plan.MapLabels, world.MapLabels?.Keys, ref sequence);
                     CancelRemovalsByAdds(plan.MapMasks, world.MapMasks?.Keys, ref sequence);
                     CancelRemovalsByAdds(plan.TelegraphPoles, world.TelegraphPoles?.Keys, ref sequence);
@@ -850,7 +1081,7 @@ namespace FUSE.Loading
                 $"FUSE merged removal plan operation='build merged removal plan' " +
                 $"packages={ordered.Select(item => item.folder).Distinct(StringComparer.OrdinalIgnoreCase).Count()} " +
                 $"definitions={ordered.Length} " +
-                $"scenery={plan.Scenery.Count} sceneClones={plan.SceneClones.Count} splineys={plan.Splineys.Count} " +
+                $"scenery={plan.Scenery.Count} sceneClones={plan.SceneClones.Count} splineys={plan.Splineys.Count} waterSurfaces={plan.WaterSurfaces.Count} " +
                 $"mapLabels={plan.MapLabels.Count} mapMasks={plan.MapMasks.Count} telegraphPoles={plan.TelegraphPoles.Count} " +
                 $"industries={plan.Industries.Count}.");
             return plan;
@@ -920,6 +1151,7 @@ namespace FUSE.Loading
             ApplyMergedRemovalsForKind(plan.Scenery, "scenery", SceneryAPI.TryRemoveScenery);
             ApplyMergedRemovalsForKind(plan.SceneClones, "scene clone", SceneCloneAPI.TryRemoveSceneClone);
             ApplyMergedRemovalsForKind(plan.Splineys, "spliney", SplineyAPI.TryRemoveSpliney);
+            ApplyMergedRemovalsForKind(plan.WaterSurfaces, "water surface", WaterSurfaceAPI.TryRemoveWaterSurface);
             ApplyMergedRemovalsForKind(plan.MapLabels, "map label", MapAPI.TryRemoveMapLabel);
             ApplyMergedRemovalsForKind(plan.MapMasks, "map mask", MapAPI.TryRemoveMapMask);
             ApplyMergedRemovalsForKind(plan.TelegraphPoles, "telegraph pole set", MapAPI.TryRemoveTelegraphPoles);
@@ -963,11 +1195,11 @@ namespace FUSE.Loading
             }
         }
 
-        private static void ApplyMergedTrackGraph(FuseMergedTrackPlan plan, string reason)
+        private static bool ApplyMergedTrackGraph(FuseMergedTrackPlan plan, string reason)
         {
             if (plan == null)
             {
-                return;
+                return false;
             }
 
             TrackAPI.BeginBatch();
@@ -1048,7 +1280,7 @@ namespace FUSE.Loading
                     FuseLog.Warning(
                         "FUSE merged graph apply operation='merged-single-graph-rebuild' failed; " +
                         "final span apply and later runtime phases were aborted for active definitions.");
-                    return;
+                    return false;
                 }
 
                 foreach (var candidate in plan.OrderedCandidates.Where(item => !item.Transaction.Report.IsFatal))
@@ -1092,6 +1324,7 @@ namespace FUSE.Loading
             }
 
             ReconcileMissingMergedSpans(plan);
+            return true;
         }
 
         /// <summary>
@@ -1416,6 +1649,8 @@ namespace FUSE.Loading
                 StartNodeId = hasStartNode ? definition.StartNodeId : current.StartNodeId,
                 EndNodeId = hasEndNode ? definition.EndNodeId : current.EndNodeId,
                 Style = definition.PreserveStyle ? current.Style : definition.Style,
+                BridgeSupportsSteel = definition.PreserveBridgeSupportsSteel ? current.BridgeSupportsSteel : definition.BridgeSupportsSteel,
+                Yard = definition.PreserveYard ? current.Yard : definition.Yard,
                 TrackClass = definition.PreserveTrackClass ? current.TrackClass : definition.TrackClass,
                 SpeedLimit = definition.PreserveSpeedLimit ? current.SpeedLimit : definition.SpeedLimit,
                 Priority = definition.PreservePriority ? current.Priority : definition.Priority,
@@ -1483,8 +1718,7 @@ namespace FUSE.Loading
                     // to succeed, then disappear when Unity finishes the pending
                     // destroy. A fresh graph child is required when the endpoint
                     // segment set changes (ARC Whittier's Pyc3/Pap9 case).
-                    TrackAPI.RemoveSpan(entry.Id);
-                    TrackAPI.AddSpan(entry.Id, entry.Value);
+                    TrackAPI.ReplaceSpan(entry.Id, entry.Value);
                     FuseLog.Info(
                         $"FUSE recreated track span package='{definition.Id}' operation='apply-merged-spans' " +
                         $"kind='track span' id='{entry.Id}' message='endpoint topology changed; avoided reusing retiring runtime span instance'.");

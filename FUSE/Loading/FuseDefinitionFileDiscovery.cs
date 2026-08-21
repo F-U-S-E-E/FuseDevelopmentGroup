@@ -20,6 +20,8 @@ namespace FUSE.Loading
             "Catalog.json",
             "Definitions.json",
             "Definition.json",
+            // Runtime registry state is not an authored FUSE definition.
+            "registry.json",
             "bridge_state.json",
             "bridge_command.json",
             "test_state.json"

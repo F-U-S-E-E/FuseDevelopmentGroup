@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
+using FUSE.Compatibility;
 using FUSE.Runtime.Registry;
 using Newtonsoft.Json.Linq;
 using UI.Common;
@@ -233,7 +234,8 @@ namespace FUSE.Loading
             var snapshot = CaptureCurrentSnapshot();
             _lastReportSnapshot = snapshot;
             var summary = BuildSummary(snapshot);
-            return BuildDetails(snapshot, summary);
+            return FuseLegacyDebugInformation.AppendToReport(
+                BuildDetails(snapshot, summary));
         }
 
         public static string GetLastJsonReport()
@@ -480,11 +482,11 @@ namespace FUSE.Loading
 
             return
                 $"FUSE: {loadedCount} loaded | faults {snapshot.FaultedPackageCount} | " +
-                $"conflicts {snapshot.Conflicts.Length} | assets {snapshot.UnknownSceneryAssets.Length} | " +
+                $"conflicts {snapshot.ActionableConflictCount} | assets {snapshot.UnknownSceneryAssets.Length} | " +
                 $"brokenAssets {snapshot.SceneryLoadFailureCount} | " +
                 $"graph {snapshot.GraphPostBindIssues.Length} | transfers {snapshot.ProgressionTransferSkips.Length} | " +
                 $"suppressions {suppressionCount} | orphans {snapshot.OrphanedCarCount} | " +
-                $"modErrors {snapshot.ModExceptionTotal} | /fuse.report";
+                "/fuse.report";
         }
 
         private static string BuildDetails(ReportSnapshot snapshot, string summary)
@@ -495,17 +497,21 @@ namespace FUSE.Loading
                 $"Reason: {snapshot.Reason}; disk-loaded this pass={snapshot.LoadedFromDiskThisPass}; " +
                 $"runtime-applied this pass={snapshot.AppliedToRuntimeThisPass}; resident definitions={snapshot.ResidentDefinitionCount}.");
             sb.AppendLine(
-                $"Packages: loaded={snapshot.LoadedPackageIds.Length}; applied={snapshot.AppliedPackageIds.Length}; " +
-                $"skipped={snapshot.SkippedPackages.Count}; disabled={snapshot.DisabledPackages.Count}; " +
+                $"Package folders: loaded={snapshot.LoadedPackageIds.Length}; disabled={snapshot.DisabledPackages.Count}; " +
                 $"faulted={snapshot.FaultedPackageCount}.");
+            sb.AppendLine(
+                $"Runtime definitions: resident={snapshot.ResidentDefinitionCount}; applied={snapshot.AppliedPackageIds.Length}; " +
+                $"actionable skips={snapshot.ActionableSkippedPackages.Count}; " +
+                $"optional fragments inactive={snapshot.OptionalSkippedPackages.Count}.");
             sb.AppendLine(
                 $"Post-bind: graphIssues={snapshot.GraphPostBindIssues.Length}; " +
                 $"progressionTransferSkips={snapshot.ProgressionTransferSkips.Length}.");
 
-            AppendList(sb, "Loaded packages", snapshot.LoadedPackageIds);
-            AppendList(sb, "Applied packages", snapshot.AppliedPackageIds);
+            AppendList(sb, "Loaded package folders", snapshot.LoadedPackageIds);
+            AppendList(sb, "Applied definitions", snapshot.AppliedPackageIds);
             AppendList(sb, "Legacy-converted packages", snapshot.LegacyConvertedPackageIds);
-            AppendMap(sb, "Skipped packages", snapshot.SkippedPackages);
+            AppendMap(sb, "Definitions skipped with actionable problems", snapshot.ActionableSkippedPackages);
+            AppendMap(sb, "Optional conditional fragments inactive", snapshot.OptionalSkippedPackages);
             AppendMap(sb, "Disabled packages", snapshot.DisabledPackages);
 
             if (snapshot.Faults.Length > 0)
@@ -513,11 +519,52 @@ namespace FUSE.Loading
                 sb.AppendLine("Faults:");
                 foreach (var fault in snapshot.Faults)
                 {
-                    sb.AppendLine($"  {fault.PackageId} [{fault.Stage}] {fault.Message}");
+                    var packageName = string.IsNullOrWhiteSpace(fault.PackageName)
+                        || string.Equals(fault.PackageName, fault.PackageId, StringComparison.OrdinalIgnoreCase)
+                        ? string.Empty
+                        : $" ({fault.PackageName})";
+                    sb.AppendLine($"  {fault.PackageId}{packageName} [{fault.Stage}] {fault.Message}");
+                    if (!string.IsNullOrWhiteSpace(fault.FolderPath))
+                    {
+                        sb.AppendLine($"    source root: {fault.FolderPath}");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(fault.SourceFile))
+                    {
+                        sb.AppendLine($"    file: {fault.SourceFile}");
+                        if (!string.IsNullOrWhiteSpace(fault.RelativeSourceFile))
+                            sb.AppendLine($"    relative file: {fault.RelativeSourceFile}");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(fault.ValidationCode))
+                        sb.AppendLine($"    validation code: {fault.ValidationCode}");
+                    if (!string.IsNullOrWhiteSpace(fault.ExpectedShape))
+                        sb.AppendLine($"    expected: {fault.ExpectedShape}");
+                    if (!string.IsNullOrWhiteSpace(fault.ReceivedValue))
+                        sb.AppendLine($"    received: {fault.ReceivedValue}");
+                    if (!string.IsNullOrWhiteSpace(fault.Details))
+                        sb.AppendLine($"    details: {fault.Details}");
+
+                    if (!string.IsNullOrWhiteSpace(fault.JsonPath) || fault.LineNumber > 0)
+                    {
+                        var path = string.IsNullOrWhiteSpace(fault.JsonPath) ? "<root>" : fault.JsonPath;
+                        var line = fault.LineNumber > 0
+                            ? $" line {fault.LineNumber}, position {fault.LinePosition}"
+                            : string.Empty;
+                        sb.AppendLine($"    JSON location: {path}{line}");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(fault.SuggestedAction))
+                    {
+                        sb.AppendLine($"    action: {fault.SuggestedAction}");
+                    }
                 }
             }
 
-            sb.AppendLine($"Conflicts recorded: {snapshot.Conflicts.Length} (details: /fuse.conflicts).");
+            sb.AppendLine(
+                $"Ownership conflicts requiring attention: {snapshot.ActionableConflictCount}; " +
+                $"shared extension targets merged successfully: {snapshot.CooperativeConflictCount} " +
+                "(details: /fuse.conflicts).");
 
             // Live session counters, not part of the load snapshot: every guard FUSE
             // keeps around broken content, so a pasted report answers "did the guards
@@ -642,12 +689,19 @@ namespace FUSE.Loading
                     ["appliedToRuntimeThisPass"] = snapshot.AppliedToRuntimeThisPass,
                     ["residentDefinitions"] = snapshot.ResidentDefinitionCount,
                     ["loadedPackages"] = snapshot.LoadedPackageIds.Length,
+                    ["appliedDefinitions"] = snapshot.AppliedPackageIds.Length,
+                    ["actionableSkippedDefinitions"] = snapshot.ActionableSkippedPackages.Count,
+                    ["optionalInactiveDefinitions"] = snapshot.OptionalSkippedPackages.Count,
+                    ["registryOverlapRecords"] = snapshot.Conflicts.Length,
+                    ["sharedExtensionOverlaps"] = snapshot.CooperativeConflictCount,
+                    // Backward-compatible aliases retained for report consumers
+                    // written before definition/package terminology was fixed.
                     ["appliedPackages"] = snapshot.AppliedPackageIds.Length,
                     ["skippedPackages"] = snapshot.SkippedPackages.Count,
                     ["disabledPackages"] = snapshot.DisabledPackages.Count,
                     ["legacyConvertedPackages"] = snapshot.LegacyConvertedPackageIds.Length,
                     ["faultedPackages"] = snapshot.FaultedPackageCount,
-                    ["conflicts"] = snapshot.Conflicts.Length,
+                    ["conflicts"] = snapshot.ActionableConflictCount,
                     ["unknownSceneryAssets"] = snapshot.UnknownSceneryAssets.Length,
                     ["graphIssues"] = snapshot.GraphPostBindIssues.Length,
                     ["progressionTransferSkips"] = snapshot.ProgressionTransferSkips.Length,
@@ -660,6 +714,9 @@ namespace FUSE.Loading
                 ["packages"] = new JObject
                 {
                     ["loaded"] = ToArray(snapshot.LoadedPackageIds),
+                    ["appliedDefinitions"] = ToArray(snapshot.AppliedPackageIds),
+                    ["actionableSkippedDefinitions"] = ToObject(snapshot.ActionableSkippedPackages),
+                    ["optionalInactiveDefinitions"] = ToObject(snapshot.OptionalSkippedPackages),
                     ["applied"] = ToArray(snapshot.AppliedPackageIds),
                     ["legacyConverted"] = ToArray(snapshot.LegacyConvertedPackageIds),
                     ["skipped"] = ToObject(snapshot.SkippedPackages),
@@ -668,7 +725,19 @@ namespace FUSE.Loading
                     {
                         ["packageId"] = fault.PackageId ?? string.Empty,
                         ["stage"] = fault.Stage ?? string.Empty,
-                        ["message"] = fault.Message ?? string.Empty
+                        ["message"] = fault.Message ?? string.Empty,
+                        ["folderPath"] = fault.FolderPath ?? string.Empty,
+                        ["sourceFile"] = fault.SourceFile ?? string.Empty,
+                        ["jsonPath"] = fault.JsonPath ?? string.Empty,
+                        ["lineNumber"] = fault.LineNumber,
+                        ["linePosition"] = fault.LinePosition,
+                        ["packageName"] = fault.PackageName ?? string.Empty,
+                        ["relativeSourceFile"] = fault.RelativeSourceFile ?? string.Empty,
+                        ["validationCode"] = fault.ValidationCode ?? string.Empty,
+                        ["expectedShape"] = fault.ExpectedShape ?? string.Empty,
+                        ["receivedValue"] = fault.ReceivedValue ?? string.Empty,
+                        ["suggestedAction"] = fault.SuggestedAction ?? string.Empty,
+                        ["details"] = fault.Details ?? string.Empty
                     }))
                 },
                 ["conflicts"] = new JArray(snapshot.Conflicts.Select(conflict => new JObject
@@ -677,8 +746,9 @@ namespace FUSE.Loading
                     ["target"] = conflict.Target ?? string.Empty,
                     ["objectId"] = conflict.Id ?? string.Empty,
                     ["ownerPackageId"] = conflict.OwnerPackageId ?? string.Empty,
-                    ["attemptedPackageId"] = conflict.AttemptedPackageId ?? string.Empty,
-                    ["resolution"] = conflict.Resolution ?? string.Empty
+                        ["attemptedPackageId"] = conflict.AttemptedPackageId ?? string.Empty,
+                        ["resolution"] = conflict.Resolution ?? string.Empty,
+                        ["classification"] = conflict.IsCooperativeMerge ? "shared-extension" : "actionable"
                 })),
                 // Live session counters (see BuildDetails); intentionally outside
                 // "counts" so they do not read as load-snapshot state.
@@ -692,6 +762,7 @@ namespace FUSE.Loading
                     ["curveMeshSuppressed"] = FuseRuntimeGuardCounters.CurveMeshSuppressed,
                     ["sceneryCarDecalsDisabled"] = FuseRuntimeGuardCounters.SceneryDecalComponentsDisabled,
                     ["sceneryLoadFailures"] = FuseRuntimeGuardCounters.SceneryLoadFailures,
+                    ["passengerStopSpansSanitized"] = FuseRuntimeGuardCounters.PassengerStopSpansSanitized,
                     ["flaresSuppressed"] = FuseRuntimeGuardCounters.FlareSuppressed,
                     ["frameSpikes"] = FuseRuntimeGuardCounters.FrameSpikes,
                     ["frameSpikeWorstMs"] = FuseRuntimeGuardCounters.FrameSpikeWorstMs
@@ -898,6 +969,18 @@ namespace FUSE.Loading
             public long ModExceptionTotal { get; set; }
             public long ModExceptionUnattributed { get; set; }
 
+            public IReadOnlyDictionary<string, string> ActionableSkippedPackages =>
+                FilterSkippedPackages(optional: false);
+
+            public IReadOnlyDictionary<string, string> OptionalSkippedPackages =>
+                FilterSkippedPackages(optional: true);
+
+            public int ActionableConflictCount =>
+                Conflicts?.Count(conflict => conflict != null && !conflict.IsCooperativeMerge) ?? 0;
+
+            public int CooperativeConflictCount =>
+                Conflicts?.Count(conflict => conflict?.IsCooperativeMerge == true) ?? 0;
+
             public int FaultedPackageCount =>
                 Faults == null
                     ? 0
@@ -913,15 +996,21 @@ namespace FUSE.Loading
 
             public bool HasProblems =>
                 FaultedPackageCount > 0 ||
-                (Conflicts != null && Conflicts.Length > 0) ||
+                ActionableConflictCount > 0 ||
                 (UnknownSceneryAssets != null && UnknownSceneryAssets.Length > 0) ||
                 (GraphPostBindIssues != null && GraphPostBindIssues.Length > 0) ||
                 (ProgressionTransferSkips != null && ProgressionTransferSkips.Length > 0) ||
                 (SkippedPackages != null && SkippedPackages.Any(item => !FusePackageFaultRegistry.IsOptionalSkipReason(item.Value))) ||
                 BlockingNoticeCount > 0 ||
                 SceneryLoadFailureCount > 0 ||
-                OrphanedCarCount > 0 ||
-                HasModExceptionProblem;
+                OrphanedCarCount > 0;
+
+            private IReadOnlyDictionary<string, string> FilterSkippedPackages(bool optional)
+            {
+                return (SkippedPackages ?? new Dictionary<string, string>())
+                    .Where(item => FusePackageFaultRegistry.IsOptionalSkipReason(item.Value) == optional)
+                    .ToDictionary(item => item.Key, item => item.Value, StringComparer.OrdinalIgnoreCase);
+            }
 
             // Notices preserve useful diagnostics (for example, a malformed
             // optional alias catalog) but do not by themselves mean the
@@ -931,10 +1020,9 @@ namespace FUSE.Loading
             // above.
             public bool HasAdvisories => AdvisoryNoticeCount > 0;
 
-            // A single one-off third-party exception must not flip the report
-            // red, but a per-cycle thrower (world moves, update ticks) crosses
-            // the registry's thresholds within seconds of the fault starting.
-            // The Status page shares this predicate (issue #208).
+            // Exception observations are diagnostics, not package readiness.
+            // This predicate remains available to the diagnostics page and
+            // structured report, but it deliberately does not feed HasProblems.
             public bool HasModExceptionProblem =>
                 ModExceptions != null &&
                 ModExceptions.Any(record => record.IsProblem);

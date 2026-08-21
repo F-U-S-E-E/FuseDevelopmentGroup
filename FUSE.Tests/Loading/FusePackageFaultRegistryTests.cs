@@ -1,6 +1,9 @@
 using System;
+using System.IO;
 using System.Linq;
+using FUSE.Authoring.Data;
 using FUSE.Loading;
+using Newtonsoft.Json.Linq;
 using Xunit;
 
 namespace FUSE.Tests.Loading
@@ -89,6 +92,26 @@ namespace FUSE.Tests.Loading
         }
 
         [Fact]
+        public void LoadDefinition_UsesManifestPackageIdForValidationFaults()
+        {
+            var definition = new FuseModDefinition
+            {
+                Id = "definition-id",
+                Name = string.Empty,
+                SchemaVersion = "1.0"
+            };
+
+            Assert.Throws<InvalidOperationException>(() =>
+                FuseModLoader.LoadDefinition(definition, null, null, "manifest-id"));
+
+            Assert.True(FusePackageFaultRegistry.IsFaulted("manifest-id"));
+            Assert.False(FusePackageFaultRegistry.IsFaulted("definition-id"));
+            Assert.All(
+                FusePackageFaultRegistry.GetFaults(),
+                fault => Assert.Equal("manifest-id", fault.PackageId));
+        }
+
+        [Fact]
         public void RecordFault_WithException_PreservesDetails()
         {
             var exception = new InvalidOperationException("inner-detail");
@@ -100,12 +123,81 @@ namespace FUSE.Tests.Loading
         }
 
         [Fact]
+        public void RecordFault_ExtractsJsonLocationAndSourceFile()
+        {
+            Exception exception = null;
+            try
+            {
+                JObject.Parse("{\"track\": [ }");
+            }
+            catch (Exception ex)
+            {
+                exception = ex;
+            }
+
+            var folderPath = Path.Combine("C:\\", "Railroader", "Mods", "BrokenTrack");
+            var source = Path.Combine(folderPath, "track.fuse.json");
+            FusePackageFaultRegistry.RecordFault(
+                "BrokenTrack",
+                "JSON deserialization",
+                "Invalid JSON",
+                exception,
+                folderPath,
+                source);
+
+            var fault = Assert.Single(FusePackageFaultRegistry.GetFaults());
+            Assert.Equal(source, fault.SourceFile);
+            Assert.Equal("BrokenTrack", fault.PackageName);
+            Assert.Equal("track.fuse.json", fault.RelativeSourceFile);
+            Assert.Equal("track", fault.JsonPath);
+            Assert.True(fault.LineNumber > 0);
+            Assert.Contains("Valid JSON", fault.ExpectedShape);
+            Assert.Contains("Unexpected character", fault.ReceivedValue);
+            Assert.Contains("Correct the JSON", fault.SuggestedAction);
+        }
+
+        [Fact]
+        public void RecordFault_PreservesSchemaExpectationCodeAndReceivedValue()
+        {
+            var folderPath = Path.Combine("C:\\", "Railroader", "Mods", "Pretty Folder");
+            FusePackageFaultRegistry.RecordFault(
+                "pkg",
+                "schema validation",
+                "Number expected.",
+                folderPath: folderPath,
+                sourceFile: Path.Combine(folderPath, "map.fuse.json"),
+                jsonPath: "operations.loaders.loader.rate",
+                packageName: "Pretty Package",
+                validationCode: "fuse.number",
+                expectedShape: "A finite number greater than zero.",
+                receivedValue: "fast");
+
+            var fault = Assert.Single(FusePackageFaultRegistry.GetFaults());
+            Assert.Equal("Pretty Package", fault.PackageName);
+            Assert.Equal("map.fuse.json", fault.RelativeSourceFile);
+            Assert.Equal("fuse.number", fault.ValidationCode);
+            Assert.Equal("A finite number greater than zero.", fault.ExpectedShape);
+            Assert.Equal("fast", fault.ReceivedValue);
+        }
+
+        [Fact]
         public void MarkDisabled_BlankReason_DefaultsTo_ManifestReason()
         {
             FusePackageFaultRegistry.MarkDisabled("pkg", null);
 
             var disabled = FusePackageFaultRegistry.GetDisabledPackages();
             Assert.Equal("disabled by manifest", disabled["pkg"]);
+        }
+
+        [Fact]
+        public void MarkDisabled_DoesNotMakePackageAnActionableSkip()
+        {
+            FusePackageFaultRegistry.MarkDisabled("pkg", "disabled by active FUSE mod set");
+
+            Assert.Empty(FusePackageFaultRegistry.GetSkippedPackages());
+            Assert.Equal(
+                "disabled by active FUSE mod set",
+                FusePackageFaultRegistry.GetDisabledPackages()["pkg"]);
         }
 
         [Fact]
@@ -120,6 +212,8 @@ namespace FUSE.Tests.Loading
         [Theory]
         [InlineData("mixinto dependency missing id='foo'", true)]
         [InlineData("MIXINTO DEPENDENCY MISSING something", true)]
+        [InlineData("package='Author.Optional' mixinto dependency missing id='Companion.Mod' target='game-graph'", true)]
+        [InlineData("package='Author.Optional' mixinto conflict matched id='Incompatible.Mod' target='game-graph'", true)]
         [InlineData("some other reason", false)]
         [InlineData("", false)]
         [InlineData(null, false)]

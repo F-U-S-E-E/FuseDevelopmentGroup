@@ -36,8 +36,12 @@ namespace FUSE.Tests.API
                 StartNodeId = "a",
                 EndNodeId = "b",
                 Gauge = "DualGauge",
+                BridgeSupportsSteel = true,
+                Yard = true,
                 Partial = true,
                 PreserveStyle = true,
+                PreserveBridgeSupportsSteel = true,
+                PreserveYard = true,
                 PreserveTrackClass = true,
                 PreserveSpeedLimit = true,
                 PreservePriority = true,
@@ -52,8 +56,12 @@ namespace FUSE.Tests.API
             var clone = Assert.IsType<FuseSegment>(cloneMethod.Invoke(null, new object[] { source }));
 
             Assert.Equal("DualGauge", clone.Gauge);
+            Assert.True(clone.BridgeSupportsSteel);
+            Assert.True(clone.Yard);
             Assert.True(clone.Partial);
             Assert.True(clone.PreserveStyle);
+            Assert.True(clone.PreserveBridgeSupportsSteel);
+            Assert.True(clone.PreserveYard);
             Assert.True(clone.PreserveTrackClass);
             Assert.True(clone.PreserveSpeedLimit);
             Assert.True(clone.PreservePriority);
