@@ -14,37 +14,27 @@ namespace FUSE.Interface.MenuWindow
         {
             builder.AddTitle("Mod Dependency Graph", "");
 
-            builder.AddLabel("This page shows mod dependencies with load order requirements and any detected faults.");
+            builder.AddLabel("This page shows dependencies for FUSE data, UMM plugins, RailLoader packages, locomotives, railcars, and asset packs.");
             AddWrappedLabel(
                 builder,
                 "Legacy (converted) packages list soft load-order hints: a hint whose target is not installed is optional and does not block loading. " +
-                "Asset-only packs and code-only plugins satisfy a dependency without being FUSE data packages. Retired package IDs whose runtime capability is replaced by FUSE are labeled PROVIDED BY FUSE.",
-                48f);
+                "Local manifests are authoritative. Nexus requirements are cached by the installer for offline use and are labeled NEXUS CACHE. " +
+                "Retired package IDs whose runtime capability is replaced by FUSE are labeled PROVIDED BY FUSE.",
+                64f);
 
             builder.Spacer(24f);
 
-            var manifests = FuseDataPackageDiscovery.GetPackageManifestSnapshots();
-            if (manifests == null || manifests.Count == 0)
+            var packages = FuseInstalledDependencyCatalog.DiscoverInstalledPackages();
+            if (packages == null || packages.Count == 0)
             {
                 builder.AddField("Dependencies", "No packages discovered");
                 return;
             }
 
-            var byId = manifests
-                .GroupBy(manifest => manifest.Id, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-            // Resolve every edge target that is not a discovered data package
-            // against the Mods root once, so installed asset-only packs and
-            // hosted code-only plugins render as PRESENT rather than MISSING
-            // (issues #207, #223).
-            var undiscovered = manifests
-                .SelectMany(manifest => manifest.RequiredPackageIds.Concat(manifest.LoadAfter).Concat(manifest.LoadBefore))
-                .Where(id => !string.IsNullOrWhiteSpace(id) && !byId.ContainsKey(id));
-            var presentInModsRoot = FuseDataPackageDiscovery.ResolvePackagesPresentInModsRoot(undiscovered);
             var rows = 0;
-            foreach (var manifest in manifests)
+            foreach (var package in packages)
             {
-                var hasEdges = manifest.RequiredPackageIds.Length > 0 || manifest.LoadAfter.Length > 0 || manifest.LoadBefore.Length > 0 || manifest.Faults.Length > 0;
+                var hasEdges = package.HasEdges || package.Faults.Count > 0;
                 if (!hasEdges && !FuseSettings.ShowAdvancedHealthDetails)
                 {
                     continue;
@@ -56,26 +46,27 @@ namespace FUSE.Interface.MenuWindow
                 }
 
                 builder.FieldLabelWidth = 120f;
-                AddWrappedLabel(builder, InsertBreakHints(manifest.Id), 28f);
-                foreach (var dependencyId in manifest.RequiredPackageIds)
+                var heading = package.Id + "  <color=\"grey\">[" + package.Category + " / " + package.ManifestSource + "]";
+                AddWrappedLabel(builder, InsertBreakHints(heading), 28f);
+                foreach (var dependency in package.Requirements)
                 {
-                    builder.AddField("requires", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependencyId, byId, presentInModsRoot, advisory: false))));
+                    builder.AddField("requires", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependency, packages, advisory: false))));
                     rows++;
                 }
 
-                foreach (var dependencyId in manifest.LoadAfter)
+                foreach (var dependency in package.LoadAfter)
                 {
-                    builder.AddField("load after", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependencyId, byId, presentInModsRoot, manifest.IsLegacyConverted))));
+                    builder.AddField("load after", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependency, packages, package.IsLegacy))));
                     rows++;
                 }
 
-                foreach (var dependencyId in manifest.LoadBefore)
+                foreach (var dependency in package.LoadBefore)
                 {
-                    builder.AddField("load before", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependencyId, byId, presentInModsRoot, manifest.IsLegacyConverted))));
+                    builder.AddField("load before", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependency, packages, package.IsLegacy))));
                     rows++;
                 }
 
-                foreach (var fault in manifest.Faults)
+                foreach (var fault in package.Faults)
                 {
                     builder.AddField("fault detected", builder.AddLabelMarkup(InsertBreakHints(FormatFault(fault))));
                     rows++;
@@ -90,6 +81,81 @@ namespace FUSE.Interface.MenuWindow
             {
                 builder.AddField("Dependencies", "No package dependency edges in current profile");
             }
+        }
+
+        internal static string FormatDependencyEdge(
+            FuseInstalledDependencyEdge edge,
+            IEnumerable<FuseInstalledPackageDependencySnapshot> packages,
+            bool advisory)
+        {
+            if (edge == null || string.IsNullOrWhiteSpace(edge.Id))
+            {
+                return "(blank) | <color=\"red\">MISSING";
+            }
+
+            var dependencyId = edge.Id.Trim();
+            var dependencyLabel = string.IsNullOrWhiteSpace(edge.DisplayName)
+                ? dependencyId
+                : edge.DisplayName.Trim() + " (" + dependencyId + ")";
+            var versionRange = FormatVersionRange(edge);
+            var source = string.IsNullOrWhiteSpace(edge.Source) ? string.Empty : " <color=\"grey\">[" + edge.Source + "]";
+            var dependency = FuseInstalledDependencyCatalog.FindInstalled(packages, dependencyId);
+            if (dependency != null)
+            {
+                if (dependency.Disabled)
+                {
+                    return advisory
+                        ? dependencyLabel + versionRange + " | <color=\"grey\">DISABLED (optional hint)" + source
+                        : dependencyLabel + versionRange + " | <color=\"yellow\">DISABLED" + source;
+                }
+
+                var matches = FuseInstalledDependencyCatalog.VersionSatisfies(
+                    dependency.Version,
+                    edge.NotBefore,
+                    edge.NotAfter,
+                    out var versionReadable);
+                var installedVersion = string.IsNullOrWhiteSpace(dependency.Version) ? string.Empty : " " + dependency.Version;
+                if (!matches)
+                {
+                    if (!versionReadable && (!string.IsNullOrWhiteSpace(edge.NotBefore) || !string.IsNullOrWhiteSpace(edge.NotAfter)))
+                    {
+                        return dependencyLabel + versionRange + " | <color=\"yellow\">PRESENT; VERSION UNKNOWN" + source;
+                    }
+
+                    return dependencyLabel + versionRange + " | <color=\"red\">INCOMPATIBLE" + installedVersion + source;
+                }
+
+                return dependencyLabel + versionRange + " | <color=\"green\">READY" + installedVersion + source;
+            }
+
+            if (FuseReplacementCapabilityCatalog.IsProvided(dependencyId))
+            {
+                return dependencyLabel + versionRange + " | <color=\"green\">PROVIDED BY FUSE" + source;
+            }
+
+            return advisory
+                ? dependencyLabel + versionRange + " | <color=\"grey\">NOT INSTALLED (optional hint)" + source
+                : dependencyLabel + versionRange + " | <color=\"red\">MISSING" + source;
+        }
+
+        private static string FormatVersionRange(FuseInstalledDependencyEdge edge)
+        {
+            if (edge == null)
+            {
+                return string.Empty;
+            }
+
+            if (!string.IsNullOrWhiteSpace(edge.NotBefore) && !string.IsNullOrWhiteSpace(edge.NotAfter))
+            {
+                return " (" + edge.NotBefore + " to " + edge.NotAfter + ")";
+            }
+
+            if (!string.IsNullOrWhiteSpace(edge.NotBefore))
+            {
+                return " (>= " + edge.NotBefore + ")";
+            }
+
+            return string.IsNullOrWhiteSpace(edge.NotAfter) ? string.Empty : " (<= " + edge.NotAfter + ")";
         }
 
         internal static string FormatDependencyEdge(

@@ -16,9 +16,12 @@ import os
 import re
 import shutil
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -30,7 +33,7 @@ if str(SCRIPT_DIR) not in sys.path:
 import legacy_json  # noqa: E402
 
 
-TOOL_VERSION = "0.7.0"
+TOOL_VERSION = "0.8.0"
 BUNDLED_FUSE_NAME = "bundled_fuse.zip"
 MANIFEST_NAMES = {"info.json", "definition.json"}
 LEGACY_MANAGED_FILES = (
@@ -80,6 +83,16 @@ LEGACY_DATA_KEYS = {
     "spawnPoint",
 }
 MAX_JSON_BYTES = 64 * 1024 * 1024
+DEPENDENCY_METADATA_DIR = ".fuse-metadata"
+DEPENDENCY_METADATA_FILE = "dependencies.json"
+NEXUS_API_BASE = "https://api.nexusmods.com/v3"
+NEXUS_URL_RE = re.compile(
+    r"https?://(?:www\.)?nexusmods\.com/(?:games/)?(?P<game>[^/]+)/mods/(?P<mod_id>\d+)",
+    re.IGNORECASE,
+)
+UMM_VERSIONED_REQUIREMENT_RE = re.compile(
+    r"^(?P<id>.+)-(?P<version>\d+\.\d+\.\d+(?:\.\d+)?)(?:[^\d].*)?$"
+)
 WINDOWS_RESERVED_NAMES = {
     "con",
     "prn",
@@ -108,6 +121,9 @@ class PackageRequirement:
     package_id: str
     not_before: str = ""
     not_after: str = ""
+    display_name: str = ""
+    nexus_mod_id: str = ""
+    source: str = "manifest"
 
 
 @dataclass
@@ -124,6 +140,10 @@ class ZipPackage:
     notes: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     requirements: list[PackageRequirement] = field(default_factory=list)
+    load_after: list[PackageRequirement] = field(default_factory=list)
+    load_before: list[PackageRequirement] = field(default_factory=list)
+    homepage: str = ""
+    nexus_source: dict[str, str] = field(default_factory=dict)
 
     @property
     def root_label(self) -> str:
@@ -156,6 +176,18 @@ def package_id_aliases(package_id: str) -> tuple[str, ...]:
     if normalized.endswith(".fuse") or normalized.endswith(".rail"):
         aliases.append(normalized[:-5])
     return tuple(dict.fromkeys(aliases))
+
+
+def package_aliases(package: ZipPackage) -> tuple[str, ...]:
+    aliases = list(package_id_aliases(package.package_id))
+    identity = nexus_page_identity(package.homepage)
+    if identity is not None:
+        aliases.append(f"nexus:{identity[0]}:{identity[1]}")
+    source_game = package.nexus_source.get("gameDomain", "")
+    source_mod = package.nexus_source.get("gameScopedModId", "")
+    if source_game and source_mod:
+        aliases.append(f"nexus:{source_game}:{source_mod}".lower())
+    return tuple(dict.fromkeys(alias.lower() for alias in aliases if alias))
 
 
 def replacement_id_key(package_id: str) -> str:
@@ -413,19 +445,29 @@ def is_railloader_manifest(data: dict[str, Any]) -> bool:
     )
 
 
-def parse_requirements(*values: Any) -> list[PackageRequirement]:
+def parse_requirements(*values: Any, parse_umm_versions: bool = False) -> list[PackageRequirement]:
     result: list[PackageRequirement] = []
     seen: set[tuple[str, str, str]] = set()
     for value in values:
         entries = value if isinstance(value, list) else [value] if value else []
         for entry in entries:
             if isinstance(entry, str):
-                requirement = PackageRequirement(entry.strip())
+                package_id = entry.strip()
+                not_before = ""
+                if parse_umm_versions:
+                    match = UMM_VERSIONED_REQUIREMENT_RE.match(package_id)
+                    if match:
+                        package_id = match.group("id").strip()
+                        not_before = match.group("version").strip()
+                requirement = PackageRequirement(package_id, not_before=not_before)
             elif isinstance(entry, dict):
                 requirement = PackageRequirement(
                     string_field(entry, "Id", "id"),
                     string_field(entry, "NotBefore", "notBefore", "MinimumVersion", "minimumVersion"),
                     string_field(entry, "NotAfter", "notAfter", "MaximumVersion", "maximumVersion"),
+                    string_field(entry, "DisplayName", "displayName", "name"),
+                    string_field(entry, "NexusModId", "nexusModId", "modId"),
+                    string_field(entry, "Source", "source") or "manifest",
                 )
             else:
                 continue
@@ -440,6 +482,206 @@ def parse_requirements(*values: Any) -> list[PackageRequirement]:
                 seen.add(key)
                 result.append(requirement)
     return result
+
+
+def merge_requirements(*groups: Iterable[PackageRequirement]) -> list[PackageRequirement]:
+    """Merge edges by package id, keeping the first (most authoritative) edge."""
+    result: list[PackageRequirement] = []
+    seen: set[str] = set()
+    for group in groups:
+        for requirement in group:
+            key = requirement.package_id.strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            result.append(requirement)
+    return result
+
+
+def nexus_page_identity(url: str) -> tuple[str, str] | None:
+    match = NEXUS_URL_RE.search(url or "")
+    if not match:
+        return None
+    return match.group("game").lower(), match.group("mod_id")
+
+
+def nexus_api_get(path: str, api_key: str, timeout: float = 15.0) -> dict[str, Any]:
+    """Read one Nexus API v3 document without persisting the user's key."""
+    if not api_key:
+        raise ValueError("a Nexus API key is required")
+    url = NEXUS_API_BASE.rstrip("/") + "/" + path.lstrip("/")
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": f"FUSE-Installer/{TOOL_VERSION}",
+            "apikey": api_key,
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = response.read(MAX_JSON_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"Nexus API returned HTTP {exc.code} for {path}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Nexus API request failed for {path}: {exc.reason}") from exc
+    if len(payload) > MAX_JSON_BYTES:
+        raise RuntimeError(f"Nexus API response exceeded {MAX_JSON_BYTES} bytes for {path}")
+    loaded = json.loads(payload.decode("utf-8"))
+    if not isinstance(loaded, dict):
+        raise RuntimeError(f"Nexus API returned a non-object document for {path}")
+    return loaded
+
+
+def response_data(payload: dict[str, Any]) -> dict[str, Any]:
+    data = payload.get("data", payload)
+    return data if isinstance(data, dict) else {}
+
+
+def select_nexus_file_version(
+    package: ZipPackage,
+    versions: Iterable[dict[str, Any]],
+) -> dict[str, Any] | None:
+    candidates = [item for item in versions if isinstance(item, dict)]
+    if package.version:
+        exact = [
+            item for item in candidates
+            if (
+                str(item.get("version", "")).strip().lower() == package.version.strip().lower()
+                or compare_versions(str(item.get("version", "")), package.version) == 0
+            )
+        ]
+        candidates = exact
+    if len(candidates) == 1:
+        return candidates[0]
+    primary = [item for item in candidates if item.get("is_primary") is True]
+    return primary[0] if len(primary) == 1 else None
+
+
+def requirements_from_nexus_ranges(
+    package: ZipPackage,
+    game_domain: str,
+    payload: dict[str, Any],
+) -> list[PackageRequirement]:
+    data = response_data(payload)
+    definitions = data.get("dependency_definitions", [])
+    result: list[PackageRequirement] = []
+    for definition in definitions if isinstance(definitions, list) else []:
+        ranges = definition.get("ranges", []) if isinstance(definition, dict) else []
+        ranges = [item for item in ranges if isinstance(item, dict)]
+        target_mods: dict[str, dict[str, Any]] = {}
+        for item in ranges:
+            target_file = item.get("target_mod_file", {})
+            target_mod = target_file.get("mod", {}) if isinstance(target_file, dict) else {}
+            game_scoped_id = str(target_mod.get("game_scoped_id", "")).strip()
+            if game_scoped_id:
+                target_mods.setdefault(game_scoped_id, target_mod)
+        if len(target_mods) != 1:
+            package.notes.append(
+                "Nexus lists a dependency with multiple alternative mods; FUSE preserved it in the install report "
+                "but did not turn an OR-choice into a false hard requirement."
+            )
+            continue
+
+        game_scoped_id, target_mod = next(iter(target_mods.items()))
+        not_before = ""
+        not_after = ""
+        if len(ranges) == 1:
+            minimum = ranges[0].get("min_version", {})
+            maximum = ranges[0].get("max_version", {})
+            if isinstance(minimum, dict):
+                not_before = str(minimum.get("version", "")).strip()
+            if isinstance(maximum, dict):
+                not_after = str(maximum.get("version", "")).strip()
+        result.append(PackageRequirement(
+            package_id=f"nexus:{game_domain}:{game_scoped_id}",
+            not_before=not_before,
+            not_after=not_after,
+            display_name=str(target_mod.get("name", "")).strip(),
+            nexus_mod_id=game_scoped_id,
+            source="nexus",
+        ))
+    return result
+
+
+def enrich_package_from_nexus(package: ZipPackage, api_key: str) -> bool:
+    """Fill a genuine manifest gap using Nexus' file-version dependency data.
+
+    A Nexus URL in the manifest is required. Filename-number guessing is
+    intentionally rejected because installing the wrong dependency is worse
+    than reporting that external metadata could not be linked.
+    """
+    if package.requirements:
+        return False
+    identity = nexus_page_identity(package.homepage)
+    if identity is None:
+        return False
+    game_domain, game_scoped_mod_id = identity
+    details = response_data(nexus_api_get(
+        f"games/{urllib.parse.quote(game_domain)}/mods/{urllib.parse.quote(game_scoped_mod_id)}",
+        api_key,
+    ))
+    internal_mod_id = str(details.get("id", "")).strip()
+    if not internal_mod_id:
+        raise RuntimeError("Nexus mod details did not include an internal mod id")
+
+    files_payload = response_data(nexus_api_get(
+        f"mods/{urllib.parse.quote(internal_mod_id)}/files",
+        api_key,
+    ))
+    mod_files = files_payload.get("mod_files", [])
+    matches: list[dict[str, Any]] = []
+    for mod_file in mod_files if isinstance(mod_files, list) else []:
+        file_id = str(mod_file.get("id", "")).strip() if isinstance(mod_file, dict) else ""
+        if not file_id:
+            continue
+        versions_payload = response_data(nexus_api_get(
+            f"mod-files/{urllib.parse.quote(file_id)}/versions",
+            api_key,
+        ))
+        selected = select_nexus_file_version(package, versions_payload.get("versions", []))
+        if selected is not None:
+            selected = dict(selected)
+            selected["_mod_file_id"] = file_id
+            matches.append(selected)
+
+    if len(matches) != 1:
+        package.notes.append(
+            "Nexus page was linked, but the installer could not uniquely match this archive's version to one Nexus file version; "
+            "external requirements were not guessed."
+        )
+        return False
+
+    selected = matches[0]
+    version_id = str(selected.get("id", "")).strip()
+    ranges = nexus_api_get(
+        f"mod-file-versions/{urllib.parse.quote(version_id)}/dependencies/ranges",
+        api_key,
+    )
+    nexus_requirements = requirements_from_nexus_ranges(package, game_domain, ranges)
+    package.requirements = merge_requirements(package.requirements, nexus_requirements)
+    package.nexus_source = {
+        "kind": "nexus",
+        "gameDomain": game_domain,
+        "gameScopedModId": game_scoped_mod_id,
+        "internalModId": internal_mod_id,
+        "modFileId": str(selected.get("_mod_file_id", "")),
+        "modFileVersionId": version_id,
+        "url": package.homepage,
+        "fetchedUtc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    }
+    return bool(nexus_requirements)
+
+
+def enrich_packages_from_nexus(packages: Iterable[ZipPackage], api_key: str) -> None:
+    for package in packages:
+        if package.errors or package.requirements or not nexus_page_identity(package.homepage):
+            continue
+        try:
+            if enrich_package_from_nexus(package, api_key):
+                package.notes.append("Dependency requirements were filled from the Nexus API and cached for offline FUSE diagnostics.")
+        except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+            package.notes.append(f"Nexus dependency lookup was unavailable: {exc}")
 
 
 def ensure_fuse_id(value: str) -> str:
@@ -504,6 +746,12 @@ def package_from_root(
             if errors:
                 kind = "invalid"
         install_name = safe_folder_name(package_id, safe_folder_name(source_folder))
+        umm_requirements = parse_requirements(
+            info_data.get("Requirements"),
+            info_data.get("requirements"),
+            parse_umm_versions=True,
+        )
+        fuse_requirements = parse_requirements(info_data.get("FuseRequires"))
         return ZipPackage(
             zip_path=zip_path,
             root=root,
@@ -516,11 +764,13 @@ def package_from_root(
             member_count=member_count,
             notes=notes,
             errors=errors,
-            requirements=parse_requirements(
-                info_data.get("Requirements"),
-                info_data.get("requirements"),
-                info_data.get("FuseRequires"),
+            requirements=merge_requirements(umm_requirements, fuse_requirements),
+            load_after=merge_requirements(
+                parse_requirements(info_data.get("LoadAfter")),
+                parse_requirements(info_data.get("FuseLoadAfter")),
             ),
+            load_before=parse_requirements(info_data.get("FuseLoadBefore")),
+            homepage=string_field(info_data, "Homepage", "homepage", "Website", "website"),
         )
 
     if definition_member is not None and (
@@ -554,6 +804,15 @@ def package_from_root(
                 definition_data.get("requires"),
                 definition_data.get("Requires"),
             ),
+            load_after=parse_requirements(
+                definition_data.get("loadAfter"),
+                definition_data.get("LoadAfter"),
+            ),
+            load_before=parse_requirements(
+                definition_data.get("loadBefore"),
+                definition_data.get("LoadBefore"),
+            ),
+            homepage=string_field(definition_data, "homepage", "Homepage", "url", "Url"),
         )
 
     return None
@@ -1006,11 +1265,36 @@ def read_installed_package_versions(mods_dir: Path) -> dict[str, str]:
                 except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
                     manifest = None
         package_id = string_field(manifest, "Id", "id")
+        version = string_field(manifest, "Version", "version")
         if package_id:
-            version = string_field(manifest, "Version", "version")
             for alias in package_id_aliases(package_id):
                 result.setdefault(alias, version)
-        result.setdefault(child.name.lower(), string_field(manifest, "Version", "version"))
+        homepage = string_field(manifest, "Homepage", "homepage", "Website", "website", "url")
+        identity = nexus_page_identity(homepage)
+        if identity is not None:
+            result.setdefault(f"nexus:{identity[0]}:{identity[1]}", version)
+        result.setdefault(child.name.lower(), version)
+
+    cache_path = mods_dir / DEPENDENCY_METADATA_DIR / DEPENDENCY_METADATA_FILE
+    try:
+        cached = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.is_file() else {}
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        cached = {}
+    for item in cached.get("packages", []) if isinstance(cached, dict) else []:
+        if not isinstance(item, dict):
+            continue
+        folder = str(item.get("folder", "")).strip()
+        if not folder or not (mods_dir / folder).is_dir():
+            continue
+        source = item.get("source", {})
+        source = source if isinstance(source, dict) else {}
+        game = str(source.get("gameDomain", "")).strip().lower()
+        mod_id = str(source.get("gameScopedModId", "")).strip()
+        if game and mod_id:
+            result.setdefault(
+                f"nexus:{game}:{mod_id}",
+                str(item.get("version", "")).strip(),
+            )
     return result
 
 
@@ -1041,7 +1325,7 @@ def validate_batch_dependencies(
     package_list = list(packages)
     by_id: dict[str, list[ZipPackage]] = {}
     for package in package_list:
-        for alias in package_id_aliases(package.package_id):
+        for alias in package_aliases(package):
             by_id.setdefault(alias, []).append(package)
     duplicate_groups: dict[str, list[ZipPackage]] = {}
     for package in package_list:
@@ -1071,7 +1355,7 @@ def validate_batch_dependencies(
     while changed:
         changed = False
         fuse_provider_available = installed_fuse_available or any(
-            "fuse" in package_id_aliases(candidate.package_id)
+            "fuse" in package_aliases(candidate)
             and not candidate.errors
             for candidate in package_list
         )
@@ -1080,6 +1364,7 @@ def validate_batch_dependencies(
                 continue
             for requirement in package.requirements:
                 required_id = requirement.package_id.lower()
+                required_label = requirement_display_label(requirement)
                 replacement_id = replacement_id_key(requirement.package_id)
                 if fuse_provider_available and replacement_id in FUSE_REPLACEMENT_IDS:
                     continue
@@ -1098,14 +1383,14 @@ def validate_batch_dependencies(
                     batch_provider_failed = required_id in by_id
                     if batch_provider_failed:
                         message = (
-                            f"Dependency '{requirement.package_id}'{bounds} required by "
+                            f"Dependency '{required_label}'{bounds} required by "
                             f"'{package.package_id}' is in this batch but failed preflight. "
                             "Fix or remove the failed dependency package, then retry the batch."
                         )
                     else:
                         message = (
-                            f"Missing dependency '{requirement.package_id}'{bounds} required by "
-                            f"'{package.package_id}'. {dependency_install_hint(requirement.package_id)}"
+                            f"Missing dependency '{required_label}'{bounds} required by "
+                            f"'{package.package_id}'. {dependency_install_hint(requirement)}"
                         )
                     package.errors.append(message)
                     changed = True
@@ -1115,7 +1400,7 @@ def validate_batch_dependencies(
                     continue
                 if any(version_numbers(version) is None for version in provider_versions):
                     note = (
-                        f"Dependency '{requirement.package_id}' is present but has no readable version; "
+                        f"Dependency '{required_label}' is present but has no readable version; "
                         f"the installer could not verify {requirement_bounds(requirement).strip()}."
                     )
                     if note not in package.notes:
@@ -1129,7 +1414,7 @@ def validate_batch_dependencies(
 
                 available_versions = ", ".join(sorted(set(provider_versions)))
                 package.errors.append(
-                    f"Dependency version conflict for '{requirement.package_id}': "
+                    f"Dependency version conflict for '{required_label}': "
                     f"'{package.package_id}' requires{requirement_bounds(requirement)}, "
                     f"but available version(s) are {available_versions}."
                 )
@@ -1149,11 +1434,22 @@ def requirement_version_matches(version: str, requirement: PackageRequirement) -
     return True
 
 
-def dependency_install_hint(package_id: str) -> str:
-    if replacement_id_key(package_id) in FUSE_REPLACEMENT_IDS:
+def requirement_display_label(requirement: PackageRequirement) -> str:
+    if requirement.display_name:
+        return f"{requirement.display_name} ({requirement.package_id})"
+    return requirement.package_id
+
+
+def dependency_install_hint(requirement: PackageRequirement) -> str:
+    if replacement_id_key(requirement.package_id) in FUSE_REPLACEMENT_IDS:
         return (
             "Install or update FUSE (or include FUSE in this batch); FUSE provides this "
             "legacy dependency contract, so do not reinstall the replaced legacy DLL."
+        )
+    if requirement.nexus_mod_id:
+        return (
+            "Install/enable the required Nexus mod: "
+            f"https://www.nexusmods.com/railroader/mods/{requirement.nexus_mod_id}"
         )
     return "Install/enable that package in Mods, or include it in this batch."
 
@@ -1441,6 +1737,80 @@ def print_result(result: InstallResult) -> None:
         print(f"  note: {result.message}")
 
 
+def requirement_cache_record(requirement: PackageRequirement) -> dict[str, Any]:
+    return {
+        "id": requirement.package_id,
+        "displayName": requirement.display_name or None,
+        "minimumVersion": requirement.not_before or None,
+        "maximumVersion": requirement.not_after or None,
+        "nexusModId": requirement.nexus_mod_id or None,
+        "source": requirement.source or "manifest",
+    }
+
+
+def write_dependency_metadata_cache(
+    mods_dir: Path,
+    results: Iterable[InstallResult],
+    dry_run: bool,
+) -> Path | None:
+    """Persist install-time provenance for the in-game offline dependency graph."""
+    if dry_run:
+        return None
+    path = mods_dir / DEPENDENCY_METADATA_DIR / DEPENDENCY_METADATA_FILE
+    try:
+        if path.is_file():
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            existing = {}
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        existing = {}
+    packages_by_folder: dict[str, dict[str, Any]] = {}
+    if isinstance(existing, dict):
+        for item in existing.get("packages", []):
+            if isinstance(item, dict) and str(item.get("folder", "")).strip():
+                packages_by_folder[str(item["folder"]).strip().lower()] = item
+
+    for result in results:
+        if result.status == "failed" or result.package.package_id.lower() == ASSETLOADER_ID.lower():
+            continue
+        package = result.package
+        folder = result.destination.name
+        packages_by_folder[folder.lower()] = {
+            "folder": folder,
+            "id": package.package_id,
+            "displayName": package.display_name,
+            "version": package.version,
+            "kind": package.kind,
+            "manifest": package.manifest_member,
+            "sourceArchive": package.zip_path.name,
+            "source": package.nexus_source or {
+                "kind": "installer",
+                "url": package.homepage or None,
+            },
+            "requirements": [requirement_cache_record(item) for item in package.requirements],
+            "loadAfter": [requirement_cache_record(item) for item in package.load_after],
+            "loadBefore": [requirement_cache_record(item) for item in package.load_before],
+        }
+
+    document = {
+        "schemaVersion": 1,
+        "generatedUtc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "packages": sorted(
+            packages_by_folder.values(),
+            key=lambda item: str(item.get("folder", "")).lower(),
+        ),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(json.dumps(document, indent=2), encoding="utf-8")
+        os.replace(temporary, path)
+        return path
+    except OSError as exc:
+        print(f"WARNING: could not write dependency metadata cache: {exc}")
+        return None
+
+
 def write_install_report(
     game_dir: Path,
     mods_dir: Path,
@@ -1490,13 +1860,18 @@ def write_install_report(
                 "notes": list(item.package.notes),
                 "errors": list(item.package.errors),
                 "requirements": [
-                    {
-                        "id": requirement.package_id,
-                        "notBefore": requirement.not_before or None,
-                        "notAfter": requirement.not_after or None,
-                    }
+                    requirement_cache_record(requirement)
                     for requirement in item.package.requirements
                 ],
+                "loadAfter": [
+                    requirement_cache_record(requirement)
+                    for requirement in item.package.load_after
+                ],
+                "loadBefore": [
+                    requirement_cache_record(requirement)
+                    for requirement in item.package.load_before
+                ],
+                "externalSource": item.package.nexus_source or None,
             }
             for item in results
         ],
@@ -1540,6 +1915,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-fuse", action="store_true", help="Do not install the bundled FUSE framework on a manual run; only process zip files.")
     parser.add_argument("--dry-run", action="store_true", help="Inspect zips and print planned installs without writing files.")
     parser.add_argument("--archive-zips", action="store_true", help="Move successfully processed zips to Mods\\FUSEInstaller\\InstalledZips.")
+    parser.add_argument("--nexus-api-key", default=None, help="Nexus API key used only during this run to fill missing dependency metadata. Prefer the NEXUS_API_KEY environment variable so the key is not stored in shell history.")
+    parser.add_argument("--no-nexus", action="store_true", help="Do not query Nexus even when NEXUS_API_KEY and a manifest Homepage URL are available.")
     parser.add_argument("--pause", action="store_true", help="Pause before closing.")
     parser.add_argument("--no-pause", action="store_true", help="Do not pause before closing, even when bundled as an exe.")
     parser.add_argument("--cli", action="store_true", help="Use command-line mode instead of the graphical installer.")
@@ -1642,6 +2019,9 @@ def run(args: argparse.Namespace) -> int:
             continue
         scan_cache[target] = inspect_zip(target)
         scanned_packages.extend(scan_cache[target][0])
+    nexus_api_key = "" if args.no_nexus else (args.nexus_api_key or os.environ.get("NEXUS_API_KEY", "")).strip()
+    if nexus_api_key:
+        enrich_packages_from_nexus(scanned_packages, nexus_api_key)
     fuse_available_for_dependencies = find_installed_mod_by_id(mods_dir, "FUSE") is not None
     validate_batch_dependencies(
         scanned_packages,
@@ -1724,6 +2104,10 @@ def run(args: argparse.Namespace) -> int:
             archived_to = archive_zip(zip_path, mods_dir, args.dry_run)
             verb = "Would archive" if args.dry_run else "Archived"
             print(f"{verb}: {zip_path} -> {archived_to}")
+
+    dependency_cache_path = write_dependency_metadata_cache(mods_dir, all_results, args.dry_run)
+    if dependency_cache_path is not None:
+        print(f"Dependency metadata cache: {dependency_cache_path}")
 
     compatibility_actions: list[CompatibilityAction] = []
     fuse_available = (
@@ -1866,6 +2250,8 @@ def run_gui(args: argparse.Namespace) -> int:
         value=should_preselect_bundled_fuse(args, bundled_fuse_available))
     update_var = tk.BooleanVar(value=not args.skip_existing)
     archive_var = tk.BooleanVar(value=bool(args.archive_zips))
+    nexus_key_var = tk.StringVar(value=args.nexus_api_key or os.environ.get("NEXUS_API_KEY", ""))
+    nexus_lookup_var = tk.BooleanVar(value=not args.no_nexus)
     status_var = tk.StringVar(value="Ready. Select the Railroader folder and packages, then click Install.")
 
     outer = tk.Frame(root, padx=16, pady=14)
@@ -1933,6 +2319,15 @@ def run_gui(args: argparse.Namespace) -> int:
     fuse_check.pack(anchor="w")
     tk.Checkbutton(options, text="Back up and update existing mod folders", variable=update_var).pack(anchor="w")
     tk.Checkbutton(options, text="Archive successfully installed source zips", variable=archive_var).pack(anchor="w")
+    tk.Checkbutton(
+        options,
+        text="Use Nexus to fill dependency gaps when a mod includes its Nexus page URL",
+        variable=nexus_lookup_var,
+    ).pack(anchor="w")
+    nexus_row = tk.Frame(options)
+    nexus_row.pack(fill="x", pady=(2, 0))
+    tk.Label(nexus_row, text="Nexus API key (optional; never saved)", anchor="w").pack(side="left")
+    tk.Entry(nexus_row, textvariable=nexus_key_var, show="*").pack(side="left", fill="x", expand=True, padx=(8, 0))
 
     result_box = ScrolledText(outer, height=15, wrap="word", font=("Consolas", 9), state="disabled")
     result_box.pack(fill="both", expand=True, pady=(6, 8))
@@ -2029,6 +2424,8 @@ def run_gui(args: argparse.Namespace) -> int:
         run_args.skip_existing = not update_var.get()
         run_args.replace = update_var.get()
         run_args.archive_zips = archive_var.get()
+        run_args.nexus_api_key = nexus_key_var.get().strip() or None
+        run_args.no_nexus = not nexus_lookup_var.get()
         run_args.repair_legacy_loader = repair_legacy
         run_args.repair_asset_loader = repair_asset_loader
         run_args.no_pause = True

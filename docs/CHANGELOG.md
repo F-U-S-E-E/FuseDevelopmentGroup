@@ -1,5 +1,13 @@
 # Changelog
 
+- Installer 0.8.0 and **Tools > Dependency Graph** now cover locomotive,
+  railcar, code-plugin, asset-pack, native FUSE, UMM, and RailLoader dependency
+  sources. UMM version suffixes are parsed correctly; verified Nexus
+  file-version requirements can fill otherwise empty manifests at install time
+  and are cached offline without storing the API key. Local explicit metadata
+  remains authoritative, stale cache entries are ignored, and Nexus OR-choice
+  groups are never misreported as multiple hard requirements.
+
 - Installer 0.7.0 repairs UMM startup order for installed code mods that
   reference FUSE-replaced RailLoader/Strange Customs assemblies. It inspects
   DLL metadata without loading code, backs up each manifest, and adds FUSE to

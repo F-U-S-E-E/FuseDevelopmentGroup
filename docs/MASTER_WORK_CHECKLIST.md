@@ -307,6 +307,13 @@ is suppressed.
   requester, and where to obtain/enable it when known. Installer batch preflight
   also distinguishes FUSE-provided legacy contracts from unrelated dependencies
   and propagates a failed provider to its dependents before any writes.
+- [x] Equipment dependency reporting covers locomotive/railcar UMM manifests,
+  legacy `Definition.json`, and AssetLoader package classification. Installer
+  0.8 correctly splits UMM ids such as `GP38SoundMod-4.4.1`, can fill a genuinely
+  empty manifest from a verified Nexus page/file-version dependency record, and
+  writes the result to an offline cache. The in-game graph never performs a
+  network request, local metadata wins, and stale/uninstalled cache entries are
+  ignored.
 - [x] Provide a complete package-scoped export suitable for a mod author, while
   keeping the Status page concise and actionable. **Copy Mod Info** now includes
   the full structured diagnostic block for only the selected package; the full

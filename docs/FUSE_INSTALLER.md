@@ -57,7 +57,7 @@ Each archive is inspected and staged before anything replaces an installed mod.
 One bad archive does not stop the remaining archives. The final table lists every
 package as `INSTALLED`, `UPDATED`, `SKIPPED`, or `FAILED`.
 
-Before writing any package, installer 0.7 scans the complete batch and checks:
+Before writing any package, installer 0.8 scans the complete batch and checks:
 
 - unsafe, absolute, parent-traversing, duplicate, or case-colliding ZIP paths;
 - ambiguous layouts where one package manifest contains another package;
@@ -67,6 +67,10 @@ Before writing any package, installer 0.7 scans the complete batch and checks:
 - dependencies already installed or supplied later in the same batch; and
 - dependency failure propagation, so a package that fails preflight cannot
   satisfy another package just by being present in the batch.
+
+UMM's versioned string form is understood as well: for example,
+`GP38SoundMod-4.4.1` means package id `GP38SoundMod`, minimum version `4.4.1`.
+It is not treated as one literal package id.
 
 Missing dependency results name the requester, dependency id, version bounds,
 and corrective action. FUSE satisfies only the legacy contracts it explicitly
@@ -108,6 +112,39 @@ screenshot of the installer window. The report's `compatibilityActions` list
 records each AssetLoader backup, alias installation, verification failure, or
 blocked migration with its source and destination paths. Each package record
 also preserves the dependency ids and version bounds used by preflight.
+
+### Equipment dependencies and Nexus fallback
+
+The same preflight and **Tools > Dependency Graph** now include locomotives,
+railcars, and other AssetLoader-style packages. FUSE combines four sources in
+this order:
+
+1. native FUSE fields in `Info.json`;
+2. UMM `Requirements`/`LoadAfter` plus RailLoader `Definition.json`;
+3. AssetLoader `Definitions.json` to identify the package as equipment (asset
+   identifiers are not guessed to be package dependencies); and
+4. Nexus file-version requirements only when the local manifests have no hard
+   requirements.
+
+The installer performs Nexus lookup only when the archive manifest contains an
+actual `https://www.nexusmods.com/<game>/mods/<id>` homepage and a Nexus API key
+is supplied. It will not guess a mod page from numbers in an archive filename.
+The GUI key field is optional and masked; the key is used only for that run and
+is never written to a report or cache. CLI users should prefer the
+`NEXUS_API_KEY` environment variable instead of putting a key in shell history.
+
+Successful provenance and dependency results are written atomically to
+`Mods\.fuse-metadata\dependencies.json`. The in-game graph reads that cache
+offline; opening or refreshing a FUSE menu never contacts Nexus. Local explicit
+metadata always wins over a cached Nexus edge, and cache records for removed
+mod folders are ignored. Nexus dependency definitions containing multiple
+alternative mods are reported but are not converted into a false hard
+requirement.
+
+Nexus API v3 currently marks the file-version dependency endpoints as
+experimental. See the [official API v3 specification](https://github.com/Nexus-Mods/Vortex/blob/master/packages/nexus-api-v3/schema/openapi.yaml),
+[authentication guidance](https://github.com/Nexus-Mods/node-nexus-api/blob/master/docs/README.md),
+and [acceptable-use policy](https://help.nexusmods.com/article/114-api-acceptable-use-policy).
 
 ## Removing the old loader safely
 
@@ -187,6 +224,15 @@ Archive processed zips after successful installs:
 
 ```powershell
 .\FUSE-Installer.exe --archive-zips
+```
+
+Fill genuine manifest gaps from Nexus for linked packages, without saving the
+key:
+
+```powershell
+$env:NEXUS_API_KEY = "your personal key"
+.\FUSE-Installer.exe --cli .\EquipmentPack.zip
+Remove-Item Env:NEXUS_API_KEY
 ```
 
 ## Building the exe
