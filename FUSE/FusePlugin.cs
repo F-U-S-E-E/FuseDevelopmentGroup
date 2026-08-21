@@ -227,6 +227,7 @@ namespace FUSE
                 try
                 {
                     _harmony.UnpatchAll(HarmonyId);
+                    FuseLegosLibraryCompatibility.ResetAfterSuccessfulUnpatch();
                 }
                 catch (Exception ex)
                 {

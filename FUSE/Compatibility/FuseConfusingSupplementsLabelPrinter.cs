@@ -27,7 +27,7 @@ namespace FUSE.Compatibility
 
         [JsonIgnore]
         [DefinitionProperty(Hidden = true)]
-        public string SavedPropertyId => string.IsNullOrWhiteSpace(Group) ? Name : Group;
+        public string SavedPropertyId => (string.IsNullOrWhiteSpace(Group) ? Name : Group)?.Trim();
     }
 
     internal sealed class FuseConfusingSupplementsLabelPrinterBuilder : ComponentBuilder<FuseConfusingSupplementsLabelPrinterComponent>
@@ -41,7 +41,7 @@ namespace FUSE.Compatibility
                 return;
             }
 
-            var savedPropertyId = component.SavedPropertyId?.Trim();
+            var savedPropertyId = component.SavedPropertyId;
             if (string.IsNullOrWhiteSpace(savedPropertyId))
             {
                 FuseLog.Warning(

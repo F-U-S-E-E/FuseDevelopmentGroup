@@ -42,6 +42,21 @@ namespace FUSE.Compatibility
         }
     }
 
+    internal static class FuseConfusingSupplementsRefillerTransferPolicy
+    {
+        internal static float Take(
+            ref float remainingTransfer,
+            float availableCapacity,
+            float availableSource)
+        {
+            var quantity = Math.Min(
+                Math.Max(0f, remainingTransfer),
+                Math.Min(Math.Max(0f, availableCapacity), Math.Max(0f, availableSource)));
+            remainingTransfer -= quantity;
+            return quantity;
+        }
+    }
+
     internal sealed class FuseConfusingSupplementsRefillerRuntime : MonoBehaviour
     {
         internal float TransferPerSecond { get; set; }
@@ -146,8 +161,14 @@ namespace FUSE.Compatibility
                 return;
             }
 
+            var remainingTransfer = maximumTransfer;
             for (var targetIndex = 0; targetIndex < target.Definition.LoadSlots.Count; targetIndex++)
             {
+                if (remainingTransfer <= 0f)
+                {
+                    break;
+                }
+
                 var targetSlot = target.Definition.LoadSlots[targetIndex];
                 var loadId = targetSlot?.RequiredLoadIdentifier;
                 if (string.IsNullOrWhiteSpace(loadId))
@@ -172,8 +193,10 @@ namespace FUSE.Compatibility
 
                 var targetLoad = target.GetLoadInfo(targetIndex);
                 var targetQuantity = targetLoad?.Quantity ?? 0f;
-                var availableCapacity = Mathf.Max(0f, targetSlot.MaximumCapacity - targetQuantity);
-                var quantity = Mathf.Min(maximumTransfer, Mathf.Min(availableCapacity, sourceLoad.Value.Quantity));
+                var quantity = FuseConfusingSupplementsRefillerTransferPolicy.Take(
+                    ref remainingTransfer,
+                    targetSlot.MaximumCapacity - targetQuantity,
+                    sourceLoad.Value.Quantity);
                 if (quantity <= 0f)
                 {
                     continue;

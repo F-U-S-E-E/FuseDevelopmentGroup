@@ -34,6 +34,32 @@ namespace FUSE.Tests.Patches
         }
 
         [Fact]
+        public void DeduplicateByKey_PreservesSourceWhenKeySelectorIsNull()
+        {
+            var source = new[] { "sawmill-mp1", "sawmill-mp2" };
+
+            var removed = FuseLocationPickerDeduplicationPatch.DeduplicateByKey(
+                source,
+                null,
+                out var result);
+
+            Assert.Equal(0, removed);
+            Assert.Equal(source, result);
+        }
+
+        [Fact]
+        public void DeduplicateByKey_ReturnsEmptyResultForNullSource()
+        {
+            var removed = FuseLocationPickerDeduplicationPatch.DeduplicateByKey<string>(
+                null,
+                value => value,
+                out var result);
+
+            Assert.Equal(0, removed);
+            Assert.Empty(result);
+        }
+
+        [Fact]
         public void ResolveCanonicalByKey_ReturnsRetainedEquivalentInstance()
         {
             var retained = new Item("sawmill-mp1", 1);

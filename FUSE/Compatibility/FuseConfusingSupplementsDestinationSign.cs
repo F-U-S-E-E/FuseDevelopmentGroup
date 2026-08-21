@@ -73,6 +73,7 @@ namespace FUSE.Compatibility
 
         private async Task ConfigureAsync(FuseConfusingSupplementsDestinationSignComponent component)
         {
+            var cancellationToken = _cancellation.Token;
             try
             {
                 if (component?.Model == null || component.Model.IsEmpty)
@@ -86,8 +87,8 @@ namespace FUSE.Compatibility
                 _loadedModel = await TrainController.Shared.PrefabStore.LoadAssetAsync<GameObject>(
                     component.Model.AssetPackIdentifier,
                     component.Model.AssetIdentifier,
-                    _cancellation.Token);
-                _cancellation.Token.ThrowIfCancellationRequested();
+                    cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
 
                 if (_loadedModel?.Asset == null)
                 {
@@ -132,8 +133,9 @@ namespace FUSE.Compatibility
                 _cullingToken?.RegisterFixedUpdate(transform);
                 RefreshSign();
             }
-            catch (OperationCanceledException) when (_cancellation.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                CleanupRuntimeObjects();
                 return;
             }
             catch (Exception ex)

@@ -27,7 +27,7 @@ namespace FUSE.Tests.Patches
             var current = new object();
             var umm = new object();
 
-            var resolved = FuseAlinasUtilitiesCompatibility.ResolveSettingsForTests(
+            var resolved = FuseAlinasUtilitiesCompatibility.ResolveSettings(
                 current,
                 umm,
                 () => new object());
@@ -41,7 +41,7 @@ namespace FUSE.Tests.Patches
             var umm = new object();
             var created = false;
 
-            var resolved = FuseAlinasUtilitiesCompatibility.ResolveSettingsForTests(
+            var resolved = FuseAlinasUtilitiesCompatibility.ResolveSettings(
                 null,
                 umm,
                 () =>
@@ -59,7 +59,7 @@ namespace FUSE.Tests.Patches
         {
             var fallback = new object();
 
-            var resolved = FuseAlinasUtilitiesCompatibility.ResolveSettingsForTests(
+            var resolved = FuseAlinasUtilitiesCompatibility.ResolveSettings(
                 null,
                 null,
                 () => fallback);

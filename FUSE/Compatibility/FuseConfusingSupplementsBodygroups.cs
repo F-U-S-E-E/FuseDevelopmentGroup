@@ -78,12 +78,29 @@ namespace FUSE.Compatibility
 
                 var propertyKey = "cs.bodygroups." + groupId;
                 var options = group.Options.ToArray();
-                context.ObserveProperty(propertyKey, value => ApplySelection(
-                    context.ObjectName,
-                    modelRoot,
-                    groupId,
-                    options,
-                    ReadSelectedOption(value, options)));
+                context.ObserveProperty(propertyKey, value =>
+                {
+                    var savedSelection = value.StringValue;
+                    var selectedOption = ReadSelectedOption(value, options);
+                    if (!string.IsNullOrWhiteSpace(savedSelection) &&
+                        !options.Any(option => string.Equals(
+                            option.Key,
+                            savedSelection,
+                            StringComparison.OrdinalIgnoreCase)))
+                    {
+                        FuseLog.Warning(
+                            $"FUSE legacy bodygroup '{groupId}' on " +
+                            $"'{context.ObjectName ?? "<unknown car>"}' no longer has saved option " +
+                            $"'{savedSelection}'; using '{selectedOption}' instead.");
+                    }
+
+                    ApplySelection(
+                        context.ObjectName,
+                        modelRoot,
+                        groupId,
+                        options,
+                        selectedOption);
+                });
             }
         }
 
@@ -92,7 +109,16 @@ namespace FUSE.Compatibility
             IReadOnlyList<KeyValuePair<string, FuseConfusingSupplementsBodygroupOption>> options)
         {
             var selected = value.StringValue;
-            return string.IsNullOrWhiteSpace(selected) && options != null && options.Count > 0
+            if (options == null || options.Count == 0)
+            {
+                return selected;
+            }
+
+            return string.IsNullOrWhiteSpace(selected) ||
+                   !options.Any(option => string.Equals(
+                       option.Key,
+                       selected,
+                       StringComparison.OrdinalIgnoreCase))
                 ? options[0].Key
                 : selected;
         }

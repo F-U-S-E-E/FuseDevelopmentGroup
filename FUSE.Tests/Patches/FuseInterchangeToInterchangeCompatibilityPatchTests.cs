@@ -14,7 +14,10 @@ namespace FUSE.Tests.Patches
         [InlineData(30, 2f, 60)]
         [InlineData(30, 0f, 0)]
         [InlineData(-1, 1f, 0)]
-        [InlineData(200, 2f, 200)]
+        [InlineData(
+            FuseSettings.InterchangeToInterchangeMaximumCarsLimit,
+            2f,
+            FuseSettings.InterchangeToInterchangeMaximumCarsLimit)]
         public void Maximum_cut_policy_is_bounded(
             int configured,
             float multiplier,
@@ -27,7 +30,7 @@ namespace FUSE.Tests.Patches
         [Theory]
         [InlineData(-1, 0)]
         [InlineData(30, 30)]
-        [InlineData(999, 200)]
+        [InlineData(999, FuseSettings.InterchangeToInterchangeMaximumCarsLimit)]
         public void User_setting_is_bounded(int value, int expected)
         {
             Assert.Equal(expected, FuseSettings.ClampInterchangeToInterchangeMaximumCars(value));

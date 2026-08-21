@@ -64,6 +64,26 @@ namespace FUSE.Tests.Compatibility
         }
 
         [Fact]
+        public void BodygroupsBuilder_StaleSavedValueSelectsFirstDeclaredOption()
+        {
+            var options = new List<KeyValuePair<string, FuseConfusingSupplementsBodygroupOption>>
+            {
+                new KeyValuePair<string, FuseConfusingSupplementsBodygroupOption>(
+                    "pilot",
+                    new FuseConfusingSupplementsBodygroupOption()),
+                new KeyValuePair<string, FuseConfusingSupplementsBodygroupOption>(
+                    "snowplow",
+                    new FuseConfusingSupplementsBodygroupOption())
+            };
+
+            var selected = FuseConfusingSupplementsBodygroupsBuilder.ReadSelectedOption(
+                Value.String("removed-option"),
+                options);
+
+            Assert.Equal("pilot", selected);
+        }
+
+        [Fact]
         public void ReplacementSurface_AccountsForEveryRegisteredRollingStockKind()
         {
             Assert.Equal(
@@ -79,16 +99,17 @@ namespace FUSE.Tests.Compatibility
         }
 
         [Fact]
-        public void LabelPrinter_SavedPropertyIdUsesGroupThenNameFallback()
+        public void LabelPrinter_SavedPropertyIdTrimsGroupThenNameFallback()
         {
             var grouped = new FuseConfusingSupplementsLabelPrinterComponent
             {
                 Name = "Visible Name",
-                Group = "shared-label"
+                Group = " shared-label "
             };
             var ungrouped = new FuseConfusingSupplementsLabelPrinterComponent
             {
-                Name = "road-name"
+                Name = " road-name ",
+                Group = "   "
             };
 
             Assert.Equal("shared-label", grouped.SavedPropertyId);
@@ -168,6 +189,25 @@ namespace FUSE.Tests.Compatibility
             };
 
             Assert.Equal(expected, FuseConfusingSupplementsRefillerRuntime.CanReceiveFrom(source, target));
+        }
+
+        [Fact]
+        public void RefillerTransferBudget_IsSharedAcrossTargetSlots()
+        {
+            var remainingTransfer = 10f;
+
+            var firstSlot = FuseConfusingSupplementsRefillerTransferPolicy.Take(
+                ref remainingTransfer,
+                6f,
+                10f);
+            var secondSlot = FuseConfusingSupplementsRefillerTransferPolicy.Take(
+                ref remainingTransfer,
+                8f,
+                10f);
+
+            Assert.Equal(6f, firstSlot);
+            Assert.Equal(4f, secondSlot);
+            Assert.Equal(0f, remainingTransfer);
         }
 
         [Fact]

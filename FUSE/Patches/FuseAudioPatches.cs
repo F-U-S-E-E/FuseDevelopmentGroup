@@ -198,10 +198,15 @@ namespace FUSE.Patches
             foreach (var name in new[] { "BuildSoundTabWhistle", "BuildSoundTabHorn", "BuildSoundTabBell" })
             {
                 var method = AccessTools.DeclaredMethod(windowType, name);
-                if (method != null)
+                if (method == null)
                 {
-                    yield return method;
+                    FuseLog.Warning(
+                        $"FUSE could not guard the car customize sound picker because " +
+                        $"'{windowType.FullName}.{name}' could not be resolved.");
+                    continue;
                 }
+
+                yield return method;
             }
         }
 

@@ -165,8 +165,14 @@ namespace FUSE.Patches
             out List<T> result)
         {
             result = source == null ? new List<T>() : new List<T>(source.Count);
-            if (source == null || source.Count == 0 || keySelector == null)
+            if (source == null || source.Count == 0)
             {
+                return 0;
+            }
+
+            if (keySelector == null)
+            {
+                result.AddRange(source);
                 return 0;
             }
 

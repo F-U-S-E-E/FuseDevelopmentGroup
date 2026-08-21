@@ -67,14 +67,19 @@ namespace FUSE.Patches
                     var settingsField = pluginType.GetField(
                         SettingsFieldName,
                         BindingFlags.Instance | BindingFlags.NonPublic);
-                    if (settingsField == null || settingsField.GetValue(shared) != null)
+                    if (settingsField == null)
                     {
                         continue;
                     }
 
-                    var settings = ReadUmmSettings(assembly, settingsField.FieldType) ??
-                                   CreateDefaultSettings(settingsField.FieldType);
-                    if (settings == null)
+                    var currentSettings = settingsField.GetValue(shared);
+                    var settings = ResolveSettings(
+                        currentSettings,
+                        currentSettings == null
+                            ? ReadUmmSettings(assembly, settingsField.FieldType)
+                            : null,
+                        () => CreateDefaultSettings(settingsField.FieldType));
+                    if (settings == null || ReferenceEquals(settings, currentSettings))
                     {
                         continue;
                     }
@@ -95,7 +100,7 @@ namespace FUSE.Patches
                     // with an AlinasUtils identity. One stale or incompatible copy
                     // must not prevent the compatible copy from being repaired.
                     FuseLog.Warning(
-                        $"FUSE could not inspect one Alina Utilities assembly " +
+                        $"FUSE could not inspect one Alina Utilities " +
                         $"assembly='{assembly.GetName().Name}': {ex.Message}");
                 }
             }
@@ -119,7 +124,7 @@ namespace FUSE.Patches
                    assemblyName.StartsWith("AlinasUtils", StringComparison.OrdinalIgnoreCase);
         }
 
-        internal static object ResolveSettingsForTests(
+        internal static object ResolveSettings(
             object currentSettings,
             object ummSettings,
             Func<object> createDefault)

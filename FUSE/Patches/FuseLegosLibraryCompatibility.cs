@@ -60,6 +60,11 @@ namespace FUSE.Patches
             return "installed";
         }
 
+        internal static void ResetAfterSuccessfulUnpatch()
+        {
+            _installed = false;
+        }
+
         private static bool CloneItemPrefix(ContainerItem item, ref ContainerItem __result)
         {
             if (item == null)

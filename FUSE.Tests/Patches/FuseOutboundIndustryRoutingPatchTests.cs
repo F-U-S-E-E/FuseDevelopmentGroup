@@ -64,6 +64,10 @@ namespace FUSE.Tests.Patches
         [Fact]
         public void Settings_clamp_untrusted_routing_values()
         {
+            Assert.Equal(0f, FuseSettings.ClampOutboundIndustryRerouteChance(-5f));
+            Assert.Equal(1f, FuseSettings.ClampOutboundIndustryRerouteChance(99f));
+            Assert.Equal(FuseSettings.DefaultOutboundIndustryRerouteChance,
+                FuseSettings.ClampOutboundIndustryRerouteChance(float.NaN));
             Assert.Equal(0.1f, FuseSettings.ClampOutboundIndustryFillFactor(-5f));
             Assert.Equal(3f, FuseSettings.ClampOutboundIndustryFillFactor(99f));
             Assert.Equal(FuseSettings.DefaultOutboundIndustryFillFactor,

@@ -42,16 +42,32 @@ namespace FUSE.Patches
             SetupDescriptor setupDescriptor,
             ref IEnumerator __result)
         {
-            PendingPlacements.Clear();
-            _presenting = false;
-            if (__result != null
-                && setupDescriptor != null
-                && ShouldQueueStarterSetup(
-                    setupDescriptor.identifier,
-                    FuseModLoader.GetLoadedMods()))
+            var shouldQueue = __result != null
+                              && setupDescriptor != null
+                              && ShouldQueueStarterSetup(
+                                  setupDescriptor.identifier,
+                                  FuseModLoader.GetLoadedMods());
+            if (TryPrepareStarterQueue(
+                    PendingPlacements,
+                    shouldQueue,
+                    _presenting))
             {
                 __result = RepairAfterInitialDelay(__result, setupDescriptor);
             }
+        }
+
+        internal static bool TryPrepareStarterQueue<T>(
+            Queue<T> placementQueue,
+            bool shouldQueue,
+            bool presentationActive)
+        {
+            if (!shouldQueue || presentationActive)
+            {
+                return false;
+            }
+
+            placementQueue?.Clear();
+            return true;
         }
 
         private static IEnumerator RepairAfterInitialDelay(
