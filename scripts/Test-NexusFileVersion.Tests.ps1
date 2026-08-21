@@ -61,6 +61,9 @@ function Invoke-SuccessCase {
   Assert-Condition `
     -Condition ($global:NexusProbeLastHeaders.apikey -eq 'test-api-key') `
     -Message "$Name did not send the API key header."
+  Assert-Condition `
+    -Condition ($global:NexusProbeLastTimeoutSec -eq 30) `
+    -Message "$Name did not use the expected Nexus request timeout."
 }
 
 function Invoke-FailureCase {
@@ -111,11 +114,15 @@ try {
       [string]$Method,
 
       [Parameter(Mandatory = $true)]
-      [hashtable]$Headers
+      [hashtable]$Headers,
+
+      [Parameter(Mandatory = $true)]
+      [int]$TimeoutSec
     )
 
     $global:NexusProbeLastUri = $Uri
     $global:NexusProbeLastHeaders = $Headers
+    $global:NexusProbeLastTimeoutSec = $TimeoutSec
     if ($global:NexusProbeMockMode -eq 'throw') {
       throw 'Simulated Nexus API failure.'
     }
@@ -221,6 +228,19 @@ try {
     Assert-Condition `
       -Condition ($workflow -notmatch '(?m)^\s+(file_group_id|file_category|archive_existing_file):') `
       -Message "$workflowPath still uses a removed Nexus upload-action input."
+
+    if ([System.IO.Path]::GetFileName($workflowPath) -eq 'release.yml') {
+      $packageIndex = $workflow.IndexOf('- name: Package Nexus variant')
+      $preflightIndex = $workflow.IndexOf('- name: Preflight Nexus upload')
+      $releaseIndex = $workflow.IndexOf('- name: Create GitHub release')
+      Assert-Condition `
+        -Condition (
+          $packageIndex -ge 0 -and
+          $packageIndex -lt $preflightIndex -and
+          $preflightIndex -lt $releaseIndex
+        ) `
+        -Message "$workflowPath must package and preflight Nexus before creating the GitHub release."
+    }
   }
 
   Write-Host 'Nexus file-version preflight tests passed.'
@@ -232,6 +252,7 @@ finally {
   Remove-Variable -Name NexusProbeMockResponse -Scope Global -ErrorAction SilentlyContinue
   Remove-Variable -Name NexusProbeLastUri -Scope Global -ErrorAction SilentlyContinue
   Remove-Variable -Name NexusProbeLastHeaders -Scope Global -ErrorAction SilentlyContinue
+  Remove-Variable -Name NexusProbeLastTimeoutSec -Scope Global -ErrorAction SilentlyContinue
   if (Test-Path -LiteralPath $tempRoot -PathType Container) {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force
   }

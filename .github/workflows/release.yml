@@ -303,25 +303,8 @@ jobs:
           "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
           "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: FUSE v${{ steps.version.outputs.version }}
-          prerelease: ${{ steps.version.outputs.is_prerelease }}
-          generate_release_notes: true
-          # GitHub gets both: the same core-only zip Nexus receives, plus the
-          # complete bundle and the individual tools.
-          files: |
-            ${{ steps.package.outputs.archive_path }}
-            ${{ steps.bundle.outputs.archive_path }}
-            dist/FUSE-Converter.exe
-            dist/FUSE-Installer.exe
-            dist/FUSEConvertFolder.pyz
-            FUSE.LiveBridge-v${{ steps.version.outputs.version }}.zip
-
       # Provenance stamp for the update check. The core zip attached to the GitHub
-      # release above stays Source="github" (the committed Info.json default); the
+      # release below stays Source="github" (the committed Info.json default); the
       # Nexus upload gets its own copy of the SAME contents with Source re-stamped
       # to "nexus", so an out-of-date player who installed from Nexus is pointed
       # back to Nexus while GitHub remains canonical (docs/RELEASING.md).
@@ -390,6 +373,23 @@ jobs:
             -GitHubOutputPath $env:GITHUB_OUTPUT
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: FUSE v${{ steps.version.outputs.version }}
+          prerelease: ${{ steps.version.outputs.is_prerelease }}
+          generate_release_notes: true
+          # GitHub gets both: the same core-only zip Nexus receives, plus the
+          # complete bundle and the individual tools.
+          files: |
+            ${{ steps.package.outputs.archive_path }}
+            ${{ steps.bundle.outputs.archive_path }}
+            dist/FUSE-Converter.exe
+            dist/FUSE-Installer.exe
+            dist/FUSEConvertFolder.pyz
+            FUSE.LiveBridge-v${{ steps.version.outputs.version }}.zip
+
       # Skipped automatically until the repo variable NEXUS_FILE_GROUP_ID is set.
       # Requires:
       #   - variable NEXUS_FILE_GROUP_ID (from "API Info" on the mod's Files tab)
@@ -397,8 +397,8 @@ jobs:
       # The secret is NOT checked in this condition: `secrets` is not an
       # available context in a step-level `if`, and referencing it there is a
       # parse error that breaks the whole workflow. With the variable set but the
-      # key missing, this step fails auth and fails the release job after the
-      # GitHub release has already been published — so set both together.
+      # key missing, the preflight fails before either release destination is
+      # mutated — so set both together.
       - name: Upload to Nexus Mods
         if: ${{ vars.NEXUS_FILE_GROUP_ID != '' && steps.version.outputs.is_ga == 'true' && steps.nexus.outputs.publish_required == 'true' }}
         uses: Nexus-Mods/upload-action@c96019556046053aa26044b44396cd38929daf23 # v1.0.0-beta.10

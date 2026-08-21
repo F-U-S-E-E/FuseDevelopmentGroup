@@ -56,6 +56,7 @@ try {
     -Uri $requestUri `
     -Method Get `
     -Headers $headers `
+    -TimeoutSec 30 `
     -ErrorAction Stop
 }
 catch {
