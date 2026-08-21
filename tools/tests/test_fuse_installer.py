@@ -39,6 +39,22 @@ def test_should_preselect_bundled_fuse_matches_launch_scope(
     assert fi.should_preselect_bundled_fuse(args, available) is expected
 
 
+@pytest.mark.parametrize(
+    ("screen", "expected"),
+    [
+        ((1920, 1080), (960, 760)),
+        ((956, 768), (908, 704)),
+        ((800, 600), (752, 536)),
+        ((40, 40), (1, 1)),
+    ],
+)
+def test_installer_window_size_stays_inside_screen_margin(
+    screen: tuple[int, int],
+    expected: tuple[int, int],
+) -> None:
+    assert fi.installer_window_size(*screen) == expected
+
+
 def make_zip(path: Path, files: dict[str, str | bytes]) -> Path:
     """Write a zip whose members are given as archive-name -> contents."""
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:

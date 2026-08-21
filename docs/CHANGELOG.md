@@ -1,5 +1,10 @@
 # Changelog
 
+- Installer 0.8.1 sizes and centers its window against the current display and
+  reserves the status and action rows before the expanding results pane. The
+  Install button therefore remains visible on 768p and other short desktops
+  without requiring the user to resize or move the window.
+
 - Reduced equipment-catalog main-thread work for installations using Lego's
   Library of Stuff. FUSE now bypasses Lego's expensive definition-edit postfix
   only for containers that cannot contain a requested edit; targeted

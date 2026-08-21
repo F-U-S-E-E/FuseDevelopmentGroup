@@ -33,7 +33,7 @@ if str(SCRIPT_DIR) not in sys.path:
 import legacy_json  # noqa: E402
 
 
-TOOL_VERSION = "0.8.0"
+TOOL_VERSION = "0.8.1"
 BUNDLED_FUSE_NAME = "bundled_fuse.zip"
 MANIFEST_NAMES = {"info.json", "definition.json"}
 LEGACY_MANAGED_FILES = (
@@ -2234,6 +2234,13 @@ def run(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def installer_window_size(screen_width: int, screen_height: int) -> tuple[int, int]:
+    """Fit the preferred installer window inside a desktop-sized margin."""
+    available_width = max(1, screen_width - 48)
+    available_height = max(1, screen_height - 64)
+    return min(960, available_width), min(760, available_height)
+
+
 def run_gui(args: argparse.Namespace) -> int:
     import tkinter as tk
     from tkinter import filedialog, messagebox
@@ -2241,8 +2248,17 @@ def run_gui(args: argparse.Namespace) -> int:
 
     root = tk.Tk()
     root.title(f"FUSE Mod Installer {TOOL_VERSION}")
-    root.geometry("900x680")
-    root.minsize(760, 560)
+    screen_width = max(1, root.winfo_screenwidth())
+    screen_height = max(1, root.winfo_screenheight())
+    window_width, window_height = installer_window_size(
+        screen_width,
+        screen_height,
+    )
+    window_x = max(0, (screen_width - window_width) // 2)
+    window_y = max(0, (screen_height - window_height) // 2)
+    root.geometry(
+        f"{window_width}x{window_height}+{window_x}+{window_y}")
+    root.minsize(min(760, window_width), min(560, window_height))
 
     game_var = tk.StringVar(value=str(Path(args.game_dir).resolve()) if args.game_dir else str(default_game_dir()))
     bundled_fuse_available = resolve_bundled_fuse() is not None
@@ -2329,16 +2345,19 @@ def run_gui(args: argparse.Namespace) -> int:
     tk.Label(nexus_row, text="Nexus API key (optional; never saved)", anchor="w").pack(side="left")
     tk.Entry(nexus_row, textvariable=nexus_key_var, show="*").pack(side="left", fill="x", expand=True, padx=(8, 0))
 
-    result_box = ScrolledText(outer, height=15, wrap="word", font=("Consolas", 9), state="disabled")
+    # Reserve the action and status rows before the expanding result pane. Tk's
+    # packer allocates widgets in packing order; allowing the result pane to
+    # claim the cavity first can push the Install button below a short desktop.
+    action_row = tk.Frame(outer)
+    action_row.pack(side="bottom", fill="x", pady=(8, 0))
+
+    status_label = tk.Label(outer, textvariable=status_var, anchor="w", justify="left", wraplength=840)
+    status_label.pack(side="bottom", fill="x")
+
+    result_box = ScrolledText(outer, height=9, wrap="word", font=("Consolas", 9), state="disabled")
     result_box.pack(fill="both", expand=True, pady=(6, 8))
     result_box.tag_configure("success", foreground="#167a2f")
     result_box.tag_configure("failure", foreground="#b42318")
-
-    status_label = tk.Label(outer, textvariable=status_var, anchor="w", justify="left", wraplength=840)
-    status_label.pack(fill="x")
-
-    action_row = tk.Frame(outer)
-    action_row.pack(fill="x", pady=(8, 0))
 
     def set_result(text: str, success: bool) -> None:
         result_box.configure(state="normal")
