@@ -61,28 +61,34 @@ namespace FUSE.Tests.Loading
         [Fact]
         public void CompatibilityLatch_ReentersInstallerAfterSuccessfulUnpatch()
         {
-            var installedField = typeof(FuseLegosLibraryCompatibility).GetField(
-                "_installed",
+            var cloneInstalledField = typeof(FuseLegosLibraryCompatibility).GetField(
+                "_cloneCompatibilityInstalled",
                 BindingFlags.NonPublic | BindingFlags.Static);
-            Assert.NotNull(installedField);
-            var original = (bool)installedField.GetValue(null);
+            var detailInstalledField = typeof(FuseLegosLibraryCompatibility).GetField(
+                "_detailModelCompatibilityInstalled",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(cloneInstalledField);
+            Assert.NotNull(detailInstalledField);
+            var originalClone = (bool)cloneInstalledField.GetValue(null);
+            var originalDetail = (bool)detailInstalledField.GetValue(null);
 
             try
             {
-                installedField.SetValue(null, true);
-                Assert.Equal(
-                    "installed",
-                    FuseLegosLibraryCompatibility.EnsureInstalled(null));
+                cloneInstalledField.SetValue(null, true);
+                detailInstalledField.SetValue(null, true);
 
                 FuseLegosLibraryCompatibility.ResetAfterSuccessfulUnpatch();
 
+                Assert.False((bool)cloneInstalledField.GetValue(null));
+                Assert.False((bool)detailInstalledField.GetValue(null));
                 Assert.Equal(
                     "unavailable (no harmony)",
                     FuseLegosLibraryCompatibility.EnsureInstalled(null));
             }
             finally
             {
-                installedField.SetValue(null, original);
+                cloneInstalledField.SetValue(null, originalClone);
+                detailInstalledField.SetValue(null, originalDetail);
             }
         }
 

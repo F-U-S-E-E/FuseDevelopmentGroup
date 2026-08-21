@@ -191,7 +191,10 @@ namespace FUSE.Patches
 
         internal static void ResetAfterSuccessfulUnpatch()
         {
-            _installed = false;
+            _cloneCompatibilityInstalled = false;
+            _detailModelCompatibilityInstalled = false;
+            _cloneFailures = 0;
+            _detailModelFailures = 0;
         }
 
         private static bool CloneItemPrefix(ContainerItem item, ref ContainerItem __result)
