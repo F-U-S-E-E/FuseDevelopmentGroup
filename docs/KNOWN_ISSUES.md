@@ -49,7 +49,8 @@ Off by default. Enabling one is a testing decision — back up your save first. 
   `/fuse.conflicts` reports the collision.
 - **Legacy loaders, AMM, Strange Customs, and RailLoader can create duplicate
   objects** when used alongside converted packages for the same route. FUSE warns
-  when it finds a leftover `Railloader.dll` or `Railloader.Interchange.dll`.
+  when it finds a leftover `Railloader.dll`, `Railloader.Injector.dll`, or
+  `Railloader.Interchange.dll`.
 - **Custom industry components load only when the owning assembly is installed.**
   A package referencing a component type from an assembly you do not have reports
   the missing dependency rather than silently dropping the component.

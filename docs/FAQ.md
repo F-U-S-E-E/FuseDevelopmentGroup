@@ -17,7 +17,8 @@ The `2025.1.x` line. FUSE logs its version report at startup in `FUSE.log`.
 ### Do I need Railloader as well?
 
 No. FUSE replaces it. Running both means two loaders are live at once, and FUSE
-warns when it finds a leftover `Railloader.dll` or `Railloader.Interchange.dll`.
+warns when it finds a leftover `Railloader.dll`, `Railloader.Injector.dll`, or
+`Railloader.Interchange.dll`.
 
 ### Is FUSE free and open source?
 
@@ -58,8 +59,11 @@ No. A package that faults is reported and skipped; unrelated packages still load
 
 ### Can I run my old mods?
 
-Data mods convert. Run them through the converter to produce a `*.FUSE` package —
-see [MIGRATION_FROM_LEGACY.md](MIGRATION_FROM_LEGACY.md).
+RailLoader JSON data mods can convert. Run them through the converter to produce
+a `*.FUSE` package — see
+[MIGRATION_FROM_LEGACY.md](MIGRATION_FROM_LEGACY.md). Asset packs and Alina
+map-tile packages install directly because FUSE loads their supported legacy
+formats; converting them would only create a misleading empty wrapper.
 
 Script mods that ship `.dll` logic do not convert. Neither do rolling stock,
 locomotive, and car mods, except audio definitions FUSE can import.
