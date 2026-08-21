@@ -177,6 +177,7 @@ namespace FUSE.Tests.Loading
         [Theory]
         [InlineData("mixinto dependency missing id='foo'", true)]
         [InlineData("MIXINTO DEPENDENCY MISSING something", true)]
+        [InlineData("package='Author.Optional' mixinto dependency missing id='Companion.Mod' target='game-graph'", true)]
         [InlineData("some other reason", false)]
         [InlineData("", false)]
         [InlineData(null, false)]

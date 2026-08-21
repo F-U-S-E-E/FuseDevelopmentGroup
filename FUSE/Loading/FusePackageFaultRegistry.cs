@@ -359,7 +359,7 @@ namespace FUSE.Loading
         public static bool IsOptionalSkipReason(string reason)
         {
             return !string.IsNullOrWhiteSpace(reason) &&
-                   (reason.StartsWith("mixinto dependency missing", StringComparison.OrdinalIgnoreCase) ||
+                   (reason.IndexOf("mixinto dependency missing", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     reason.StartsWith(FuseMapSession.InactiveSkipReasonPrefix, StringComparison.OrdinalIgnoreCase));
         }
 
