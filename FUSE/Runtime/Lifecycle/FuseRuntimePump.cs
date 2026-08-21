@@ -54,6 +54,8 @@ namespace FUSE.Runtime.Lifecycle
 
         internal static void Shutdown()
         {
+            FuseMainThreadWorkTracker.Reset();
+
             if (_host == null)
             {
                 return;
@@ -83,50 +85,106 @@ namespace FUSE.Runtime.Lifecycle
             {
                 // AssemblyLoad can run on a loader thread. Third-party guard
                 // discovery and Harmony mutation are coalesced and replayed here.
+                var measure = FuseSettings.EnableFrameSpikeDiagnostics;
+                var frame = Time.frameCount;
+                var started = measure ? FuseMainThreadWorkTracker.Start() : 0L;
                 FUSE.Patches.FuseThirdPartyGuardInstaller.DrainPending();
+                if (measure)
+                    FuseMainThreadWorkTracker.Record(
+                        frame,
+                        "third-party guard installation",
+                        started);
 
                 // RailLoader plugins that implement IUpdateHandler expect their
                 // callback every Unity frame. Hosting only OnEnable made those
                 // plugins appear loaded while their runtime behavior stayed inert.
+                started = measure ? FuseMainThreadWorkTracker.Start() : 0L;
                 FUSE.Loading.FuseLegacyAssemblyHost.UpdateHostedPlugins();
+                if (measure)
+                    FuseMainThreadWorkTracker.Record(
+                        frame,
+                        "hosted legacy plugin updates",
+                        started);
 
                 // TimeSync Mod's ten-minute System.Threading.Timer callback
                 // arrives on a worker thread. Replay it here before it can
                 // touch StateManager and the Unity-backed in-game console.
+                started = measure ? FuseMainThreadWorkTracker.Start() : 0L;
                 FUSE.Patches.FuseTimeSyncMainThreadGuardPatches.DrainPending();
+                if (measure)
+                    FuseMainThreadWorkTracker.Record(
+                        frame,
+                        "time synchronization",
+                        started);
 
                 // Scenery load-failure records + broken-scenery quarantines:
                 // queued from task continuations / the log hook / the bundle
                 // audit (any thread), resolved and applied here.
+                started = measure ? FuseMainThreadWorkTracker.Start() : 0L;
                 FUSE.Patches.FuseSceneryLoadFailurePatch.DrainPending();
+                if (measure)
+                    FuseMainThreadWorkTracker.Record(
+                        frame,
+                        "scenery failure containment",
+                        started);
 
                 // Scenery models are destroyed at the end of the frame. Release
                 // their asset references on the following frame so a load/unload
                 // race cannot keep a bundle alive or unload it too early.
+                started = measure ? FuseMainThreadWorkTracker.Start() : 0L;
                 FUSE.Patches.FuseDeferredAssetReferenceReleaseQueue.Update();
+                if (measure)
+                    FuseMainThreadWorkTracker.Record(
+                        frame,
+                        "deferred asset release",
+                        started);
 
                 // Mod health exception observations: first-seen signatures
                 // queued by the threaded log hook (any thread), attributed and
                 // recorded (with throttled log lines) here.
+                started = measure ? FuseMainThreadWorkTracker.Start() : 0L;
                 FuseModExceptionLogHook.DrainPending();
+                if (measure)
+                    FuseMainThreadWorkTracker.Record(
+                        frame,
+                        "exception attribution",
+                        started);
 
                 // Completed FUSE asset requests whose reference count reached
                 // zero are removed individually by the store patch. Reclaim
                 // their now-unreachable Unity assets only after streaming has
                 // remained quiet long enough to avoid load/unload thrashing.
+                started = measure ? FuseMainThreadWorkTracker.Start() : 0L;
                 FuseUnusedAssetReclaimer.Update();
+                if (measure)
+                    FuseMainThreadWorkTracker.Record(
+                        frame,
+                        "unused asset reclaim",
+                        started);
 
                 // AssetBundle requests may all complete together after a
                 // teleport. Finish only a bounded number of car bodies,
                 // trucks, unique materials, and load models per frame.
+                started = measure ? FuseMainThreadWorkTracker.Start() : 0L;
                 FUSE.Patches.FuseCarModelCompletionScheduler.Update();
+                if (measure)
+                    FuseMainThreadWorkTracker.Record(
+                        frame,
+                        "equipment model completion",
+                        started);
 
                 // EquipmentWindow synchronously enumerates every mounted
                 // Definitions.json the first time it opens. Warm one cold
                 // store per frame so legacy container edit patches (notably
                 // Lego's large definition set) cannot produce a multi-second
                 // buy-menu stall.
+                started = measure ? FuseMainThreadWorkTracker.Start() : 0L;
                 FUSE.Patches.FuseEquipmentCatalogWarmup.Update();
+                if (measure)
+                    FuseMainThreadWorkTracker.Record(
+                        frame,
+                        "equipment catalogue warm-up",
+                        started);
             }
         }
     }

@@ -1,5 +1,15 @@
 # Changelog
 
+- Reduced equipment-catalog main-thread work for installations using Lego's
+  Library of Stuff. FUSE now bypasses Lego's expensive definition-edit postfix
+  only for containers that cannot contain a requested edit; targeted
+  locomotive and railcar containers still run Lego's original behavior. The
+  incremental warm-up report now records skipped unrelated containers, slow
+  stores, and the worst store so low-end performance can be verified in-game.
+- Live Diagnostics auto-refresh now updates the visible count and log text in
+  place instead of rebuilding the complete FUSE window once per second. This
+  preserves scroll position and removes a periodic UI-layout/main-thread hitch.
+
 - Fixed FUSE Profiles omitting auto-converted RailLoader data packages. Native
   FUSE and converted legacy packages now appear beside UMM-active mods, new
   profiles enable every available package by default, and toggles update the

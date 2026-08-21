@@ -133,13 +133,6 @@ namespace FUSE.Interface.MenuWindow
                 ModsPanelBuilder.CloseAllLegacyModTabs("legacy settings tab no longer visible");
             }
 
-            if (_window != null && _window.IsShown &&
-                _selectedTabState.Value == TabIdTools &&
-                _selectedToolItem.Value == "liveDiagnostics" &&
-                LiveDiagnosticsToolPage.ShouldAutoRefresh(Time.unscaledTime))
-            {
-                RebuildWindow();
-            }
         }
 
         private void BuildFuseMenu(UIPanelBuilder builder)

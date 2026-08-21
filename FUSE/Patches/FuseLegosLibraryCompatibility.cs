@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using FUSE.Infrastructure;
 using HarmonyLib;
@@ -22,14 +24,23 @@ namespace FUSE.Patches
             "LegosLibraryOfStuff.DetailModelConditionPatch";
         private const string ComponentGroupHandlerTypeName =
             "LegosLibraryOfStuff.ComponentGroupHandler";
+        private const string LibraryTypeName =
+            "LegosLibraryOfStuff.LibraryOfStuff";
 
         private static readonly MethodInfo SerializerSettingsMethod =
             AccessTools.Method(typeof(ContainerSerialization), "JsonSerializerSettings");
 
         private static bool _cloneCompatibilityInstalled;
         private static bool _detailModelCompatibilityInstalled;
+        private static bool _containerFastPathInstalled;
         private static int _cloneFailures;
         private static int _detailModelFailures;
+        private static MethodInfo _loadJsonDefinitionsMethod;
+        private static FieldInfo _definitionIdentifiersField;
+        private static HashSet<string> _definitionIdentifiers;
+        private static int _definitionIdentifierCount = -1;
+        private static bool _definitionsPrimed;
+        private static int _containersSkipped;
 
         internal static string EnsureInstalled(Harmony harmony)
         {
@@ -60,6 +71,27 @@ namespace FUSE.Patches
                             nameof(CloneItemPrefix)));
                     _cloneCompatibilityInstalled = true;
                 }
+
+                var originalPostfix = AccessTools.DeclaredMethod(patchType, "Postfix");
+                var libraryType = AccessTools.TypeByName(LibraryTypeName);
+                _loadJsonDefinitionsMethod = libraryType == null
+                    ? null
+                    : AccessTools.DeclaredMethod(libraryType, "LoadJsonDefinitions");
+                _definitionIdentifiersField = libraryType == null
+                    ? null
+                    : AccessTools.Field(libraryType, "definitionIdentifiers");
+                if (!_containerFastPathInstalled &&
+                    originalPostfix != null &&
+                    _loadJsonDefinitionsMethod != null &&
+                    _definitionIdentifiersField != null)
+                {
+                    harmony.Patch(
+                        originalPostfix,
+                        prefix: new HarmonyMethod(
+                            typeof(FuseLegosLibraryCompatibility),
+                            nameof(ContainerPostfixPrefix)));
+                    _containerFastPathInstalled = true;
+                }
             }
 
             if (detailModelPatchType != null)
@@ -70,14 +102,16 @@ namespace FUSE.Patches
                     installFusePostfix: !_detailModelCompatibilityInstalled);
             }
 
-            if (_cloneCompatibilityInstalled && _detailModelCompatibilityInstalled)
+            if (_cloneCompatibilityInstalled &&
+                _detailModelCompatibilityInstalled &&
+                _containerFastPathInstalled)
             {
                 return "installed";
             }
 
             if (_cloneCompatibilityInstalled || _detailModelCompatibilityInstalled)
             {
-                return $"partial (clone={_cloneCompatibilityInstalled} detailModel={_detailModelCompatibilityInstalled})";
+                return $"partial (clone={_cloneCompatibilityInstalled} detailModel={_detailModelCompatibilityInstalled} containerFastPath={_containerFastPathInstalled})";
             }
 
             return "idle (surface changed)";
@@ -193,8 +227,104 @@ namespace FUSE.Patches
         {
             _cloneCompatibilityInstalled = false;
             _detailModelCompatibilityInstalled = false;
+            _containerFastPathInstalled = false;
             _cloneFailures = 0;
             _detailModelFailures = 0;
+            _loadJsonDefinitionsMethod = null;
+            _definitionIdentifiersField = null;
+            _definitionIdentifiers = null;
+            _definitionIdentifierCount = -1;
+            _definitionsPrimed = false;
+            _containersSkipped = 0;
+        }
+
+        internal static int ContainersSkippedByFastPath => _containersSkipped;
+
+        internal static bool ContainerMayContainEditedDefinition(
+            Container container,
+            ISet<string> identifiers)
+        {
+            if (container?.Objects == null || identifiers == null || identifiers.Count == 0)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < container.Objects.Count; index++)
+            {
+                var identifier = container.Objects[index]?.Identifier;
+                if (!string.IsNullOrEmpty(identifier) && identifiers.Contains(identifier))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ContainerPostfixPrefix(ref Container __0)
+        {
+            try
+            {
+                if (!TryGetDefinitionIdentifiers(out var identifiers))
+                {
+                    return true;
+                }
+
+                if (ContainerMayContainEditedDefinition(__0, identifiers))
+                {
+                    return true;
+                }
+
+                _containersSkipped++;
+                return false;
+            }
+            catch
+            {
+                // The optimization is optional. Lego's original postfix remains
+                // the compatibility authority whenever its reflected surface moves.
+                return true;
+            }
+        }
+
+        private static bool TryGetDefinitionIdentifiers(out HashSet<string> identifiers)
+        {
+            identifiers = null;
+            if (_loadJsonDefinitionsMethod == null || _definitionIdentifiersField == null)
+            {
+                return false;
+            }
+
+            if (!_definitionsPrimed)
+            {
+                _loadJsonDefinitionsMethod.Invoke(null, null);
+                _definitionsPrimed = true;
+            }
+
+            if (!(_definitionIdentifiersField.GetValue(null) is IEnumerable source))
+            {
+                return false;
+            }
+
+            var count = source is ICollection collection ? collection.Count : -1;
+            if (_definitionIdentifiers != null && count >= 0 && count == _definitionIdentifierCount)
+            {
+                identifiers = _definitionIdentifiers;
+                return true;
+            }
+
+            var rebuilt = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var value in source)
+            {
+                if (value is string identifier && !string.IsNullOrEmpty(identifier))
+                {
+                    rebuilt.Add(identifier);
+                }
+            }
+
+            _definitionIdentifiers = rebuilt;
+            _definitionIdentifierCount = count >= 0 ? count : rebuilt.Count;
+            identifiers = rebuilt;
+            return true;
         }
 
         private static bool CloneItemPrefix(ContainerItem item, ref ContainerItem __result)

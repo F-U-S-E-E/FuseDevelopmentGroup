@@ -26,6 +26,11 @@ namespace FUSE.Patches
         private static int _nextStore;
         private static int _failedStores;
         private static long _elapsedTicks;
+        private static long _worstStoreTicks;
+        private static string _worstStoreIdentifier = string.Empty;
+        private static int _slowStores;
+
+        private const double SlowStoreMilliseconds = 25d;
 
         internal static int PendingStoreCount => Math.Max(0, _stores.Length - _nextStore);
 
@@ -37,6 +42,9 @@ namespace FUSE.Patches
             _nextStore = 0;
             _failedStores = 0;
             _elapsedTicks = 0;
+            _worstStoreTicks = 0;
+            _worstStoreIdentifier = string.Empty;
+            _slowStores = 0;
 
             if (_stores.Length > 0)
             {
@@ -76,7 +84,18 @@ namespace FUSE.Patches
                 }
                 finally
                 {
-                    _elapsedTicks += Stopwatch.GetTimestamp() - started;
+                    var elapsedTicks = Stopwatch.GetTimestamp() - started;
+                    _elapsedTicks += elapsedTicks;
+                    if (elapsedTicks > _worstStoreTicks)
+                    {
+                        _worstStoreTicks = elapsedTicks;
+                        _worstStoreIdentifier = store.Identifier ?? "<unknown>";
+                    }
+
+                    if (elapsedTicks * 1000d / Stopwatch.Frequency >= SlowStoreMilliseconds)
+                    {
+                        _slowStores++;
+                    }
                 }
             }
 
@@ -86,9 +105,13 @@ namespace FUSE.Patches
             }
 
             var elapsedMs = _elapsedTicks * 1000d / Stopwatch.Frequency;
+            var worstStoreMs = _worstStoreTicks * 1000d / Stopwatch.Frequency;
             FuseLog.Info(
                 $"FUSE Equipment catalogue warm-up completed stores={_stores.Length} " +
-                $"failed={_failedStores} cumulativeWorkMs={elapsedMs:0.0}. " +
+                $"failed={_failedStores} cumulativeWorkMs={elapsedMs:0.0} " +
+                $"slowStores={_slowStores} slowThresholdMs={SlowStoreMilliseconds:0} " +
+                $"worstStore='{_worstStoreIdentifier}' worstStoreMs={worstStoreMs:0.0} " +
+                $"legoUnrelatedContainersSkipped={FuseLegosLibraryCompatibility.ContainersSkippedByFastPath}. " +
                 "Opening the buy menu will reuse the prepared containers.");
         }
 

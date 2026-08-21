@@ -219,6 +219,12 @@ namespace FUSE.Runtime.Lifecycle
                             var decalRegistry = FuseDecalCullingScrubPatch.TryGetRegistryCount(out var registryCount)
                                 ? registryCount.ToString()
                                 : "n/a";
+                            var pumpContext = FuseMainThreadWorkTracker.TryGet(
+                                Time.frameCount - 1,
+                                out var pumpPhase,
+                                out var pumpMilliseconds)
+                                ? $"fusePumpWorstPhase='{pumpPhase}' fusePumpWorstMs={pumpMilliseconds:F1} "
+                                : "fusePumpWorstPhase='none measured' fusePumpWorstMs=0.0 ";
                             FuseLog.Warning(
                                 $"FUSE frame spike #{spikeCount}: {frameMs:F0}ms{(isNewWorst ? " (session worst)" : string.Empty)} " +
                                 $"(adaptive baseline {observation.BaselineMs:F1}ms, absolute floor {absoluteFloorMs:F0}ms, " +
@@ -231,6 +237,7 @@ namespace FUSE.Runtime.Lifecycle
                                 $"trackDestroyQueue={FuseTrackRebuilderQueueProcessor.DestroyQueueDepth} " +
                                 $"equipmentCullQueue={FuseCarCullerPendingProcessor.QueueDepth} " +
                                 $"equipmentCompletionQueue={FuseCarModelCompletionScheduler.QueueDepth} " +
+                                pumpContext +
                                 $"decalRegistry={decalRegistry}. " +
                                 "Correlate this timestamp with surrounding FUSE.log/Player.log activity; " +
                                 "a positive GC delta points at allocation pressure, a deep scenery queue " +

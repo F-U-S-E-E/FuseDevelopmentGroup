@@ -136,6 +136,13 @@ rather than fixing it. See [SETTINGS.md](SETTINGS.md#performance-diagnostics).
 Note that load time scales with how much your packages actually change: track
 segments, scenery, and industries all cost time to apply.
 
+Current builds also name the slowest measured FUSE runtime-pump phase on a
+logged spike. `fusePumpWorstPhase='none measured'` means the detector did not
+find expensive work in FUSE's own per-frame pump; correlate that timestamp with
+the surrounding game and third-party logs instead. Equipment warm-up completion
+lines include the slowest asset store and how many stores crossed the slow-store
+threshold, which is the useful evidence for a buy-menu delay report.
+
 ### Should I leave the debug overlays on?
 
 No. The track, scenery, and world-label overlays draw every frame and exist for
