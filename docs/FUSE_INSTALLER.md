@@ -263,7 +263,6 @@ powershell -ExecutionPolicy Bypass -File .\tools\build_installer_exe.ps1 -FusePa
 
 The release workflow does this automatically, passing the zip it just built. If
 you build without `-FusePayload`, the exe still installs mods from dragged zips,
-but a no-argument run has no FUSE to install and reports that instead. After a
-bundled build, the script performs a real install into a throwaway fake game
-folder and confirms `Mods\FUSE\Info.json` was written. Installer tests also
-verify AssetLoader backup, DLL removal, and dependency-alias creation.
+but a no-argument run has no FUSE to install and reports that instead. The
+bundled-build smoke test verifies FUSE installation and AssetLoader migration
+in a throwaway game folder.

@@ -24,6 +24,7 @@ MANUALS = [
                    ("Frequently Asked Questions", P("docs","FAQ.md")),
                    ("Migrating From Legacy Mods", P("docs","MIGRATION_FROM_LEGACY.md")),
                    ("Settings Reference", P("docs","SETTINGS.md")),
+                   ("Performance Acceptance Testing", P("docs","PERFORMANCE_TESTING.md")),
                    ("Console Command Reference", P("docs","CONSOLE_COMMANDS.md")),
                    ("Troubleshooting", P("docs","TROUBLESHOOTING.md")),
                    ("Known Issues", P("docs","KNOWN_ISSUES.md")),

@@ -46,6 +46,7 @@ $pageMap = [ordered]@{
     'FAQ.md'                  = 'FAQ'
     'MIGRATION_FROM_LEGACY.md' = 'Migrating-From-Legacy-Mods'
     'SETTINGS.md'             = 'Settings'
+    'PERFORMANCE_TESTING.md'  = 'Performance-Testing'
     'CONSOLE_COMMANDS.md'     = 'Console-Commands'
     'TROUBLESHOOTING.md'      = 'Troubleshooting'
     'KNOWN_ISSUES.md'         = 'Known-Issues'
@@ -59,7 +60,7 @@ $pageMap = [ordered]@{
 
 # Sidebar grouping.
 $sections = [ordered]@{
-    'Players'         = @('Getting-Started', 'Install-Convert-Or-Author', 'FAQ', 'Migrating-From-Legacy-Mods', 'Settings', 'Console-Commands', 'Troubleshooting', 'Known-Issues', 'Installer')
+    'Players'         = @('Getting-Started', 'Install-Convert-Or-Author', 'FAQ', 'Migrating-From-Legacy-Mods', 'Settings', 'Performance-Testing', 'Console-Commands', 'Troubleshooting', 'Known-Issues', 'Installer')
     'Package Authors' = @('Converter', 'Package-Author-Guide', 'Authoring-Recipes', 'External-Editor', 'Map-Authoring-Coverage')
 }
 
@@ -163,6 +164,7 @@ anything.
 - [Install, Convert, Or Author](Install-Convert-Or-Author) — choose the correct tool
 - [FAQ](FAQ) — legacy mods, multiplayer, saves, performance
 - [Settings](Settings) — every setting and its default
+- [Performance Testing](Performance-Testing) — reproducible load, menu, stutter, editor, and Toolshed acceptance
 - [Console Commands](Console-Commands) — every ``/fuse.*`` command
 - [Troubleshooting](Troubleshooting) — symptom to diagnostic
 - [Known Issues](Known-Issues) — current limitations

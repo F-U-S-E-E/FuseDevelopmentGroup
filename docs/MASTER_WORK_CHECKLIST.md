@@ -100,6 +100,8 @@ a representative low-end system; a fast developer PC is not sufficient proof.
 - [ ] Capture before/after frame-time, main-thread time, load time, worst spike,
   queue depth, and memory/GC evidence in the in-game performance report. A code
   review or passing unit suite alone does not close this gate.
+  The reproducible team procedure and required evidence bundle are published in
+  [`PERFORMANCE_TESTING.md`](PERFORMANCE_TESTING.md).
 
 ## Live GitHub issue intake (2026-08-19)
 

@@ -143,6 +143,9 @@ the surrounding game and third-party logs instead. Equipment warm-up completion
 lines include the slowest asset store and how many stores crossed the slow-store
 threshold, which is the useful evidence for a buy-menu delay report.
 
+For a release-quality before/after run, follow
+[Performance Acceptance Testing](PERFORMANCE_TESTING.md).
+
 ### Should I leave the debug overlays on?
 
 No. The track, scenery, and world-label overlays draw every frame and exist for
