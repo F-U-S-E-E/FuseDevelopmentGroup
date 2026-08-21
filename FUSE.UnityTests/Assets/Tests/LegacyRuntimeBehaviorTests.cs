@@ -1,11 +1,23 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using FUSE.Authoring.Data;
+using FUSE.Compatibility;
+using FUSE.Patches;
 using FUSE.Runtime.API;
+using Game.Messages;
+using Game.Progression;
+using HarmonyLib;
+using KeyValue.Runtime;
 using Model.Ops;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using Track;
+using UI.Builder;
+using UI.CarInspector;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -171,6 +183,377 @@ namespace FUSE.UnityTests
             Assert.That(target.shadowCastingMode, Is.EqualTo(ShadowCastingMode.Off));
         }
 
+        [Test]
+        public void StrangeCustomsFileCache_NormalizesPathsAndTracksEntryState()
+        {
+            var relative = Path.Combine("fixtures", "audio.wav");
+            var normalized = StrangeCustoms.FileCache.NormalizePath(relative);
+            var equivalent = StrangeCustoms.FileCache.NormalizePath(
+                Path.Combine("fixtures", ".", "audio.wav"));
+
+            Assert.That(Path.IsPathRooted(normalized), Is.True);
+            Assert.That(equivalent, Is.EqualTo(normalized));
+
+            var entry = new StrangeCustoms.FileCache.CacheEntry<string>(relative);
+            string observed = null;
+            entry.Register(value => observed = value);
+            entry.Set("loaded");
+
+            Assert.That(entry.IsValid, Is.True);
+            Assert.That(entry.IsLoading, Is.False);
+            Assert.That(entry.Value, Is.EqualTo("loaded"));
+            Assert.That(observed, Is.EqualTo("loaded"));
+
+            entry.Invalidate();
+            Assert.That(entry.IsValid, Is.False);
+            Assert.That(entry.Value, Is.Null);
+        }
+
+        [Test]
+        public void StrangeCustomsFlowyBuilder_AdaptsLegacyDataToNativeSpliney()
+        {
+            var definition = StrangeCustoms.FlowyThingBuilder.ConvertDefinition(
+                JObject.Parse(@"{
+                    'handler': 'StrangeCustoms.FlowyThingBuilder',
+                    'style': 'River',
+                    'profile': 'River profile',
+                    'points': [
+                        { 'position': { 'x': 1, 'y': 2, 'z': 3 }, 'width': 4 },
+                        { 'position': { 'x': 5, 'y': 6, 'z': 7 }, 'width': 8 }
+                    ]
+                }"));
+
+            Assert.That(definition.Type, Is.EqualTo("river"));
+            Assert.That(definition.Profile, Is.EqualTo("River profile"));
+            Assert.That(definition.OffsetY, Is.EqualTo(-0.1f));
+            Assert.That(definition.Points.Length, Is.EqualTo(2));
+            Assert.That(definition.Points[0].Width, Is.EqualTo(4f));
+            Assert.That(definition.Points[1].Position.z, Is.EqualTo(7f));
+        }
+
+        [Test]
+        public void LabelPrinter_SavedPropertyIdTrimsGroupThenNameFallback()
+        {
+            var grouped = new FuseConfusingSupplementsLabelPrinterComponent
+            {
+                Name = "Visible Name",
+                Group = " shared-label "
+            };
+            var ungrouped = new FuseConfusingSupplementsLabelPrinterComponent
+            {
+                Name = " road-name ",
+                Group = "   "
+            };
+
+            Assert.That(grouped.SavedPropertyId, Is.EqualTo("shared-label"));
+            Assert.That(ungrouped.SavedPropertyId, Is.EqualTo("road-name"));
+            Assert.That(
+                FuseConfusingSupplementsLabelPrinterBuilder.SavedPropertyKey(ungrouped.SavedPropertyId),
+                Is.EqualTo("cs.labelprinter.road-name"));
+            Assert.That(FuseConfusingSupplementsLabelPrinterBuilder.ReadText(Value.Null()), Is.Empty);
+        }
+
+        [Test]
+        public void LabelPrinter_UpdatedTextPreservesDictionaryFields()
+        {
+            var current = Value.Dictionary(new Dictionary<string, Value>
+            {
+                ["text"] = Value.String("Old text"),
+                ["font"] = Value.String("Railroad Roman")
+            });
+
+            var updated = FuseConfusingSupplementsLabelPrinterBuilder.UpdatedTextValue(current, "New text");
+            var runtime = PropertyValueConverter.SnapshotToRuntime(updated);
+
+            Assert.That(FuseConfusingSupplementsLabelPrinterBuilder.ReadText(runtime), Is.EqualTo("New text"));
+            Assert.That(runtime.DictionaryValue["font"].StringValue, Is.EqualTo("Railroad Roman"));
+        }
+
+        [Test]
+        public void LiveryController_BlankOrMissingSelectionRestoresOriginalTexture()
+        {
+            var controller = CreateLiveryController(
+                out var material,
+                out var originalTexture,
+                out var replacementTexture);
+
+            try
+            {
+                material.mainTexture = replacementTexture;
+                controller.ApplySavedSelection(Value.Null());
+                Assert.That(material.mainTexture, Is.SameAs(originalTexture));
+
+                material.mainTexture = replacementTexture;
+                controller.ApplySavedSelection(Value.String("removed-livery"));
+                Assert.That(material.mainTexture, Is.SameAs(originalTexture));
+            }
+            finally
+            {
+                FuseConfusingSupplementsLiveryRegistry.Shutdown();
+                UnityEngine.Object.DestroyImmediate(originalTexture);
+                UnityEngine.Object.DestroyImmediate(replacementTexture);
+                UnityEngine.Object.DestroyImmediate(material);
+            }
+        }
+
+        [Test]
+        public void LiveryRegistry_RefreshLiveCarsRestoresOriginalBeforeClearingCache()
+        {
+            CreateLiveryController(
+                out var material,
+                out var originalTexture,
+                out var replacementTexture);
+
+            try
+            {
+                material.mainTexture = replacementTexture;
+                AddCachedLiveryTexture("refresh-test", replacementTexture);
+
+                var refreshed = FuseConfusingSupplementsLiveryRegistry.RefreshLiveCars();
+
+                Assert.That(refreshed, Is.GreaterThanOrEqualTo(1));
+                Assert.That(material.mainTexture, Is.SameAs(originalTexture));
+                Assert.That(FuseConfusingSupplementsLiveryRegistry.CachedTextureCount, Is.Zero);
+            }
+            finally
+            {
+                FuseConfusingSupplementsLiveryRegistry.Shutdown();
+                UnityEngine.Object.DestroyImmediate(originalTexture);
+                if (replacementTexture != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(replacementTexture);
+                }
+
+                UnityEngine.Object.DestroyImmediate(material);
+            }
+        }
+
+        [Test]
+        public void LiveryController_OnDestroyDestroysEveryTrackedMaterialOnce()
+        {
+            var shader = Shader.Find("Unlit/Texture") ??
+                         Shader.Find("Sprites/Default") ??
+                         Shader.Find("Standard");
+            Assert.That(shader, Is.Not.Null);
+
+            var controllerObject = new GameObject("livery material cleanup fixture");
+            controllerObject.transform.SetParent(_root.transform, false);
+            var controller = controllerObject.AddComponent<FuseConfusingSupplementsLiveryController>();
+            var sourceTexture = new Texture2D(1, 1);
+            var sourceMaterial = new Material(shader);
+            sourceMaterial.mainTexture = sourceTexture;
+            try
+            {
+                var firstRendererObject = new GameObject("first livery renderer");
+                firstRendererObject.transform.SetParent(controllerObject.transform, false);
+                var firstRenderer = firstRendererObject.AddComponent<MeshRenderer>();
+                firstRenderer.sharedMaterial = sourceMaterial;
+
+                var secondRendererObject = new GameObject("second livery renderer");
+                secondRendererObject.transform.SetParent(controllerObject.transform, false);
+                var secondRenderer = secondRendererObject.AddComponent<MeshRenderer>();
+                secondRenderer.sharedMaterial = sourceMaterial;
+
+                controller.CaptureMaterials(controllerObject);
+                var capturedMaterials = new[]
+                {
+                    firstRenderer.material,
+                    secondRenderer.material
+                };
+
+                var ownedMaterialsField = typeof(FuseConfusingSupplementsLiveryController).GetField(
+                    "_ownedMaterials",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                Assert.That(ownedMaterialsField, Is.Not.Null);
+                var ownedMaterials = ownedMaterialsField.GetValue(controller) as ISet<Material>;
+                Assert.That(ownedMaterials, Is.Not.Null);
+                Assert.That(ownedMaterials.Count, Is.EqualTo(capturedMaterials.Distinct().Count()));
+
+                var materialSnapshotsField = typeof(FuseConfusingSupplementsLiveryController).GetField(
+                    "_materials",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                Assert.That(materialSnapshotsField, Is.Not.Null);
+                var materialSnapshots = materialSnapshotsField.GetValue(controller) as ICollection;
+                Assert.That(materialSnapshots, Is.Not.Null);
+                var initialSnapshotCount = materialSnapshots.Count;
+                Assert.That(initialSnapshotCount, Is.GreaterThan(0));
+
+                controller.CaptureMaterials(controllerObject);
+                Assert.That(ownedMaterials.Count, Is.EqualTo(capturedMaterials.Distinct().Count()));
+                Assert.That(materialSnapshots.Count, Is.EqualTo(initialSnapshotCount));
+
+                UnityEngine.Object.DestroyImmediate(controllerObject);
+
+                Assert.That(capturedMaterials.All(material => material == null), Is.True);
+                Assert.That(sourceMaterial == null, Is.False);
+            }
+            finally
+            {
+                if (controllerObject != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(controllerObject);
+                }
+
+                if (sourceMaterial != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(sourceMaterial);
+                }
+
+                if (sourceTexture != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(sourceTexture);
+                }
+            }
+        }
+
+        [Test]
+        public void LiveryRegistry_DestroyTextureUsesImmediateCleanupInEditMode()
+        {
+            Assert.That(Application.isPlaying, Is.False);
+            var texture = new Texture2D(1, 1);
+
+            FuseConfusingSupplementsLiveryRegistry.DestroyTexture(texture);
+
+            Assert.That(texture == null, Is.True);
+        }
+
+        [Test]
+        public void LiveryRegistry_FileIndexIsDeterministicAndClearedWithTextureCache()
+        {
+            var directory = Path.Combine(Path.GetTempPath(), "FUSE-livery-index-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                var jpgPath = Path.Combine(directory, "boiler.jpg");
+                var pngPath = Path.Combine(directory, "boiler.png");
+                File.WriteAllBytes(pngPath, Array.Empty<byte>());
+                File.WriteAllBytes(jpgPath, Array.Empty<byte>());
+
+                var first = FuseConfusingSupplementsLiveryRegistry.GetTextureFiles(directory);
+                Assert.That(first["boiler"], Is.EqualTo(jpgPath));
+
+                var cabPath = Path.Combine(directory, "cab.png");
+                File.WriteAllBytes(cabPath, Array.Empty<byte>());
+                var cached = FuseConfusingSupplementsLiveryRegistry.GetTextureFiles(directory);
+                Assert.That(cached, Is.SameAs(first));
+                Assert.That(cached.ContainsKey("cab"), Is.False);
+
+                FuseConfusingSupplementsLiveryRegistry.Shutdown();
+                var refreshed = FuseConfusingSupplementsLiveryRegistry.GetTextureFiles(directory);
+                Assert.That(refreshed.ContainsKey("cab"), Is.True);
+            }
+            finally
+            {
+                FuseConfusingSupplementsLiveryRegistry.Shutdown();
+                Directory.Delete(directory, true);
+            }
+        }
+
+        [Test]
+        public void GracePatch_TargetsTheLocationOverload()
+        {
+            var expected = AccessTools.Method(
+                typeof(OpsController),
+                "CalculateGraceDays",
+                new[] { typeof(Location), typeof(Location) });
+            var declared = ResolveDeclaredHarmonyTarget(typeof(FuseFallFromGraceCalculationPatch));
+
+            Assert.That(expected, Is.Not.Null);
+            Assert.That(declared, Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void InspectorPatch_TargetsTheWaybillPanelOverload()
+        {
+            var expected = AccessTools.Method(
+                typeof(CarInspector),
+                "PopulateWaybillPanel",
+                new[] { typeof(UIPanelBuilder), typeof(Waybill) });
+            var declared = ResolveDeclaredHarmonyTarget(typeof(FuseFallFromGraceInspectorPatch));
+
+            Assert.That(expected, Is.Not.Null);
+            Assert.That(declared, Is.EqualTo(expected));
+        }
+
+        private static MethodInfo ResolveDeclaredHarmonyTarget(Type patchType)
+        {
+            Type declaringType = null;
+            string methodName = null;
+            Type[] argumentTypes = null;
+            foreach (var patch in patchType.GetCustomAttributes(typeof(HarmonyPatch), false).Cast<HarmonyPatch>())
+            {
+                if (patch.info?.declaringType != null)
+                {
+                    declaringType = patch.info.declaringType;
+                }
+
+                if (!string.IsNullOrWhiteSpace(patch.info?.methodName))
+                {
+                    methodName = patch.info.methodName;
+                }
+
+                if (patch.info?.argumentTypes != null)
+                {
+                    argumentTypes = patch.info.argumentTypes;
+                }
+            }
+
+            Assert.That(declaringType, Is.Not.Null);
+            Assert.That(methodName, Is.Not.Null.And.Not.Empty);
+            return AccessTools.Method(declaringType, methodName, argumentTypes);
+        }
+
+        [TestCase(0f, 0)]
+        [TestCase(0.24f, 0)]
+        [TestCase(0.25f, 0)]
+        [TestCase(0.26f, 1)]
+        [TestCase(0.99f, 1)]
+        public void WeightedSelection_UsesRemainingCapacity(float sample, int expected)
+        {
+            Assert.That(
+                FuseOutboundIndustryRoutingPatch.SelectWeightedIndex(
+                    new[] { 1f, 3f },
+                    sample),
+                Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void WeightedSelection_HandlesEmptyAndZeroWeightSets()
+        {
+            Assert.That(
+                FuseOutboundIndustryRoutingPatch.SelectWeightedIndex(
+                    Array.Empty<float>(),
+                    0.5f),
+                Is.EqualTo(-1));
+            Assert.That(
+                FuseOutboundIndustryRoutingPatch.SelectWeightedIndex(
+                    new[] { 0f, 0f },
+                    0.75f),
+                Is.EqualTo(1));
+        }
+
+        [Test]
+        public void CompanyStarterQueue_SkipsNullPlacements()
+        {
+            var validPlacement = new SetupDescriptor.CarPlacement
+            {
+                carIdentifier = new[] { "starter-car" }
+            };
+            var setup = _root.AddComponent<SetupDescriptor>();
+            setup.identifier = "ewh-company";
+            setup.placements = new[] { null, validPlacement };
+            var queue = new Queue<SetupDescriptor.CarPlacement>();
+
+            var queued = FuseCompanyStarterPlacementPatch.QueueStarterPlacements(
+                setup,
+                queue);
+
+            Assert.That(queued, Is.EqualTo(1));
+            Assert.That(queue.Count, Is.EqualTo(1));
+            Assert.That(queue.Peek(), Is.SameAs(validPlacement));
+            Assert.That(setup.placements, Is.Empty);
+        }
+
         private static FuseSplineyPoint Point(float x, float z)
         {
             return new FuseSplineyPoint { Position = new Vector3(x, 0f, z) };
@@ -183,6 +566,78 @@ namespace FUSE.UnityTests
                 BindingFlags.NonPublic | BindingFlags.Static);
             Assert.That(method, Is.Not.Null);
             method.Invoke(null, new object[] { source, target });
+        }
+
+        private FuseConfusingSupplementsLiveryController CreateLiveryController(
+            out Material material,
+            out Texture2D originalTexture,
+            out Texture2D replacementTexture)
+        {
+            var shader = Shader.Find("Unlit/Texture") ??
+                         Shader.Find("Sprites/Default") ??
+                         Shader.Find("Standard");
+            Assert.That(shader, Is.Not.Null);
+
+            var carObject = new GameObject("livery controller fixture");
+            carObject.transform.SetParent(_root.transform, false);
+            var renderer = carObject.AddComponent<MeshRenderer>();
+            material = new Material(shader);
+            originalTexture = new Texture2D(1, 1) { name = "original" };
+            replacementTexture = new Texture2D(1, 1) { name = "replacement" };
+            material.mainTexture = originalTexture;
+            renderer.sharedMaterial = material;
+
+            var propertyIds = new List<int>();
+            material.GetTexturePropertyNameIDs(propertyIds);
+            var fixtureMaterial = material;
+            var fixtureOriginalTexture = originalTexture;
+            var propertyId = propertyIds.First(
+                id => fixtureMaterial.GetTexture(id) == fixtureOriginalTexture);
+
+            var controller = carObject.AddComponent<FuseConfusingSupplementsLiveryController>();
+            var controllerType = typeof(FuseConfusingSupplementsLiveryController);
+            var snapshotType = controllerType.GetNestedType("MaterialSnapshot", BindingFlags.NonPublic);
+            Assert.That(snapshotType, Is.Not.Null);
+            var constructor = snapshotType.GetConstructor(
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                null,
+                new[] { typeof(Material), typeof(int), typeof(Texture), typeof(string) },
+                null);
+            Assert.That(constructor, Is.Not.Null);
+
+            var materialsField = controllerType.GetField("_materials", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(materialsField, Is.Not.Null);
+            var snapshots = materialsField.GetValue(controller) as IList;
+            Assert.That(snapshots, Is.Not.Null);
+            snapshots.Add(constructor.Invoke(new object[]
+            {
+                material,
+                propertyId,
+                originalTexture,
+                originalTexture.name
+            }));
+
+            SetPrivateField(controller, "_carIdentifier", "fuse-unity-test-" + Guid.NewGuid());
+            SetPrivateField(controller, "_configured", true);
+            return controller;
+        }
+
+        private static void AddCachedLiveryTexture(string key, Texture2D texture)
+        {
+            var field = typeof(FuseConfusingSupplementsLiveryRegistry).GetField(
+                "Textures",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null);
+            var textures = field.GetValue(null) as IDictionary;
+            Assert.That(textures, Is.Not.Null);
+            textures[key] = texture;
+        }
+
+        private static void SetPrivateField(object target, string name, object value)
+        {
+            var field = target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(field, Is.Not.Null);
+            field.SetValue(target, value);
         }
     }
 }
