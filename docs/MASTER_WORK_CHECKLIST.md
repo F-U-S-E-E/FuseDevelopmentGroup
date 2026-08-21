@@ -532,13 +532,16 @@ documented in [`BASE_GAME_MAP_AUTHORING_AUDIT.md`](BASE_GAME_MAP_AUTHORING_AUDIT
 - [x] Rewrite the local FUSE install, getting started, troubleshooting, migration,
   converter scope, package authoring, schema, operations, diagnostics, and
   command documentation.
-- [ ] Complete FUSE wiki and sync published pages.
+- [x] Complete FUSE wiki and sync published pages. Published from source
+  `d9feb6e` as wiki commit `b3c8ac4` on 2026-08-20.
 - [x] Complete the local Tile Editor wiki source: installation/runtime prerequisite, all tabs,
   every key binding, selection, terrain/vegetation, tiles, track/grades,
   scenery/objects, roads/water, industries/operations, loaders/custom loaders,
   passenger, interchanges, signals/CTC, export modes, validation, and examples.
+  Published from source `c711590` as wiki commit `792f21c`.
 - [x] Complete the local Toolshed wiki source including custom-loader authoring and editor catalog
   integration.
+  Published from source `c72cb12` as wiki commit `7a2732b`.
 - [x] Complete the local Narrow Gauge wiki source and identify FUSE/editor integration points.
 - [x] Explain that the converter handles RailLoader JSON/data packages, not
   arbitrary compiled code mods.
