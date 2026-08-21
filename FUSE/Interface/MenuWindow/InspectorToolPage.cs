@@ -169,6 +169,7 @@ namespace FUSE.Interface.MenuWindow
             AddInspectorIndexTargets(results, signatures, "Station", FuseStationRuntimeIndex.Instance, FuseClaimKind.Station, term, limit);
             AddInspectorIndexTargets(results, signatures, "Scenery", FuseSceneryRuntimeIndex.Instance, FuseClaimKind.Scenery, term, limit);
             AddInspectorIndexTargets(results, signatures, "Spliney", FuseSplineyRuntimeIndex.Instance, null, term, limit);
+            AddInspectorIndexTargets(results, signatures, "Water Surface", FuseWaterSurfaceRuntimeIndex.Instance, null, term, limit);
             AddInspectorIndexTargets(results, signatures, "Map Label", FuseMapLabelRuntimeIndex.Instance, null, term, limit);
             AddInspectorIndexTargets(results, signatures, "Progression", FuseProgressionRuntimeIndex.Instance, null, term, limit);
             AddInspectorIndexTargets(results, signatures, "Map Feature", FuseMapFeatureRuntimeIndex.Instance, null, term, limit);

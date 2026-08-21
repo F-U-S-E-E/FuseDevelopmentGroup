@@ -18,7 +18,7 @@ namespace FUSE.Interface.MenuWindow
             AddWrappedLabel(
                 builder,
                 "Legacy (converted) packages list soft load-order hints: a hint whose target is not installed is optional and does not block loading. " +
-                "Asset-only packs and code-only plugins satisfy a dependency without being FUSE data packages.",
+                "Asset-only packs and code-only plugins satisfy a dependency without being FUSE data packages. Retired package IDs whose runtime capability is replaced by FUSE are labeled PROVIDED BY FUSE.",
                 48f);
 
             builder.Spacer(24f);
@@ -38,13 +38,13 @@ namespace FUSE.Interface.MenuWindow
             // hosted code-only plugins render as PRESENT rather than MISSING
             // (issues #207, #223).
             var undiscovered = manifests
-                .SelectMany(manifest => manifest.LoadAfter.Concat(manifest.LoadBefore))
+                .SelectMany(manifest => manifest.RequiredPackageIds.Concat(manifest.LoadAfter).Concat(manifest.LoadBefore))
                 .Where(id => !string.IsNullOrWhiteSpace(id) && !byId.ContainsKey(id));
             var presentInModsRoot = FuseDataPackageDiscovery.ResolvePackagesPresentInModsRoot(undiscovered);
             var rows = 0;
             foreach (var manifest in manifests)
             {
-                var hasEdges = manifest.LoadAfter.Length > 0 || manifest.LoadBefore.Length > 0 || manifest.Faults.Length > 0;
+                var hasEdges = manifest.RequiredPackageIds.Length > 0 || manifest.LoadAfter.Length > 0 || manifest.LoadBefore.Length > 0 || manifest.Faults.Length > 0;
                 if (!hasEdges && !FuseSettings.ShowAdvancedHealthDetails)
                 {
                     continue;
@@ -57,6 +57,12 @@ namespace FUSE.Interface.MenuWindow
 
                 builder.FieldLabelWidth = 120f;
                 AddWrappedLabel(builder, InsertBreakHints(manifest.Id), 28f);
+                foreach (var dependencyId in manifest.RequiredPackageIds)
+                {
+                    builder.AddField("requires", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependencyId, byId, presentInModsRoot, advisory: false))));
+                    rows++;
+                }
+
                 foreach (var dependencyId in manifest.LoadAfter)
                 {
                     builder.AddField("load after", builder.AddLabelMarkup(InsertBreakHints(FormatDependencyEdge(dependencyId, byId, presentInModsRoot, manifest.IsLegacyConverted))));
@@ -97,7 +103,15 @@ namespace FUSE.Interface.MenuWindow
                 return "(blank) | <color=\"red\">MISSING";
             }
 
-            if (packages != null && packages.TryGetValue(dependencyId, out var dependency))
+            FusePackageManifestSnapshot dependency = null;
+            if (packages != null)
+            {
+                packages.TryGetValue(dependencyId, out dependency);
+                dependency = dependency ?? packages.Values.FirstOrDefault(candidate =>
+                    FuseDeclaredPackageRelationship.SamePackageId(candidate?.Id, dependencyId));
+            }
+
+            if (dependency != null)
             {
                 if (!dependency.Disabled)
                 {
@@ -107,6 +121,11 @@ namespace FUSE.Interface.MenuWindow
                 return advisory
                     ? dependencyId + " | <color=\"grey\">DISABLED (optional hint)"
                     : dependencyId + " | <color=\"yellow\">DISABLED";
+            }
+
+            if (FuseReplacementCapabilityCatalog.IsProvided(dependencyId))
+            {
+                return dependencyId + " | <color=\"green\">PROVIDED BY FUSE";
             }
 
             if (presentInModsRoot != null && presentInModsRoot.Contains(dependencyId))

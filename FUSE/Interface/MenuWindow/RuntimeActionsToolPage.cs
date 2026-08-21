@@ -172,11 +172,13 @@ namespace FUSE.Interface.MenuWindow
             builder.AppendLine("Stations: " + SafeCount(() => StationAPI.GetAllStationAgents().Count()));
             builder.AppendLine("Passenger Stops: " + SafeCount(() => StationAPI.GetAllPassengerStops().Count()));
             builder.AppendLine("Scenery: " + SafeCount(() => SceneryAPI.GetAllScenery().Count()));
+            builder.AppendLine("Water Surfaces: " + SafeCount(() => WaterSurfaceAPI.GetAllWaterSurfaces().Count()));
             builder.AppendLine();
             builder.AppendLine("FUSE Registry");
             builder.AppendLine("Exclusive Claims: " + FUSE.Runtime.Registry.FuseRegistry.ExclusiveClaimCount);
             builder.AppendLine("Shared Claims: " + FUSE.Runtime.Registry.FuseRegistry.SharedClaimCount);
-            builder.AppendLine("Conflicts: " + FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count);
+            builder.AppendLine("Conflicts: " + FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count(conflict => !conflict.IsCooperativeMerge));
+            builder.AppendLine("Shared Extension Targets: " + FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count(conflict => conflict.IsCooperativeMerge));
             return builder.ToString().TrimEnd();
         }
 
@@ -236,6 +238,7 @@ namespace FUSE.Interface.MenuWindow
                     ["scenery"] = SafeCount(() => SceneryAPI.GetAllScenery().Count()),
                     ["sceneClones"] = SafeCount(() => SceneCloneAPI.GetAllSceneClones().Count()),
                     ["splineys"] = SafeCount(() => SplineyAPI.GetAllSplineys().Count()),
+                    ["waterSurfaces"] = SafeCount(() => WaterSurfaceAPI.GetAllWaterSurfaces().Count()),
                     ["mapLabels"] = SafeCount(() => MapAPI.GetAllMapLabels().Count()),
                     ["mapMasks"] = SafeCount(() => MapAPI.GetAllMapMasks().Count()),
                     ["progressions"] = SafeCount(() => ProgressionAPI.GetAllProgressions().Count()),
@@ -245,7 +248,9 @@ namespace FUSE.Interface.MenuWindow
                 {
                     ["exclusiveClaims"] = FUSE.Runtime.Registry.FuseRegistry.ExclusiveClaimCount,
                     ["sharedClaims"] = FUSE.Runtime.Registry.FuseRegistry.SharedClaimCount,
-                    ["conflicts"] = FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count
+                    ["conflicts"] = FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count(conflict => !conflict.IsCooperativeMerge),
+                    ["sharedExtensionTargets"] = FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count(conflict => conflict.IsCooperativeMerge),
+                    ["overlapRecords"] = FUSE.Runtime.Registry.FuseRegistry.Conflicts.Count
                 },
                 ["assets"] = new JObject
                 {

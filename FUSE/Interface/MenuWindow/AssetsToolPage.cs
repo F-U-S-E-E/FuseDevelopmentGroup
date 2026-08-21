@@ -2,6 +2,7 @@
 using FUSE.Loading;
 using Newtonsoft.Json.Linq;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -21,13 +22,19 @@ namespace FUSE.Interface.MenuWindow
             builder.AddLabel("This tool shows asset information and a list of any duplicate asset keys.");
 
             var diagnostics = FuseAssetPackRegistry.GetDiagnostics();
+            var duplicateGroups = GroupDuplicateAssets(diagnostics.DuplicateKeys);
             builder.AddSection("Asset Resolution");
             builder.AddField("Mode", AssetPackModeText());
             builder.AddField("Stores Scanned", diagnostics.StoreFolders.Length.ToString());
             builder.AddField("Runtime Stores", FusePerformanceMetrics.FormatCount("direct asset pack store count"));
             builder.AddField("Unique Asset Keys", diagnostics.UniqueAssetKeys.ToString());
-            builder.AddField("Duplicate Keys", diagnostics.DuplicateKeys.Length.ToString());
+            builder.AddField("Overlapping Asset Keys", diagnostics.DuplicateKeys.Length.ToString());
+            builder.AddField("Source Overlap Groups", duplicateGroups.Length.ToString());
+            builder.AddField("Identical Copies", diagnostics.DuplicateKeys.Count(item => !item.DefinitionsDiffer).ToString());
+            builder.AddField("Different Definitions", diagnostics.DuplicateKeys.Count(item => item.DefinitionsDiffer).ToString());
             builder.AddField("Failed Definitions", diagnostics.FailedDefinitionLoads.Length.ToString());
+            builder.AddField("Definition Overrides", diagnostics.LegacyDefinitionOverrides.Length.ToString());
+            builder.AddField("Override Issues", diagnostics.LegacyDefinitionOverrideIssues.Length.ToString());
             builder.AddField("Last Direct Mount", FusePerformanceMetrics.FormatTiming("direct asset pack stores"));
             AddWrappedField(
                 builder,
@@ -55,7 +62,8 @@ namespace FUSE.Interface.MenuWindow
 
             builder.Spacer(4f);
 
-            if (!FuseSettings.ShowAdvancedHealthDetails && diagnostics.DuplicateKeys.Length == 0 && diagnostics.FailedDefinitionLoads.Length == 0)
+            if (!FuseSettings.ShowAdvancedHealthDetails && diagnostics.DuplicateKeys.Length == 0 &&
+                diagnostics.FailedDefinitionLoads.Length == 0 && diagnostics.LegacyDefinitionOverrideIssues.Length == 0)
             {
                 builder.AddField("Status", "No asset issues detected");
             }
@@ -69,26 +77,26 @@ namespace FUSE.Interface.MenuWindow
             }
             else
             {
-                builder.AddSection("Duplicate Asset Keys");
+                builder.AddSection("Asset Source Overlaps");
                 if (diagnostics.DuplicateKeys.Length == 0)
                 {
                     builder.AddField("Status", "None detected");
                 }
                 else
                 {
-                    foreach (var duplicate in diagnostics.DuplicateKeys.Take(20))
+                    foreach (var group in duplicateGroups.Take(20))
                     {
-                        BuildDuplicateAssetPreview(builder, duplicate);
+                        BuildDuplicateAssetGroupPreview(builder, group);
                         builder.Spacer(4f);
                         builder.AddHRule();
                     }
 
-                    if (diagnostics.DuplicateKeys.Length > 20)
+                    if (duplicateGroups.Length > 20)
                     {
                         AddWrappedField(
                             builder,
                             "More",
-                            (diagnostics.DuplicateKeys.Length - 20) + " hidden. Export Asset Report for all duplicate keys.",
+                            (duplicateGroups.Length - 20) + " source group(s) hidden. Export Asset Report for every overlapping key.",
                             34f);
                     }
                 }
@@ -108,38 +116,103 @@ namespace FUSE.Interface.MenuWindow
                         (diagnostics.StoreFolders.Length - 40) + " hidden. Export Asset Report for all store paths.",
                         34f);
                 }
+
+                builder.Spacer(4f);
+                builder.AddSection("Definition Overrides");
+                if (diagnostics.LegacyDefinitionOverrides.Length == 0)
+                {
+                    builder.AddField("Status", "None detected");
+                }
+                else
+                {
+                    foreach (var definitionOverride in diagnostics.LegacyDefinitionOverrides.Take(20))
+                    {
+                        AddWrappedField(
+                            builder,
+                            definitionOverride.StoreIdentifier,
+                            definitionOverride.PackageId + " | " + definitionOverride.DefinitionsPath,
+                            44f);
+                    }
+                }
+
+                foreach (var issue in diagnostics.LegacyDefinitionOverrideIssues.Take(20))
+                {
+                    AddWrappedField(builder, "Override Issue", issue, 58f);
+                }
             }
 
             builder.Spacer(8f);
         }
 
-        private static string BuildAssetSummary(FuseAssetPackDiagnostics diagnostics)
+        internal static string BuildAssetSummary(FuseAssetPackDiagnostics diagnostics)
         {
+            diagnostics = diagnostics ?? new FuseAssetPackDiagnostics();
+            var duplicateGroups = GroupDuplicateAssets(diagnostics.DuplicateKeys);
             var builder = new StringBuilder();
             builder.AppendLine("FUSE Asset Summary");
             builder.AppendLine("Mode: " + AssetPackModeText());
             builder.AppendLine("Stores scanned: " + (diagnostics.StoreFolders?.Length ?? 0));
             builder.AppendLine("Unique asset keys: " + diagnostics.UniqueAssetKeys);
-            builder.AppendLine("Duplicate keys: " + (diagnostics.DuplicateKeys?.Length ?? 0));
+            builder.AppendLine("Overlapping asset keys: " + (diagnostics.DuplicateKeys?.Length ?? 0));
+            builder.AppendLine("Source overlap groups: " + duplicateGroups.Length);
+            builder.AppendLine("Identical duplicate definitions: " + (diagnostics.DuplicateKeys?.Count(item => !item.DefinitionsDiffer) ?? 0));
+            builder.AppendLine("Different duplicate definitions: " + (diagnostics.DuplicateKeys?.Count(item => item.DefinitionsDiffer) ?? 0));
             builder.AppendLine("Failed definitions: " + (diagnostics.FailedDefinitionLoads?.Length ?? 0));
+            builder.AppendLine("Definition overrides: " + (diagnostics.LegacyDefinitionOverrides?.Length ?? 0));
+            builder.AppendLine("Definition override issues: " + (diagnostics.LegacyDefinitionOverrideIssues?.Length ?? 0));
 
-            var duplicates = diagnostics.DuplicateKeys ?? Array.Empty<FuseDuplicateAssetKey>();
-            if (duplicates.Length > 0)
+            if (duplicateGroups.Length > 0)
             {
                 builder.AppendLine();
-                builder.AppendLine("Duplicate preview:");
-                foreach (var duplicate in duplicates.Take(10))
+                builder.AppendLine("Overlap group preview:");
+                foreach (var group in duplicateGroups.Take(10))
                 {
-                    builder.AppendLine("- " + BuildDuplicateAssetPreviewString(duplicate));
+                    builder.AppendLine("- " + BuildDuplicateAssetGroupPreviewString(group));
                 }
 
-                if (duplicates.Length > 10)
+                if (duplicateGroups.Length > 10)
                 {
-                    builder.AppendLine("- " + (duplicates.Length - 10) + " more duplicate key(s); export the asset report for the full list.");
+                    builder.AppendLine("- " + (duplicateGroups.Length - 10) + " more source overlap group(s); export the asset report for every key.");
                 }
             }
 
             return builder.ToString().TrimEnd();
+        }
+
+        internal static FuseDuplicateAssetGroup[] GroupDuplicateAssets(
+            IEnumerable<FuseDuplicateAssetKey> duplicates)
+        {
+            var grouped = new Dictionary<string, FuseDuplicateAssetGroup>(StringComparer.Ordinal);
+            foreach (var duplicate in duplicates ?? Enumerable.Empty<FuseDuplicateAssetKey>())
+            {
+                if (duplicate == null || string.IsNullOrWhiteSpace(duplicate.Key))
+                {
+                    continue;
+                }
+
+                var sources = (duplicate.Sources ?? Array.Empty<string>())
+                    .Where(source => !string.IsNullOrWhiteSpace(source))
+                    .ToArray();
+                var identity = (duplicate.DefinitionsDiffer ? "different" : "identical") +
+                               "\u001e" + string.Join("\u001f", sources);
+                if (!grouped.TryGetValue(identity, out var group))
+                {
+                    group = new FuseDuplicateAssetGroup
+                    {
+                        DefinitionsDiffer = duplicate.DefinitionsDiffer,
+                        Sources = sources
+                    };
+                    grouped.Add(identity, group);
+                }
+
+                group.Keys.Add(duplicate.Key);
+            }
+
+            return grouped.Values
+                .OrderByDescending(group => group.DefinitionsDiffer)
+                .ThenByDescending(group => group.Keys.Count)
+                .ThenBy(group => group.Keys.FirstOrDefault() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
         }
 
         private static string AssetPackModeText()
@@ -165,11 +238,6 @@ namespace FUSE.Interface.MenuWindow
 
             var sources = duplicateAssetKey.Sources ?? [];
             var preview = sources
-                .Select(source =>
-                {
-                    var name = string.IsNullOrWhiteSpace(source) ? string.Empty : Path.GetFileName(source);
-                    return string.IsNullOrWhiteSpace(name) ? source : name;
-                })
                 .Where(source => !string.IsNullOrWhiteSpace(source))
                 .ToArray();
 
@@ -187,13 +255,17 @@ namespace FUSE.Interface.MenuWindow
             }
         }
 
-        private static void BuildDuplicateAssetPreview(UIPanelBuilder builder, FuseDuplicateAssetKey duplicate)
+        private static void BuildDuplicateAssetGroupPreview(UIPanelBuilder builder, FuseDuplicateAssetGroup group)
         {
-            if (duplicate == null) return;
+            if (group == null)
+            {
+                return;
+            }
 
-            GetDuplicateAssetInfo(duplicate, out string winner, out string[] overridden, out string suffix);
+            GetDuplicateAssetInfo(group.Sources, out string winner, out string[] overridden, out string suffix);
 
-            builder.AddField("Asset Key", duplicate.Key);
+            builder.AddField("Affected Keys", group.Keys.Count.ToString());
+            builder.AddField("Definition Match", group.DefinitionsDiffer ? "Different definitions (review)" : "Identical copies");
 
             if (string.IsNullOrWhiteSpace(winner))
             {
@@ -206,20 +278,53 @@ namespace FUSE.Interface.MenuWindow
             {
                 builder.AddField("Sources Overridden", string.Join(",", overridden) + suffix);
             }
+
+            AddWrappedField(
+                builder,
+                "Example Keys",
+                string.Join(", ", group.Keys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase).Take(4)),
+                44f);
+            AddWrappedField(
+                builder,
+                "Impact",
+                group.DefinitionsDiffer
+                    ? "Definitions differ; FUSE uses the listed winner, so model or behavior can change with source order."
+                    : "Definitions are identical; this is redundant installed content, not a load failure.",
+                44f);
         }
 
-        private static string BuildDuplicateAssetPreviewString(FuseDuplicateAssetKey duplicate)
+        private static string BuildDuplicateAssetGroupPreviewString(FuseDuplicateAssetGroup group)
         {
-            if (duplicate == null)
+            if (group == null)
             {
                 return string.Empty;
             }
 
-            GetDuplicateAssetInfo(duplicate, out string winner, out string[] overridden, out string suffix);
+            GetDuplicateAssetInfo(group.Sources, out string winner, out string[] overridden, out string suffix);
+            var examples = string.Join(", ", group.Keys
+                .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
+                .Take(3)
+                .Select(InsertBreakHints));
+            var impact = group.DefinitionsDiffer
+                ? "different definitions; winner controls behavior"
+                : "identical copies; no behavior change";
 
             return overridden.Length == 0
-                ? $"{InsertBreakHints(duplicate.Key)} | winner {winner}{suffix}"
-                : $"{InsertBreakHints(duplicate.Key)} | winner {winner} | overridden {string.Join(", ", overridden)}{suffix}";
+                ? $"{group.Keys.Count} key(s) | winner {winner}{suffix} | {impact} | examples {examples}"
+                : $"{group.Keys.Count} key(s) | winner {winner} | overridden {string.Join(", ", overridden)}{suffix} | {impact} | examples {examples}";
+        }
+
+        private static void GetDuplicateAssetInfo(
+            string[] sources,
+            out string winner,
+            out string[] overridden,
+            out string suffix)
+        {
+            GetDuplicateAssetInfo(
+                new FuseDuplicateAssetKey { Sources = sources ?? Array.Empty<string>() },
+                out winner,
+                out overridden,
+                out suffix);
         }
 
         private static string ExportAssetDiagnostics(FuseAssetPackDiagnostics diagnostics, bool openFolder = true)
@@ -248,6 +353,7 @@ namespace FUSE.Interface.MenuWindow
                     duplicates.Add(new JObject
                     {
                         ["key"] = duplicate.Key ?? string.Empty,
+                        ["definitionsDiffer"] = duplicate.DefinitionsDiffer,
                         ["sourceCount"] = sources.Count,
                         ["winner"] = sources.Count > 0 ? sources[0] : string.Empty,
                         ["overridden"] = new JArray(sources.Skip(1)),
@@ -261,6 +367,26 @@ namespace FUSE.Interface.MenuWindow
                     failedDefinitions.Add(failure);
                 }
 
+                var definitionOverrides = new JArray();
+                foreach (var definitionOverride in diagnostics.LegacyDefinitionOverrides ??
+                         Array.Empty<FuseLegacyDefinitionOverrideRegistration>())
+                {
+                    definitionOverrides.Add(new JObject
+                    {
+                        ["storeIdentifier"] = definitionOverride.StoreIdentifier ?? string.Empty,
+                        ["definitionsPath"] = definitionOverride.DefinitionsPath ?? string.Empty,
+                        ["packageId"] = definitionOverride.PackageId ?? string.Empty,
+                        ["packagePath"] = definitionOverride.PackagePath ?? string.Empty,
+                        ["explicit"] = definitionOverride.Explicit
+                    });
+                }
+
+                var definitionOverrideIssues = new JArray();
+                foreach (var issue in diagnostics.LegacyDefinitionOverrideIssues ?? Array.Empty<string>())
+                {
+                    definitionOverrideIssues.Add(issue);
+                }
+
                 var report = new JObject
                 {
                     ["exportedUtc"] = DateTime.UtcNow.ToString("O"),
@@ -269,9 +395,13 @@ namespace FUSE.Interface.MenuWindow
                     ["uniqueAssetKeys"] = diagnostics.UniqueAssetKeys,
                     ["duplicateKeyCount"] = duplicates.Count,
                     ["failedDefinitionLoadCount"] = failedDefinitions.Count,
+                    ["definitionOverrideCount"] = definitionOverrides.Count,
+                    ["definitionOverrideIssueCount"] = definitionOverrideIssues.Count,
                     ["stores"] = stores,
                     ["duplicateKeys"] = duplicates,
-                    ["failedDefinitionLoads"] = failedDefinitions
+                    ["failedDefinitionLoads"] = failedDefinitions,
+                    ["definitionOverrides"] = definitionOverrides,
+                    ["definitionOverrideIssues"] = definitionOverrideIssues
                 };
 
                 File.WriteAllText(path, report.ToString(Newtonsoft.Json.Formatting.Indented));
@@ -291,5 +421,14 @@ namespace FUSE.Interface.MenuWindow
                 return message;
             }
         }
+    }
+
+    internal sealed class FuseDuplicateAssetGroup
+    {
+        internal bool DefinitionsDiffer { get; set; }
+
+        internal string[] Sources { get; set; } = Array.Empty<string>();
+
+        internal List<string> Keys { get; } = new List<string>();
     }
 }

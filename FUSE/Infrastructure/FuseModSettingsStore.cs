@@ -109,6 +109,21 @@ namespace FUSE.Infrastructure
 
         public static void SetValue(FuseModDefinition definition, string key, FuseModSettingDefinition setting, JToken value)
         {
+            SetValueCore(definition, key, setting, value, persist: true);
+        }
+
+        internal static void SetValueInMemory(FuseModDefinition definition, string key, FuseModSettingDefinition setting, JToken value)
+        {
+            SetValueCore(definition, key, setting, value, persist: false);
+        }
+
+        private static void SetValueCore(
+            FuseModDefinition definition,
+            string key,
+            FuseModSettingDefinition setting,
+            JToken value,
+            bool persist)
+        {
             if (string.IsNullOrWhiteSpace(definition?.Id) || string.IsNullOrWhiteSpace(key))
             {
                 return;
@@ -121,7 +136,7 @@ namespace FUSE.Infrastructure
                 var scopeKey = GetCurrentScopeKey(scope);
                 var bucket = GetBucket(definition.Id, scope, scopeKey, create: true);
                 bucket[key] = CoerceValue(value, setting);
-                if (SaveNoLock())
+                if (persist && SaveNoLock())
                 {
                     _lastStatus = $"Saved setting '{key}' for package '{definition.Id}' ({DescribeScope(scope)}).";
                 }
