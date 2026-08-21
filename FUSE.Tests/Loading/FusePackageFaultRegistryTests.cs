@@ -166,6 +166,17 @@ namespace FUSE.Tests.Loading
         }
 
         [Fact]
+        public void MarkDisabled_DoesNotMakePackageAnActionableSkip()
+        {
+            FusePackageFaultRegistry.MarkDisabled("pkg", "disabled by active FUSE mod set");
+
+            Assert.Empty(FusePackageFaultRegistry.GetSkippedPackages());
+            Assert.Equal(
+                "disabled by active FUSE mod set",
+                FusePackageFaultRegistry.GetDisabledPackages()["pkg"]);
+        }
+
+        [Fact]
         public void MarkSkipped_BlankReason_DefaultsTo_Skipped()
         {
             FusePackageFaultRegistry.MarkSkipped("pkg", "   ");

@@ -164,7 +164,6 @@ namespace FUSE.Loading
                 if (manifest.Disabled)
                 {
                     FusePackageFaultRegistry.MarkDisabled(manifest.Id, manifest.DisabledReason);
-                    FusePackageFaultRegistry.MarkSkipped(manifest.Id, manifest.DisabledReason);
                     FuseLog.Warning($"FUSE skipped disabled data package '{manifest.Id}' path='{packagePath}' reason='{manifest.DisabledReason}'.");
                     continue;
                 }
@@ -599,6 +598,11 @@ namespace FUSE.Loading
             var installedMods = FuseModRequirementResolver.CollectInstalledMods();
             foreach (var package in fallbackOrder)
             {
+                if (package.Disabled)
+                {
+                    continue;
+                }
+
                 foreach (var conflict in package.ConflictsWith ?? Array.Empty<FuseModRequirement>())
                 {
                     string conflictingId;
@@ -647,6 +651,15 @@ namespace FUSE.Loading
 
             foreach (var package in fallbackOrder)
             {
+                // Disabled packages stay in the lookup table so an enabled package
+                // that requires one can report that dependency accurately. Their
+                // own requirements and order declarations are intentionally inert:
+                // a profile-disabled package must not fault the active mod set.
+                if (package.Disabled)
+                {
+                    continue;
+                }
+
                 foreach (var dependencyId in package.RequiredPackageIds)
                 {
                     if (TryResolvePackage(byId, dependencyId, out var dependency))

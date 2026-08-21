@@ -5,7 +5,10 @@
   profiles enable every available package by default, and toggles update the
   persisted profile instead of a detached UI copy. Disabling a package blocks
   its data definitions, asset packs, hosted legacy assembly, and conditional
-  mixinto fragments at their shared package-admission boundary.
+  mixinto fragments at their shared package-admission boundary. Disabled
+  packages no longer validate their own dependencies or appear as actionable
+  skips, so an intentionally small profile does not report false package
+  faults.
 
 - Installer 0.8.0 and **Tools > Dependency Graph** now cover locomotive,
   railcar, code-plugin, asset-pack, native FUSE, UMM, and RailLoader dependency

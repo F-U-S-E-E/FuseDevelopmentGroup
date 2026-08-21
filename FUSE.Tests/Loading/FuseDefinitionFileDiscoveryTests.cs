@@ -1,5 +1,8 @@
 using System;
+using System.Collections;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using Fuse.Core.Bridge;
 using FUSE.Loading;
 using Xunit;
@@ -151,6 +154,33 @@ namespace FUSE.Tests.Loading
             var discovered = FuseDataPackageDiscovery.DiscoverPackageFolders(_root);
 
             Assert.Equal(new[] { folder }, discovered);
+        }
+
+        [Fact]
+        public void DisabledPackage_DoesNotValidateItsOwnDependencies()
+        {
+            var folder = CreateModFolder("DisabledPackage");
+            File.WriteAllText(Path.Combine(folder, "Info.json"), @"{
+  ""Id"": ""Disabled.Package"",
+  ""FuseDataFile"": ""content.fuse.json"",
+  ""FuseDisabled"": true,
+  ""FuseRequires"": [""Missing.Package""]
+}");
+
+            var discover = typeof(FuseDataPackageDiscovery).GetMethod(
+                "DiscoverPackageManifests",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.NotNull(discover);
+
+            var manifests = ((IEnumerable)discover.Invoke(null, new object[] { _root }))
+                .Cast<object>()
+                .ToArray();
+            var manifest = Assert.Single(manifests);
+            var manifestType = manifest.GetType();
+            var faults = (IEnumerable)manifestType.GetProperty("Faults").GetValue(manifest);
+
+            Assert.True((bool)manifestType.GetProperty("Disabled").GetValue(manifest));
+            Assert.Empty(faults.Cast<object>());
         }
     }
 }
