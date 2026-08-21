@@ -18,7 +18,7 @@ concurrency:
 jobs:
   build-and-release:
     # Release jobs wait for an organization reviewer before reaching the
-    # self-hosted runner or receiving the environment-scoped Nexus credential.
+    # self-hosted runner or receiving the repository-scoped Nexus credential.
     environment: nexus-release
     runs-on: self-hosted
     env:
@@ -393,7 +393,7 @@ jobs:
       # Skipped automatically until the repo variable NEXUS_FILE_GROUP_ID is set.
       # Requires:
       #   - variable NEXUS_FILE_GROUP_ID (from "API Info" on the mod's Files tab)
-      #   - nexus-release environment secret NEXUSMODS_API_KEY
+      #   - repository secret NEXUSMODS_API_KEY
       # The secret is NOT checked in this condition: `secrets` is not an
       # available context in a step-level `if`, and referencing it there is a
       # parse error that breaks the whole workflow. With the variable set but the

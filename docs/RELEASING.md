@@ -164,10 +164,11 @@ To promote a successor:
    the deployed baseline and prevents a later lock-file rollback from being
    promoted as a successor.
 
-The `nexus-release` environment holds `NEXUSMODS_API_KEY`, and the repository
-holds one Nexus API Info variable per product. The variable names predate the
-v3 API and retain `FILE_GROUP_ID` for compatibility, but their values are v3
-`file_id` values:
+The repository retains the existing `NEXUSMODS_API_KEY` secret and one Nexus
+API Info variable per product. Release jobs can use that repository-scoped
+secret only after the protected `nexus-release` environment gate approves and
+starts the job. The variable names predate the v3 API and retain
+`FILE_GROUP_ID` for compatibility, but their values are v3 `file_id` values:
 
 - `NEXUS_TILE_EDITOR_FILE_GROUP_ID=7822458`
 - `NEXUS_TOOLSHED_FILE_GROUP_ID=7822380`
@@ -181,10 +182,10 @@ as a no-op, while only a missing version reaches the pinned upload action.
 
 Repository setup for Nexus publishing therefore requires all of the following:
 
-- A protected `nexus-release` environment with `NEXUSMODS_API_KEY`, required
-  organization-member reviewers, self-review prevention, and deployment tag
-  policies for `mod-v*`, `tileeditorsuite-v*`, `toolshed-v*`, and
-  `narrowgauge-v*`.
+- A protected `nexus-release` environment with required organization-member
+  reviewers, self-review prevention, and deployment tag policies for `mod-v*`,
+  `tileeditorsuite-v*`, `toolshed-v*`, and `narrowgauge-v*`.
+- The existing repository secret `NEXUSMODS_API_KEY`.
 - Active tag rules for those four patterns that restrict creation to release
   administrators and prevent deletion or rewriting.
 - The four API Info variables described above (the three optional products plus

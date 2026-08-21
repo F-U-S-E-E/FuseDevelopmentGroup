@@ -93,7 +93,7 @@ jobs:
               throw "Repository variable $env:NEXUS_VARIABLE must be a numeric Nexus API Info ID."
             }
             if ([string]::IsNullOrWhiteSpace($env:NEXUSMODS_API_KEY)) {
-              throw "Environment secret NEXUSMODS_API_KEY is not configured."
+              throw "Repository secret NEXUSMODS_API_KEY is not configured."
             }
 
             powershell -NoProfile -ExecutionPolicy Bypass `
