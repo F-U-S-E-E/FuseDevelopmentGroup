@@ -151,10 +151,23 @@ namespace FUSE.Patches
             }
 
             var placement = PendingPlacements.Peek();
-            var descriptors = BuildDescriptors(placement);
-            if (descriptors.Count == 0)
+            var preparationSucceeded = TryBuildDescriptors(
+                placement,
+                out var descriptors);
+            var consumedEmpty = TryConsumeConfirmedEmpty(
+                PendingPlacements,
+                preparationSucceeded,
+                descriptors.Count);
+            if (!preparationSucceeded)
             {
-                PendingPlacements.Dequeue();
+                Toast.Present(
+                    "Starter equipment retained. Run /fuse.starters when "
+                    + "placement is available.",
+                    ToastPosition.Middle);
+                return;
+            }
+            if (consumedEmpty)
+            {
                 PresentNextPlacement();
                 return;
             }
@@ -241,6 +254,23 @@ namespace FUSE.Patches
                    && placedCarCount == expectedCarCount;
         }
 
+        internal static bool TryConsumeConfirmedEmpty<T>(
+            Queue<T> queue,
+            bool preparationSucceeded,
+            int descriptorCount)
+        {
+            if (!preparationSucceeded
+                || descriptorCount != 0
+                || queue == null
+                || queue.Count == 0)
+            {
+                return false;
+            }
+
+            queue.Dequeue();
+            return true;
+        }
+
         private static IEnumerator PresentAfterFrame()
         {
             yield return null;
@@ -271,13 +301,15 @@ namespace FUSE.Patches
                    + " cut(s) remaining).";
         }
 
-        private static List<CarDescriptor> BuildDescriptors(
-            SetupDescriptor.CarPlacement placement)
+        private static bool TryBuildDescriptors(
+            SetupDescriptor.CarPlacement placement,
+            out List<CarDescriptor> descriptors)
         {
+            descriptors = new List<CarDescriptor>();
             try
             {
                 var identifiers = placement?.carIdentifier ?? Array.Empty<string>();
-                var descriptors = StateManager.DescriptorsForIdentifiers(identifiers)
+                descriptors = StateManager.DescriptorsForIdentifiers(identifiers)
                     .Select(descriptor =>
                     {
                         descriptor.Properties["oiled"] = placement.oiled;
@@ -301,14 +333,16 @@ namespace FUSE.Patches
                     descriptors,
                     1f);
 
-                return descriptors;
+                return true;
             }
             catch (Exception ex)
             {
                 FuseLog.Exception(
-                    "FUSE failed to prepare a queued Company starter cut.",
+                    "FUSE failed to prepare a queued Company starter cut; "
+                    + "the cut remains queued.",
                     ex);
-                return new List<CarDescriptor>();
+                descriptors = new List<CarDescriptor>();
+                return false;
             }
         }
 

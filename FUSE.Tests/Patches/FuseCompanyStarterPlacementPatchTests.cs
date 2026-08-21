@@ -83,5 +83,28 @@ namespace FUSE.Tests.Patches
                     expectedCarCount,
                     placedCarCount));
         }
+
+        [Theory]
+        [InlineData(false, 0, false, 1)]
+        [InlineData(true, 0, true, 0)]
+        [InlineData(true, 1, false, 1)]
+        public void StarterPool_DiscardsOnlySuccessfullyPreparedEmptyCuts(
+            bool preparationSucceeded,
+            int descriptorCount,
+            bool expectedConsumed,
+            int expectedRemaining)
+        {
+            var pending = new Queue<string>();
+            pending.Enqueue("retained-cut");
+
+            var consumed =
+                FuseCompanyStarterPlacementPatch.TryConsumeConfirmedEmpty(
+                    pending,
+                    preparationSucceeded,
+                    descriptorCount);
+
+            Assert.Equal(expectedConsumed, consumed);
+            Assert.Equal(expectedRemaining, pending.Count);
+        }
     }
 }
