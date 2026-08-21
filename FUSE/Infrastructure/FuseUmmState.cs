@@ -16,6 +16,9 @@ namespace FUSE.Infrastructure
         public string FolderName { get; set; } = string.Empty;
         public string Path { get; set; } = string.Empty;
         public bool Enabled { get; set; }
+        public bool IsFuseDataPackage { get; set; }
+        public bool IsLegacyConverted { get; set; }
+        public string ProfileSource { get; set; } = "UMM-active";
     }
 
     internal static class FuseUmmState

@@ -1,5 +1,12 @@
 # Changelog
 
+- Fixed FUSE Profiles omitting auto-converted RailLoader data packages. Native
+  FUSE and converted legacy packages now appear beside UMM-active mods, new
+  profiles enable every available package by default, and toggles update the
+  persisted profile instead of a detached UI copy. Disabling a package blocks
+  its data definitions, asset packs, hosted legacy assembly, and conditional
+  mixinto fragments at their shared package-admission boundary.
+
 - Installer 0.8.0 and **Tools > Dependency Graph** now cover locomotive,
   railcar, code-plugin, asset-pack, native FUSE, UMM, and RailLoader dependency
   sources. UMM version suffixes are parsed correctly; verified Nexus

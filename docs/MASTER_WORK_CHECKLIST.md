@@ -289,6 +289,12 @@ is suppressed.
   existing string/object/list shapes. The installed Alina Utilities manifest
   was repaired and its original retained under
   `Mods\ModBackups\FUSEInstaller\CompatibilityManifests-*`.
+- [x] Profiles list native FUSE and auto-converted legacy data packages in
+  addition to UMM-active entries. New profiles start with every available
+  package enabled; existing profiles can toggle converted packages by id or
+  folder. The persisted profile gate excludes disabled package data files,
+  asset packs, hosted legacy code, dependency inventory, and conditional
+  mixinto fragments before runtime application.
 - [ ] Verify UMM drag-and-drop behavior and the previously reported 1.0.2 install
   failure.
 
