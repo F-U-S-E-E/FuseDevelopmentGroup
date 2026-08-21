@@ -32,6 +32,9 @@ namespace FUSE.Compatibility
 
     internal sealed class FuseConfusingSupplementsLabelPrinterBuilder : ComponentBuilder<FuseConfusingSupplementsLabelPrinterComponent>
     {
+        private const string SavedPropertyPrefix = "cs.labelprinter.";
+        internal const string TextFieldName = "text";
+
         protected override void Build(
             ComponentBuilderContext context,
             FuseConfusingSupplementsLabelPrinterComponent component)
@@ -78,7 +81,7 @@ namespace FUSE.Compatibility
                 }
             }
 
-            context.ObserveProperty("cs.labelprinter." + savedPropertyId, value =>
+            context.ObserveProperty(SavedPropertyKey(savedPropertyId), value =>
             {
                 helper.text = ReadText(value);
                 helper.RenderDecal();
@@ -88,9 +91,14 @@ namespace FUSE.Compatibility
         internal static string ReadText(Value value)
         {
             var values = value.DictionaryValue;
-            return values != null && values.TryGetValue("text", out var text)
+            return values != null && values.TryGetValue(TextFieldName, out var text)
                 ? text.StringValue ?? string.Empty
                 : string.Empty;
+        }
+
+        internal static string SavedPropertyKey(string savedPropertyId)
+        {
+            return SavedPropertyPrefix + savedPropertyId;
         }
 
         private static bool TryGetTemplateName(DecalContent content, out string templateName)
@@ -169,7 +177,7 @@ namespace FUSE.Compatibility
             }
 
             return FuseConfusingSupplementsLabelPrinterBuilder.ReadText(
-                car.KeyValueObject["cs.labelprinter." + savedPropertyId]);
+                car.KeyValueObject[FuseConfusingSupplementsLabelPrinterBuilder.SavedPropertyKey(savedPropertyId)]);
         }
 
         private static void SetText(Car car, string savedPropertyId, string text)
@@ -179,11 +187,13 @@ namespace FUSE.Compatibility
                 return;
             }
 
-            car.KeyValueObject["cs.labelprinter." + savedPropertyId] = Value.Dictionary(
-                new Dictionary<string, Value>
-                {
-                    ["text"] = Value.String(text ?? string.Empty)
-                });
+            car.KeyValueObject[FuseConfusingSupplementsLabelPrinterBuilder.SavedPropertyKey(savedPropertyId)] =
+                Value.Dictionary(
+                    new Dictionary<string, Value>
+                    {
+                        [FuseConfusingSupplementsLabelPrinterBuilder.TextFieldName] =
+                            Value.String(text ?? string.Empty)
+                    });
         }
     }
 }

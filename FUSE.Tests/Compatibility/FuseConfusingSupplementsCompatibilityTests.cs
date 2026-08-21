@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using FUSE.Compatibility;
 using FUSE.Interface.Console;
 using KeyValue.Runtime;
-using Model.Definition.Data;
 using System.Linq;
 using System.Reflection;
 using System.IO;
@@ -114,6 +113,9 @@ namespace FUSE.Tests.Compatibility
 
             Assert.Equal("shared-label", grouped.SavedPropertyId);
             Assert.Equal("road-name", ungrouped.SavedPropertyId);
+            Assert.Equal(
+                "cs.labelprinter.road-name",
+                FuseConfusingSupplementsLabelPrinterBuilder.SavedPropertyKey(ungrouped.SavedPropertyId));
             Assert.Equal(string.Empty, FuseConfusingSupplementsLabelPrinterBuilder.ReadText(Value.Null()));
         }
 
@@ -173,22 +175,11 @@ namespace FUSE.Tests.Compatibility
             string targetIdentifier,
             bool expected)
         {
-            var source = new CarDefinition
-            {
-                LoadSlots = new List<LoadSlot>
-                {
-                    new LoadSlot { RequiredLoadIdentifier = sourceIdentifier }
-                }
-            };
-            var target = new CarDefinition
-            {
-                LoadSlots = new List<LoadSlot>
-                {
-                    new LoadSlot { RequiredLoadIdentifier = targetIdentifier }
-                }
-            };
-
-            Assert.Equal(expected, FuseConfusingSupplementsRefillerRuntime.CanReceiveFrom(source, target));
+            Assert.Equal(
+                expected,
+                FuseConfusingSupplementsRefillerPolicy.CanTargetReceiveFromSource(
+                    new[] { sourceIdentifier },
+                    new[] { targetIdentifier }));
         }
 
         [Fact]
@@ -196,11 +187,11 @@ namespace FUSE.Tests.Compatibility
         {
             var remainingTransfer = 10f;
 
-            var firstSlot = FuseConfusingSupplementsRefillerTransferPolicy.Take(
+            var firstSlot = FuseConfusingSupplementsRefillerPolicy.Take(
                 ref remainingTransfer,
                 6f,
                 10f);
-            var secondSlot = FuseConfusingSupplementsRefillerTransferPolicy.Take(
+            var secondSlot = FuseConfusingSupplementsRefillerPolicy.Take(
                 ref remainingTransfer,
                 8f,
                 10f);

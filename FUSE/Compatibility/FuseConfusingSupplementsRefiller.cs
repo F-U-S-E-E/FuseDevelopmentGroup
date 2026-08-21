@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using FUSE.Infrastructure;
 using Game.State;
@@ -42,8 +43,25 @@ namespace FUSE.Compatibility
         }
     }
 
-    internal static class FuseConfusingSupplementsRefillerTransferPolicy
+    internal static class FuseConfusingSupplementsRefillerPolicy
     {
+        internal static bool CanTargetReceiveFromSource(
+            IEnumerable<string> sourceLoadIdentifiers,
+            IEnumerable<string> targetLoadIdentifiers)
+        {
+            if (sourceLoadIdentifiers == null || targetLoadIdentifiers == null)
+            {
+                return false;
+            }
+
+            return targetLoadIdentifiers.Any(targetIdentifier =>
+                !string.IsNullOrWhiteSpace(targetIdentifier) &&
+                sourceLoadIdentifiers.Any(sourceIdentifier => string.Equals(
+                    sourceIdentifier,
+                    targetIdentifier,
+                    StringComparison.OrdinalIgnoreCase)));
+        }
+
         internal static float Take(
             ref float remainingTransfer,
             float availableCapacity,
@@ -94,19 +112,11 @@ namespace FUSE.Compatibility
             }
         }
 
-        internal static bool CanReceiveFrom(CarDefinition source, CarDefinition target)
+        private static bool CanTargetReceiveFromSource(CarDefinition source, CarDefinition target)
         {
-            if (source?.LoadSlots == null || target?.LoadSlots == null)
-            {
-                return false;
-            }
-
-            return target.LoadSlots.Any(targetSlot =>
-                !string.IsNullOrWhiteSpace(targetSlot?.RequiredLoadIdentifier) &&
-                source.LoadSlots.Any(sourceSlot => string.Equals(
-                    sourceSlot?.RequiredLoadIdentifier,
-                    targetSlot.RequiredLoadIdentifier,
-                    StringComparison.OrdinalIgnoreCase)));
+            return FuseConfusingSupplementsRefillerPolicy.CanTargetReceiveFromSource(
+                source?.LoadSlots?.Select(slot => slot?.RequiredLoadIdentifier),
+                target?.LoadSlots?.Select(slot => slot?.RequiredLoadIdentifier));
         }
 
         private static Car FindNearestCompatibleCar(Car source, Car.LogicalEnd end)
@@ -137,7 +147,8 @@ namespace FUSE.Compatibility
                     continue;
                 }
 
-                if (IsSupportedTarget(candidate) && CanReceiveFrom(source.Definition, candidate.Definition))
+                if (IsSupportedTarget(candidate) &&
+                    CanTargetReceiveFromSource(source.Definition, candidate.Definition))
                 {
                     return candidate;
                 }
@@ -193,7 +204,7 @@ namespace FUSE.Compatibility
 
                 var targetLoad = target.GetLoadInfo(targetIndex);
                 var targetQuantity = targetLoad?.Quantity ?? 0f;
-                var quantity = FuseConfusingSupplementsRefillerTransferPolicy.Take(
+                var quantity = FuseConfusingSupplementsRefillerPolicy.Take(
                     ref remainingTransfer,
                     targetSlot.MaximumCapacity - targetQuantity,
                     sourceLoad.Value.Quantity);

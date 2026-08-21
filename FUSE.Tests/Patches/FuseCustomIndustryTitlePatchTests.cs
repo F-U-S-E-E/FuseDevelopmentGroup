@@ -1,6 +1,4 @@
-using System.Runtime.Serialization;
 using FUSE.Patches;
-using Model.Ops;
 using StrangeCustoms.Tracks.Industries;
 using Xunit;
 
@@ -15,29 +13,38 @@ namespace FUSE.Tests.Patches
         }
 
         [Fact]
-        public void Prefix_UsesLegacyCustomIndustryTitleContract()
+        public void TryGetCustomTitle_UsesLegacyCustomIndustryTitleContract()
         {
-            var component = (FakeTitledComponent)FormatterServices
-                .GetUninitializedObject(typeof(FakeTitledComponent));
-            var result = string.Empty;
+            var component = new FakeTitledComponent("Acquire coal at test depot");
 
-            var runOriginal = FuseCustomIndustryTitlePatch.Prefix(component, ref result);
+            var found = FuseCustomIndustryTitlePatch.TryGetCustomTitle(component, out var title);
 
-            Assert.False(runOriginal);
-            Assert.Equal("Acquire coal at test depot", result);
+            Assert.True(found);
+            Assert.Equal("Acquire coal at test depot", title);
         }
 
-        private sealed class FakeTitledComponent : IndustryComponent, ICustomIndustryTitle
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        public void TryGetCustomTitle_RejectsMissingTitle(string value)
         {
-            public string Title => "Acquire coal at test depot";
+            var component = new FakeTitledComponent(value);
 
-            public override void OrderCars(IIndustryContext ctx)
+            var found = FuseCustomIndustryTitlePatch.TryGetCustomTitle(component, out var title);
+
+            Assert.False(found);
+            Assert.Equal(value, title);
+        }
+
+        private sealed class FakeTitledComponent : ICustomIndustryTitle
+        {
+            internal FakeTitledComponent(string title)
             {
+                Title = title;
             }
 
-            public override void Service(IIndustryContext ctx)
-            {
-            }
+            public string Title { get; }
         }
     }
 }

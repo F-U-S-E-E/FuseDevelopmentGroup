@@ -14,22 +14,38 @@ namespace FUSE.Patches
         internal static MethodBase TargetMethod()
         {
             return AccessTools.GetDeclaredMethods(typeof(DropdownLocationPickerRowData))
-                .FirstOrDefault(method =>
-                    method.Name.IndexOf(
-                        "TitleForComponent",
-                        StringComparison.OrdinalIgnoreCase) >= 0);
+                .SingleOrDefault(method =>
+                {
+                    if (!method.IsStatic ||
+                        method.ReturnType != typeof(string) ||
+                        method.Name.IndexOf("TitleForComponent", StringComparison.Ordinal) < 0)
+                    {
+                        return false;
+                    }
+
+                    var parameters = method.GetParameters();
+                    return parameters.Length == 1 &&
+                           parameters[0].ParameterType == typeof(IndustryComponent);
+                });
         }
 
-        internal static bool Prefix(IndustryComponent ic, ref string __result)
+        internal static bool Prefix(
+            [HarmonyArgument(0)] IndustryComponent component,
+            ref string __result)
         {
-            if (!(ic is ICustomIndustryTitle titled)
-                || string.IsNullOrWhiteSpace(titled.Title))
+            if (!TryGetCustomTitle(component as ICustomIndustryTitle, out var title))
             {
                 return true;
             }
 
-            __result = titled.Title;
+            __result = title;
             return false;
+        }
+
+        internal static bool TryGetCustomTitle(ICustomIndustryTitle titled, out string title)
+        {
+            title = titled?.Title;
+            return !string.IsNullOrWhiteSpace(title);
         }
     }
 }
