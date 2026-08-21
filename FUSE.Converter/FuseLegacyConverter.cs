@@ -167,8 +167,16 @@ namespace FUSE.Converter
 
             EmitTrackGroupCoverageWarning(declaredInitialGroups, result.Report);
 
-            var legacyLoadAfter = LegacyDefinitionConverter.LegacyLoadAfter(modFolder);
-            WriteInfoJson(outputFolder, manifest, result.WrittenFragments, result.Report, legacyLoadAfter);
+            var legacyDependencies = LegacyDefinitionConverter.LegacyDependencies(modFolder);
+            var legacyConflictsWith = LegacyDefinitionConverter.LegacyConflictsWith(modFolder);
+            WriteInfoJson(
+                outputFolder,
+                manifest,
+                result.WrittenFragments,
+                result.Report,
+                legacyDependencies.Requires,
+                legacyDependencies.LoadAfter,
+                legacyConflictsWith);
 
             // Asset packs + map tiles are file-system payloads that
             // ride alongside the converted *.fuse.json fragments.
@@ -228,14 +236,10 @@ namespace FUSE.Converter
         }
 
         /// <summary>
-        /// Kind-aware dispatcher: routes to <see cref="ConvertMod"/>
-        /// for route packages,
-        /// <see cref="LegacyAudioConverter.ConvertAudioMod"/> for
-        /// audio packages, and produces an empty-success result with
-        /// a warning for asset / unknown kinds (the user can copy
-        /// asset packs verbatim — that's already what
-        /// <see cref="ConvertMod"/> does at the end of the route
-        /// path).
+        /// Kind-aware dispatcher. Only legacy JSON route and audio data
+        /// are conversion inputs. Native FUSE, compiled code, map-tile,
+        /// and asset-only packages are installed directly instead of
+        /// being copied into misleading zero-fragment conversions.
         /// </summary>
         public static FuseConversionResult ConvertPackage(string modFolder, string outputFolder, string requestedKind = "auto")
         {
@@ -245,68 +249,50 @@ namespace FUSE.Converter
                 case "audio":
                     return LegacyAudioConverter.ConvertAudioMod(modFolder, outputFolder);
                 case "asset":
-                    return ConvertAssetOnly(modFolder, outputFolder);
+                    return UnsupportedPackage(
+                        modFolder,
+                        outputFolder,
+                        "Asset-pack-only package detected. FUSE loads supported asset packs directly; install this package with the FUSE installer instead of converting it.");
+                case "map_tile":
+                    return UnsupportedPackage(
+                        modFolder,
+                        outputFolder,
+                        "Legacy map-tile package detected. FUSE's Alina compatibility loads supported tile data directly; install this package with the FUSE installer instead of converting it.");
+                case "native":
+                    return UnsupportedPackage(
+                        modFolder,
+                        outputFolder,
+                        "This package already contains FUSE-native *.fuse.json data. No conversion is needed; install the original package with the FUSE installer.");
+                case "code":
+                    return UnsupportedPackage(
+                        modFolder,
+                        outputFolder,
+                        "Compiled code mod detected. The converter only translates RailLoader JSON data and cannot reproduce DLL behavior; install a compatible code mod directly or ask its author for a FUSE-native version.");
                 case "route":
+                    return ConvertMod(modFolder, outputFolder);
                 case "unknown":
                 default:
-                    return ConvertMod(modFolder, outputFolder);
+                    return UnsupportedPackage(
+                        modFolder,
+                        outputFolder,
+                        "No convertible RailLoader JSON data was detected. Expected route, track, scenery, industry, progression, or supported audio JSON; code, assets, map tiles, and native FUSE packages are installed rather than converted.");
             }
         }
 
-        /// <summary>
-        /// Asset-only conversion: just copies asset-pack folders and
-        /// writes a FUSE Info.json. Used when the source has no
-        /// JSON-side data (no tracks/industries/etc.) but does ship
-        /// asset packs (Catalog.json + Definitions.json + bundle).
-        /// </summary>
-        private static FuseConversionResult ConvertAssetOnly(string modFolder, string outputFolder)
+        private static FuseConversionResult UnsupportedPackage(string modFolder, string outputFolder, string reason)
         {
             var result = new FuseConversionResult
             {
                 OutputFolderPath = outputFolder,
+                Success = false,
             };
-
-            if (LegacyAssetCopier.PathsOverlap(modFolder, outputFolder))
-            {
-                result.Success = false;
-                result.Report.Add(Error("Output folder overlaps the source folder; refusing to convert in place (it would overwrite the original mod).", modFolder));
-                return result;
-            }
 
             var manifest = LegacyManifestReader.Read(modFolder);
             result.ModId = manifest.Id;
             result.ModName = manifest.Name;
             result.ModVersion = manifest.Version;
             result.Author = manifest.Author;
-
-            try
-            {
-                Directory.CreateDirectory(outputFolder);
-                var assetRoots = LegacyKindDetector.FindAssetPackSources(modFolder);
-                if (assetRoots.Count > 0)
-                {
-                    LegacyAssetCopier.CopyAssetSources(modFolder, outputFolder, assetRoots, result);
-                }
-
-                var info = new JObject
-                {
-                    ["$schema"] = ".\\schemas\\umm-info.schema.json",
-                    ["Id"] = manifest.Id + ".FUSE",
-                    ["DisplayName"] = manifest.Name + " (FUSE)",
-                    ["Author"] = manifest.Author ?? string.Empty,
-                    ["Version"] = manifest.Version ?? "1.0.0",
-                    ["ManagerVersion"] = "0.27.10",
-                    ["Requirements"] = new JArray("FUSE"),
-                    ["LoadAfter"] = new JArray("FUSE"),
-                    ["FuseAssetPacks"] = JArray.FromObject(assetRoots.Count > 0 ? assetRoots : (System.Collections.Generic.IEnumerable<string>)new[] { "." }),
-                };
-                File.WriteAllText(Path.Combine(outputFolder, "Info.json"), info.ToString(Formatting.Indented));
-                result.Success = true;
-            }
-            catch (Exception ex)
-            {
-                result.Report.Add(Error("Asset-only conversion failed: " + ex.Message, modFolder));
-            }
+            result.Report.Add(Error(reason, modFolder));
             return result;
         }
 
@@ -397,30 +383,35 @@ namespace FUSE.Converter
 
         private static void WriteInfoJson(string outputFolder, LegacyManifestReader.LegacyManifest manifest,
                                           List<string> fragments, List<FuseConversionReportEntry> report,
-                                          List<string> legacyLoadAfter = null)
+                                          List<string> legacyRequires = null,
+                                          List<string> legacyLoadAfter = null,
+                                          JArray legacyConflictsWith = null)
         {
             try
             {
-                // LoadAfter starts with "FUSE" (the runtime), then
-                // every legacy requirement / loadAfter id remapped
-                // via LegacyDefinitionConverter.FusePackageId so we
-                // wait for any sibling-converted packages.
-                var loadAfter = new JArray("FUSE");
-                if (legacyLoadAfter != null)
-                {
-                    foreach (var id in legacyLoadAfter) loadAfter.Add(id);
-                }
+                // UMM only needs to start FUSE first. Data-package requirements
+                // and ordering belong to FUSE's own dependency graph; keeping
+                // them separate preserves hard-vs-advisory legacy semantics.
+                var fuseRequires = legacyRequires == null
+                    ? new JArray()
+                    : JArray.FromObject(legacyRequires);
+                var fuseLoadAfter = legacyLoadAfter == null
+                    ? new JArray()
+                    : JArray.FromObject(legacyLoadAfter);
 
                 var info = new JObject
                 {
                     ["$schema"] = ".\\schemas\\umm-info.schema.json",
-                    ["Id"] = $"{manifest.Id}.FUSE",
+                    ["Id"] = LegacyDefinitionConverter.ConvertedPackageId(manifest.Id) ?? $"{manifest.Id}.FUSE",
                     ["DisplayName"] = $"{manifest.Name} (FUSE)",
                     ["Author"] = manifest.Author ?? string.Empty,
                     ["Version"] = manifest.Version ?? "1.0.0",
                     ["ManagerVersion"] = "0.27.10",
                     ["Requirements"] = new JArray("FUSE"),
-                    ["LoadAfter"] = loadAfter,
+                    ["LoadAfter"] = new JArray("FUSE"),
+                    ["FuseRequires"] = fuseRequires,
+                    ["FuseLoadAfter"] = fuseLoadAfter,
+                    ["FuseConflictsWith"] = legacyConflictsWith ?? new JArray(),
                     ["FuseDataFiles"] = JArray.FromObject(fragments),
                 };
 

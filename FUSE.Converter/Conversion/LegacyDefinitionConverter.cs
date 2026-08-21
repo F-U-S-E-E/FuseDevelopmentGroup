@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 
@@ -42,13 +43,18 @@ namespace FUSE.Converter.Conversion
         /// </summary>
         public static JObject ConvertRequirement(JToken item)
         {
+            return ConvertReference(item, true);
+        }
+
+        private static JObject ConvertReference(JToken item, bool filterReplacementCapabilities)
+        {
             if (item == null) return null;
 
             if (item.Type == JTokenType.String)
             {
                 var requirementId = item.Value<string>()?.Trim();
                 if (string.IsNullOrEmpty(requirementId)) return null;
-                if (LegacyConverterConstants.CoreLegacyRequirements.Contains(requirementId)) return null;
+                if (filterReplacementCapabilities && LegacyConverterConstants.IsCoreLegacyRequirement(requirementId)) return null;
                 return new JObject { ["id"] = requirementId };
             }
 
@@ -56,7 +62,7 @@ namespace FUSE.Converter.Conversion
 
             var id = (obj.Value<string>("id") ?? obj.Value<string>("Id") ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(id)) return null;
-            if (LegacyConverterConstants.CoreLegacyRequirements.Contains(id)) return null;
+            if (filterReplacementCapabilities && LegacyConverterConstants.IsCoreLegacyRequirement(id)) return null;
 
             var result = new JObject
             {
@@ -75,12 +81,17 @@ namespace FUSE.Converter.Conversion
         /// </summary>
         public static JArray ConvertRequirements(JToken value)
         {
+            return ConvertReferences(value, true);
+        }
+
+        private static JArray ConvertReferences(JToken value, bool filterReplacementCapabilities)
+        {
             var result = new JArray();
             if (!(value is JArray arr)) return result;
 
             foreach (var item in arr)
             {
-                var converted = ConvertRequirement(item);
+                var converted = ConvertReference(item, filterReplacementCapabilities);
                 if (converted != null)
                 {
                     result.Add(converted);
@@ -89,19 +100,60 @@ namespace FUSE.Converter.Conversion
             return result;
         }
 
+        public static JArray LegacyConflictsWith(string modFolder)
+        {
+            var path = Path.Combine(modFolder ?? string.Empty, "Definition.json");
+            if (!File.Exists(path))
+            {
+                return new JArray();
+            }
+
+            try
+            {
+                var definition = LegacyJsonReader.ReadJson(path) as JObject;
+                var converted = ConvertReferences(
+                    definition?["conflictsWith"] ?? definition?["ConflictsWith"],
+                    false);
+                return new JArray(converted.OfType<JObject>().Select(reference =>
+                    JsonCleanHelper.CleanObject(new JObject
+                    {
+                        ["Id"] = ConvertedPackageId(reference.Value<string>("id")),
+                        ["NotBefore"] = reference["notBefore"]?.DeepClone(),
+                        ["NotAfter"] = reference["notAfter"]?.DeepClone()
+                    })));
+            }
+            catch (Exception)
+            {
+                return new JArray();
+            }
+        }
+
         /// <summary>
         /// Port of <c>fuse_package_id</c>. A legacy requirement id
         /// like "MyMod" becomes "MyMod.FUSE" (the converter shipped
         /// alongside the original package); ids already ending in
-        /// ".FUSE" pass through unchanged. Core legacy requirements
+        /// ".FUSE" pass through unchanged and legacy ".RAIL" suffixes
+        /// are replaced. Core legacy requirements
         /// return null so they get dropped from the LoadAfter chain.
         /// </summary>
         public static string FusePackageId(string requirementId)
         {
             var text = (requirementId ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(text)) return null;
-            if (LegacyConverterConstants.CoreLegacyRequirements.Contains(text)) return null;
+            if (LegacyConverterConstants.IsCoreLegacyRequirement(text)) return null;
+            return ConvertedPackageId(text);
+        }
+
+        internal static string ConvertedPackageId(string packageId)
+        {
+            var text = (packageId ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(text)) return null;
             if (text.EndsWith(".FUSE", StringComparison.OrdinalIgnoreCase)) return text;
+            if (text.EndsWith(".RAIL", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text.Substring(0, text.Length - ".RAIL".Length).Trim();
+            }
+            if (string.IsNullOrEmpty(text)) return null;
             return text + ".FUSE";
         }
 
@@ -114,19 +166,33 @@ namespace FUSE.Converter.Conversion
         /// </summary>
         public static List<string> LegacyLoadAfter(string modFolder)
         {
-            var result = new List<string>();
+            var dependencies = LegacyDependencies(modFolder);
+            var result = new List<string>(dependencies.Requires);
+            result.AddRange(dependencies.LoadAfter);
+            return Deduplicate(result);
+        }
+
+        /// <summary>
+        /// Reads hard requirements separately from advisory ordering. The old
+        /// converter flattened both into LoadAfter, which made a missing required
+        /// package look optional to FUSE.
+        /// </summary>
+        public static (List<string> Requires, List<string> LoadAfter) LegacyDependencies(string modFolder)
+        {
+            var required = new List<string>();
+            var loadAfter = new List<string>();
             var path = Path.Combine(modFolder ?? string.Empty, "Definition.json");
-            if (!File.Exists(path)) return result;
+            if (!File.Exists(path)) return (required, loadAfter);
 
             JObject definition;
             try
             {
                 definition = LegacyJsonReader.ReadJson(path) as JObject;
-                if (definition == null) return result;
+                if (definition == null) return (required, loadAfter);
             }
             catch (Exception)
             {
-                return result;
+                return (required, loadAfter);
             }
 
             var requirements =
@@ -141,37 +207,97 @@ namespace FUSE.Converter.Conversion
                 var packageId = FusePackageId((requirement as JObject)?.Value<string>("id"));
                 if (!string.IsNullOrEmpty(packageId))
                 {
-                    result.Add(packageId);
+                    required.Add(packageId);
                 }
             }
 
             var loadAfterToken = definition["loadAfter"] ?? definition["LoadAfter"];
-            var loadAfterList = new List<string>();
             if (loadAfterToken is JArray la)
             {
                 foreach (var item in la)
                 {
-                    if (item.Type == JTokenType.String) loadAfterList.Add(item.Value<string>());
+                    var id = item.Type == JTokenType.String
+                        ? item.Value<string>()
+                        : (item as JObject)?.Value<string>("id") ?? (item as JObject)?.Value<string>("Id");
+                    var packageId = FusePackageId(id);
+                    if (!string.IsNullOrEmpty(packageId)) loadAfter.Add(packageId);
                 }
             }
             else if (loadAfterToken?.Type == JTokenType.String)
             {
-                loadAfterList.Add(loadAfterToken.Value<string>());
-            }
-
-            foreach (var item in loadAfterList)
-            {
-                var packageId = FusePackageId(item);
+                var packageId = FusePackageId(loadAfterToken.Value<string>());
                 if (!string.IsNullOrEmpty(packageId))
                 {
-                    result.Add(packageId);
+                    loadAfter.Add(packageId);
                 }
             }
 
-            // Dedup preserving first-seen order (case-insensitive).
+            foreach (var id in EnumerateMixintoRequirementIds(
+                         definition["mixintos"] ?? definition["Mixintos"]))
+            {
+                var packageId = FusePackageId(id);
+                if (!string.IsNullOrEmpty(packageId))
+                {
+                    loadAfter.Add(packageId);
+                }
+            }
+
+            return (Deduplicate(required), Deduplicate(loadAfter));
+        }
+
+        private static IEnumerable<string> EnumerateMixintoRequirementIds(JToken value)
+        {
+            if (value == null || value.Type == JTokenType.Null)
+            {
+                yield break;
+            }
+
+            if (value is JArray array)
+            {
+                foreach (var item in array)
+                {
+                    foreach (var id in EnumerateMixintoRequirementIds(item))
+                    {
+                        yield return id;
+                    }
+                }
+
+                yield break;
+            }
+
+            if (!(value is JObject obj))
+            {
+                yield break;
+            }
+
+            foreach (var requirement in ConvertRequirements(obj["requires"] ?? obj["Requires"]).OfType<JObject>())
+            {
+                var id = requirement.Value<string>("id");
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    yield return id;
+                }
+            }
+
+            foreach (var property in obj.Properties())
+            {
+                if (string.Equals(property.Name, "requires", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                foreach (var id in EnumerateMixintoRequirementIds(property.Value))
+                {
+                    yield return id;
+                }
+            }
+        }
+
+        private static List<string> Deduplicate(IEnumerable<string> values)
+        {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var ordered = new List<string>();
-            foreach (var item in result)
+            foreach (var item in values ?? Array.Empty<string>())
             {
                 if (seen.Add(item))
                 {
@@ -213,7 +339,7 @@ namespace FUSE.Converter.Conversion
                 return (metadata, orderedFiles);
             }
 
-            void Record(string target, string reference, JArray requirements)
+            void Record(string target, string reference, JArray requirements, JArray conflictsWith)
             {
                 var referencedFile = ExtractFileReference(reference);
                 if (string.IsNullOrEmpty(referencedFile)) return;
@@ -229,6 +355,7 @@ namespace FUSE.Converter.Conversion
                     ["target"] = (target ?? string.Empty).Trim(),
                     ["sourceFile"] = sourceFile,
                     ["requires"] = requirements ?? new JArray(),
+                    ["conflictsWith"] = conflictsWith ?? new JArray(),
                 });
             }
 
@@ -238,7 +365,7 @@ namespace FUSE.Converter.Conversion
 
                 if (value.Type == JTokenType.String)
                 {
-                    Record(target, value.Value<string>(), null);
+                    Record(target, value.Value<string>(), null, null);
                     return;
                 }
 
@@ -251,8 +378,9 @@ namespace FUSE.Converter.Conversion
                 if (!(value is JObject obj)) return;
 
                 var requirements = ConvertRequirements(obj["requires"] ?? obj["Requires"]);
+                var conflictsWith = ConvertReferences(obj["conflictsWith"] ?? obj["ConflictsWith"], false);
                 var reference = obj.Value<string>("mixinto") ?? obj.Value<string>("Mixinto");
-                Record(target, reference, requirements);
+                Record(target, reference, requirements, conflictsWith);
             }
 
             var mixintos = definition["mixintos"] as JObject ?? definition["Mixintos"] as JObject;

@@ -99,6 +99,7 @@ namespace FUSE.Authoring.Data
                 { "pay-for-resource", "ConfusingSupplements.IndustryComponents.Pay4Resource" },
                 { "confusingsupplements.pay4resource", "ConfusingSupplements.IndustryComponents.Pay4Resource" },
                 { "confusingsupplements.industrycomponents.pay4resource", "ConfusingSupplements.IndustryComponents.Pay4Resource" },
+                { "adrfdr.pay4resource", "ConfusingSupplements.IndustryComponents.Pay4Resource" },
                 { "confusingsupplements.empty", "ConfusingSupplements.IndustryComponents.Empty" },
                 { "confusingsupplements.industrycomponents.empty", "ConfusingSupplements.IndustryComponents.Empty" }
             };

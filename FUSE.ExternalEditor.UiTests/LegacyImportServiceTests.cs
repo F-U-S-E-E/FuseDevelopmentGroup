@@ -21,7 +21,8 @@ public class LegacyImportServiceTests
         {
             File.WriteAllText(Path.Combine(src, "Definition.json"),
                 "{\"id\":\"my.legacy.mod\",\"name\":\"My Legacy Mod\",\"version\":\"1.2.3\",\"author\":\"me\"}");
-            File.WriteAllText(Path.Combine(src, "data.json"), "{}");
+            File.WriteAllText(Path.Combine(src, "data.json"),
+                "{\"tracks\":{\"nodes\":{\"n_legacy\":{\"position\":{\"x\":10,\"y\":20,\"z\":30},\"rotation\":{\"x\":0,\"y\":0,\"z\":0}}}}}");
 
             var result = new LegacyImportService().Convert(src, outDir);
 
@@ -35,6 +36,9 @@ public class LegacyImportServiceTests
             var projects = new ProjectService();
             var def = projects.Load(result.FirstFragmentPath!);
             Assert.False(string.IsNullOrEmpty(def.Id));
+            Assert.True(def.Tracks.Nodes.TryGetValue("n_legacy", out var legacyNode));
+            Assert.Equal(new FuseVector3(10, 20, 30), legacyNode.Position);
+            Assert.Equal(FuseVector3.zero, legacyNode.Rotation);
 
             TrackOps.AddNode(def.Tracks, "n_test", new FuseVector3(1, 2, 3), default);
             var editedPath = Path.Combine(outDir, "edited.fuse.json");

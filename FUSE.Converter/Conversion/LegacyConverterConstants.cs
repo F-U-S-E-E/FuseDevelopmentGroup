@@ -157,10 +157,27 @@ namespace FUSE.Converter.Conversion
         public static readonly HashSet<string> CoreLegacyRequirements = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "railroader", "railloader", "rail-loader",
+            "railloader.injector", "railloader.interchange",
+            "assetloader",
+            "alinanova21.mapeditor", "mapeditor", "mmapeditor",
             "zamu.strangecustoms", "strangecustoms",
             "zamu.confusingsupplements", "confusingsupplements",
+            "zamu.foryourconvenience", "foryourconvenience",
+            "alinanova21.alinasmapmod", "alinasmapmod", "alinamapmod",
             "fuse",
         };
+
+        public static bool IsCoreLegacyRequirement(string packageId)
+        {
+            var value = (packageId ?? string.Empty).Trim();
+            while (value.EndsWith(".FUSE", StringComparison.OrdinalIgnoreCase) ||
+                   value.EndsWith(".RAIL", StringComparison.OrdinalIgnoreCase))
+            {
+                value = value.Substring(0, value.Length - 5);
+            }
+
+            return CoreLegacyRequirements.Contains(value);
+        }
 
         /// <summary>
         /// Component type alias table — port of the dictionary

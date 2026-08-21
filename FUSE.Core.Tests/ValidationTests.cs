@@ -60,5 +60,32 @@ namespace Fuse.Core.Tests
             Assert.Equal(first.Errors.Count, second.Errors.Count);
             Assert.Equal(first.Warnings.Count, second.Warnings.Count);
         }
+
+        [Fact]
+        public void Explicitly_Null_Sections_Are_Normalized_Before_Feature_Rule_Validation()
+        {
+            var json = @"{
+                ""id"": ""fuse.test.null-sections"",
+                ""name"": ""Null Sections"",
+                ""settings"": null,
+                ""operations"": null,
+                ""tracks"": null,
+                ""world"": null,
+                ""progression"": null,
+                ""audio"": null,
+                ""featureRules"": {
+                    ""optional"": {
+                        ""setting"": ""missing"",
+                        ""value"": true,
+                        ""targets"": { ""scenery"": [""missing""] }
+                    }
+                }
+            }";
+
+            var result = new FuseDefinitionValidator().Validate(FuseCoreSerializer.FromJson(json));
+
+            Assert.Contains(result.Errors, error => error.Code == "fuse.featureRule.setting.missing");
+            Assert.Contains(result.Errors, error => error.Code == "fuse.featureRule.target.missing");
+        }
     }
 }

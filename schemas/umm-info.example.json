@@ -17,6 +17,7 @@
   ],
   "FuseLoadPriority": 100,
   "FuseLoadAfter": [],
+  "FuseConflictsWith": [],
   "FuseLoadBefore": [],
   "FuseDataFiles": [
     "track.fuse.json",
@@ -26,5 +27,11 @@
   ],
   "FuseAssetPacks": [
     "SCAssetPacks"
+  ],
+  "FuseDefinitionOverrides": [
+    {
+      "StoreIdentifier": "example-existing-store",
+      "Path": "DefinitionOverrides/example-existing-store/Definitions.json"
+    }
   ]
 }

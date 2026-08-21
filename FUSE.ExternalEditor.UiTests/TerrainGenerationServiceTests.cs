@@ -134,8 +134,7 @@ public class TerrainGenerationServiceTests
         // Progress<T> posts its callbacks asynchronously to the thread pool (no SynchronizationContext
         // in headless xUnit), so they can trail GenerateRegionAsync's completion. Await their delivery
         // with a bounded timeout instead of a fixed delay that a loaded CI runner can outrun.
-        var delivered = await Task.WhenAny(allReported.Task, Task.Delay(TimeSpan.FromSeconds(2)));
-        Assert.True(delivered == allReported.Task, "expected all 6 Progress<T> callbacks to be delivered");
+        await allReported.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
         lock (reports)
         {
             Assert.Equal(6, reports.Count);

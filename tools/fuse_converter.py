@@ -34,7 +34,7 @@ import convert_fuse_audio  # noqa: E402
 import legacy_json  # noqa: E402
 
 
-TOOL_VERSION = "0.2.0"
+TOOL_VERSION = "0.2.1"
 DEFAULT_STEAM_MODS = Path(r"C:\Steam\steamapps\common\Railroader\Mods")
 DEFAULT_MANAGER_VERSION = "0.27.10"
 JSON_MANIFEST_NAMES = {"definition.json", "info.json"}
@@ -541,6 +541,36 @@ def has_direct_asset_pack_sources(source: Path) -> bool:
     return has_direct_asset_pack_children(source)
 
 
+def has_direct_native_fuse_data(source: Path) -> bool:
+    if not source.is_dir():
+        return False
+    try:
+        return any(path.is_file() and path.name.lower().endswith(".fuse.json") for path in source.iterdir())
+    except OSError:
+        return False
+
+
+def has_native_fuse_data(source: Path) -> bool:
+    if not source.is_dir():
+        return False
+    try:
+        return any(
+            path.is_file() and path.name.lower().endswith(".fuse.json")
+            for path in source.rglob("*")
+        )
+    except OSError:
+        return False
+
+
+def has_direct_compiled_plugin(source: Path) -> bool:
+    if not source.is_dir():
+        return False
+    try:
+        return any(path.is_file() and path.suffix.lower() == ".dll" for path in source.iterdir())
+    except OSError:
+        return False
+
+
 def detect_direct_kind(source: Path, requested: str) -> str:
     if source.is_file():
         if source.suffix.lower() == ".zip":
@@ -562,17 +592,21 @@ def detect_direct_kind(source: Path, requested: str) -> str:
     direct_assets = has_direct_asset_pack_sources(source)
     direct_json = has_direct_convertible_json(source)
 
+    if has_direct_native_fuse_data(source):
+        return "native"
+
     if requested == "route":
         return "route" if direct_route or direct_tiles or direct_json else "unknown"
     if requested == "audio":
         return "audio" if direct_audio or direct_json else "unknown"
-    if requested == "asset":
-        return "asset" if direct_assets else "unknown"
-
     if direct_audio and not direct_route:
         return "audio"
-    if direct_route or direct_tiles:
+    if direct_route:
         return "route"
+    if has_direct_compiled_plugin(source):
+        return "code"
+    if direct_tiles:
+        return "map_tile"
     if direct_assets:
         return "asset"
     return "unknown"
@@ -597,12 +631,24 @@ def detect_kind(source: Path, requested: str) -> str:
     if requested != "auto":
         return requested
 
-    if detects_audio(source) and not detects_route_data(source):
+    if source.is_file() and source.name.lower().endswith(".fuse.json"):
+        return "native"
+    if source.is_dir() and has_native_fuse_data(source):
+        return "native"
+    contains_compiled_plugin = source.is_dir() and has_direct_compiled_plugin(source)
+    if (
+        contains_compiled_plugin
+        and not detects_direct_route_data(source)
+        and not detects_direct_audio(source)
+    ):
+        return "code"
+    route_data = detects_route_data(source)
+    if detects_audio(source) and not route_data:
         return "audio"
-    if detects_route_data(source):
+    if route_data:
         return "route"
     if find_map_tile_sources(source):
-        return "route"
+        return "map_tile"
     if find_asset_pack_sources(source):
         return "asset"
     if is_json_file(source):
@@ -647,7 +693,8 @@ def update_info_json(output: Path, update: dict[str, Any]) -> None:
 
 def write_reports(report: ConversionReport) -> None:
     report.finish()
-    write_json(report.output / "conversion-report.json", report.to_dict())
+    report_folder = report_output_folder(report)
+    write_json(report_folder / "conversion-report.json", report.to_dict())
 
     lines = [
         f"# FUSE Conversion Report - {report.output.name}",
@@ -696,7 +743,13 @@ def write_reports(report: ConversionReport) -> None:
         )
     if not report.entries:
         lines.append("| OK |  |  | No warnings or errors. |")
-    write_text(report.output / "conversion-report.md", "\n".join(lines) + "\n")
+    write_text(report_folder / "conversion-report.md", "\n".join(lines) + "\n")
+
+
+def report_output_folder(report: ConversionReport) -> Path:
+    if report.status != "failed":
+        return report.output
+    return report.output.parent / "_conversion-reports" / report.output.name
 
 
 def write_batch_reports(source_root: Path, out_root: Path, reports: list[ConversionReport]) -> None:
@@ -717,8 +770,9 @@ def write_batch_reports(source_root: Path, out_root: Path, reports: list[Convers
 
         report_name = slug(report.package_id or report.output.name or f"report-{index}", f"report-{index}")
         report_stem = f"{index:03d}-{report_name}"
-        json_source = report.output / "conversion-report.json"
-        md_source = report.output / "conversion-report.md"
+        source_report_folder = report_output_folder(report)
+        json_source = source_report_folder / "conversion-report.json"
+        md_source = source_report_folder / "conversion-report.md"
         json_dest = audit_dir / f"{report_stem}.json"
         md_dest = audit_dir / f"{report_stem}.md"
         if json_source.exists():
@@ -1199,7 +1253,6 @@ def convert_input(input_path: Path, out_root: Path, kind: str, clean_output: boo
         output = out_root / output_name_for(original)
         report = ConversionReport(original, output, "unknown", status="failed")
         report.add("ERROR", "Input path does not exist.", original)
-        output.mkdir(parents=True, exist_ok=True)
         write_reports(report)
         return report
 
@@ -1225,13 +1278,44 @@ def convert_input(input_path: Path, out_root: Path, kind: str, clean_output: boo
             elif detected == "audio":
                 convert_audio(working_source, output, clean_output, report)
             elif detected == "asset":
-                convert_asset(working_source, output, clean_output, report)
+                report.add(
+                    "ERROR",
+                    "Asset-pack-only package detected. FUSE loads supported asset packs directly; install this package with the FUSE installer instead of converting it.",
+                    working_source,
+                    "unsupported-asset-package",
+                )
+            elif detected == "map_tile":
+                report.add(
+                    "ERROR",
+                    "Legacy map-tile package detected. FUSE's Alina compatibility loads supported tile data directly; install this package with the FUSE installer instead of converting it.",
+                    working_source,
+                    "unsupported-map-tile-package",
+                )
+            elif detected == "native":
+                report.add(
+                    "ERROR",
+                    "This package already contains FUSE-native data. No conversion is needed; install the original package with the FUSE installer.",
+                    working_source,
+                    "unsupported-already-native",
+                )
+            elif detected == "code":
+                report.add(
+                    "ERROR",
+                    "Compiled code mod detected. The converter only translates RailLoader JSON data and cannot reproduce DLL behavior; install a compatible code mod directly or ask its author for a FUSE-native version.",
+                    working_source,
+                    "unsupported-code-package",
+                )
             else:
-                raise RuntimeError("could not detect package type; use --kind route, --kind audio, or --kind asset")
+                report.add(
+                    "ERROR",
+                    "No convertible RailLoader JSON data detected; use the FUSE installer for code, asset, map-tile, or native packages.",
+                    working_source,
+                    "unsupported-package",
+                )
 
-            scan_legacy_warnings(working_source, report)
+            if detected in {"route", "audio"}:
+                scan_legacy_warnings(working_source, report)
         except Exception as exc:
-            output.mkdir(parents=True, exist_ok=True)
             report.add("ERROR", str(exc), working_source, detected)
 
         write_reports(report)
@@ -1347,14 +1431,14 @@ def print_summary(report: ConversionReport) -> None:
         print(f"  counts: {counts}")
     if report.warnings or report.errors:
         print(f"  warnings={report.warnings} errors={report.errors}")
-    print(f"  report: {report.output / 'conversion-report.md'}")
+    print(f"  report: {report_output_folder(report) / 'conversion-report.md'}")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Convert legacy Railroader mods to FUSE packages.")
     parser.add_argument("inputs", nargs="+", help="Legacy folder, zip file, or JSON file. Drag-and-drop works on Windows.")
     parser.add_argument("--out", default=None, help="Output root. Default is Railroader Mods if found, or FUSEConverted for --batch.")
-    parser.add_argument("--kind", choices=("auto", "route", "audio", "asset"), default="auto", help="Force a package type.")
+    parser.add_argument("--kind", choices=("auto", "route", "audio"), default="auto", help="Force a JSON package type.")
     parser.add_argument("--clean", action="store_true", help="Replace existing .FUSE output folders under the output root.")
     parser.add_argument("--batch", action="store_true", help="Treat each input folder as a container and recursively convert every recognized child mod, zip, or JSON in it.")
     args = parser.parse_args()

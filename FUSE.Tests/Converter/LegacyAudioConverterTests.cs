@@ -194,6 +194,17 @@ namespace FUSE.Tests.Converter
         // BuildAudioSkeleton
         // ------------------------------------------------------------------
 
+        [Theory]
+        [InlineData("modX", "modX.FUSE.Audio")]
+        [InlineData("modX.RAIL", "modX.FUSE.Audio")]
+        [InlineData("modX.rail", "modX.FUSE.Audio")]
+        [InlineData("modX.FUSE", "modX.FUSE.Audio")]
+        public void BuildAudioSkeleton_normalizes_legacy_package_suffix(string modId, string expected)
+        {
+            var rail = LegacyAudioConverter.BuildAudioSkeleton(modId, "Mod X", "2.0", "alex");
+            Assert.Equal(expected, rail.Value<string>("id"));
+        }
+
         [Fact]
         public void BuildAudioSkeleton_carries_audio_subsection_plus_suppress_arrays()
         {

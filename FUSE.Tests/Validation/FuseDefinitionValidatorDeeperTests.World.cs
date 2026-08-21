@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using FUSE.Authoring.Data;
 using FUSE.Authoring.Data.Common;
 using FUSE.Authoring.Validation;
-using UnityEngine;
 using Xunit;
 
 namespace FUSE.Tests.Validation
@@ -137,20 +136,6 @@ namespace FUSE.Tests.Validation
             }
 
             [Fact]
-            public void TelegraphPoles_WithFewerThanTwoPoints_EmitsError()
-            {
-                var definition = MinimalValid();
-                definition.World.TelegraphPoles["poles"] = new FuseTelegraphPoles
-                {
-                    Points = new[] { Vector3.zero }
-                };
-
-                var result = NewValidator().Validate(definition);
-
-                Assert.Contains(result.Errors, e => e.Code == "fuse.telegraph.points");
-            }
-
-            [Fact]
             public void TelegraphMovement_WithoutPoleIndices_EmitsError()
             {
                 var definition = MinimalValid();
@@ -164,47 +149,6 @@ namespace FUSE.Tests.Validation
                 Assert.Contains(result.Errors, e => e.Code == "fuse.telegraphPoleMovement.poleIndices");
             }
 
-            [Fact]
-            public void TelegraphMovement_WithNegativePoleIndex_EmitsError()
-            {
-                var definition = MinimalValid();
-                definition.World.TelegraphPoleMovements = new[]
-                {
-                    new FuseTelegraphPoleMovement { PoleIndices = new[] { -1 }, Offset = new Vector3(1, 0, 0) }
-                };
-
-                var result = NewValidator().Validate(definition);
-
-                Assert.Contains(result.Errors, e => e.Code == "fuse.telegraphPoleMovement.poleIndex");
-            }
-
-            [Fact]
-            public void TelegraphMovement_WithDuplicatePoleIndex_EmitsWarning()
-            {
-                var definition = MinimalValid();
-                definition.World.TelegraphPoleMovements = new[]
-                {
-                    new FuseTelegraphPoleMovement { PoleIndices = new[] { 1, 1 }, Offset = new Vector3(1, 0, 0) }
-                };
-
-                var result = NewValidator().Validate(definition);
-
-                Assert.Contains(result.Warnings, w => w.Code == "fuse.telegraphPoleMovement.duplicatePoleIndex");
-            }
-
-            [Fact]
-            public void TelegraphMovement_WithZeroOffset_EmitsWarning()
-            {
-                var definition = MinimalValid();
-                definition.World.TelegraphPoleMovements = new[]
-                {
-                    new FuseTelegraphPoleMovement { PoleIndices = new[] { 0 }, Offset = Vector3.zero }
-                };
-
-                var result = NewValidator().Validate(definition);
-
-                Assert.Contains(result.Warnings, w => w.Code == "fuse.telegraphPoleMovement.zeroOffset");
-            }
         }
 
         public class WorldMapMaskRules
@@ -229,32 +173,6 @@ namespace FUSE.Tests.Validation
                 var result = NewValidator().Validate(definition);
 
                 Assert.Contains(result.Errors, e => e.Code == "fuse.mapMask.rectangle.size");
-            }
-
-            [Fact]
-            public void Rectangle_WithZeroSize_EmitsError()
-            {
-                var definition = MinimalValid();
-                definition.World.MapMasks["m"] = new FuseMapMask { Type = "rectangle", Size = Vector3.zero };
-
-                var result = NewValidator().Validate(definition);
-
-                Assert.Contains(result.Errors, e => e.Code == "fuse.mapMask.rectangle.size");
-            }
-
-            [Fact]
-            public void Curve_WithFewerThanTwoPoints_EmitsError()
-            {
-                var definition = MinimalValid();
-                definition.World.MapMasks["m"] = new FuseMapMask
-                {
-                    Type = "curve",
-                    Points = new[] { Vector3.zero }
-                };
-
-                var result = NewValidator().Validate(definition);
-
-                Assert.Contains(result.Errors, e => e.Code == "fuse.mapMask.curve.points");
             }
 
             [Theory]

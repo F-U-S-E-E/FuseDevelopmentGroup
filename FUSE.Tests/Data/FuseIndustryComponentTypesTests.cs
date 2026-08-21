@@ -32,6 +32,7 @@ namespace FUSE.Tests.Data
             [InlineData("passenger-stop", "passengerStop")]
             [InlineData("paxstationcomponent", "passengerStop")]
             [InlineData("alinasmapmod.paxstationcomponent", "passengerStop")]
+            [InlineData("ADRFDR.Pay4Resource", "ConfusingSupplements.IndustryComponents.Pay4Resource")]
             public void Known_Aliases_NormalizeToCanonical(string input, string expected)
             {
                 Assert.Equal(expected, FuseIndustryComponentTypes.Normalize(input));

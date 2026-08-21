@@ -72,13 +72,69 @@ namespace FUSE.Tests.Converter
         }
 
         [Fact]
-        public void DetectKind_returns_route_for_map_tile_folder()
+        public void DetectKind_returns_map_tile_for_map_tile_folder()
         {
             var folder = Path.Combine(_workspace, "tiles");
             Directory.CreateDirectory(folder);
             File.WriteAllText(Path.Combine(folder, "tile-0-0.data"), "binary");
-            // map-tile folder reports as route (route covers tiles).
+            Assert.Equal("map_tile", LegacyKindDetector.DetectKind(folder, "auto"));
+        }
+
+        [Fact]
+        public void DetectKind_returns_code_for_compiled_plugin()
+        {
+            var folder = Path.Combine(_workspace, "plugin");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "Plugin.dll"), "not-a-real-assembly");
+            var nested = Path.Combine(folder, "schemas");
+            Directory.CreateDirectory(nested);
+            File.WriteAllText(Path.Combine(nested, "example.json"),
+                "{ \"tracks\": { \"nodes\": {} } }");
+
+            Assert.Equal("code", LegacyKindDetector.DetectKind(folder, "auto"));
+        }
+
+        [Fact]
+        public void DetectKind_returns_route_for_mixed_code_and_convertible_json()
+        {
+            var folder = Path.Combine(_workspace, "mixed-plugin");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "Plugin.dll"), "not-a-real-assembly");
+            File.WriteAllText(Path.Combine(folder, "track.json"),
+                "{ \"tracks\": { \"nodes\": {} } }");
+
             Assert.Equal("route", LegacyKindDetector.DetectKind(folder, "auto"));
+        }
+
+        [Fact]
+        public void DetectKind_returns_native_for_fuse_fragment()
+        {
+            var folder = Path.Combine(_workspace, "native");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "track.fuse.json"), "{}");
+
+            Assert.Equal("native", LegacyKindDetector.DetectKind(folder, "auto"));
+        }
+
+        [Fact]
+        public void DetectKind_returns_native_for_nested_route_shaped_fuse_fragment()
+        {
+            var folder = Path.Combine(_workspace, "nested-native");
+            var data = Path.Combine(folder, "Data");
+            Directory.CreateDirectory(data);
+            File.WriteAllText(Path.Combine(data, "track.fuse.json"),
+                "{ \"tracks\": { \"nodes\": {} } }");
+
+            Assert.Equal("native", LegacyKindDetector.DetectKind(folder, "auto"));
+        }
+
+        [Fact]
+        public void DetectKind_returns_native_for_direct_fuse_fragment_file()
+        {
+            var fragment = Path.Combine(_workspace, "track.fuse.json");
+            File.WriteAllText(fragment, "{ \"tracks\": { \"nodes\": {} } }");
+
+            Assert.Equal("native", LegacyKindDetector.DetectKind(fragment, "auto"));
         }
 
         [Fact]
@@ -88,6 +144,18 @@ namespace FUSE.Tests.Converter
             Directory.CreateDirectory(folder);
             File.WriteAllText(Path.Combine(folder, "horns.json"),
                 "[ { \"layers\": [ \"a.wav\" ] } ]");
+            Assert.Equal("audio", LegacyKindDetector.DetectKind(folder, "auto"));
+        }
+
+        [Fact]
+        public void DetectKind_returns_audio_for_mixed_code_and_audio_json()
+        {
+            var folder = Path.Combine(_workspace, "mixed-audio-plugin");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "Plugin.dll"), "not-a-real-assembly");
+            File.WriteAllText(Path.Combine(folder, "horns.json"),
+                "[ { \"layers\": [ \"a.wav\" ] } ]");
+
             Assert.Equal("audio", LegacyKindDetector.DetectKind(folder, "auto"));
         }
 

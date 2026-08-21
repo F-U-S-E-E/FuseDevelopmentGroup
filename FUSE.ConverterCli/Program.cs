@@ -122,7 +122,7 @@ internal static class Program
             }
 
             var recognized = Directory.GetDirectories(input)
-                .Where(child => FuseLegacyConverter.DetectKind(child, options.Kind) != "unknown")
+                .Where(child => FuseLegacyConverter.DetectKind(child, options.Kind) != "unknown" || LooksLikeModFolder(child))
                 .OrderBy(child => child, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             if (recognized.Count == 0)
@@ -135,6 +135,28 @@ internal static class Program
         }
 
         return folders;
+    }
+
+    private static bool LooksLikeModFolder(string folder)
+    {
+        if (File.Exists(Path.Combine(folder, "Definition.json"))
+            || File.Exists(Path.Combine(folder, "Info.json")))
+        {
+            return true;
+        }
+
+        try
+        {
+            return Directory.EnumerateFiles(folder, "*.dll", SearchOption.TopDirectoryOnly).Any();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -204,8 +226,10 @@ internal static class Program
     }
 
     /// <summary>
-    /// Writes conversion-report.json / conversion-report.md (the legacy
-    /// Python converter's report file names) into the mod's output folder.
+    /// Writes conversion-report.json / conversion-report.md. Successful
+    /// conversions keep reports inside the package. Failed/unsupported
+    /// inputs use a sibling _conversion-reports folder so a report-only
+    /// directory cannot be mistaken for an installable .FUSE package.
     /// </summary>
     private static void WriteReports(
         CliOptions options,
@@ -218,9 +242,20 @@ internal static class Program
             return;
         }
 
-        if (!Directory.Exists(result.OutputFolderPath))
+        var reportFolder = result.Success
+            ? result.OutputFolderPath
+            : Path.Combine(
+                Path.GetDirectoryName(result.OutputFolderPath) ?? ".",
+                "_conversion-reports",
+                Path.GetFileName(result.OutputFolderPath));
+
+        try
         {
-            Console.Error.WriteLine($"fuse-convert: cannot write reports; output folder does not exist: {result.OutputFolderPath}");
+            Directory.CreateDirectory(reportFolder);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"fuse-convert: cannot create report folder '{reportFolder}': {ex.Message}");
             return;
         }
 
@@ -240,7 +275,7 @@ internal static class Program
             try
             {
                 File.WriteAllText(
-                    Path.Combine(result.OutputFolderPath, "conversion-report.json"),
+                    Path.Combine(reportFolder, "conversion-report.json"),
                     report.ToString(Formatting.Indented));
             }
             catch (Exception ex)
@@ -262,7 +297,7 @@ internal static class Program
                 (validationDiagnostics.Count > 0 ? FuseValidationRenderer.ToMarkdown(validationDiagnostics) : "No validation findings.\n");
             try
             {
-                File.WriteAllText(Path.Combine(result.OutputFolderPath, "conversion-report.md"), markdown);
+                File.WriteAllText(Path.Combine(reportFolder, "conversion-report.md"), markdown);
             }
             catch (Exception ex)
             {

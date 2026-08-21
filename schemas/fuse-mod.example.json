@@ -24,7 +24,8 @@
       "label": "Depot Props",
       "description": "Show optional detail props around the depot.",
       "scope": "user",
-      "default": true
+      "default": true,
+      "reloadRequired": true
     },
     "yardDetailLevel": {
       "type": "enum",
@@ -45,6 +46,18 @@
       "scope": "server",
       "default": "#D6C89A",
       "advanced": true
+    }
+  },
+  "featureRules": {
+    "optionalDepotProps": {
+      "setting": "enableDepotProps",
+      "operator": "equals",
+      "value": true,
+      "targets": {
+        "scenery": [
+          "murphy:scenery:depot"
+        ]
+      }
     }
   },
   "tracks": {
@@ -661,6 +674,40 @@
           }
         ]
       },
+      "murphy:fence:001": {
+        "type": "objectLine",
+        "assetIdentifier": "example-pack:fence-panel",
+        "spacing": 3,
+        "instanceScale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "rotationOffset": {
+          "x": 0,
+          "y": 90,
+          "z": 0
+        },
+        "snapToTerrain": true,
+        "placeAtEnd": true,
+        "maximumInstances": 256,
+        "points": [
+          {
+            "position": {
+              "x": 10,
+              "y": 1,
+              "z": 24
+            }
+          },
+          {
+            "position": {
+              "x": 52,
+              "y": 2,
+              "z": 27
+            }
+          }
+        ]
+      },
       "murphy:waterfall:001": {
         "type": "waterfall",
         "profile": "default",
@@ -680,6 +727,39 @@
             }
           }
         ]
+      }
+    },
+    "waterSurfaces": {
+      "murphy:lake:millpond": {
+        "points": [
+          {
+            "x": 92,
+            "y": 1.5,
+            "z": -42
+          },
+          {
+            "x": 132,
+            "y": 1.5,
+            "z": -38
+          },
+          {
+            "x": 128,
+            "y": 1.5,
+            "z": -12
+          },
+          {
+            "x": 88,
+            "y": 1.5,
+            "z": -16
+          }
+        ],
+        "lockHeight": true,
+        "snapToTerrain": false,
+        "enableCollider": false,
+        "uvScale": 1,
+        "triangleDensity": 0.2,
+        "maximumTriangleArea": 50,
+        "yOffset": 0
       }
     },
     "telegraphPoles": {
