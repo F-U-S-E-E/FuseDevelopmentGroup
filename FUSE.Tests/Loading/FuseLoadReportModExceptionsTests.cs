@@ -274,7 +274,9 @@ namespace FUSE.Tests.Loading
             snapshot.AppliedPackageIds = new[] { "Author.Package.base" };
             snapshot.SkippedPackages = new Dictionary<string, string>
             {
-                ["Author.Package.optional"] = "mixinto dependency missing id='Optional.Companion'"
+                ["Author.Package.optional"] =
+                    "package='Author.Package.optional' mixinto dependency missing id='Optional.Companion' " +
+                    "target='game-graph' folder='C:\\Mods\\AuthorPackage' sourceFile='legacy://optional.json'"
             };
 
             Assert.False(snapshot.HasProblems);
