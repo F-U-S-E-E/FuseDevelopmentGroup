@@ -117,6 +117,31 @@ namespace FUSE.Tests.Loading
         }
 
         [Fact]
+        public void AlinaUtilities_registry_is_not_discovered_as_a_data_package()
+        {
+            // Alina Utilities is a dual-format executable mod. Its registry.json
+            // is updater/catalog metadata, not a native FUSE definition. A FUSE
+            // requirement in Info.json must not promote that support file into
+            // the data-package loader.
+            var folder = CreateModFolder("AlinasUtils");
+            File.WriteAllText(Path.Combine(folder, "Info.json"), @"{
+  ""Id"": ""AlinaNova21.AlinasUtils"",
+  ""DisplayName"": ""Alina's Utilities"",
+  ""Version"": ""1.0.0"",
+  ""AssemblyName"": ""AlinasUtils.dll"",
+  ""EntryMethod"": ""AlinasUtils.UMM.Mod.Load"",
+  ""Requirements"": [""FUSE""],
+  ""LoadAfter"": [""FUSE""]
+}");
+            File.WriteAllText(
+                Path.Combine(folder, "registry.json"),
+                @"{ ""mods"": [{ ""id"": ""AlinaNova21.AlinasUtils"" }] }");
+
+            Assert.Empty(FuseDefinitionFileDiscovery.ResolveFallbackDefinitionPaths(folder));
+            Assert.Empty(FuseDataPackageDiscovery.DiscoverPackageFolders(_root));
+        }
+
+        [Fact]
         public void NativePackageWithMalformedInfo_IsStillDiscoveredForFaultReporting()
         {
             var folder = CreateModFolder("BrokenNativePackage");

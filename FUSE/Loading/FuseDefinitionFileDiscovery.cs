@@ -20,6 +20,7 @@ namespace FUSE.Loading
             "Catalog.json",
             "Definitions.json",
             "Definition.json",
+            "registry.json",
             "bridge_state.json",
             "bridge_command.json",
             "test_state.json"
