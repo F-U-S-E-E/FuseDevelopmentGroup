@@ -774,6 +774,13 @@ namespace FUSE.Infrastructure
                 $"FUSE legacy gameplay setting changed: {nameof(InterchangeContinuousService)}={enabled}.");
         }
 
+        internal static void PreviewInterchangeNotBeforeHour(float value)
+        {
+            InterchangeNotBeforeHour = ClampInterchangeServiceHour(
+                value,
+                DefaultInterchangeNotBeforeHour);
+        }
+
         public static void SetInterchangeNotBeforeHour(float value)
         {
             InterchangeNotBeforeHour = ClampInterchangeServiceHour(
@@ -783,6 +790,13 @@ namespace FUSE.Infrastructure
             FuseLog.Info(
                 $"FUSE legacy gameplay setting changed: {nameof(InterchangeNotBeforeHour)}=" +
                 $"{InterchangeNotBeforeHour:F2}.");
+        }
+
+        internal static void PreviewInterchangeNotAfterHour(float value)
+        {
+            InterchangeNotAfterHour = ClampInterchangeServiceHour(
+                value,
+                DefaultInterchangeNotAfterHour);
         }
 
         public static void SetInterchangeNotAfterHour(float value)
@@ -832,16 +846,31 @@ namespace FUSE.Infrastructure
             SaveUserOverride(nameof(EnableOutboundIndustryRerouting), enabled);
         }
 
+        internal static void PreviewOutboundIndustryRerouteChance(float value)
+        {
+            OutboundIndustryRerouteChance = ClampOutboundIndustryRerouteChance(value);
+        }
+
         public static void SetOutboundIndustryRerouteChance(float value)
         {
             OutboundIndustryRerouteChance = ClampOutboundIndustryRerouteChance(value);
             SaveUserOverride(nameof(OutboundIndustryRerouteChance), OutboundIndustryRerouteChance);
         }
 
+        internal static void PreviewOutboundIndustryFillFactor(float value)
+        {
+            OutboundIndustryFillFactor = ClampOutboundIndustryFillFactor(value);
+        }
+
         public static void SetOutboundIndustryFillFactor(float value)
         {
             OutboundIndustryFillFactor = ClampOutboundIndustryFillFactor(value);
             SaveUserOverride(nameof(OutboundIndustryFillFactor), OutboundIndustryFillFactor);
+        }
+
+        internal static void PreviewOutboundIndustryPaymentMultiplier(float value)
+        {
+            OutboundIndustryPaymentMultiplier = ClampOutboundIndustryPaymentMultiplier(value);
         }
 
         public static void SetOutboundIndustryPaymentMultiplier(float value)

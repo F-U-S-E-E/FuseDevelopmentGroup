@@ -107,5 +107,121 @@ namespace FUSE.Tests.Interface.MenuWindow
 
             Assert.Equal("NotEnoughRosters", Assert.Single(result).DisplayName);
         }
+
+        [Theory]
+        [InlineData("Package 'Example' requires 'Missing.Mod', but no matching package was discovered.", "Missing dependency")]
+        [InlineData("Package 'Example' conflictsWith 'Other.Mod'; matching package is enabled.", "Incompatible mod installed")]
+        [InlineData("manifest JSON: Unexpected character at line 12.", "Invalid package data")]
+        public void ClassifyPackageStatus_distinguishes_actionable_failure_types(string fault, string expected)
+        {
+            var snapshot = new FusePackageManifestSnapshot
+            {
+                Id = "Example",
+                Faults = new[] { fault }
+            };
+
+            var status = ModsPanelBuilder.ClassifyPackageStatus(snapshot);
+
+            Assert.Equal(expected, status.Label);
+            Assert.Equal("Mods Needing Attention", status.ListGroup);
+        }
+
+        [Fact]
+        public void ClassifyPackageStatus_reports_successfully_applied_package()
+        {
+            var status = ModsPanelBuilder.ClassifyPackageStatus(new FusePackageManifestSnapshot
+            {
+                Id = "Example",
+                AppliedToRuntime = true
+            });
+
+            Assert.Equal("Applied", status.Label);
+            Assert.Equal("Applied Mods", status.ListGroup);
+        }
+
+        [Fact]
+        public void ClassifyPackageStatus_keeps_optional_mixinto_skip_non_actionable()
+        {
+            var status = ModsPanelBuilder.ClassifyPackageStatus(new FusePackageManifestSnapshot
+            {
+                Id = "Example",
+                AppliedToRuntime = true,
+                SkipReason = "mixinto dependency missing 'Optional.Mod'"
+            });
+
+            Assert.Equal("Applied", status.Label);
+            Assert.Contains("Optional content is inactive", status.Detail);
+            Assert.Equal("Applied Mods", status.ListGroup);
+        }
+
+        [Fact]
+        public void ClassifyPackageStatus_does_not_hide_actionable_skip_behind_optional_fragment()
+        {
+            var status = ModsPanelBuilder.ClassifyPackageStatus(new FusePackageManifestSnapshot
+            {
+                Id = "Example",
+                AppliedToRuntime = true,
+                SkipReasons = new[]
+                {
+                    "mixinto dependency missing id='Optional.Mod'",
+                    "runtime apply exception"
+                }
+            });
+
+            Assert.Equal("Partially applied", status.Label);
+            Assert.Equal(
+                "mixinto dependency missing id='Optional.Mod'; runtime apply exception",
+                status.Detail);
+            Assert.Equal("Mods Needing Attention", status.ListGroup);
+        }
+
+        [Fact]
+        public void ClassifyPackageStatus_reports_partial_apply_without_calling_whole_package_failed()
+        {
+            var status = ModsPanelBuilder.ClassifyPackageStatus(new FusePackageManifestSnapshot
+            {
+                Id = "Example",
+                AppliedToRuntime = true,
+                RuntimeFaults = new[] { "runtime apply: one definition failed" }
+            });
+
+            Assert.Equal("Partially applied", status.Label);
+            Assert.Equal("Mods Needing Attention", status.ListGroup);
+        }
+
+        [Fact]
+        public void ClassifyPackageStatus_reports_disabled_package_separately()
+        {
+            var status = ModsPanelBuilder.ClassifyPackageStatus(new FusePackageManifestSnapshot
+            {
+                Id = "Example",
+                Disabled = true,
+                DisabledReason = "disabled in the active profile"
+            });
+
+            Assert.Equal("Disabled", status.Label);
+            Assert.Equal("disabled in the active profile", status.Detail);
+            Assert.Equal("Disabled Mods", status.ListGroup);
+        }
+
+        [Theory]
+        [InlineData(-5f, 0f)]
+        [InlineData(11f, 10f)]
+        [InlineData(4.6f, 5f)]
+        [InlineData(4.4f, 4f)]
+        public void NormalizeNumberSliderValue_clamps_and_quantizes(float value, float expected)
+        {
+            var result = ModsPanelBuilder.NormalizeNumberSliderValue(value, 0f, 10f, 1d);
+
+            Assert.Equal(expected, result);
+        }
+
+        [Fact]
+        public void NormalizeNumberSliderValue_preserves_unquantized_values()
+        {
+            var result = ModsPanelBuilder.NormalizeNumberSliderValue(4.25f, 0f, 10f, 0d);
+
+            Assert.Equal(4.25f, result);
+        }
     }
 }
