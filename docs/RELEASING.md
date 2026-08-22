@@ -1,13 +1,15 @@
 # Releasing
 
 FUSE ships through two build-and-release lanes plus one optional-mod promotion
-lane, each driven by a disjoint git tag. Pushing the tag is the only trigger —
-the matching workflow either builds and packages FUSE-owned code or promotes a
-checksum-pinned optional-mod release. Nexus-capable tags are promotion requests:
-the core and optional-mod jobs wait at the protected `nexus-release`
-environment before GitHub assigns the organization's self-hosted runner or
-provides the Nexus credential. One organization member other than the person
-who started the deployment must approve it.
+lane, each normally driven by a disjoint git tag. The core mod lane also exposes
+a manual recovery trigger for publishing an existing immutable tag whose first
+run failed before publication. The matching workflow either builds and packages
+FUSE-owned code or promotes a checksum-pinned optional-mod release.
+Nexus-capable tags are promotion requests: the core and optional-mod jobs wait
+at the protected `nexus-release` environment before GitHub assigns the
+organization's self-hosted runner or provides the Nexus credential. One
+configured organization release approver must approve it; the initiator may be
+that approver.
 
 ## Mod release — `mod-v<semver>`
 
@@ -17,6 +19,13 @@ Tag: `mod-v0.13.0`, `mod-v1.0.1-rc2`, ... (must match
 Runs [`.github/workflows/release.yml`](../.github/workflows/release.yml) on the
 **self-hosted** Railroader runner (it needs the game's Unity/UMM reference
 assemblies). Produces and attaches:
+
+If the tag-triggered run fails before publication, run the same workflow
+manually from protected `main` and supply the existing `mod-v<semver>` tag as
+`release_tag`. The workflow resolves that tag through the GitHub API, verifies
+that its commit is on protected `main`, and checks out the verified commit SHA.
+This recovery path republishes the canonical tag; it never rewrites or replaces
+the immutable release ref.
 
 - `FUSE-v<ver>.zip` — the UMM runtime mod (FUSE.dll, stamped `Info.json`,
   schemas, icon, `LICENSE`). **This is the only file that goes to Nexus.**
@@ -182,9 +191,10 @@ as a no-op, while only a missing version reaches the pinned upload action.
 
 Repository setup for Nexus publishing therefore requires all of the following:
 
-- A protected `nexus-release` environment with required organization-member
-  reviewers, self-review prevention, and deployment tag policies for `mod-v*`,
-  `tileeditorsuite-v*`, `toolshed-v*`, and `narrowgauge-v*`.
+- A protected `nexus-release` environment with required organization release
+  reviewers, approval by any configured reviewer (including the initiator),
+  deployment tag policies for `mod-v*`, `tileeditorsuite-v*`, `toolshed-v*`, and
+  `narrowgauge-v*`, plus protected `main` for the manual core-tag recovery path.
 - The existing repository secret `NEXUSMODS_API_KEY`.
 - Active tag rules for those four patterns that restrict creation to release
   administrators and prevent deletion or rewriting.

@@ -213,12 +213,33 @@ try {
   )
   foreach ($workflowPath in $workflowPaths) {
     $workflow = Get-Content -LiteralPath $workflowPath -Raw
+    $workflowName = [System.IO.Path]::GetFileName($workflowPath)
     Assert-Condition `
       -Condition ($workflow -match '(?m)^\s+environment: nexus-release\s*$') `
       -Message "$workflowPath does not use the protected Nexus environment."
-    Assert-Condition `
-      -Condition ($workflow -match 'git fetch --no-tags origin main:refs/remotes/origin/main') `
-      -Message "$workflowPath does not verify its tag against protected main."
+
+    if ($workflowName -eq 'release.yml') {
+      Assert-Condition `
+        -Condition (
+          $workflow.Contains('/git/ref/tags/') -and
+          $workflow.Contains('/git/tags/') -and
+          $workflow.Contains('/compare/$tagCommit...main') -and
+          $workflow.Contains("`$comparison.status -notin @('identical', 'ahead')")
+        ) `
+        -Message "$workflowPath does not verify its tag against protected main through the GitHub API."
+      Assert-Condition `
+        -Condition (
+          $workflow.Contains('workflow_dispatch:') -and
+          $workflow.Contains('ref: ${{ steps.verify_tag.outputs.tag_commit }}')
+        ) `
+        -Message "$workflowPath does not pin existing-tag recovery builds to the verified commit."
+    }
+    else {
+      Assert-Condition `
+        -Condition ($workflow -match 'git fetch --no-tags origin main:refs/remotes/origin/main') `
+        -Message "$workflowPath does not verify its tag against protected main."
+    }
+
     Assert-Condition `
       -Condition ($workflow -match 'Nexus-Mods/upload-action@c96019556046053aa26044b44396cd38929daf23') `
       -Message "$workflowPath does not pin Nexus upload-action beta.10."
@@ -229,7 +250,7 @@ try {
       -Condition ($workflow -notmatch '(?m)^\s+(file_group_id|file_category|archive_existing_file):') `
       -Message "$workflowPath still uses a removed Nexus upload-action input."
 
-    if ([System.IO.Path]::GetFileName($workflowPath) -eq 'release.yml') {
+    if ($workflowName -eq 'release.yml') {
       $packageIndex = $workflow.IndexOf('- name: Package Nexus variant')
       $preflightIndex = $workflow.IndexOf('- name: Preflight Nexus upload')
       $releaseIndex = $workflow.IndexOf('- name: Create GitHub release')
