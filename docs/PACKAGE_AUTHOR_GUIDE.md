@@ -6,6 +6,12 @@ This guide is the short public authoring contract for FUSE packages. The full sc
 
 Use one or more `*.fuse.json` files inside a FUSE package folder. Each file should keep one clear concern where practical: graph, scenery, industries, progressions, audio, map tiles, or asset metadata.
 
+Every top-level file ending in `*.fuse.json` is an active definition. Do not
+leave backups such as `progressions-old.fuse.json` or
+`progressions-copy.fuse.json` in the installed package: FUSE cannot distinguish
+them from intentional fragments and will apply them too. Rename archival files
+so they no longer end in `.fuse.json`, or keep them outside the release folder.
+
 Every file should include:
 
 - `schemaVersion`

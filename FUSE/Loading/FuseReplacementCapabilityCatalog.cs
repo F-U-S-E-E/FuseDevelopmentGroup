@@ -27,20 +27,16 @@ namespace FUSE.Loading
             "MapEditor",
             "MMapEditor",
             "Zamu.ConfusingSupplements",
-            "Zamu.C1CD",
             "Zamu.FallFromGrace",
             "Zamu.AbsoluteMadness",
             "Zamu.SomeKindOfMadness",
-            "Zamu.Interchange2Interchange",
             "Zamu.ForYourConvenience",
             "Zamu.StrangeCustoms",
             "StrangeCustoms",
             "ConfusingSupplements",
-            "C1CD",
             "FallFromGrace",
             "AbsoluteMadness",
             "SomeKindOfMadness",
-            "Interchange2Interchange",
             "ForYourConvenience"
         };
 

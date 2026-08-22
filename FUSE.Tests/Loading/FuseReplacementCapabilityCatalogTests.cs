@@ -8,16 +8,12 @@ namespace FUSE.Tests.Loading
         [Theory]
         [InlineData("Zamu.StrangeCustoms")]
         [InlineData("Zamu.ConfusingSupplements.FUSE")]
-        [InlineData("Zamu.C1CD")]
-        [InlineData("C1CD.FUSE")]
         [InlineData("Zamu.FallFromGrace")]
         [InlineData("FallFromGrace.FUSE")]
         [InlineData("Zamu.AbsoluteMadness")]
         [InlineData("AbsoluteMadness.FUSE")]
         [InlineData("Zamu.SomeKindOfMadness")]
         [InlineData("SomeKindOfMadness.FUSE")]
-        [InlineData("Zamu.Interchange2Interchange")]
-        [InlineData("Interchange2Interchange.FUSE")]
         [InlineData("AlinaNova21.AlinasMapMod")]
         [InlineData("AssetLoader")]
         [InlineData("Railloader.Injector")]
@@ -33,6 +29,10 @@ namespace FUSE.Tests.Loading
         [InlineData("C_L_B.DKW")]
         [InlineData("Embedded.BuildingBlocks")]
         [InlineData("Zamu.SerialTrafficControl")]
+        [InlineData("Zamu.C1CD")]
+        [InlineData("C1CD.FUSE")]
+        [InlineData("Zamu.Interchange2Interchange")]
+        [InlineData("Interchange2Interchange.FUSE")]
         public void IsProvided_does_not_waive_real_content_dependencies(string packageId)
         {
             Assert.False(FuseReplacementCapabilityCatalog.IsProvided(packageId));
