@@ -136,6 +136,12 @@ reports, scenery benchmarks, and Runtime Actions (`Reload Track/Data`,
 `Reload Terrain`, `Rebuild Caches`) for testing and recovery. Check `FUSE.log`
 after using a reload action.
 
+The Dependency Graph includes equipment and asset/code packages, not only FUSE
+map data. It reads local FUSE, UMM, RailLoader, and AssetLoader metadata plus the
+installer's offline Nexus cache, and shows missing/disabled/incompatible
+requirements with their version bounds. The in-game menu does not contact
+Nexus.
+
 Useful console commands:
 
 - `/fuse.report` - show the current human-readable load report

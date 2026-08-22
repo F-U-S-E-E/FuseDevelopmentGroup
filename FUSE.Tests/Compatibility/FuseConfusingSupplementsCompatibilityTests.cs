@@ -171,6 +171,14 @@ namespace FUSE.Tests.Compatibility
         }
 
         [Fact]
+        public void RefillerCompatibility_SearchesAllSourceAndTargetSlots()
+        {
+            Assert.True(FuseConfusingSupplementsRefillerPolicy.CanTargetReceiveFromSource(
+                new[] { "water", "diesel" },
+                new[] { "coal", "DIESEL" }));
+        }
+
+        [Fact]
         public void RefillerTransferBudget_IsSharedAcrossTargetSlots()
         {
             var remainingTransfer = 10f;

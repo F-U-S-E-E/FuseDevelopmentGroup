@@ -1,8 +1,5 @@
 using System;
-using System.Collections;
 using System.IO;
-using System.Linq;
-using System.Reflection;
 using Fuse.Core.Bridge;
 using FUSE.Loading;
 using Xunit;

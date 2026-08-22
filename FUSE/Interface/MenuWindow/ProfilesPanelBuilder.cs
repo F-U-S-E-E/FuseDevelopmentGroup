@@ -85,7 +85,7 @@ namespace FUSE.Interface.MenuWindow
 
             builder.AddSection("How profiles work");
             builder.Spacer(4f);
-            builder.AddLabel("Use profiles to manage multiple mod lists. UMM decides which mods exist; FUSE profiles only choose from UMM-active mods. If no profile is selected, everything UMM-active is enabled.");
+            builder.AddLabel("Use profiles to manage FUSE-controlled package content. UMM-disabled mods stay unavailable; native FUSE and auto-converted legacy data packages can be enabled or disabled here even when they are not UMM plugins. If no profile is selected, every available package is enabled.");
             builder.Spacer(8f);
             builder.AddLabel("You must restart the game in order for changes to take effect on the active mod profile.");
             builder.Spacer(8f);
@@ -94,10 +94,10 @@ namespace FUSE.Interface.MenuWindow
             builder.Spacer(8f);
 
             builder.Spacer(8f);
-            var activeMods = FuseModSetService.GetVisibleUmmMods();
+            var activeMods = FuseModSetService.GetVisibleProfileMods();
             if (activeMods.Count == 0)
             {
-                builder.AddField("Mods", "None found through UMM");
+                builder.AddField("Packages", "None found through UMM or FUSE package discovery");
             }
             else
             {
@@ -110,7 +110,7 @@ namespace FUSE.Interface.MenuWindow
 
         private static void BuildModListEntry(UIPanelBuilder builder, FuseUmmModInfo mod, FuseModSet modSet)
         {
-            var enabled = modSet.EnabledModIds.Contains(mod.Id);
+            var enabled = FuseModSetService.IsModEnabledInSet(modSet, mod);
             builder.HStack(row =>
             {
                 row.AddToggle(() => enabled, (_) =>
@@ -133,6 +133,7 @@ namespace FUSE.Interface.MenuWindow
             builder.FieldLabelWidth = 192f;
             builder.AddField("Id", mod.Id);
             builder.AddField("Version", mod.Version);
+            builder.AddField("Source", mod.ProfileSource);
 
             builder.Spacer(8f);
             builder.AddHRule();

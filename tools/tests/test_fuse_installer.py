@@ -386,6 +386,106 @@ def test_inspect_parses_umm_and_railloader_requirement_bounds(tmp_path):
     ]
 
 
+def test_inspect_parses_umm_version_suffix_without_changing_package_id(tmp_path):
+    zip_path = make_zip(
+        tmp_path / "gp38.zip",
+        {
+            "GP38/Info.json": info(
+                Id="GP38ATSF",
+                Requirements=["GP38SoundMod-4.4.1"],
+            ),
+        },
+    )
+
+    packages, warnings = fi.inspect_zip(zip_path)
+
+    assert warnings == []
+    assert packages[0].requirements == [
+        fi.PackageRequirement("GP38SoundMod", not_before="4.4.1")
+    ]
+
+
+def test_nexus_dependency_enrichment_requires_manifest_url_and_unique_version(tmp_path, monkeypatch):
+    package = fi.ZipPackage(
+        zip_path=tmp_path / "water-car.zip",
+        root=("WaterCar",),
+        kind="umm",
+        package_id="WaterCar",
+        display_name="Water Car",
+        version="1.0",
+        install_name="WaterCar",
+        manifest_member="WaterCar/Info.json",
+        member_count=1,
+        homepage="https://www.nexusmods.com/games/railroader/mods/503",
+    )
+
+    def fake_get(path, api_key, timeout=15.0):
+        assert api_key == "secret"
+        if path == "games/railroader/mods/503":
+            return {"data": {"id": "internal-source"}}
+        if path == "mods/internal-source/files":
+            return {"data": {"mod_files": [{"id": "file-a"}]}}
+        if path == "mod-files/file-a/versions":
+            return {"data": {"versions": [{"id": "version-a", "version": "1.0.0", "is_primary": True}]}}
+        if path == "mod-file-versions/version-a/dependencies/ranges":
+            return {
+                "dependency_definitions": [{
+                    "ranges": [{
+                        "target_mod_file": {"mod": {"game_scoped_id": "712", "name": "Shared Scripts"}},
+                        "min_version": {"version": "2.2.0"},
+                        "max_version": None,
+                    }],
+                }],
+                "dlc_dependency_definitions": [],
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr(fi, "nexus_api_get", fake_get)
+
+    assert fi.enrich_package_from_nexus(package, "secret") is True
+    assert package.requirements == [fi.PackageRequirement(
+        "nexus:railroader:712",
+        not_before="2.2.0",
+        display_name="Shared Scripts",
+        nexus_mod_id="712",
+        source="nexus",
+    )]
+    assert package.nexus_source["gameScopedModId"] == "503"
+    assert package.nexus_source["modFileVersionId"] == "version-a"
+
+
+def test_dependency_metadata_cache_is_offline_and_preserves_other_packages(tmp_path):
+    mods = tmp_path / "Mods"
+    existing_dir = mods / fi.DEPENDENCY_METADATA_DIR
+    existing_dir.mkdir(parents=True)
+    cache = existing_dir / fi.DEPENDENCY_METADATA_FILE
+    cache.write_text(json.dumps({
+        "schemaVersion": 1,
+        "packages": [{"folder": "Existing", "id": "Existing"}],
+    }), encoding="utf-8")
+    package = fi.ZipPackage(
+        zip_path=tmp_path / "car.zip",
+        root=("Car",),
+        kind="umm",
+        package_id="Car",
+        display_name="Rail Car",
+        version="1.0.0",
+        install_name="Car",
+        manifest_member="Car/Info.json",
+        member_count=1,
+        requirements=[fi.PackageRequirement("Scripts", not_before="2.0.0")],
+    )
+    result = fi.InstallResult(package, "installed", mods / "Car")
+
+    path = fi.write_dependency_metadata_cache(mods, [result], dry_run=False)
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    by_folder = {item["folder"]: item for item in data["packages"]}
+    assert set(by_folder) == {"Car", "Existing"}
+    assert by_folder["Car"]["requirements"][0]["id"] == "Scripts"
+    assert by_folder["Car"]["requirements"][0]["minimumVersion"] == "2.0.0"
+
+
 def test_dependency_preflight_reports_missing_id_bounds_and_requester(tmp_path):
     dependent = package(
         tmp_path,

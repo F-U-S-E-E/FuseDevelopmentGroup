@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using FUSE.Infrastructure;
 using Game.State;
 using Model;
@@ -54,12 +53,26 @@ namespace FUSE.Compatibility
                 return false;
             }
 
-            return targetLoadIdentifiers.Any(targetIdentifier =>
-                !string.IsNullOrWhiteSpace(targetIdentifier) &&
-                sourceLoadIdentifiers.Any(sourceIdentifier => string.Equals(
-                    sourceIdentifier,
-                    targetIdentifier,
-                    StringComparison.OrdinalIgnoreCase)));
+            foreach (var targetIdentifier in targetLoadIdentifiers)
+            {
+                if (string.IsNullOrWhiteSpace(targetIdentifier))
+                {
+                    continue;
+                }
+
+                foreach (var sourceIdentifier in sourceLoadIdentifiers)
+                {
+                    if (string.Equals(
+                            sourceIdentifier,
+                            targetIdentifier,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         internal static float Take(
@@ -116,9 +129,42 @@ namespace FUSE.Compatibility
 
         private static bool CanTargetReceiveFromSource(CarDefinition source, CarDefinition target)
         {
-            return FuseConfusingSupplementsRefillerPolicy.CanTargetReceiveFromSource(
-                source?.LoadSlots?.Select(slot => slot?.RequiredLoadIdentifier),
-                target?.LoadSlots?.Select(slot => slot?.RequiredLoadIdentifier));
+            if (source?.LoadSlots == null || target?.LoadSlots == null)
+            {
+                return false;
+            }
+
+            for (var targetIndex = 0; targetIndex < target.LoadSlots.Count; targetIndex++)
+            {
+                var targetIdentifier = target.LoadSlots[targetIndex]?.RequiredLoadIdentifier;
+                if (FindLoadSlot(source, targetIdentifier) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static int FindLoadSlot(CarDefinition definition, string requiredLoadIdentifier)
+        {
+            if (definition?.LoadSlots == null || string.IsNullOrWhiteSpace(requiredLoadIdentifier))
+            {
+                return -1;
+            }
+
+            for (var index = 0; index < definition.LoadSlots.Count; index++)
+            {
+                if (string.Equals(
+                        definition.LoadSlots[index]?.RequiredLoadIdentifier,
+                        requiredLoadIdentifier,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return index;
+                }
+            }
+
+            return -1;
         }
 
         private static Car FindNearestCompatibleCar(Car source, Car.LogicalEnd end)
@@ -189,10 +235,7 @@ namespace FUSE.Compatibility
                     continue;
                 }
 
-                var sourceIndex = source.Definition.LoadSlots.FindIndex(slot => string.Equals(
-                    slot?.RequiredLoadIdentifier,
-                    loadId,
-                    StringComparison.OrdinalIgnoreCase));
+                var sourceIndex = FindLoadSlot(source.Definition, loadId);
                 if (sourceIndex < 0)
                 {
                     continue;

@@ -1,8 +1,37 @@
 # Changelog
 
-- Kept installer actions visible on shorter desktops by sizing and centering
-  the window within the available screen and reserving the action/status rows
-  before the expanding results pane.
+- Installer 0.8.1 sizes and centers its window against the current display and
+  reserves the status and action rows before the expanding results pane. The
+  Install button therefore remains visible on 768p and other short desktops
+  without requiring the user to resize or move the window.
+
+- Reduced equipment-catalog main-thread work for installations using Lego's
+  Library of Stuff. FUSE now bypasses Lego's expensive definition-edit postfix
+  only for containers that cannot contain a requested edit; targeted
+  locomotive and railcar containers still run Lego's original behavior. The
+  incremental warm-up report now records skipped unrelated containers, slow
+  stores, and the worst store so low-end performance can be verified in-game.
+- Live Diagnostics auto-refresh now updates the visible count and log text in
+  place instead of rebuilding the complete FUSE window once per second. This
+  preserves scroll position and removes a periodic UI-layout/main-thread hitch.
+
+- Fixed FUSE Profiles omitting auto-converted RailLoader data packages. Native
+  FUSE and converted legacy packages now appear beside UMM-active mods, new
+  profiles enable every available package by default, and toggles update the
+  persisted profile instead of a detached UI copy. Disabling a package blocks
+  its data definitions, asset packs, hosted legacy assembly, and conditional
+  mixinto fragments at their shared package-admission boundary. Disabled
+  packages no longer validate their own dependencies or appear as actionable
+  skips, so an intentionally small profile does not report false package
+  faults.
+
+- Installer 0.8.0 and **Tools > Dependency Graph** now cover locomotive,
+  railcar, code-plugin, asset-pack, native FUSE, UMM, and RailLoader dependency
+  sources. UMM version suffixes are parsed correctly; verified Nexus
+  file-version requirements can fill otherwise empty manifests at install time
+  and are cached offline without storing the API key. Local explicit metadata
+  remains authoritative, stale cache entries are ignored, and Nexus OR-choice
+  groups are never misreported as multiple hard requirements.
 
 - Installer 0.7.0 repairs UMM startup order for installed code mods that
   reference FUSE-replaced RailLoader/Strange Customs assemblies. It inspects

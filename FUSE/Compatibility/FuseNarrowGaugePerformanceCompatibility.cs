@@ -39,6 +39,8 @@ namespace FUSE.Compatibility
         private const float CurveOverlapToleranceMeters = 0.085f;
 
         private static readonly object Gate = new object();
+        [ThreadStatic]
+        private static List<LineSegment> _curveSegments;
         private static Harmony _harmony;
         private static bool _installed;
         private static bool _attempted;
@@ -330,51 +332,70 @@ namespace FUSE.Compatibility
             }
 
             // NarrowGauge's original DistancePointToCurve enumerates a.Segments
-            // through LINQ Min for every 0.1m endpoint. The segment sequence is
-            // immutable for this calculation, so materialize it once while
-            // preserving the exact sampling grid, distance formula, and tolerance.
-            var segments = a.Segments.Select(item => item.Item2).ToArray();
-            if (segments.Length == 0)
+            // through LINQ Min for every 0.1m endpoint. Reuse one list per thread
+            // so every pairwise overlap test does not allocate another iterator,
+            // closure, and segment array.
+            var segments = _curveSegments;
+            if (segments == null)
             {
-                throw new InvalidOperationException(
-                    "Cannot measure overlap against a curve with no segments.");
+                segments = new List<LineSegment>(64);
+                _curveSegments = segments;
             }
 
-            var length = b.Length;
-            var overlap = 0f;
-            var count = Mathf.Max(
-                2,
-                Mathf.CeilToInt(length / CurveOverlapSampleSpacingMeters) + 1);
-            for (var index = 0; index + 1 < count; index++)
+            segments.Clear();
+            try
             {
-                var startDistance = Mathf.Min(
-                    length,
-                    index * CurveOverlapSampleSpacingMeters);
-                var endDistance = index == count - 2
-                    ? length
-                    : Mathf.Min(
-                        length,
-                        (index + 1) * CurveOverlapSampleSpacingMeters);
-                if (DistancePointToSegments(
-                        b.LinePointAtDistance(startDistance).point,
-                        segments) <= CurveOverlapToleranceMeters &&
-                    DistancePointToSegments(
-                        b.LinePointAtDistance(endDistance).point,
-                        segments) <= CurveOverlapToleranceMeters)
+                foreach (var item in a.Segments)
                 {
-                    overlap += endDistance - startDistance;
+                    segments.Add(item.Item2);
                 }
-            }
 
-            return overlap;
+                if (segments.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        "Cannot measure overlap against a curve with no segments.");
+                }
+
+                var length = b.Length;
+                var overlap = 0f;
+                var count = Mathf.Max(
+                    2,
+                    Mathf.CeilToInt(length / CurveOverlapSampleSpacingMeters) + 1);
+                for (var index = 0; index + 1 < count; index++)
+                {
+                    var startDistance = Mathf.Min(
+                        length,
+                        index * CurveOverlapSampleSpacingMeters);
+                    var endDistance = index == count - 2
+                        ? length
+                        : Mathf.Min(
+                            length,
+                            (index + 1) * CurveOverlapSampleSpacingMeters);
+                    if (DistancePointToSegments(
+                            b.LinePointAtDistance(startDistance).point,
+                            segments) <= CurveOverlapToleranceMeters &&
+                        DistancePointToSegments(
+                            b.LinePointAtDistance(endDistance).point,
+                            segments) <= CurveOverlapToleranceMeters)
+                    {
+                        overlap += endDistance - startDistance;
+                    }
+                }
+
+                return overlap;
+            }
+            finally
+            {
+                segments.Clear();
+            }
         }
 
         private static float DistancePointToSegments(
             Vector3 point,
-            LineSegment[] segments)
+            List<LineSegment> segments)
         {
             var minimum = float.MaxValue;
-            for (var index = 0; index < segments.Length; index++)
+            for (var index = 0; index < segments.Count; index++)
             {
                 var segment = segments[index];
                 var start = segment.a.point;

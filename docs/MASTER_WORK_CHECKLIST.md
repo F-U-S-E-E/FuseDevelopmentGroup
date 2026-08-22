@@ -9,11 +9,11 @@ Status key: **Open**, **Investigating**, **Implemented**, **Needs in-game test**
 
 ## Current automated release gate (2026-08-20)
 
-- FUSE net48 suite: **2,205 passed, 9 opt-in real-pack fixtures skipped, 0 failed**.
-- FUSE Core/schema/help suite: **122 passed, 0 failed**.
+- FUSE net48 suite: **2,269 passed, 9 opt-in real-pack fixtures skipped, 0 failed**.
+- FUSE Core/schema/help suite: **126 passed, 0 failed**.
 - External editor UI suite: **96 passed, 0 failed**.
-- Tile Editor desktop suite: **126 passed, 0 failed**.
-- Installer/tools suite: **79 passed, 0 failed**.
+- Tile Editor desktop suite: **128 passed, 0 failed**.
+- Installer/tools suite: **88 passed, 0 failed**.
 - FUSE editor bridge, Toolshed, Narrow Gauge, and Railroad Operations validation
   harness all build/validate successfully; companion-mod builds were run with
   deployment disabled.
@@ -45,8 +45,76 @@ is suppressed.
 - [x] Separate genuine package/load failures from ordinary Unity/runtime
   diagnostics so normal exceptions do not alarm users.
 
+## Performance and main-thread acceptance targets
+
+These targets apply to FUSE, Tile Editor, and Toolshed. Narrow Gauge is outside
+this performance pass. Measurements must include a large real-world mod set and
+a representative low-end system; a fast developer PC is not sufficient proof.
+
+Clean-profile baseline captured 2026-08-20 on the deployed review FUSE build:
+0 FUSE data packages, 82 equipment stores prepared in 227.3 ms, worst store
+10.3 ms, no store over the 25 ms slow threshold, and one 397 ms startup frame
+whose measured FUSE-pump portion was 1.4 ms. This proves the instrumentation and
+base-game path, but does not replace the required large-mod-set/low-end run.
+
+- [ ] Attribute recurring 2–4 second game-tick stalls to a named FUSE,
+  companion-mod, game, or third-party phase. No FUSE-owned periodic callback may
+  perform an unbounded scene scan, package scan, file read, JSON parse, report
+  rebuild, or asset-store traversal on Unity's main thread.
+  FUSE frame-spike logs now include the slowest measured runtime-pump phase;
+  Toolshed's exact two-second facility/interchange scans were made
+  change-driven, lookup-cached, and exponentially backed off. A fresh field
+  capture is still required to attribute any stall that remains.
+- [ ] Move thread-safe file I/O, JSON/schema parsing, dependency indexing, IPC
+  decoding, report preparation, and pure calculations off the Unity main
+  thread where ordering permits. Marshal only the final Unity/game-database
+  mutation back to the main thread.
+- [ ] Keep Unity objects, scene hierarchy access, game databases, Harmony
+  mutation, and AssetBundle/renderer operations on the main thread, but make
+  them change-driven, cached, nearest-first where visual priority matters, and
+  bounded by a measured per-frame budget.
+  Current implementation keeps Unity access on the main thread, shares lazy
+  scene indexes across unresolved Toolshed definitions, drains waybill repair
+  in a two-car-per-frame queue, and centralizes Tile Editor grade-label camera
+  work at 20 Hz.
+- [ ] Eliminate the cold buy-menu freeze with the full equipment corpus while
+  preserving Lego definition edits, locomotive/railcar availability, and
+  customization behavior. Record total warm-up work, worst store, slow-store
+  count, and click-to-open latency.
+  The warm-up now skips Lego's expensive container postfix for stores that
+  cannot contain a Lego-authored identifier and logs slow-store count, worst
+  store, and total work. Full-corpus click timing remains an in-game gate.
+- [ ] Improve package discovery, definition load, map apply, track rebuild, and
+  editor save/reload times without changing native FUSE schema behavior or
+  legacy load order.
+- [ ] Prevent FUSE scenery from visibly appearing near or in front of the active
+  camera after player control begins. Loading-screen release and streaming
+  budgets must prioritize camera-near content without creating a single-frame
+  activation spike.
+- [ ] Tile Editor overlays, previews, IPC, caches, vegetation/terrain workflows,
+  and save monitoring must remain responsive on a whole-map project and must
+  not poll or rebuild unchanged state every frame.
+  Grade-label billboarding is centralized, heartbeat disk writes are coalesced
+  off-thread, and the desktop whole-map renderer idles at 15 Hz (5 Hz minimized)
+  while immediately returning to 60 Hz for active editing and generation.
+- [ ] Toolshed facilities, storage/particle animations, turntables, and rolling-
+  stock helpers must avoid duplicate Update/LateUpdate work and unchanged
+  renderer/GameObject writes.
+  Link-and-pin visuals now refresh at 10 Hz and only write changed state;
+  service animations cache normalized storage/transform state; startup loader,
+  facility, and selective-interchange discovery reuse bounded scene scans.
+- [ ] Capture before/after frame-time, main-thread time, load time, worst spike,
+  queue depth, and memory/GC evidence in the in-game performance report. A code
+  review or passing unit suite alone does not close this gate.
+  The reproducible team procedure and required evidence bundle are published in
+  [`PERFORMANCE_TESTING.md`](PERFORMANCE_TESTING.md).
+
 ## Live GitHub issue intake (2026-08-19)
 
+- [ ] #249 Equipment roster will not open in single- or multiplayer — report is
+  against public 1.0.4 and contains no usable `/fuse.report` or downloadable log
+  link in the issue body. Retest the current review build after catalog warm-up;
+  capture the click-time exception and package set before attributing it to FUSE.
 - [x] #240 Convertor error — converter fix and regression fixture implemented;
   issue remains open pending release/user confirmation.
 - [x] #239 Whittier Sawmill Trackmod Issue (ARC Whittier) — span rebinding,
@@ -289,6 +357,12 @@ is suppressed.
   existing string/object/list shapes. The installed Alina Utilities manifest
   was repaired and its original retained under
   `Mods\ModBackups\FUSEInstaller\CompatibilityManifests-*`.
+- [x] Profiles list native FUSE and auto-converted legacy data packages in
+  addition to UMM-active entries. New profiles start with every available
+  package enabled; existing profiles can toggle converted packages by id or
+  folder. The persisted profile gate excludes disabled package data files,
+  asset packs, hosted legacy code, dependency inventory, and conditional
+  mixinto fragments before runtime application.
 - [ ] Verify UMM drag-and-drop behavior and the previously reported 1.0.2 install
   failure.
 
@@ -307,6 +381,13 @@ is suppressed.
   requester, and where to obtain/enable it when known. Installer batch preflight
   also distinguishes FUSE-provided legacy contracts from unrelated dependencies
   and propagates a failed provider to its dependents before any writes.
+- [x] Equipment dependency reporting covers locomotive/railcar UMM manifests,
+  legacy `Definition.json`, and AssetLoader package classification. Installer
+  0.8 correctly splits UMM ids such as `GP38SoundMod-4.4.1`, can fill a genuinely
+  empty manifest from a verified Nexus page/file-version dependency record, and
+  writes the result to an offline cache. The in-game graph never performs a
+  network request, local metadata wins, and stale/uninstalled cache entries are
+  ignored.
 - [x] Provide a complete package-scoped export suitable for a mod author, while
   keeping the Status page concise and actionable. **Copy Mod Info** now includes
   the full structured diagnostic block for only the selected package; the full
@@ -463,13 +544,16 @@ documented in [`BASE_GAME_MAP_AUTHORING_AUDIT.md`](BASE_GAME_MAP_AUTHORING_AUDIT
 - [x] Rewrite the local FUSE install, getting started, troubleshooting, migration,
   converter scope, package authoring, schema, operations, diagnostics, and
   command documentation.
-- [ ] Complete FUSE wiki and sync published pages.
+- [x] Complete FUSE wiki and sync published pages. Published 15 pages plus Home
+  and sidebar from source `0447e49` as wiki commit `3e54f4f` on 2026-08-20.
 - [x] Complete the local Tile Editor wiki source: installation/runtime prerequisite, all tabs,
   every key binding, selection, terrain/vegetation, tiles, track/grades,
   scenery/objects, roads/water, industries/operations, loaders/custom loaders,
   passenger, interchanges, signals/CTC, export modes, validation, and examples.
+  Published from source `c711590` as wiki commit `792f21c`.
 - [x] Complete the local Toolshed wiki source including custom-loader authoring and editor catalog
   integration.
+  Published from source `c72cb12` as wiki commit `7a2732b`.
 - [x] Complete the local Narrow Gauge wiki source and identify FUSE/editor integration points.
 - [x] Explain that the converter handles RailLoader JSON/data packages, not
   arbitrary compiled code mods.

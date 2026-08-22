@@ -1195,6 +1195,14 @@ namespace FUSE.Loading
                 return false;
             }
 
+            if (FuseUmmState.HasActiveRuntimeEntry(manifest.FolderPath, manifest.Id))
+            {
+                FuseLog.Info(
+                    $"FUSE legacy support skipped old-loader plugin hosting for '{manifest.Id}' " +
+                    "because its active Unity Mod Manager entry already owns the plugin lifecycle.");
+                return false;
+            }
+
             if (FuseUmmState.TryGetDisabledReason(manifest.FolderPath, manifest.Id, out var disabledReason))
             {
                 FuseLog.Info($"FUSE legacy support skipped UMM-disabled old-loader package '{manifest.Id}' reason='{disabledReason}'.");

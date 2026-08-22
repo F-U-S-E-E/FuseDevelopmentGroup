@@ -42,6 +42,19 @@ The compatibility-guard and observed-exception lists on this page are evidence,
 not automatic bug verdicts. Include them when they repeat alongside a visible
 problem.
 
+### A Two- To Four-Second Stutter Keeps Repeating
+
+Enable **Frame Spike Diagnostics** in FUSE Settings, reproduce for at least a
+minute, then attach `FUSE.log` and `Player.log`. Each retained spike includes GC
+deltas, streaming and track queue depths, equipment completion depth, and the
+slowest measured FUSE runtime-pump phase. Do not infer the cause from ordinary
+Unity exceptions alone. A named phase identifies where to investigate; `none
+measured` is equally useful because it points outside FUSE's pump.
+
+For a buy-menu stall, wait for the equipment-catalog warm-up completion line and
+include its total work, slow-store count, and worst-store fields. Report whether
+the first click happened before or after that line.
+
 ### Faulted Package
 
 Run `/fuse.loaded` and `/fuse.report`. Check `FUSE.log` for the package id and phase. Package failures should not prevent unrelated packages from loading.

@@ -15,7 +15,7 @@ namespace FUSE.Infrastructure
     {
         private static readonly object Sync = new object();
         private static FuseModSetStore _store;
-        private static string _lastStatus = "No mod set is loaded. All UMM-active FUSE packages are enabled.";
+        private static string _lastStatus = "No mod set is loaded. All UMM-active and FUSE-managed packages are enabled.";
 
         public static string LastStatus
         {
@@ -48,7 +48,7 @@ namespace FUSE.Infrastructure
                 {
                     EnsureLoaded();
                     var set = FindSet(_store.ActiveSetId);
-                    return set == null ? "None - all UMM-active packages enabled" : set.Name;
+                    return set == null ? "None - all available packages enabled" : set.Name;
                 }
             }
         }
@@ -73,9 +73,100 @@ namespace FUSE.Infrastructure
                 .ToArray();
         }
 
-        public static IReadOnlyList<FuseUmmModInfo> GetEnabledVisibleUmmMods()
+        public static IReadOnlyList<FuseUmmModInfo> GetVisibleProfileMods()
         {
-            return GetVisibleUmmMods()
+            return MergeVisibleProfileMods(
+                FuseUmmState.GetActiveMods(includeFuse: false),
+                FuseDataPackageDiscovery.GetPackageManifestSnapshots());
+        }
+
+        internal static IReadOnlyList<FuseUmmModInfo> MergeVisibleProfileMods(
+            IEnumerable<FuseUmmModInfo> activeUmmMods,
+            IEnumerable<FusePackageManifestSnapshot> dataPackages)
+        {
+            var result = (activeUmmMods ?? Enumerable.Empty<FuseUmmModInfo>())
+                .Where(mod => mod != null)
+                .Select(mod => new FuseUmmModInfo
+                {
+                    Id = mod.Id ?? string.Empty,
+                    DisplayName = mod.DisplayName ?? string.Empty,
+                    Version = mod.Version ?? string.Empty,
+                    FolderName = mod.FolderName ?? string.Empty,
+                    Path = mod.Path ?? string.Empty,
+                    Enabled = mod.Enabled,
+                    IsFuseDataPackage = mod.IsFuseDataPackage,
+                    IsLegacyConverted = mod.IsLegacyConverted,
+                    ProfileSource = string.IsNullOrWhiteSpace(mod.ProfileSource) ? "UMM-active" : mod.ProfileSource
+                })
+                .ToList();
+
+            foreach (var package in dataPackages ?? Enumerable.Empty<FusePackageManifestSnapshot>())
+            {
+                if (package == null ||
+                    string.Equals(package.Id, "FUSE", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(package.FolderName, "FUSE", StringComparison.OrdinalIgnoreCase) ||
+                    (package.Disabled && !IsDisabledByFuseProfile(package.DisabledReason)))
+                {
+                    continue;
+                }
+
+                var existing = result.FirstOrDefault(mod =>
+                    FuseDeclaredPackageRelationship.SamePackageId(mod.Id, package.Id) ||
+                    (!string.IsNullOrWhiteSpace(package.FolderName) &&
+                     string.Equals(mod.FolderName, package.FolderName, StringComparison.OrdinalIgnoreCase)));
+                var source = package.IsLegacyConverted ? "legacy converted data" : "FUSE data";
+                if (existing != null)
+                {
+                    existing.IsFuseDataPackage = true;
+                    existing.IsLegacyConverted = existing.IsLegacyConverted || package.IsLegacyConverted;
+                    if (existing.ProfileSource.IndexOf(source, StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        existing.ProfileSource += " + " + source;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(existing.DisplayName))
+                    {
+                        existing.DisplayName = package.DisplayName;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(existing.Version))
+                    {
+                        existing.Version = package.Version;
+                    }
+
+                    continue;
+                }
+
+                result.Add(new FuseUmmModInfo
+                {
+                    Id = package.Id ?? string.Empty,
+                    DisplayName = string.IsNullOrWhiteSpace(package.DisplayName) ? package.Id : package.DisplayName,
+                    Version = package.Version ?? string.Empty,
+                    FolderName = package.FolderName ?? string.Empty,
+                    Path = package.FolderPath ?? string.Empty,
+                    Enabled = !package.Disabled,
+                    IsFuseDataPackage = true,
+                    IsLegacyConverted = package.IsLegacyConverted,
+                    ProfileSource = source
+                });
+            }
+
+            return result
+                .Where(mod => !string.IsNullOrWhiteSpace(mod.Id) || !string.IsNullOrWhiteSpace(mod.FolderName))
+                .OrderBy(mod => mod.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(mod => mod.Id, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        private static bool IsDisabledByFuseProfile(string reason)
+        {
+            return !string.IsNullOrWhiteSpace(reason) &&
+                   reason.IndexOf("disabled by active FUSE mod set", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        public static IReadOnlyList<FuseUmmModInfo> GetEnabledVisibleProfileMods()
+        {
+            return GetVisibleProfileMods()
                 .Where(IsModEnabledInActiveSet)
                 .OrderBy(mod => mod.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(mod => mod.Id, StringComparer.OrdinalIgnoreCase)
@@ -84,7 +175,7 @@ namespace FUSE.Infrastructure
 
         public static string GetActiveSetFingerprint()
         {
-            var mods = GetEnabledVisibleUmmMods();
+            var mods = GetEnabledVisibleProfileMods();
             var input = string.Join(
                 "\n",
                 mods.Select(mod => $"{mod.Id}|{mod.Version}|{mod.FolderName}").ToArray());
@@ -107,9 +198,9 @@ namespace FUSE.Infrastructure
 
         public static string GetSetPackageSummary(FuseModSet set)
         {
-            var visible = GetVisibleUmmMods();
+            var visible = GetVisibleProfileMods();
             var enabled = visible.Count(m => IsModEnabledInSet(set, m));
-            return $"{enabled}/{visible.Count} UMM-active mod(s) enabled by FUSE profile";
+            return $"{enabled}/{visible.Count} available package(s) enabled by FUSE profile";
         }
 
         public static string ExportActiveManifest()
@@ -118,13 +209,14 @@ namespace FUSE.Infrastructure
             {
                 EnsureLoaded();
                 var path = Path.Combine(Path.GetDirectoryName(GetStorePath()) ?? Application.persistentDataPath, "active-mod-set-manifest.json");
-                var mods = GetEnabledVisibleUmmMods()
+                var mods = GetEnabledVisibleProfileMods()
                     .Select(mod => new
                     {
                         mod.Id,
                         mod.DisplayName,
                         mod.Version,
-                        mod.FolderName
+                        mod.FolderName,
+                        mod.ProfileSource
                     })
                     .ToArray();
                 var manifest = new
@@ -132,7 +224,7 @@ namespace FUSE.Infrastructure
                     exportedUtc = DateTime.UtcNow.ToString("O"),
                     activeSet = ActiveSetName,
                     fingerprint = GetActiveSetFingerprint(),
-                    policy = "UMM-disabled mods are excluded before FUSE mod-set filtering.",
+                    policy = "UMM-disabled mods are excluded before FUSE profile filtering; non-UMM FUSE and converted legacy data packages remain profile-selectable.",
                     mods
                 };
                 Directory.CreateDirectory(Path.GetDirectoryName(path) ?? string.Empty);
@@ -181,7 +273,7 @@ namespace FUSE.Infrastructure
                 EnsureLoaded();
                 _store.ActiveSetId = string.Empty;
                 Save();
-                _lastStatus = "No mod set is loaded. All UMM-active FUSE packages are enabled.";
+                _lastStatus = "No mod set is loaded. All UMM-active and FUSE-managed packages are enabled.";
             }
         }
 
@@ -233,37 +325,61 @@ namespace FUSE.Infrastructure
             lock (Sync)
             {
                 EnsureLoaded();
-
-                var ids = ToMutableSet(set.EnabledModIds);
-                var folders = ToMutableSet(set.EnabledFolderNames);
-                var currentlyEnabled = IsModEnabledInSet(set, mod);
-                if (currentlyEnabled)
+                var storedSet = FindSet(set.Id);
+                if (storedSet == null)
                 {
-                    ids.Remove(mod.Id ?? string.Empty);
-                    folders.Remove(mod.FolderName ?? string.Empty);
-                    _lastStatus = $"Turned off '{mod.DisplayName}' in mod set '{set.Name}'.";
-                }
-                else
-                {
-                    if (!string.IsNullOrWhiteSpace(mod.Id))
-                    {
-                        ids.Add(mod.Id);
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(mod.FolderName))
-                    {
-                        folders.Add(mod.FolderName);
-                    }
-
-                    _lastStatus = $"Turned on '{mod.DisplayName}' in mod set '{set.Name}'.";
+                    _lastStatus = $"Could not update mod set '{set.Name}' because it no longer exists.";
+                    return false;
                 }
 
-                set.EnabledModIds = ids.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray();
-                set.EnabledFolderNames = folders.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray();
-                set.UpdatedUtc = DateTime.UtcNow.ToString("O");
+                var nowEnabled = ToggleModMembership(storedSet, mod);
+                if (!ReferenceEquals(storedSet, set))
+                {
+                    set.EnabledModIds = storedSet.EnabledModIds.ToArray();
+                    set.EnabledFolderNames = storedSet.EnabledFolderNames.ToArray();
+                    set.UpdatedUtc = storedSet.UpdatedUtc;
+                }
+
+                _lastStatus = nowEnabled
+                    ? $"Turned on '{mod.DisplayName}' in mod set '{storedSet.Name}'."
+                    : $"Turned off '{mod.DisplayName}' in mod set '{storedSet.Name}'.";
                 Save();
                 return true;
             }
+        }
+
+        internal static bool ToggleModMembership(FuseModSet set, FuseUmmModInfo mod)
+        {
+            if (set == null || mod == null)
+            {
+                return false;
+            }
+
+            var ids = ToMutableSet(set.EnabledModIds);
+            var folders = ToMutableSet(set.EnabledFolderNames);
+            var currentlyEnabled = IsModEnabledInSet(set, mod);
+            if (currentlyEnabled)
+            {
+                ids.Remove(mod.Id ?? string.Empty);
+                folders.Remove(mod.FolderName ?? string.Empty);
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(mod.Id))
+                {
+                    ids.Add(mod.Id);
+                }
+
+                if (!string.IsNullOrWhiteSpace(mod.FolderName))
+                {
+                    folders.Add(mod.FolderName);
+                }
+            }
+
+            set.EnabledModIds = ids.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray();
+            set.EnabledFolderNames = folders.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray();
+            set.UpdatedUtc = DateTime.UtcNow.ToString("O");
+            return !currentlyEnabled;
         }
 
         public static bool HasActiveSet
@@ -299,8 +415,13 @@ namespace FUSE.Infrastructure
                     return true;
                 }
 
-                return IsPackageMatched(set, packageId, folderPath);
+                return IsPackageEnabledInSet(set, packageId, folderPath);
             }
+        }
+
+        internal static bool IsPackageEnabledInSet(FuseModSet set, string packageId, string folderPath)
+        {
+            return set == null || IsPackageMatched(set, packageId, folderPath);
         }
 
         public static string GetPackageDisabledReason(string packageId, string folderPath)
@@ -367,29 +488,45 @@ namespace FUSE.Infrastructure
 
         private static FuseModSet CreateSetFromCurrentActiveModsNoLock()
         {
-            var mods = FuseUmmState.GetActiveMods(includeFuse: false).ToArray();
+            var mods = GetVisibleProfileMods().ToArray();
             var now = DateTime.UtcNow.ToString("O");
-            var set = new FuseModSet
-            {
-                Id = "set-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss"),
-                Name = NextSetName(),
-                EnabledModIds = mods.Select(mod => mod.Id)
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
-                    .ToArray(),
-                EnabledFolderNames = mods.Select(mod => mod.FolderName)
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
-                    .ToArray(),
-                CreatedUtc = now,
-                UpdatedUtc = now
-            };
+            var set = CreateSetDefinition(
+                "set-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss"),
+                NextSetName(),
+                mods,
+                now);
 
             _store.Sets.Add(set);
             _store.ActiveSetId = set.Id;
             return set;
+        }
+
+        internal static FuseModSet CreateSetDefinition(
+            string id,
+            string name,
+            IEnumerable<FuseUmmModInfo> mods,
+            string timestamp)
+        {
+            var candidates = (mods ?? Enumerable.Empty<FuseUmmModInfo>())
+                .Where(mod => mod != null)
+                .ToArray();
+            return new FuseModSet
+            {
+                Id = id ?? string.Empty,
+                Name = name ?? string.Empty,
+                EnabledModIds = candidates.Select(mod => mod.Id)
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                EnabledFolderNames = candidates.Select(mod => mod.FolderName)
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                CreatedUtc = timestamp ?? string.Empty,
+                UpdatedUtc = timestamp ?? string.Empty
+            };
         }
 
         private static string NextSetName()
@@ -410,7 +547,7 @@ namespace FUSE.Infrastructure
                 StringComparer.OrdinalIgnoreCase);
         }
 
-        private static bool IsModEnabledInSet(FuseModSet set, FuseUmmModInfo mod)
+        internal static bool IsModEnabledInSet(FuseModSet set, FuseUmmModInfo mod)
         {
             if (set == null || mod == null)
             {

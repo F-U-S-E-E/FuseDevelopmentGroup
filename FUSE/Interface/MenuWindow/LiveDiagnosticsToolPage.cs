@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
+using TMPro;
 using UI.Builder;
 using UI.Common;
 using UnityEngine;
@@ -22,18 +23,10 @@ namespace FUSE.Interface.MenuWindow
         private static string _levelFilter = "All";
         private static string _search = string.Empty;
         private static bool _autoRefresh;
-        private static float _nextAutoRefreshAt;
-
-        internal static bool ShouldAutoRefresh(float now)
-        {
-            if (!_autoRefresh || now < _nextAutoRefreshAt)
-            {
-                return false;
-            }
-
-            _nextAutoRefreshAt = now + 1f;
-            return true;
-        }
+        private static bool _hasViewSnapshot;
+        private static float _nextViewSnapshotAt;
+        private static int _visibleCount;
+        private static string _visibleLines = string.Empty;
 
         public static void Build(UIPanelBuilder builder)
         {
@@ -52,7 +45,17 @@ namespace FUSE.Interface.MenuWindow
         {
             builder.AddSection("FUSE Log");
             builder.AddField("File", string.IsNullOrWhiteSpace(FuseLog.LogFilePath) ? "unavailable" : FuseLog.LogFilePath);
-            builder.AddField("Buffered", FuseLiveLogBuffer.Count + " / " + FuseLiveLogBuffer.Capacity + " recent entries");
+            if (_autoRefresh)
+            {
+                builder.AddField(
+                    "Buffered",
+                    () => FuseLiveLogBuffer.Count + " / " + FuseLiveLogBuffer.Capacity + " recent entries",
+                    UIPanelBuilder.Frequency.Periodic);
+            }
+            else
+            {
+                builder.AddField("Buffered", FuseLiveLogBuffer.Count + " / " + FuseLiveLogBuffer.Capacity + " recent entries");
+            }
 
             var selectedLevel = Math.Max(0, Array.IndexOf(LevelFilters, _levelFilter));
             builder.AddField(
@@ -62,6 +65,7 @@ namespace FUSE.Interface.MenuWindow
                     if (index >= 0 && index < LevelFilters.Length)
                     {
                         _levelFilter = LevelFilters[index];
+                        InvalidateViewSnapshot();
                         builder.Rebuild();
                     }
                 })).Height(32f);
@@ -72,17 +76,22 @@ namespace FUSE.Interface.MenuWindow
 
             builder.HStack(row =>
             {
-                row.AddButtonCompact("Refresh", builder.Rebuild);
+                row.AddButtonCompact("Refresh", () =>
+                {
+                    InvalidateViewSnapshot();
+                    builder.Rebuild();
+                });
                 row.AddButtonCompact(_autoRefresh ? "Pause Auto Refresh" : "Start Auto Refresh", () =>
                 {
                     _autoRefresh = !_autoRefresh;
-                    _nextAutoRefreshAt = 0f;
+                    InvalidateViewSnapshot();
                     builder.Rebuild();
                 });
                 row.AddButtonCompact("Clear Filter", () =>
                 {
                     _levelFilter = "All";
                     _search = string.Empty;
+                    InvalidateViewSnapshot();
                     builder.Rebuild();
                 });
             }, 6f).Height(32f);
@@ -120,11 +129,38 @@ namespace FUSE.Interface.MenuWindow
                     ? "Auto refresh is on (once per second)."
                     : "This in-game snapshot refreshes on demand. Open Live Console for a continuously scrolling second-screen view.");
 
-            var entries = VisibleEntries();
-            builder.AddField("Visible", entries.Length.ToString());
-            var lines = FormatEntries(entries);
-            AddWrappedLabel(builder, string.IsNullOrWhiteSpace(lines) ? "No matching FUSE log entries." : lines,
-                Math.Min(1400f, Math.Max(100f, entries.Length * 19f)));
+            RefreshViewSnapshot(force: true);
+            if (_autoRefresh)
+            {
+                builder.AddField(
+                    "Visible",
+                    () =>
+                    {
+                        RefreshViewSnapshot(force: false);
+                        return _visibleCount.ToString();
+                    },
+                    UIPanelBuilder.Frequency.Periodic);
+                var logView = builder.AddLabel(
+                    () =>
+                    {
+                        RefreshViewSnapshot(force: false);
+                        return string.IsNullOrWhiteSpace(_visibleLines)
+                            ? "No matching FUSE log entries."
+                            : _visibleLines;
+                    },
+                    UIPanelBuilder.Frequency.Periodic);
+                ConfigureLogView(logView);
+            }
+            else
+            {
+                builder.AddField("Visible", _visibleCount.ToString());
+                var logView = builder.AddLabel(
+                    string.IsNullOrWhiteSpace(_visibleLines)
+                        ? "No matching FUSE log entries."
+                        : _visibleLines,
+                    text => ConfigureLogText(text));
+                logView.Height(1400f);
+            }
         }
 
         private static void BuildContainedEvents(UIPanelBuilder builder)
@@ -177,10 +213,70 @@ namespace FUSE.Interface.MenuWindow
         private static FuseLiveLogEntry[] VisibleEntries() =>
             FuseLiveLogBuffer.Snapshot(_levelFilter, _search, 120);
 
-        private static string FormatEntries(FuseLiveLogEntry[] entries) =>
-            string.Join(Environment.NewLine, (entries ?? Array.Empty<FuseLiveLogEntry>())
-                .Select(entry => entry.FormatLine())
-                .ToArray());
+        private static string FormatEntries(FuseLiveLogEntry[] entries)
+        {
+            if (entries == null || entries.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            var text = new StringBuilder(entries.Length * 96);
+            for (var index = 0; index < entries.Length; index++)
+            {
+                if (index > 0)
+                {
+                    text.AppendLine();
+                }
+
+                text.Append(entries[index].FormatLine());
+            }
+
+            return text.ToString();
+        }
+
+        private static void InvalidateViewSnapshot()
+        {
+            _hasViewSnapshot = false;
+            _nextViewSnapshotAt = 0f;
+        }
+
+        private static void RefreshViewSnapshot(bool force)
+        {
+            var now = Time.unscaledTime;
+            if (!force && _hasViewSnapshot && (!_autoRefresh || now < _nextViewSnapshotAt))
+            {
+                return;
+            }
+
+            var entries = VisibleEntries();
+            _visibleCount = entries.Length;
+            _visibleLines = FormatEntries(entries);
+            _hasViewSnapshot = true;
+            _nextViewSnapshotAt = now + 0.9f;
+        }
+
+        private static void ConfigureLogView(RectTransform view)
+        {
+            if (view == null)
+            {
+                return;
+            }
+
+            ConfigureLogText(view.GetComponent<TMP_Text>());
+            view.Height(1400f);
+        }
+
+        private static void ConfigureLogText(TMP_Text text)
+        {
+            if (text == null)
+            {
+                return;
+            }
+
+            text.enableWordWrapping = true;
+            text.overflowMode = TextOverflowModes.Ellipsis;
+            text.alignment = TextAlignmentOptions.Left;
+        }
 
         private static string BuildDiagnosticsText()
         {
