@@ -27,8 +27,10 @@ that its commit is on protected `main`, and checks out the verified commit SHA.
 This recovery path republishes the canonical tag; it never rewrites or replaces
 the immutable release ref.
 
-- `FUSE-v<ver>.zip` — the UMM runtime mod (FUSE.dll, stamped `Info.json`,
-  schemas, icon, `LICENSE`). **This is the only file that goes to Nexus.**
+- `FUSE-v<ver>.zip` — on GitHub, the direct-UMM runtime mod (FUSE.dll, stamped
+  `Info.json`, schemas, icon, `LICENSE`). Nexus receives a same-named
+  extraction-first archive containing the Nexus-stamped `FUSE/` folder and
+  `FUSE-Installer.exe` at its root.
 - `FUSE-Complete-v<ver>.zip` — everything in one download, GitHub only:
   `Mods/FUSE`, `Mods/FUSE.LiveBridge`, `Tools/` (converter, installer,
   folder-converter), plus `LICENSE` and `INSTALL.md`. `Mods/` sits at the
@@ -40,19 +42,20 @@ Both mod zips carry `LICENSE`; FUSE ships under the AGPL-3.0, which requires
 conveying the license with the binary, and `scripts/Validate-ModPackage.cs`
 fails the release if it is missing.
 
-Nexus receives the core zip alone, on purpose. A player installing from Nexus
-needs one file; the converter, installer and dev bridge only belong in front of
-package authors, who get them from GitHub.
+Nexus receives one player-facing zip containing the core `FUSE/` folder and the
+self-contained installer. Users extract it and either run `FUSE-Installer.exe`
+or copy the adjacent `FUSE/` folder manually. The converter, folder-converter,
+complete author bundle, and development bridge remain GitHub-only.
 
 The Nexus upload also carries a **provenance stamp** so the in-game update check
 can send an out-of-date player back to where they installed. Every GitHub artifact
 ships the committed `Info.json` default `"Source": "github"`; the release builds a
-second copy of the core zip with `Source` re-stamped to `"nexus"` (via
-`scripts/stamp-info-source.ps1`) and uploads *that* one to Nexus. The two zips
-share a name and their entire contents — only that one field differs. GitHub stays
-canonical for versioning; the stamp only decides which download link the notice
-shows. The stamp step is GA-only and gated on `NEXUS_FILE_GROUP_ID`, so only stable
-builds are ever stamped `nexus`. The runtime reads it in
+second copy of the core mod folder with `Source` re-stamped to `"nexus"` (via
+`scripts/stamp-info-source.ps1`), places it beside `FUSE-Installer.exe`, and
+uploads that combined zip to Nexus. GitHub stays canonical for versioning; the
+stamp only decides which download link the notice shows. The stamp step is
+GA-only and gated on `NEXUS_FILE_GROUP_ID`, so only stable builds are ever
+stamped `nexus`. The runtime reads it in
 `FUSE.Infrastructure.FuseInstallSource`.
 
 Before a stable upload, the workflow queries the Nexus v3 file-version API for

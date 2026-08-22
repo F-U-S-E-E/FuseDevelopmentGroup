@@ -15,12 +15,14 @@ at the bottom if you think you need them, and skip them otherwise.
 
 1. Install Unity Mod Manager and point it at your Railroader install.
 2. Download `FUSE-v<version>.zip`.
-3. Install it, either way:
-   - **With UMM:** open UMM, go to the **Mods** tab, and drag
-     `FUSE-v<version>.zip` onto it.
-   - **By hand:** extract the zip so the `FUSE` folder inside it lands at
-     `Railroader/Mods/FUSE`. When you are done, `Railroader/Mods/FUSE/FUSE.dll`
-     and `Railroader/Mods/FUSE/Info.json` should both exist.
+3. Install it:
+   - **GitHub download:** open UMM, go to the **Mods** tab, and drag the zip
+     onto it; or extract its `FUSE` folder to `Railroader/Mods/FUSE`.
+   - **Nexus download:** extract the zip first, then run
+     `FUSE-Installer.exe`; or copy the adjacent `FUSE` folder to
+     `Railroader/Mods/FUSE` by hand.
+   When you are done, `Railroader/Mods/FUSE/FUSE.dll` and
+   `Railroader/Mods/FUSE/Info.json` should both exist.
 4. Start Railroader and load a map.
 
 Do not nest the folder. `Railroader/Mods/FUSE/FUSE/FUSE.dll` is wrong and FUSE

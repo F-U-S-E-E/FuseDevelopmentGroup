@@ -1,5 +1,9 @@
 # Changelog
 
+- Nexus releases now bundle the self-contained `FUSE-Installer.exe` beside the
+  Nexus-stamped `FUSE/` folder in the single player-facing download. The GitHub
+  core zip remains directly installable through Unity Mod Manager.
+
 - Installer 0.8.1 sizes and centers its window against the current display and
   reserves the status and action rows before the expanding results pane. The
   Install button therefore remains visible on 768p and other short desktops

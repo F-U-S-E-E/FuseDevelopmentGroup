@@ -306,12 +306,10 @@ jobs:
       - name: Build FUSEConvertFolder.pyz
         run: python tools/build_folder_converter_pyz.py
 
-      # Everything in one download, for GitHub only. Nexus deliberately receives
-      # just the core mod zip (see the Nexus step at the bottom): a player there
-      # needs FUSE.dll and nothing else, and a Files tab listing a converter, an
-      # installer, a folder-converter and a dev bridge is exactly the confusion
-      # we are avoiding. This bundle serves package authors who want the whole
-      # toolchain in one file.
+      # Everything in one download, for GitHub only. The Nexus archive below is
+      # intentionally smaller: it contains the core mod and the self-contained
+      # installer, while this bundle also serves package-author tooling and the
+      # development bridge.
       - name: Package complete bundle zip
         id: bundle
         shell: powershell
@@ -348,9 +346,10 @@ jobs:
 
       # Provenance stamp for the update check. The core zip attached to the GitHub
       # release below stays Source="github" (the committed Info.json default); the
-      # Nexus upload gets its own copy of the SAME contents with Source re-stamped
-      # to "nexus", so an out-of-date player who installed from Nexus is pointed
-      # back to Nexus while GitHub remains canonical (docs/RELEASING.md).
+      # Nexus upload gets its own copy of that mod with Source re-stamped to
+      # "nexus", plus the self-contained installer, so an out-of-date player who
+      # installed from Nexus is pointed back to Nexus while GitHub remains
+      # canonical (docs/RELEASING.md).
       #
       # GA only, and gated on NEXUS_FILE_GROUP_ID for the same reasons as the
       # upload step below — no point building the variant when it will not ship.
@@ -361,19 +360,27 @@ jobs:
         run: |
           $version = "${{ steps.version.outputs.version }}"
           $nexusRoot = Join-Path $PWD "staging-nexus"
-          $modFolder = Join-Path $nexusRoot "FUSE"
-          # Same user-facing filename as the GitHub core zip; only the containing
-          # folder and the Info.json Source field differ.
+          $payloadRoot = Join-Path $nexusRoot "payload"
+          $modFolder = Join-Path $payloadRoot "FUSE"
+          # Keep the established user-facing filename while making the Nexus
+          # download an extraction-first archive containing both supported
+          # installation paths.
           $archivePath = Join-Path $nexusRoot "FUSE-v$version.zip"
 
           if (Test-Path $nexusRoot) { Remove-Item $nexusRoot -Recurse -Force }
-          New-Item -ItemType Directory -Path $nexusRoot | Out-Null
+          New-Item -ItemType Directory -Path $payloadRoot | Out-Null
 
           # Reuse the exact staged mod folder the GitHub/core zip was built and
           # validated from, so the Nexus zip can never drift from it; then flip
           # only the provenance stamp.
           Copy-Item -Recurse "staging\FUSE" $modFolder
           powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\stamp-info-source.ps1" -Path (Join-Path $modFolder "Info.json") -Source nexus
+
+          # Nexus users get the supported self-contained installer in the same
+          # download. It embeds the already-validated GitHub/core payload, while
+          # the adjacent FUSE folder remains available for a transparent manual
+          # install and carries the Nexus provenance stamp.
+          Copy-Item "dist\FUSE-Installer.exe" $payloadRoot
 
           # Cheap guard: the stamp is a byte-faithful regex replace, so confirm the
           # manifest still parses and actually reads "nexus" before it ships.
@@ -383,15 +390,27 @@ jobs:
           # Pack with New-ModArchive.ps1 (forward-slash entry names), NOT
           # Compress-Archive: under Windows PowerShell 5.1 Compress-Archive writes
           # backslash entry names that break UMM's UPDATE path — the exact
-          # 1.0.0-1.0.2 bug fixed for the core zip above (issue #209). Nexus is a
-          # pure update channel, so this variant must carry the fix too; the
-          # validator now fails the release on any backslash entry regardless.
-          .\scripts\New-ModArchive.ps1 -Path $modFolder -DestinationPath $archivePath
+          # 1.0.0-1.0.2 bug fixed for the core zip above (issue #209). Archive
+          # the payload contents so FUSE/ and FUSE-Installer.exe sit at the root.
+          .\scripts\New-ModArchive.ps1 -Path $payloadRoot -DestinationPath $archivePath -ContentsOnly
+
+          # Fail closed if either installation path is missing from the artifact.
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
+          try {
+            $entries = @($zip.Entries | ForEach-Object FullName)
+            foreach ($required in @('FUSE-Installer.exe', 'FUSE/FUSE.dll', 'FUSE/Info.json', 'FUSE/LICENSE')) {
+              if ($required -notin $entries) { throw "Nexus archive is missing required entry '$required'." }
+            }
+          }
+          finally {
+            $zip.Dispose()
+          }
           "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
 
-      # Uploads ONLY the core mod zip to the mod's Nexus Mods page — deliberately
-      # not the complete bundle, the tools, or the Live Bridge. Players installing
-      # from Nexus need exactly one file; keep the Files tab that way.
+      # Uploads one player-facing archive to the mod's Nexus Mods page. It contains
+      # the core mod plus FUSE-Installer.exe, but deliberately omits the converter,
+      # folder-converter, complete author bundle, and Live Bridge.
       #
       # GA tags only. Release candidates publish as full GitHub releases, so
       # is_prerelease is false for them and gating on it would push every RC to
@@ -423,8 +442,8 @@ jobs:
           name: FUSE v${{ steps.version.outputs.version }}
           prerelease: ${{ steps.version.outputs.is_prerelease }}
           generate_release_notes: true
-          # GitHub gets both: the same core-only zip Nexus receives, plus the
-          # complete bundle and the individual tools.
+          # GitHub gets its direct-UMM core zip, plus the complete bundle and the
+          # individual tools. Nexus gets the installer-inclusive archive above.
           files: |
             ${{ steps.package.outputs.archive_path }}
             ${{ steps.bundle.outputs.archive_path }}
