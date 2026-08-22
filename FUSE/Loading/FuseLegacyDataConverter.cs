@@ -187,6 +187,7 @@ namespace FUSE.Loading
                 Author = ReadString(definition, "author", "Author") ?? string.Empty,
                 RequiredPackageIds = ReadLegacyRequiredDependencyIds(definition),
                 LoadAfter = ReadLegacyDependencyIds(definition),
+                ConflictsWith = ReadLegacyConflictRequirements(definition),
                 SourceFiles = sourceFiles,
                 MapTileSources = mapTileSources
             };
@@ -219,7 +220,7 @@ namespace FUSE.Loading
 
                 var definition = FuseSerializer.FromJson(root.ToString(Formatting.None));
                 var definitionPath = "legacy://map-tiles";
-                FuseModLoader.LoadDefinition(definition, folderPath, definitionPath);
+                FuseModLoader.LoadDefinition(definition, folderPath, definitionPath, manifest.PackageId);
                 loadedDefinitions.Add(new FuseLoadedMod(folderPath, definitionPath, definition));
                 usedFragments.Add("map-tiles");
             }
@@ -247,18 +248,36 @@ namespace FUSE.Loading
                 // Route them through the audio-specific converter so the
                 // entries land in the FUSE audio dict instead of being
                 // dropped by the "not an object" branch in ReadLegacyObject.
-                if (TryClassifyLegacyAudioFile(sourceFile, out var audioKind))
+                try
                 {
-                    ConvertLegacyAudioSource(sourceFile, audioKind, root);
+                    if (TryClassifyLegacyAudioFile(sourceFile, out var audioKind))
+                    {
+                        ConvertLegacyAudioSource(sourceFile, audioKind, root);
+                    }
+                    else
+                    {
+                        var source = ReadLegacyObject(sourceFile);
+                        ConvertSource(source, root, manifest);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    var source = ReadLegacyObject(sourceFile);
-                    ConvertSource(source, root, manifest);
+                    FusePackageFaultRegistry.RecordFault(
+                        manifest.PackageId,
+                        "legacy JSON conversion",
+                        ex.GetBaseException().Message,
+                        ex,
+                        folderPath,
+                        sourceFile,
+                        packageName: manifest.DisplayName,
+                        expectedShape: "RailLoader/Strange Customs JSON data supported by the FUSE legacy compatibility converter.",
+                        receivedValue: ex.GetBaseException().Message,
+                        suggestedAction: "Correct the named legacy JSON file at the reported property/line, or remove that optional source from the package manifest, then reload the map.");
+                    throw;
                 }
                 var definition = FuseSerializer.FromJson(root.ToString(Formatting.None));
                 var definitionPath = "legacy://" + sourceKey;
-                FuseModLoader.LoadDefinition(definition, folderPath, definitionPath);
+                FuseModLoader.LoadDefinition(definition, folderPath, definitionPath, manifest.PackageId);
                 loadedDefinitions.Add(new FuseLoadedMod(folderPath, definitionPath, definition));
             }
 
@@ -488,7 +507,7 @@ namespace FUSE.Loading
 
             if (value.Type == JTokenType.String)
             {
-                RecordMixinto(target, value.Value<string>(), null, result, order++);
+                RecordMixinto(target, value.Value<string>(), null, null, result, order++);
                 return;
             }
 
@@ -508,12 +527,19 @@ namespace FUSE.Loading
                     target,
                     ReadString(obj, "mixinto", "Mixinto"),
                     ConvertRequirements(obj["requires"] ?? obj["Requires"]),
+                    ConvertLegacyReferences(obj["conflictsWith"] ?? obj["ConflictsWith"], false),
                     result,
                     order++);
             }
         }
 
-        private static void RecordMixinto(string target, string reference, JArray requirements, IDictionary<string, JObject> result, int order)
+        private static void RecordMixinto(
+            string target,
+            string reference,
+            JArray requirements,
+            JArray conflictsWith,
+            IDictionary<string, JObject> result,
+            int order)
         {
             var sourceFile = ExtractFileReference(reference);
             if (string.IsNullOrWhiteSpace(sourceFile))
@@ -527,7 +553,8 @@ namespace FUSE.Loading
                 ["target"] = target ?? string.Empty,
                 ["sourceFile"] = key,
                 ["order"] = order,
-                ["requires"] = requirements ?? new JArray()
+                ["requires"] = requirements ?? new JArray(),
+                ["conflictsWith"] = conflictsWith ?? new JArray()
             });
         }
 
@@ -587,6 +614,11 @@ namespace FUSE.Loading
 
         private static JArray ConvertRequirements(JToken value)
         {
+            return ConvertLegacyReferences(value, true);
+        }
+
+        private static JArray ConvertLegacyReferences(JToken value, bool filterReplacementCapabilities)
+        {
             var result = new JArray();
             if (!(value is JArray array))
             {
@@ -598,7 +630,8 @@ namespace FUSE.Loading
                 var id = item.Type == JTokenType.String
                     ? item.Value<string>()
                     : ReadString(item as JObject, "id", "Id");
-                if (string.IsNullOrWhiteSpace(id) || IsCoreLegacyRequirement(id))
+                if (string.IsNullOrWhiteSpace(id) ||
+                    (filterReplacementCapabilities && IsCoreLegacyRequirement(id)))
                 {
                     continue;
                 }
@@ -614,6 +647,22 @@ namespace FUSE.Loading
             return result;
         }
 
+        private static FuseModRequirement[] ReadLegacyConflictRequirements(JObject definition)
+        {
+            return ConvertLegacyReferences(
+                    definition?["conflictsWith"] ?? definition?["ConflictsWith"],
+                    false)
+                .OfType<JObject>()
+                .Select(item => new FuseModRequirement
+                {
+                    Id = ReadString(item, "id", "Id"),
+                    NotBefore = ReadString(item, "notBefore", "NotBefore"),
+                    NotAfter = ReadString(item, "notAfter", "NotAfter")
+                })
+                .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+                .ToArray();
+        }
+
         private static string[] ReadLegacyDependencyIds(JObject definition)
         {
             var result = new List<string>(ReadLegacyRequiredDependencyIds(definition));
@@ -626,7 +675,68 @@ namespace FUSE.Loading
                 }
             }
 
+            // A conditional legacy mixinto is optional when its requirement is
+            // absent, but it must run after that package when the dependency is
+            // present. Carry those ids into advisory ordering rather than hard
+            // requirements so discovery can build the correct topological edge
+            // without disabling the package when an optional layer is missing.
+            foreach (var id in ReadMixintoRequirementIds(definition?["mixintos"] ?? definition?["Mixintos"]))
+            {
+                if (!IsCoreLegacyRequirement(id))
+                {
+                    result.Add(EnsureFusePackageId(id));
+                }
+            }
+
             return result.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+
+        private static IEnumerable<string> ReadMixintoRequirementIds(JToken value)
+        {
+            if (value == null || value.Type == JTokenType.Null)
+            {
+                yield break;
+            }
+
+            if (value is JArray array)
+            {
+                foreach (var item in array)
+                {
+                    foreach (var id in ReadMixintoRequirementIds(item))
+                    {
+                        yield return id;
+                    }
+                }
+
+                yield break;
+            }
+
+            if (!(value is JObject obj))
+            {
+                yield break;
+            }
+
+            foreach (var requirement in ConvertRequirements(obj["requires"] ?? obj["Requires"]).OfType<JObject>())
+            {
+                var id = ReadString(requirement, "id");
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    yield return id;
+                }
+            }
+
+            foreach (var property in obj.Properties())
+            {
+                if (string.Equals(property.Name, "requires", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                foreach (var id in ReadMixintoRequirementIds(property.Value))
+                {
+                    yield return id;
+                }
+            }
         }
 
         private static string[] ReadLegacyRequiredDependencyIds(JObject definition)
@@ -654,22 +764,7 @@ namespace FUSE.Loading
 
         private static bool IsCoreLegacyRequirement(string id)
         {
-            var value = (id ?? string.Empty).Trim().ToLowerInvariant();
-            return value == "railroader" ||
-                   value == "railloader" ||
-                   value == "rail-loader" ||
-                   value == "alinanova21.alinasmapmod" ||
-                   value == "alinasmapmod" ||
-                   value == "alinamapmod" ||
-                   value == "alinanova21.mapeditor" ||
-                   value == "mapeditor" ||
-                   value == "mmapeditor" ||
-                   value == "alinanova21.alinasmapexpansion" ||
-                   value == "alinasmapexpansion" ||
-                   value == "zamu.strangecustoms" ||
-                   value == "strangecustoms" ||
-                   value == "zamu.confusingsupplements" ||
-                   value == "confusingsupplements";
+            return FuseReplacementCapabilityCatalog.IsProvided(id);
         }
 
         internal static JObject CreateSkeleton(FuseLegacyPackageManifest manifest, string fragment)
@@ -786,7 +881,16 @@ namespace FUSE.Loading
                         continue;
                     }
 
-                    (root["tracks"]["areas"] as JObject)[area.Name] = ConvertArea(area.Name, areaObject);
+                    // In Strange Customs game-graph files an area object is often
+                    // only a namespace around `industries`. It is not an area
+                    // mutation. Converting that wrapper used to manufacture a
+                    // zero position and update the live base area, moving every
+                    // Whittier industry away from its tracks (issues #210/#239).
+                    if (HasLegacyAreaDefinition(areaObject))
+                    {
+                        (root["tracks"]["areas"] as JObject)[area.Name] =
+                            ConvertArea(area.Name, areaObject);
+                    }
                     var industries = areaObject["industries"] as JObject;
                     if (industries == null)
                     {
@@ -839,7 +943,7 @@ namespace FUSE.Loading
                 }
             }
             ConvertDictionary(source["scenery"], root["world"]["scenery"] as JObject, root["world"]["removals"]["scenery"] as JArray, ConvertScenery);
-            ConvertSplineys(source["splineys"] as JObject, root);
+            ConvertSplineys(source["splineys"] as JObject, root, manifest?.PackageId);
             ConvertMandelas(source["mandelas"] as JObject, root);
             var texts = source["texts"] as JObject;
             if (texts != null)
@@ -978,6 +1082,7 @@ namespace FUSE.Loading
         public string Author { get; set; }
         public string[] RequiredPackageIds { get; set; } = Array.Empty<string>();
         public string[] LoadAfter { get; set; } = Array.Empty<string>();
+        public FuseModRequirement[] ConflictsWith { get; set; } = Array.Empty<FuseModRequirement>();
         public string[] SourceFiles { get; set; } = Array.Empty<string>();
         public FuseLegacyMapTileSource[] MapTileSources { get; set; } = Array.Empty<FuseLegacyMapTileSource>();
     }

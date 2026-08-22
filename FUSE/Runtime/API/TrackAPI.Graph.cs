@@ -412,6 +412,7 @@ namespace FUSE.Runtime.API
             Location? bestLower = null;
             var bestLength = float.PositiveInfinity;
             var bestFacing = string.Empty;
+            var validCandidateCount = 0;
 
             for (var trial = 1; trial <= 3; trial++)
             {
@@ -433,7 +434,13 @@ namespace FUSE.Runtime.API
                     var points = span.GetPoints();
                     var length = span.Length;
                     if (points == null || points.Count < 2 ||
-                        length <= SpanDistanceTolerance || length >= bestLength)
+                        length <= SpanDistanceTolerance)
+                    {
+                        continue;
+                    }
+
+                    validCandidateCount++;
+                    if (length >= bestLength)
                     {
                         continue;
                     }
@@ -451,10 +458,17 @@ namespace FUSE.Runtime.API
                 }
             }
 
-            if (!bestUpper.HasValue || !bestLower.HasValue)
+            if (!bestUpper.HasValue || !bestLower.HasValue || validCandidateCount != 1)
             {
                 span.upper = originalUpper;
                 span.lower = originalLower;
+                if (validCandidateCount > 1)
+                {
+                    FuseLog.Warning(
+                        $"FUSE refused to auto-repair track span '{spanId}' because {validCandidateCount} endpoint-facing " +
+                        "combinations resolved through the switch graph. Choosing the shortest route is ambiguous and can bind " +
+                        "an industry track to a neighboring track; correct the authored endpoint directions instead.");
+                }
                 return false;
             }
 
@@ -567,6 +581,7 @@ namespace FUSE.Runtime.API
             var id = span.id ?? string.Empty;
             var displayName = span.name ?? string.Empty;
             UnregisterSpanWithGraph(Graph.Shared, id);
+            span.id = CreateRetiredSpanId(id);
             RemoveRuntimeObject(span);
             if (!string.IsNullOrWhiteSpace(id))
             {

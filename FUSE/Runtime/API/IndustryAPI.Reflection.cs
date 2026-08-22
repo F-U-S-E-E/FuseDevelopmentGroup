@@ -19,6 +19,12 @@ namespace FUSE.Runtime.API
 {
     public static partial class IndustryAPI
     {
+        private const string LegacyPay4ResourceType =
+            "ConfusingSupplements.IndustryComponents.Pay4Resource";
+        private const string LegacyCaptiveConversionLoaderType =
+            "ConfusingSupplements.IndustryComponents.CaptiveConversionLoader";
+        private const string LegacyCaptiveConversionUnloaderType =
+            "ConfusingSupplements.IndustryComponents.CaptiveConversionUnloader";
 
         private static Type ResolveComponentType(string type)
         {
@@ -100,9 +106,19 @@ namespace FUSE.Runtime.API
             // reconstructed independently from the public JSON contract
             // documented by packs like Foxy's Kirkland Purchasable Coal
             // Patch — no third-party assembly is required at runtime.
-            if (string.Equals(normalized, "ConfusingSupplements.IndustryComponents.Pay4Resource", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(normalized, LegacyPay4ResourceType, StringComparison.OrdinalIgnoreCase))
             {
                 return typeof(FusePay4ResourceIndustryComponent);
+            }
+
+            if (string.Equals(normalized, LegacyCaptiveConversionLoaderType, StringComparison.OrdinalIgnoreCase))
+            {
+                return typeof(FuseCaptiveConversionLoader);
+            }
+
+            if (string.Equals(normalized, LegacyCaptiveConversionUnloaderType, StringComparison.OrdinalIgnoreCase))
+            {
+                return typeof(FuseCaptiveConversionUnloader);
             }
 
             var reflected = TryResolveIndustryComponentType(normalized);
@@ -225,6 +241,21 @@ namespace FUSE.Runtime.API
             if (component is FuseLegacyPlaceholderIndustryComponent)
             {
                 return LegacyEmptyComponentType;
+            }
+
+            if (component is FuseCaptiveConversionLoader)
+            {
+                return LegacyCaptiveConversionLoaderType;
+            }
+
+            if (component is FuseCaptiveConversionUnloader)
+            {
+                return LegacyCaptiveConversionUnloaderType;
+            }
+
+            if (component is FusePay4ResourceIndustryComponent)
+            {
+                return LegacyPay4ResourceType;
             }
 
             return component.GetType().FullName;
@@ -515,6 +546,14 @@ namespace FUSE.Runtime.API
                     continue;
                 }
 
+                if (!IsUsableTrackSpan(span))
+                {
+                    FuseLog.Warning(
+                        $"FUSE track span '{id}' has a missing or invalid endpoint after graph conflict resolution; " +
+                        "it was omitted from the industry component so opening operations UI cannot crash.");
+                    continue;
+                }
+
                 spans.Add(span);
             }
 
@@ -537,7 +576,7 @@ namespace FUSE.Runtime.API
             var result = new List<TrackSpan>();
             foreach (var span in existing.Concat(additions))
             {
-                if (span == null)
+                if (!IsUsableTrackSpan(span))
                 {
                     continue;
                 }
@@ -550,6 +589,23 @@ namespace FUSE.Runtime.API
             }
 
             return result.ToArray();
+        }
+
+        internal static bool IsUsableTrackSpan(TrackSpan span)
+        {
+            if (span == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return span.IsValid;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static Load ResolveLoad(string loadId)

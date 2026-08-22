@@ -158,6 +158,14 @@ namespace FUSE.Loading
             AddLegacyAssetPackAlias(aliases, resolved, resolved);
             AddLegacyAssetPackAlias(aliases, Path.GetFileName(assetPackFolder), resolved);
 
+            if (string.Equals(
+                    NormalizeAssetPackPhysicalPath(packagePath),
+                    NormalizeAssetPackPhysicalPath(assetPackFolder),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                AddLegacyAssetPackAlias(aliases, packageId, resolved);
+            }
+
             var relative = GetRelativePath(packagePath, assetPackFolder).Replace(Path.DirectorySeparatorChar, '/');
             if (!string.IsNullOrWhiteSpace(packageId) && !string.IsNullOrWhiteSpace(relative))
             {
@@ -213,7 +221,7 @@ namespace FUSE.Loading
                     : Path.GetFileName(packagePath);
                 RecordCatalogInspectionFailure(
                     $"Asset pack Catalog.json could not be read: package='{package}' " +
-                    $"pack='{Path.GetFileName(assetPackFolder)}' reason='{ex.Message}' — " +
+                    $"pack='{Path.GetFileName(assetPackFolder)}' file='{catalogPath}' reason='{ex.Message}' — " +
                     "catalog-declared aliases were skipped; content referencing them may not resolve.");
             }
         }

@@ -14,10 +14,27 @@ namespace FUSE.Loading
 {
     internal static partial class FuseLegacyDataConverter
     {
+        private static readonly object JsonRepairWarningGate = new object();
+        private static readonly HashSet<string> ReportedControlCharacterFiles =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         internal static JObject ReadLegacyObject(string path)
         {
             return JObject.Parse(ReadLegacyJsonText(path));
+        }
+
+        internal static JObject ReadManifestObject(string path)
+        {
+            // Manifest files decide whether a package is discovered at all. Keep
+            // the harmless RailLoader-era allowances (comments, trailing commas,
+            // and stray control bytes), but never invent missing braces here. A
+            // structurally incomplete Info.json must remain attributable to the
+            // package and surface in /fuse.report with its real line/column.
+            var text = File.ReadAllText(path);
+            text = StripJsonControlCharacters(text, path);
+            text = StripJsonComments(text);
+            text = RemoveTrailingCommas(text);
+            return JObject.Parse(text);
         }
 
         // Counterpart for legacy sources whose top-level token is a JSON
@@ -118,12 +135,23 @@ namespace FUSE.Loading
                     }
                 }
 
-                FuseLog.Warning(
-                    $"FUSE stripped {stripped} stray control byte(s) from legacy file '{path}' " +
-                    $"before parsing (first occurrence: 0x{(int)firstByte:X2} at line {line}, column {column}). " +
-                    "This is almost always an editor accident (e.g. a Ctrl+V verbatim insert) and the " +
-                    "mod author should fix the source file. FUSE only tolerates this on the legacy " +
-                    "pipeline; native FUSE addons (*.fuse.json) must be valid JSON.");
+                var warningKey = path ?? string.Empty;
+                var report = false;
+                lock (JsonRepairWarningGate)
+                {
+                    report = ReportedControlCharacterFiles.Add(warningKey);
+                }
+
+                if (report)
+                {
+                    FuseLog.Warning(
+                        $"FUSE stripped {stripped} stray control byte(s) from legacy file '{path}' " +
+                        $"before parsing (first occurrence: 0x{(int)firstByte:X2} at line {line}, column {column}). " +
+                        "This is almost always an editor accident (e.g. a Ctrl+V verbatim insert) and the " +
+                        "mod author should fix the source file. This warning is shown once per file per session. " +
+                        "FUSE only tolerates this on the legacy pipeline; native FUSE addons (*.fuse.json) " +
+                        "must be valid JSON.");
+                }
             }
 
             return builder == null ? text : builder.ToString();

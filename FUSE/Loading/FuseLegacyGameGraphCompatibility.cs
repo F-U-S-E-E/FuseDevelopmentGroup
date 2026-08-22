@@ -152,7 +152,7 @@ namespace FUSE.Loading
             }
         }
 
-        private static bool ShouldExpand(FuseLoadedMod loaded)
+        internal static bool ShouldExpand(FuseLoadedMod loaded)
         {
             var definition = loaded?.Definition;
             if (definition == null || !IsLegacyConverted(definition) || IsExpanded(definition))
@@ -161,8 +161,20 @@ namespace FUSE.Loading
             }
 
             var target = definition.Mixinto?.Target;
-            return string.IsNullOrWhiteSpace(target) ||
-                   string.Equals(target, GameGraphTarget, StringComparison.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(target) &&
+                !string.Equals(target, GameGraphTarget, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(ResolveSourcePath(loaded)))
+            {
+                return true;
+            }
+
+            FuseLog.Warning(
+                $"FUSE legacy game-graph compatibility could not resolve the source file for '{loaded.DefinitionPath}'.");
+            return false;
         }
 
         private static bool IsLegacyConverted(FuseModDefinition definition)

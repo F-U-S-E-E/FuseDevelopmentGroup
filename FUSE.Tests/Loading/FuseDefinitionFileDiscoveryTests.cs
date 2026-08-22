@@ -1,5 +1,8 @@
 using System;
+using System.Collections;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using Fuse.Core.Bridge;
 using FUSE.Loading;
 using Xunit;
@@ -114,6 +117,78 @@ namespace FUSE.Tests.Loading
                 @"{ ""Schema"": 1, ""Pid"": 1234, ""HeartbeatUtc"": ""2026-06-10T00:00:00Z"", ""Ok"": true }");
 
             Assert.Empty(FuseDataPackageDiscovery.DiscoverPackageFolders(_root));
+        }
+
+        [Fact]
+        public void AlinaUtilities_registry_is_not_discovered_as_a_data_package()
+        {
+            // Alina Utilities is a dual-format executable mod. Its registry.json
+            // is updater/catalog metadata, not a native FUSE definition. A FUSE
+            // requirement in Info.json must not promote that support file into
+            // the data-package loader.
+            var folder = CreateModFolder("AlinasUtils");
+            File.WriteAllText(Path.Combine(folder, "Info.json"), @"{
+  ""Id"": ""AlinaNova21.AlinasUtils"",
+  ""DisplayName"": ""Alina's Utilities"",
+  ""Version"": ""1.0.0"",
+  ""AssemblyName"": ""AlinasUtils.dll"",
+  ""EntryMethod"": ""AlinasUtils.UMM.Mod.Load"",
+  ""Requirements"": [""FUSE""],
+  ""LoadAfter"": [""FUSE""]
+}");
+            File.WriteAllText(
+                Path.Combine(folder, "registry.json"),
+                @"{ ""mods"": [{ ""id"": ""AlinaNova21.AlinasUtils"" }] }");
+
+            Assert.Empty(FuseDefinitionFileDiscovery.ResolveFallbackDefinitionPaths(folder));
+            Assert.Empty(FuseDataPackageDiscovery.DiscoverPackageFolders(_root));
+        }
+
+        [Fact]
+        public void NativePackageWithMalformedInfo_IsStillDiscoveredForFaultReporting()
+        {
+            var folder = CreateModFolder("BrokenNativePackage");
+            File.WriteAllText(Path.Combine(folder, "Info.json"), "{ \"Id\": \"BrokenNativePackage\", ");
+            File.WriteAllText(Path.Combine(folder, "track.fuse.json"), "{}");
+
+            var discovered = FuseDataPackageDiscovery.DiscoverPackageFolders(_root);
+
+            Assert.Equal(new[] { folder }, discovered);
+        }
+
+        [Fact]
+        public void PluralDataFilesRemainValidWhenSingularFieldIsJsonNull()
+        {
+            var folder = CreateModFolder("PluralDataFiles");
+            File.WriteAllText(Path.Combine(folder, "Info.json"), @"{
+  ""Id"": ""Plural.Data.Files"",
+  ""FuseDataFile"": null,
+  ""FuseDataFiles"": [""first.fuse.json"", ""second.fuse.json""],
+  ""FuseDisabled"": true
+}");
+
+            var manifest = Assert.Single(FuseDataPackageDiscovery.GetPackageManifestSnapshots(_root));
+
+            Assert.Equal("Plural.Data.Files", manifest.Id);
+            Assert.Empty(manifest.Faults);
+        }
+
+        [Fact]
+        public void DisabledPackage_DoesNotValidateItsOwnDependencies()
+        {
+            var folder = CreateModFolder("DisabledPackage");
+            File.WriteAllText(Path.Combine(folder, "Info.json"), @"{
+  ""Id"": ""Disabled.Package"",
+  ""FuseDataFile"": ""content.fuse.json"",
+  ""FuseDisabled"": true,
+  ""FuseRequires"": [""Missing.Package""]
+}");
+
+            var manifests = FuseDataPackageDiscovery.GetPackageManifestSnapshots(_root);
+            var manifest = Assert.Single(manifests);
+
+            Assert.True(manifest.Disabled);
+            Assert.Empty(manifest.Faults);
         }
     }
 }

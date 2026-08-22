@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using FUSE.Authoring.Data;
+using FUSE.Authoring.Data.Common;
 using FUSE.Infrastructure;
 
 namespace FUSE.Runtime.API
@@ -84,6 +85,12 @@ namespace FUSE.Runtime.API
                     return CloneStation(station) as T;
                 if (definition is FuseTurntable turntable)
                     return CloneTurntable(turntable) as T;
+                if (definition is FuseSpan span)
+                    return CloneSpan(span) as T;
+                if (definition is FuseSpliney spliney)
+                    return CloneSpliney(spliney) as T;
+                if (definition is FuseWaterSurface waterSurface)
+                    return CloneWaterSurface(waterSurface) as T;
 
                 // Unknown type — return original (best-effort, same as before).
                 return definition;
@@ -223,6 +230,82 @@ namespace FUSE.Runtime.API
                     ControllerType        = src.Visuals.ControllerType,
                     InteractionRadius     = src.Visuals.InteractionRadius,
                 },
+            };
+        }
+
+        private static FuseWaterSurface CloneWaterSurface(FuseWaterSurface src)
+        {
+            if (src == null) return null;
+            return new FuseWaterSurface
+            {
+                Points = src.Points?.ToArray(),
+                SourceLakePath = src.SourceLakePath,
+                MaterialName = src.MaterialName,
+                LockHeight = src.LockHeight,
+                SnapToTerrain = src.SnapToTerrain,
+                EnableCollider = src.EnableCollider,
+                UvScale = src.UvScale,
+                TriangleDensity = src.TriangleDensity,
+                MaximumTriangleArea = src.MaximumTriangleArea,
+                YOffset = src.YOffset,
+            };
+        }
+
+        private static FuseSpliney CloneSpliney(FuseSpliney src)
+        {
+            if (src == null) return null;
+            return new FuseSpliney
+            {
+                Type = src.Type,
+                Profile = src.Profile,
+                Style = src.Style,
+                OffsetY = src.OffsetY,
+                HeadStyle = src.HeadStyle,
+                TailStyle = src.TailStyle,
+                AssetIdentifier = src.AssetIdentifier,
+                Prefab = src.Prefab,
+                Spacing = src.Spacing,
+                InstanceScale = src.InstanceScale,
+                RotationOffset = src.RotationOffset,
+                LateralOffset = src.LateralOffset,
+                VerticalOffset = src.VerticalOffset,
+                SnapToTerrain = src.SnapToTerrain,
+                AlignToSlope = src.AlignToSlope,
+                PlaceAtEnd = src.PlaceAtEnd,
+                MaximumInstances = src.MaximumInstances,
+                Points = src.Points?.Select(point => point == null
+                    ? null
+                    : new FuseSplineyPoint
+                    {
+                        Position = point.Position,
+                        Rotation = point.Rotation,
+                        Width = point.Width,
+                    }).ToArray(),
+            };
+        }
+
+        private static FuseSpan CloneSpan(FuseSpan src)
+        {
+            if (src == null) return null;
+            return new FuseSpan
+            {
+                Upper = CloneTrackLocation(src.Upper),
+                Lower = CloneTrackLocation(src.Lower),
+                Normalize = src.Normalize,
+                GroupId = src.GroupId,
+            };
+        }
+
+        private static FuseTrackLocation CloneTrackLocation(FuseTrackLocation src)
+        {
+            if (src == null) return null;
+            return new FuseTrackLocation
+            {
+                SegmentId = src.SegmentId,
+                Normalized = src.Normalized,
+                Distance = src.Distance,
+                End = src.End,
+                Offset = src.Offset,
             };
         }
 

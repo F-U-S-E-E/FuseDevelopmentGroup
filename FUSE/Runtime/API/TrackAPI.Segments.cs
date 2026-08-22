@@ -9,6 +9,7 @@ using FUSE.Authoring.Data;
 using FUSE.Authoring.Data.Common;
 using FUSE.Runtime.Events;
 using FUSE.Infrastructure;
+using FUSE.Compatibility;
 using Track;
 using Track.Signals;
 using UnityEngine;
@@ -19,6 +20,29 @@ namespace FUSE.Runtime.API
     {
 
         public static TrackSegment AddSegment(string id, string startNodeId, string endNodeId, TrackSegment.Style style = TrackSegment.Style.Standard, int speedLimit = 45, string groupId = null, TrackClass trackClass = TrackClass.Mainline, int priority = 0)
+        {
+            return AddSegmentCore(
+                id,
+                startNodeId,
+                endNodeId,
+                style,
+                speedLimit,
+                groupId,
+                trackClass,
+                priority,
+                null);
+        }
+
+        private static TrackSegment AddSegmentCore(
+            string id,
+            string startNodeId,
+            string endNodeId,
+            TrackSegment.Style style,
+            int speedLimit,
+            string groupId,
+            TrackClass trackClass,
+            int priority,
+            Action<TrackSegment> beforeNotification)
         {
             RequireId(id, nameof(id));
             var graph = RequireGraph();
@@ -39,6 +63,7 @@ namespace FUSE.Runtime.API
             segment.priority = priority;
             segment.groupId = groupId;
 
+            beforeNotification?.Invoke(segment);
             graph.AddSegment(segment, true);
             FuseSegmentRuntimeIndex.Instance.Set(id, segment);
             FuseEvents.RaiseSegmentAdded(segment);
@@ -54,7 +79,7 @@ namespace FUSE.Runtime.API
                 throw new ArgumentNullException(nameof(definition));
             }
 
-            var segment = AddSegment(
+            var segment = AddSegmentCore(
                 id,
                 definition.StartNodeId,
                 definition.EndNodeId,
@@ -62,12 +87,29 @@ namespace FUSE.Runtime.API
                 definition.SpeedLimit,
                 definition.GroupId,
                 ParseTrackClass(definition.TrackClass),
-                definition.Priority);
+                definition.Priority,
+                value => RailroaderTrackContract.ApplyStructure(
+                    value,
+                    definition.Style,
+                    definition.BridgeSupportsSteel,
+                    definition.Yard));
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSegment, id, definition);
             return segment;
         }
 
         public static void UpdateSegment(string id, TrackSegment.Style style, int speedLimit, TrackClass? trackClass = null, int? priority = null, string groupId = null)
+        {
+            UpdateSegmentCore(id, style, speedLimit, trackClass, priority, groupId, null);
+        }
+
+        private static void UpdateSegmentCore(
+            string id,
+            TrackSegment.Style style,
+            int speedLimit,
+            TrackClass? trackClass,
+            int? priority,
+            string groupId,
+            Action<TrackSegment> beforeNotification)
         {
             var segment = RequireSegment(id);
             segment.style = style;
@@ -90,6 +132,7 @@ namespace FUSE.Runtime.API
             segment.InvalidateCurve();
             Graph.Shared.InvalidateNode(segment.a);
             Graph.Shared.InvalidateNode(segment.b);
+            beforeNotification?.Invoke(segment);
             FuseSegmentRuntimeIndex.Instance.Set(id, segment);
             FuseEvents.RaiseSegmentUpdated(segment);
             RequestRebuild();
@@ -103,13 +146,18 @@ namespace FUSE.Runtime.API
                 throw new ArgumentNullException(nameof(definition));
             }
 
-            UpdateSegment(
+            UpdateSegmentCore(
                 id,
                 ParseSegmentStyle(definition.Style),
                 definition.SpeedLimit,
                 ParseTrackClass(definition.TrackClass),
                 definition.Priority,
-                definition.GroupId);
+                definition.GroupId,
+                value => RailroaderTrackContract.ApplyStructure(
+                    value,
+                    definition.Style,
+                    definition.BridgeSupportsSteel,
+                    definition.Yard));
             FuseApiPersistence.RecordDefinition(FuseDefinitionKind.TrackSegment, id, definition);
         }
 
@@ -154,7 +202,9 @@ namespace FUSE.Runtime.API
             definition = definition ?? new FuseSegment();
             definition.StartNodeId = segment.a != null ? segment.a.id : null;
             definition.EndNodeId = segment.b != null ? segment.b.id : null;
-            definition.Style = segment.style.ToString();
+            definition.Style = RailroaderTrackContract.GetStyleName(segment);
+            definition.BridgeSupportsSteel = RailroaderTrackContract.GetBridgeSupportsSteel(segment);
+            definition.Yard = RailroaderTrackContract.GetYard(segment);
             definition.TrackClass = segment.trackClass == TrackClass.Mainline ? "main" : segment.trackClass.ToString();
             definition.SpeedLimit = segment.speedLimit;
             definition.Priority = segment.priority;

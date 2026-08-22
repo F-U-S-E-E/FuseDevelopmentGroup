@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using FUSE.Authoring.Data;
+using FUSE.Compatibility;
 using FUSE.Infrastructure;
 using FUSE.Authoring.Serialization;
 using Newtonsoft.Json;
@@ -273,7 +274,8 @@ namespace FUSE.Loading
             {
                 ["position"] = Vector(item["position"] ?? item["localPosition"], false),
                 ["rotation"] = Vector(item["rotation"] ?? item["localRotation"], false),
-                ["flipSwitchStand"] = ReadBool(item, "flipSwitchStand", false)
+                ["flipSwitchStand"] = ReadBool(item, "flipSwitchStand", false),
+                ["isDiamond"] = ReadBool(item, "isDiamond", ReadBool(item, "IsDiamond", false))
             };
         }
 
@@ -293,20 +295,26 @@ namespace FUSE.Loading
             }
 
             var hasStyle = HasAnyProperty(item, "Style", "style");
+            var hasFlags = HasAnyProperty(item, "flags", "Flags");
             var hasTrackClass = HasAnyProperty(item, "trackClass", "TrackClass");
             var hasSpeedLimit = HasAnyProperty(item, "speedLimit", "SpeedLimit");
             var hasPriority = HasAnyProperty(item, "priority");
             var hasGroupId = HasAnyProperty(item, "groupId", "GroupId");
             var partial = string.IsNullOrWhiteSpace(startNodeId) || string.IsNullOrWhiteSpace(endNodeId);
+            var flags = ReadInt(item["flags"] ?? item["Flags"], 0);
+            var style = ReadString(item, "Style", "style");
 
             var result = new JObject
             {
-                ["style"] = ReadString(item, "Style", "style") ?? "standard",
+                ["style"] = style ?? StyleFromTrackFlags(flags),
                 ["trackClass"] = ReadString(item, "trackClass", "TrackClass") ?? "main",
                 ["speedLimit"] = ReadInt(item["speedLimit"] ?? item["SpeedLimit"], 45),
                 ["priority"] = ReadInt(item["priority"], 0),
                 ["groupId"] = ReadString(item, "groupId", "GroupId"),
-                ["gauge"] = ReadString(item, "gauge", "Gauge")
+                ["gauge"] = ReadString(item, "gauge", "Gauge"),
+                ["bridgeSupportsSteel"] = hasFlags &&
+                    (flags & RailroaderTrackContract.BridgeSupportsSteelFlag) != 0,
+                ["yard"] = hasFlags && (flags & RailroaderTrackContract.YardFlag) != 0
             };
 
             if (!string.IsNullOrWhiteSpace(startNodeId))
@@ -323,6 +331,8 @@ namespace FUSE.Loading
             {
                 result["partial"] = true;
                 result["preserveStyle"] = !hasStyle;
+                result["preserveBridgeSupportsSteel"] = !hasFlags && !hasStyle;
+                result["preserveYard"] = !hasFlags && !hasStyle;
                 result["preserveTrackClass"] = !hasTrackClass;
                 result["preserveSpeedLimit"] = !hasSpeedLimit;
                 result["preservePriority"] = !hasPriority;
@@ -330,6 +340,21 @@ namespace FUSE.Loading
             }
 
             return result;
+        }
+
+        private static string StyleFromTrackFlags(int flags)
+        {
+            if ((flags & RailroaderTrackContract.TunnelFlag) != 0)
+            {
+                return "tunnel";
+            }
+
+            if ((flags & RailroaderTrackContract.BridgeFlag) != 0)
+            {
+                return "bridge";
+            }
+
+            return (flags & RailroaderTrackContract.YardFlag) != 0 ? "yard" : "standard";
         }
 
         private static JToken ConvertSpan(JToken token)
@@ -416,16 +441,42 @@ namespace FUSE.Loading
 
         private static JObject ConvertArea(string id, JObject item)
         {
-            return CleanObject(new JObject
+            var result = new JObject
             {
-                ["name"] = ReadString(item, "name") ?? id,
-                ["position"] = Vector(item["localPosition"] ?? item["position"], false),
+                ["name"] = ReadString(item, "name"),
                 ["radius"] = Clone(item["radius"]),
                 ["tagColor"] = NormalizeAreaTagColor(id, item["tagColor"] ?? item["TagColor"]),
                 ["order"] = Clone(item["order"]),
                 ["spanIds"] = ToStringArray(item["spanIds"] ?? item["spans"]),
                 ["groupId"] = ReadString(item, "groupId", "GroupId")
-            });
+            };
+
+            var position = item["localPosition"] ?? item["position"];
+            if (position != null && position.Type != JTokenType.Null)
+            {
+                result["position"] = Vector(position, false);
+            }
+
+            return CleanObject(result);
+        }
+
+        private static bool HasLegacyAreaDefinition(JObject item)
+        {
+            if (item == null)
+            {
+                return false;
+            }
+
+            return item.Properties().Any(property =>
+                string.Equals(property.Name, "name", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "localPosition", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "position", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "radius", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "tagColor", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "order", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "spanIds", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "spans", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "groupId", StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>
@@ -634,6 +685,17 @@ namespace FUSE.Loading
             }
 
             var model = ReadString(item, "assetIdentifier", "model", "modelIdentifier", "prefabIdentifier", "prefab") ?? string.Empty;
+            if (IsLegacyEditorOnlySceneryAsset(model))
+            {
+                // Alina's turntable measurement disc is an authoring overlay,
+                // not part of the finished scene. A small number of old map
+                // packages shipped the helper beside the real turntable. The
+                // old editor hid it outside edit mode; materializing it as
+                // ordinary FUSE scenery leaves a bright yellow disc over the
+                // completed bridge (issue #235).
+                return null;
+            }
+
             if (!string.IsNullOrWhiteSpace(model) && !model.Contains("://"))
             {
                 model = "scenery://" + model;
@@ -649,7 +711,27 @@ namespace FUSE.Loading
             });
         }
 
-        private static void ConvertSplineys(JObject source, JObject root)
+        internal static bool IsLegacyEditorOnlySceneryAsset(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var normalized = value.Trim();
+            var scheme = normalized.IndexOf("://", StringComparison.Ordinal);
+            if (scheme >= 0)
+            {
+                normalized = normalized.Substring(scheme + 3);
+            }
+
+            return string.Equals(
+                normalized,
+                "TurntableMeasurementTool",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void ConvertSplineys(JObject source, JObject root, string packageId)
         {
             if (source == null)
             {
@@ -696,7 +778,11 @@ namespace FUSE.Loading
                 }
                 else if (RailroadCrossingHandlers.Contains(handler))
                 {
-                    ((JObject)root["world"]["scenery"])[property.Name] = ConvertScenery(item);
+                    var scenery = ConvertScenery(item);
+                    if (scenery != null)
+                    {
+                        ((JObject)root["world"]["scenery"])[property.Name] = scenery;
+                    }
                 }
                 else if (!string.IsNullOrWhiteSpace(handler) &&
                          !SplineyHandlerMap.ContainsKey(handler) &&
@@ -708,7 +794,7 @@ namespace FUSE.Loading
                     // GraphWillChangeEvent dispatched in Flush() below. FUSE
                     // intentionally does not know which plugin owns which
                     // handler — plugins self-select inside their event handler.
-                    FuseSplineyPluginHost.Register(property.Name, item);
+                    FuseSplineyPluginHost.Register(property.Name, item, packageId);
                     continue;
                 }
                 else if (points?.Count >= 2)
@@ -733,7 +819,8 @@ namespace FUSE.Loading
                 FuseLog.Info(
                     "FUSE legacy spliney plugin host dispatched GraphWillChangeEvent " +
                     $"pendingSplineys={flush.PendingSplineyCount} " +
-                    $"nodesAdded={flush.NodesAdded} segmentsAdded={flush.SegmentsAdded}.");
+                    $"nodesAdded={flush.NodesAdded} nodesUpdated={flush.NodesUpdated} " +
+                    $"segmentsAdded={flush.SegmentsAdded} segmentsUpdated={flush.SegmentsUpdated}.");
             }
         }
 
@@ -789,6 +876,16 @@ namespace FUSE.Loading
                 ["tailStyle"] = ReadString(item, "tailStyle", "tailstyle"),
                 ["points"] = points
             });
+        }
+
+        internal static JObject ConvertSplineyForCompatibility(JObject item)
+        {
+            if (item == null)
+            {
+                throw new ArgumentNullException(nameof(item));
+            }
+
+            return ConvertSpliney(item);
         }
 
         private static string InferSplineyType(JObject item, string handler)

@@ -233,7 +233,10 @@ namespace FUSE.Loading
             foreach (var property in obj.Properties())
             {
                 var cleaned = Clean(property.Value);
-                if (cleaned == null || cleaned.Type == JTokenType.Null || IsEmpty(cleaned))
+                if (cleaned == null ||
+                    cleaned.Type == JTokenType.Null ||
+                    cleaned is JValue scalar && scalar.Value == null ||
+                    IsEmpty(cleaned))
                 {
                     continue;
                 }

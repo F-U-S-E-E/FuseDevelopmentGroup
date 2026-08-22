@@ -36,23 +36,47 @@ namespace FUSE.Patches
     [HarmonyPatch]
     internal static class FusePrefabStoreAllCarDefinitionInfosFilterPatch
     {
+        private static readonly FieldInfo StoresField =
+            AccessTools.Field(typeof(PrefabStore), "_stores");
+        private static PrefabStore _cachedOwner;
+        private static int _cachedStoreCount = -1;
+        private static TypedContainerItem<CarDefinition>[] _cachedDefinitions;
+
         private static MethodInfo TargetMethod()
         {
             return AccessTools.PropertyGetter(typeof(PrefabStore), "AllCarDefinitionInfos");
         }
 
+        private static bool Prefix(
+            PrefabStore __instance,
+            ref System.Collections.Generic.IEnumerable<TypedContainerItem<CarDefinition>> __result,
+            out bool __state)
+        {
+            __state = TryGetCached(__instance, out var cached);
+            if (__state)
+            {
+                __result = cached;
+                return false;
+            }
+
+            return true;
+        }
+
         private static void Postfix(
             PrefabStore __instance,
-            ref System.Collections.Generic.IEnumerable<TypedContainerItem<CarDefinition>> __result)
+            ref System.Collections.Generic.IEnumerable<TypedContainerItem<CarDefinition>> __result,
+            bool __state)
         {
-            if (__result == null)
+            if (__state || __result == null)
             {
                 return;
             }
 
             try
             {
-                __result = FilterLoserDefinitions(__instance, __result);
+                var filtered = FilterLoserDefinitions(__instance, __result).ToArray();
+                PublishCache(__instance, filtered);
+                __result = filtered;
             }
             catch (Exception ex)
             {
@@ -81,15 +105,14 @@ namespace FUSE.Patches
                 loserIdentifiers = null;
             }
 
-            if (loserIdentifiers == null || loserIdentifiers.Count == 0)
-            {
-                // No collisions recorded, or we failed to compute the
-                // set — keep the original enumeration verbatim so we
-                // never silently drop content the game expected.
-                return source;
-            }
-
-            return EnumerateNonLoser(source, loserIdentifiers);
+            // Always put the game/third-party enumeration behind the resilient
+            // boundary, even when no duplicate-pack losers were recorded. A
+            // malformed car provider can otherwise throw lazily while the
+            // Equipment window builds its purchase catalogue and leave the
+            // entire window unusable. The empty set preserves every valid item.
+            return EnumerateNonLoser(
+                source,
+                loserIdentifiers ?? new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal));
         }
 
         private static System.Collections.Generic.IEnumerable<TypedContainerItem<CarDefinition>>
@@ -112,6 +135,8 @@ namespace FUSE.Patches
             // going" semantics for free.
             using (var enumerator = source.GetEnumerator())
             {
+                var consecutiveFailures = 0;
+                var reportedFailure = false;
                 while (true)
                 {
                     bool hasNext;
@@ -124,17 +149,35 @@ namespace FUSE.Patches
                             current = enumerator.Current;
                         }
                     }
-                    catch (Model.Database.PrefabStore.UnknownIdentifierException)
+                    catch (Model.Database.PrefabStore.UnknownIdentifierException ex)
                     {
                         // Loser identifier the filter rejected.
                         // Move past it and keep going.
+                        consecutiveFailures++;
+                        ReportEnumerationFailureOnce(ex, ref reportedFailure);
+                        if (consecutiveFailures >= 16)
+                        {
+                            FuseLog.Warning(
+                                "FUSE stopped a repeatedly failing car-definition provider after 16 consecutive errors; " +
+                                "valid definitions already enumerated remain available in the Equipment window.");
+                            yield break;
+                        }
                         continue;
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         // Any other failure inside the selector —
                         // skip the item but don't tear the whole
                         // enumeration down.
+                        consecutiveFailures++;
+                        ReportEnumerationFailureOnce(ex, ref reportedFailure);
+                        if (consecutiveFailures >= 16)
+                        {
+                            FuseLog.Warning(
+                                "FUSE stopped a repeatedly failing car-definition provider after 16 consecutive errors; " +
+                                "valid definitions already enumerated remain available in the Equipment window.");
+                            yield break;
+                        }
                         continue;
                     }
 
@@ -142,9 +185,9 @@ namespace FUSE.Patches
                     {
                         yield break;
                     }
+                    consecutiveFailures = 0;
                     if (current == null || current.Identifier == null)
                     {
-                        yield return current;
                         continue;
                     }
                     if (loserIdentifiers.Contains(current.Identifier))
@@ -154,6 +197,83 @@ namespace FUSE.Patches
                     yield return current;
                 }
             }
+        }
+
+        internal static void InvalidateCache(PrefabStore owner = null)
+        {
+            if (owner != null && !ReferenceEquals(owner, _cachedOwner))
+            {
+                return;
+            }
+
+            _cachedOwner = null;
+            _cachedStoreCount = -1;
+            _cachedDefinitions = null;
+        }
+
+        private static bool TryGetCached(
+            PrefabStore owner,
+            out TypedContainerItem<CarDefinition>[] definitions)
+        {
+            definitions = null;
+            if (owner == null || !ReferenceEquals(owner, _cachedOwner) || _cachedDefinitions == null)
+            {
+                return false;
+            }
+
+            var storeCount = ReadStoreCount(owner);
+            if (storeCount < 0 || storeCount != _cachedStoreCount)
+            {
+                InvalidateCache(owner);
+                return false;
+            }
+
+            definitions = _cachedDefinitions;
+            return true;
+        }
+
+        private static void PublishCache(
+            PrefabStore owner,
+            TypedContainerItem<CarDefinition>[] definitions)
+        {
+            var storeCount = ReadStoreCount(owner);
+            if (owner == null || definitions == null || storeCount < 0)
+            {
+                return;
+            }
+
+            _cachedOwner = owner;
+            _cachedStoreCount = storeCount;
+            _cachedDefinitions = definitions;
+        }
+
+        private static int ReadStoreCount(PrefabStore owner)
+        {
+            try
+            {
+                return StoresField?.GetValue(owner) is System.Collections.ICollection stores
+                    ? stores.Count
+                    : -1;
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+
+        private static void ReportEnumerationFailureOnce(Exception exception, ref bool reported)
+        {
+            if (reported)
+            {
+                return;
+            }
+
+            reported = true;
+            var cause = exception?.GetBaseException();
+            FuseLog.Warning(
+                "FUSE contained a broken car-definition provider while building the Equipment catalogue: " +
+                $"{cause?.GetType().Name ?? "Exception"}: {cause?.Message ?? "unknown error"}. " +
+                "The invalid entry was skipped so remaining equipment stays purchasable.");
         }
 
         /// <summary>
@@ -171,13 +291,12 @@ namespace FUSE.Patches
                 return result;
             }
 
-            var storesField = AccessTools.Field(typeof(PrefabStore), "_stores");
-            if (storesField == null)
+            if (StoresField == null)
             {
                 return result;
             }
 
-            if (!(storesField.GetValue(prefabStore) is System.Collections.Generic.IList<AssetPackRuntimeStore> stores))
+            if (!(StoresField.GetValue(prefabStore) is System.Collections.Generic.IList<AssetPackRuntimeStore> stores))
             {
                 return result;
             }

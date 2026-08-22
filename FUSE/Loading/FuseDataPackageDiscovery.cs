@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using FUSE.Authoring.Data;
 using FUSE.Infrastructure;
 using FUSE.Runtime.Lifecycle;
 using Newtonsoft.Json;
@@ -83,7 +84,18 @@ namespace FUSE.Loading
         internal static IReadOnlyList<FusePackageManifestSnapshot> GetPackageManifestSnapshots()
         {
             DiscoverPackagesOnce();
-            return _discoveredPackageManifests
+            return CreatePackageManifestSnapshots(_discoveredPackageManifests);
+        }
+
+        internal static IReadOnlyList<FusePackageManifestSnapshot> GetPackageManifestSnapshots(string modsRoot)
+        {
+            return CreatePackageManifestSnapshots(DiscoverPackageManifests(modsRoot));
+        }
+
+        private static IReadOnlyList<FusePackageManifestSnapshot> CreatePackageManifestSnapshots(
+            IEnumerable<FusePackageManifest> manifests)
+        {
+            return (manifests ?? Enumerable.Empty<FusePackageManifest>())
                 .Select((manifest, index) => new FusePackageManifestSnapshot
                 {
                     Order = index + 1,
@@ -95,6 +107,8 @@ namespace FUSE.Loading
                     Priority = manifest.Priority,
                     LoadAfter = manifest.LoadAfter ?? Array.Empty<string>(),
                     LoadBefore = manifest.LoadBefore ?? Array.Empty<string>(),
+                    RequiredPackageIds = manifest.RequiredPackageIds ?? Array.Empty<string>(),
+                    ConflictsWith = manifest.ConflictsWith ?? Array.Empty<FuseModRequirement>(),
                     Disabled = manifest.Disabled,
                     DisabledReason = manifest.DisabledReason ?? string.Empty,
                     IsLegacyConverted = manifest.IsLegacyDataPackage,
@@ -161,16 +175,45 @@ namespace FUSE.Loading
                 if (manifest.Disabled)
                 {
                     FusePackageFaultRegistry.MarkDisabled(manifest.Id, manifest.DisabledReason);
-                    FusePackageFaultRegistry.MarkSkipped(manifest.Id, manifest.DisabledReason);
                     FuseLog.Warning($"FUSE skipped disabled data package '{manifest.Id}' path='{packagePath}' reason='{manifest.DisabledReason}'.");
                     continue;
                 }
 
                 if (manifest.HasBlockingFaults)
                 {
-                    foreach (var fault in manifest.Faults)
+                    if (manifest.ManifestReadException != null)
                     {
-                        FusePackageFaultRegistry.RecordFault(manifest.Id, "dependency/load-order", fault);
+                        FusePackageFaultRegistry.RecordFault(
+                            manifest.Id,
+                            "manifest JSON",
+                            manifest.Faults.FirstOrDefault() ?? manifest.ManifestReadException.GetBaseException().Message,
+                            manifest.ManifestReadException,
+                            manifest.FolderPath,
+                            manifest.ManifestPath,
+                            packageName: manifest.DisplayName,
+                            expectedShape: "A valid Info.json or Definition.json package manifest.",
+                            receivedValue: manifest.ManifestReadException.GetBaseException().Message);
+                    }
+                    else
+                    {
+                        foreach (var fault in manifest.Faults)
+                        {
+                            var isManifestFieldFault = fault?.IndexOf(
+                                "FuseDataFile",
+                                StringComparison.OrdinalIgnoreCase) >= 0;
+                            FusePackageFaultRegistry.RecordFault(
+                                manifest.Id,
+                                isManifestFieldFault ? "manifest field" : "dependency/load-order",
+                                fault,
+                                null,
+                                manifest.FolderPath,
+                                manifest.ManifestPath,
+                                InferManifestFaultJsonPath(manifest, fault),
+                                suggestedAction: SuggestedActionForManifestFault(fault),
+                                packageName: manifest.DisplayName,
+                                expectedShape: "Package dependency and load-order declarations accepted by FUSE.",
+                                receivedValue: fault);
+                        }
                     }
 
                     FusePackageFaultRegistry.MarkSkipped(manifest.Id, "dependency/load-order fault");
@@ -178,6 +221,7 @@ namespace FUSE.Loading
                     continue;
                 }
 
+                var faultCountBeforeLoad = FusePackageFaultRegistry.FaultCount;
                 try
                 {
                     var packageStopwatch = Stopwatch.StartNew();
@@ -187,7 +231,7 @@ namespace FUSE.Loading
                     }
                     else
                     {
-                        FuseModLoader.LoadMod(packagePath);
+                        FuseModLoader.LoadMod(packagePath, manifest.Id);
                     }
                     FusePackageFaultRegistry.MarkLoadedFromDisk(manifest.Id);
                     FuseLog.Info($"FUSE loaded package '{Path.GetFileName(packagePath)}' id='{manifest.Id}' from disk into resident definitions in {packageStopwatch.ElapsedMilliseconds} ms. Runtime apply has not run in this step.");
@@ -195,7 +239,15 @@ namespace FUSE.Loading
                 }
                 catch (Exception ex)
                 {
-                    FusePackageFaultRegistry.RecordFault(manifest.Id, "deserialization", ex.Message, ex);
+                    if (FusePackageFaultRegistry.FaultCount == faultCountBeforeLoad)
+                    {
+                        FusePackageFaultRegistry.RecordFault(
+                            manifest.Id,
+                            "package load",
+                            ex.GetBaseException().Message,
+                            ex,
+                            packagePath);
+                    }
                     FusePackageFaultRegistry.MarkSkipped(manifest.Id, "deserialization failed");
                     FuseLog.Exception($"Failed to deserialize FUSE data package '{packagePath}' from disk", ex);
                 }
@@ -268,6 +320,7 @@ namespace FUSE.Loading
 
         public static void ResetDiscovery()
         {
+            FuseLegacyCapabilityActivation.Reset();
             if (!_discoveryComplete && !_definitionsLoadedFromDisk && _discoveredPackageFolders.Length == 0)
             {
                 return;
@@ -338,14 +391,31 @@ namespace FUSE.Loading
             JObject info;
             try
             {
-                info = FuseLegacyDataConverter.ReadLegacyObject(infoPath);
+                info = FuseLegacyDataConverter.ReadManifestObject(infoPath);
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
             {
                 // A malformed Info.json is an authoring error in a FUSE/UMM package, not a signal to
                 // reinterpret the folder as a legacy data package. Surface the parse failure and stop.
-                FuseLog.Exception($"FUSE ignored package '{folderPath}' because Info.json could not be parsed", ex);
-                return false;
+                if (!LooksLikeFusePackageWithBrokenInfo(folderPath))
+                {
+                    FuseLog.Exception($"FUSE ignored package '{folderPath}' because Info.json could not be parsed", ex);
+                    return false;
+                }
+
+                FuseLog.Exception($"FUSE retained faulted package '{folderPath}' because Info.json could not be parsed", ex);
+
+                var fallbackId = Path.GetFileName(folderPath);
+                manifest = new FusePackageManifest
+                {
+                    Id = fallbackId,
+                    DisplayName = fallbackId,
+                    FolderPath = folderPath,
+                    ManifestPath = infoPath,
+                    ManifestReadException = ex
+                };
+                manifest.Faults.Add(ex.GetBaseException().Message);
+                return true;
             }
 
             var id = ((string)info["Id"] ?? Path.GetFileName(folderPath)).Trim();
@@ -354,10 +424,14 @@ namespace FUSE.Loading
                 return false;
             }
 
-            var hasExplicitDataFiles = HasFuseDataFile(info["FuseDataFile"]) ||
-                HasFuseDataFile(info["FuseDataFiles"]);
-            var isAssetPackOnly = HasFuseAssetPacks(info) && !hasExplicitDataFiles;
-            var isDataPackage = hasExplicitDataFiles ||
+            var singleDataFileToken = info["FuseDataFile"];
+            var multipleDataFilesToken = info["FuseDataFiles"];
+            var declaresDataFiles = singleDataFileToken != null || multipleDataFilesToken != null;
+            var hasExplicitDataFiles =
+                HasFuseDataFile(singleDataFileToken) ||
+                HasFuseDataFile(multipleDataFilesToken);
+            var isAssetPackOnly = HasFuseAssetPacks(info) && !declaresDataFiles;
+            var isDataPackage = declaresDataFiles ||
                 (!isAssetPackOnly && HasRootDefinitionFile(folderPath) && (ContainsFuseReference(info["Requirements"]) || ContainsFuseReference(info["LoadAfter"])));
             if (!isDataPackage)
             {
@@ -384,13 +458,20 @@ namespace FUSE.Loading
                 DisplayName = ((string)info["DisplayName"] ?? (string)info["Name"] ?? (string)info["name"] ?? id ?? string.Empty).Trim(),
                 Version = ((string)info["Version"] ?? (string)info["version"] ?? string.Empty).Trim(),
                 FolderPath = folderPath,
+                ManifestPath = infoPath,
                 Priority = ReadPriority(info["FuseLoadPriority"]),
                 RequiredPackageIds = ReadDependencyIds(info["FuseRequires"]),
                 LoadAfter = ReadDependencyIds(info["FuseLoadAfter"]),
                 LoadBefore = ReadDependencyIds(info["FuseLoadBefore"]),
+                ConflictsWith = ReadPackageReferences(info["FuseConflictsWith"]),
                 Disabled = disabled,
                 DisabledReason = disabledReason
             };
+            if (declaresDataFiles && !hasExplicitDataFiles)
+            {
+                manifest.Faults.Add(
+                    "Info.json field 'FuseDataFile'/'FuseDataFiles' must be a non-empty file name or an array of non-empty file names.");
+            }
             return true;
         }
 
@@ -423,15 +504,88 @@ namespace FUSE.Loading
                 DisplayName = legacy.DisplayName ?? id,
                 Version = legacy.Version ?? string.Empty,
                 FolderPath = folderPath,
+                ManifestPath = Path.Combine(folderPath, "Definition.json"),
                 Priority = ReadPriority(info?["FuseLoadPriority"]),
                 RequiredPackageIds = legacy.RequiredPackageIds ?? Array.Empty<string>(),
                 LoadAfter = legacy.LoadAfter ?? Array.Empty<string>(),
                 LoadBefore = ReadDependencyIds(info?["FuseLoadBefore"]),
+                ConflictsWith = legacy.ConflictsWith ?? Array.Empty<FuseModRequirement>(),
                 Disabled = disabled,
                 DisabledReason = disabledReason,
                 IsLegacyDataPackage = true
             };
             return true;
+        }
+
+        private static bool LooksLikeFusePackageWithBrokenInfo(string folderPath)
+        {
+            try
+            {
+                return File.Exists(Path.Combine(folderPath, "Definition.json")) ||
+                       Directory.GetFiles(folderPath, "*.fuse.json", SearchOption.TopDirectoryOnly).Length > 0 ||
+                       Directory.GetFiles(folderPath, "*.bson", SearchOption.TopDirectoryOnly).Length > 0;
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                FuseLog.Exception($"FUSE could not inspect malformed package folder '{folderPath}'", ex);
+                return false;
+            }
+        }
+
+        private static string InferManifestFaultJsonPath(FusePackageManifest manifest, string message)
+        {
+            if (message?.IndexOf("requires", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return manifest != null && manifest.IsLegacyDataPackage ? "requires" : "FuseRequires";
+            }
+
+            if (message?.IndexOf("LoadAfter", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return manifest != null && manifest.IsLegacyDataPackage ? "loadAfter" : "FuseLoadAfter";
+            }
+
+            if (message?.IndexOf("LoadBefore", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return manifest != null && manifest.IsLegacyDataPackage ? "loadBefore" : "FuseLoadBefore";
+            }
+
+            if (message?.IndexOf("conflictsWith", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return manifest != null && manifest.IsLegacyDataPackage ? "conflictsWith" : "FuseConflictsWith";
+            }
+
+            if (message?.IndexOf("FuseDataFile", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "FuseDataFiles";
+            }
+
+            return string.Empty;
+        }
+
+        private static string SuggestedActionForManifestFault(string message)
+        {
+            if (message?.IndexOf("FuseDataFile", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Correct the FuseDataFile/FuseDataFiles value in Info.json, then reload package discovery.";
+            }
+
+            if (message?.IndexOf("requires", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Install and enable the named dependency, or correct this package's required dependency id.";
+            }
+
+            if (message?.IndexOf("LoadAfter", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message?.IndexOf("LoadBefore", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Correct the load-order id or install and enable the referenced package.";
+            }
+
+            if (message?.IndexOf("conflictsWith", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Disable one of the author-declared incompatible packages, or correct the conflictsWith declaration if the packages are compatible.";
+            }
+
+            return "Correct the reported package manifest problem, then reload package discovery.";
         }
 
         private static IReadOnlyList<FusePackageManifest> SortPackages(IReadOnlyList<FusePackageManifest> packages)
@@ -441,7 +595,7 @@ namespace FUSE.Loading
                 .ThenBy(package => package.Id, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(package => package.FolderPath, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
-            if (fallbackOrder.Length <= 1)
+            if (fallbackOrder.Length == 0)
             {
                 return fallbackOrder;
             }
@@ -460,14 +614,74 @@ namespace FUSE.Loading
                 FuseLog.Warning($"FUSE {message}");
             }
 
+            var installedMods = FuseModRequirementResolver.CollectInstalledMods();
+            foreach (var package in fallbackOrder)
+            {
+                if (package.Disabled)
+                {
+                    continue;
+                }
+
+                foreach (var conflict in package.ConflictsWith ?? Array.Empty<FuseModRequirement>())
+                {
+                    string conflictingId;
+                    string conflictingVersion;
+                    string conflictingSource;
+                    if (TryResolvePackage(byId, conflict?.Id, out var conflictingPackage) &&
+                        !ReferenceEquals(package, conflictingPackage) &&
+                        IsDeclaredConflictMatch(
+                            conflict,
+                            conflictingPackage.Id,
+                            conflictingPackage.Version,
+                            conflictingPackage.Disabled))
+                    {
+                        conflictingId = conflictingPackage.Id;
+                        conflictingVersion = conflictingPackage.Version;
+                        conflictingSource = "discovered data package";
+                    }
+                    else if (TryMatchInstalledConflict(
+                                 package.Id,
+                                 package.FolderPath,
+                                 conflict,
+                                 installedMods,
+                                 out var installed))
+                    {
+                        conflictingId = installed.Id;
+                        conflictingVersion = installed.Version;
+                        conflictingSource = installed.Source;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
+                    var bounds = FormatVersionBounds(conflict);
+                    var message =
+                        $"Package '{package.Id}' conflictsWith '{conflict.Id}'{bounds}; " +
+                        $"matching package '{conflictingId}' version '{conflictingVersion}' is enabled " +
+                        $"(source: {conflictingSource}).";
+                    package.Faults.Add(message);
+                    FuseLog.Warning($"FUSE {message}");
+                }
+            }
+
             var outgoing = fallbackOrder.ToDictionary(package => package, _ => new HashSet<FusePackageManifest>());
             var incomingCount = fallbackOrder.ToDictionary(package => package, _ => 0);
 
             foreach (var package in fallbackOrder)
             {
+                // Disabled packages stay in the lookup table so an enabled package
+                // that requires one can report that dependency accurately. Their
+                // own requirements and order declarations are intentionally inert:
+                // a profile-disabled package must not fault the active mod set.
+                if (package.Disabled)
+                {
+                    continue;
+                }
+
                 foreach (var dependencyId in package.RequiredPackageIds)
                 {
-                    if (byId.TryGetValue(dependencyId, out var dependency))
+                    if (TryResolvePackage(byId, dependencyId, out var dependency))
                     {
                         if (dependency.Disabled)
                         {
@@ -478,6 +692,14 @@ namespace FUSE.Loading
                         }
 
                         AddPackageOrderEdge(dependency, package, outgoing, incomingCount);
+                        continue;
+                    }
+
+                    if (FuseReplacementCapabilityCatalog.IsProvided(dependencyId))
+                    {
+                        FuseLog.Info(
+                            $"FUSE dependency '{dependencyId}' required by '{package.Id}' is supplied by the FUSE runtime; " +
+                            "the runtime initializes before data packages, so no package load-order edge was needed.");
                         continue;
                     }
 
@@ -496,7 +718,7 @@ namespace FUSE.Loading
 
                 foreach (var dependencyId in package.LoadAfter)
                 {
-                    if (byId.TryGetValue(dependencyId, out var dependency))
+                    if (TryResolvePackage(byId, dependencyId, out var dependency))
                     {
                         if (dependency.Disabled)
                         {
@@ -515,6 +737,12 @@ namespace FUSE.Loading
 
                         AddPackageOrderEdge(dependency, package, outgoing, incomingCount);
                     }
+                    else if (FuseReplacementCapabilityCatalog.IsProvided(dependencyId))
+                    {
+                        FuseLog.Info(
+                            $"FUSE loadAfter '{dependencyId}' declared by '{package.Id}' resolves to a FUSE runtime replacement; " +
+                            "the runtime is already initialized before this package.");
+                    }
                     else
                     {
                         var message = $"Package '{package.Id}' declares FuseLoadAfter '{dependencyId}', but no matching FUSE data package was discovered.";
@@ -532,7 +760,7 @@ namespace FUSE.Loading
 
                 foreach (var dependencyId in package.LoadBefore)
                 {
-                    if (byId.TryGetValue(dependencyId, out var dependency))
+                    if (TryResolvePackage(byId, dependencyId, out var dependency))
                     {
                         if (dependency.Disabled)
                         {
@@ -550,6 +778,21 @@ namespace FUSE.Loading
                         }
 
                         AddPackageOrderEdge(package, dependency, outgoing, incomingCount);
+                    }
+                    else if (FuseReplacementCapabilityCatalog.IsProvided(dependencyId))
+                    {
+                        var message =
+                            $"Package '{package.Id}' declares loadBefore '{dependencyId}', but '{dependencyId}' is a FUSE runtime replacement " +
+                            "that necessarily initializes before data packages.";
+                        if (package.IsLegacyDataPackage)
+                        {
+                            FuseLog.Info($"FUSE ignored legacy order reference because it is advisory: {message}");
+                        }
+                        else
+                        {
+                            package.Faults.Add(message);
+                            FuseLog.Warning($"FUSE {message}");
+                        }
                     }
                     else
                     {
@@ -605,6 +848,116 @@ namespace FUSE.Loading
             return result;
         }
 
+        private static bool TryResolvePackage(
+            IReadOnlyDictionary<string, FusePackageManifest> packagesById,
+            string dependencyId,
+            out FusePackageManifest package)
+        {
+            package = null;
+            if (packagesById == null || string.IsNullOrWhiteSpace(dependencyId))
+            {
+                return false;
+            }
+
+            if (packagesById.TryGetValue(dependencyId.Trim(), out package))
+            {
+                return true;
+            }
+
+            package = packagesById.Values.FirstOrDefault(candidate =>
+                FuseDeclaredPackageRelationship.SamePackageId(candidate?.Id, dependencyId));
+            return package != null;
+        }
+
+        internal static bool IsDeclaredConflictMatch(
+            FuseModRequirement conflict,
+            string targetId,
+            string targetVersion,
+            bool targetDisabled)
+        {
+            if (conflict == null || string.IsNullOrWhiteSpace(conflict.Id) ||
+                string.IsNullOrWhiteSpace(targetId) || targetDisabled ||
+                !FuseDeclaredPackageRelationship.SamePackageId(conflict.Id, targetId))
+            {
+                return false;
+            }
+
+            var installed = new FuseModRequirementResolver.InstalledMod
+            {
+                Id = targetId,
+                Version = targetVersion ?? string.Empty,
+                Source = "discovered data package"
+            };
+            return FuseModRequirementResolver.VersionSatisfies(
+                "declared-conflict",
+                conflict,
+                installed,
+                out _);
+        }
+
+        internal static bool TryMatchInstalledConflict(
+            string declaringPackageId,
+            string declaringFolderPath,
+            FuseModRequirement conflict,
+            Dictionary<string, FuseModRequirementResolver.InstalledMod> installedMods,
+            out FuseModRequirementResolver.InstalledMod installed)
+        {
+            installed = null;
+            if (string.IsNullOrWhiteSpace(declaringPackageId) || conflict == null || string.IsNullOrWhiteSpace(conflict.Id) ||
+                !FuseModRequirementResolver.TryFindInstalled(conflict.Id, installedMods, out var candidate))
+            {
+                return false;
+            }
+
+            if (FuseDeclaredPackageRelationship.SamePackageId(declaringPackageId, candidate.Id) ||
+                (!string.IsNullOrWhiteSpace(declaringFolderPath) &&
+                 !string.IsNullOrWhiteSpace(candidate.FolderPath) &&
+                 string.Equals(
+                     NormalizePackagePath(declaringFolderPath),
+                     NormalizePackagePath(candidate.FolderPath),
+                     StringComparison.OrdinalIgnoreCase)))
+            {
+                return false;
+            }
+
+            if (!IsDeclaredConflictMatch(conflict, candidate.Id, candidate.Version, targetDisabled: false))
+            {
+                return false;
+            }
+
+            installed = candidate;
+            return true;
+        }
+
+        private static string NormalizePackagePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return Path.GetFullPath(path)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch
+            {
+                return path.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+        }
+
+        private static string FormatVersionBounds(FuseModRequirement reference)
+        {
+            if (reference == null ||
+                (string.IsNullOrWhiteSpace(reference.NotBefore) && string.IsNullOrWhiteSpace(reference.NotAfter)))
+            {
+                return string.Empty;
+            }
+
+            return $" (notBefore='{reference.NotBefore ?? string.Empty}', notAfter='{reference.NotAfter ?? string.Empty}')";
+        }
+
         private static void AddPackageOrderEdge(
             FusePackageManifest before,
             FusePackageManifest after,
@@ -655,6 +1008,10 @@ namespace FUSE.Loading
                 .Select(id => id.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
+            foreach (var dependencyId in wanted.Where(FuseReplacementCapabilityCatalog.IsProvided))
+            {
+                present.Add(dependencyId);
+            }
             if (wanted.Length == 0)
             {
                 return present;
@@ -712,6 +1069,11 @@ namespace FUSE.Loading
             if (string.IsNullOrWhiteSpace(dependencyId))
             {
                 return false;
+            }
+
+            if (FuseReplacementCapabilityCatalog.IsProvided(dependencyId))
+            {
+                return true;
             }
 
             var modsRoot = GetModsRoot();
@@ -881,6 +1243,37 @@ namespace FUSE.Loading
             return result
                 .Where(id => !string.IsNullOrWhiteSpace(id))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        private static FuseModRequirement[] ReadPackageReferences(JToken token)
+        {
+            if (token == null)
+            {
+                return Array.Empty<FuseModRequirement>();
+            }
+
+            IEnumerable<JToken> items = token.Type == JTokenType.Array
+                ? token.Children()
+                : new[] { token };
+            return items
+                .Where(item => item != null &&
+                    (item.Type == JTokenType.String || item.Type == JTokenType.Object))
+                .Select(item => item.Type == JTokenType.String
+                    ? new FuseModRequirement { Id = ((string)item)?.Trim() }
+                    : new FuseModRequirement
+                    {
+                        Id = ((string)item["Id"] ?? (string)item["id"])?.Trim(),
+                        NotBefore = ((string)item["NotBefore"] ?? (string)item["notBefore"])?.Trim(),
+                        NotAfter = ((string)item["NotAfter"] ?? (string)item["notAfter"])?.Trim()
+                    })
+                .Where(reference => !string.IsNullOrWhiteSpace(reference.Id))
+                .GroupBy(reference =>
+                    (reference.Id ?? string.Empty) + "\0" +
+                    (reference.NotBefore ?? string.Empty) + "\0" +
+                    (reference.NotAfter ?? string.Empty),
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
                 .ToArray();
         }
 
@@ -1083,10 +1476,13 @@ namespace FUSE.Loading
             public string DisplayName { get; set; }
             public string Version { get; set; }
             public string FolderPath { get; set; }
+            public string ManifestPath { get; set; } = string.Empty;
+            public Exception ManifestReadException { get; set; }
             public int Priority { get; set; }
             public string[] RequiredPackageIds { get; set; } = Array.Empty<string>();
             public string[] LoadAfter { get; set; } = Array.Empty<string>();
             public string[] LoadBefore { get; set; } = Array.Empty<string>();
+            public FuseModRequirement[] ConflictsWith { get; set; } = Array.Empty<FuseModRequirement>();
             public bool Disabled { get; set; }
             public string DisabledReason { get; set; } = string.Empty;
             public bool IsLegacyDataPackage { get; set; }
@@ -1106,10 +1502,17 @@ namespace FUSE.Loading
         public int Priority { get; set; }
         public string[] LoadAfter { get; set; } = Array.Empty<string>();
         public string[] LoadBefore { get; set; } = Array.Empty<string>();
+        public string[] RequiredPackageIds { get; set; } = Array.Empty<string>();
+        public FuseModRequirement[] ConflictsWith { get; set; } = Array.Empty<FuseModRequirement>();
         public bool Disabled { get; set; }
         public string DisabledReason { get; set; } = string.Empty;
         public bool IsLegacyConverted { get; set; }
         public bool IsLegacyHosted { get; set; }
         public string[] Faults { get; set; } = Array.Empty<string>();
+        public bool LoadedFromDisk { get; set; }
+        public bool AppliedToRuntime { get; set; }
+        public string SkipReason { get; set; } = string.Empty;
+        public string[] SkipReasons { get; set; } = Array.Empty<string>();
+        public string[] RuntimeFaults { get; set; } = Array.Empty<string>();
     }
 }
