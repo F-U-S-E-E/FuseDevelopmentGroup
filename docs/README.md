@@ -10,6 +10,7 @@ New to FUSE, or installing it on a fresh setup.
 | Doc | What it covers |
 | --- | --- |
 | [Getting Started](GETTING_STARTED.md) | Install FUSE and your first packages, verify the load, update, uninstall |
+| [Install, Convert, Or Author?](CHOOSING_A_WORKFLOW.md) | Pick the right installer, converter, editor, or runtime companion |
 | [FAQ](FAQ.md) | Common questions — legacy mods, multiplayer, saves, performance |
 | [Settings](SETTINGS.md) | All 29 settings, their defaults, and where they live |
 | [Console Commands](CONSOLE_COMMANDS.md) | Every `/fuse.*` command |
@@ -27,6 +28,7 @@ Building or converting FUSE packages.
 | Doc | What it covers |
 | --- | --- |
 | [Package Author Guide](PACKAGE_AUTHOR_GUIDE.md) | The authoring contract — ids, dependencies, optional references |
+| [Authoring Recipes](AUTHORING_RECIPES.md) | Move track, remove industries, place loaders, edit roads/signs, diagnose JSON |
 | [JSON Schema Reference](../schemas/FUSE_JSON_SCHEMA.md) | The full data contract |
 | [Converter](FUSE_CONVERTER.md) | Drag-and-drop, batch, and `fuse-convert` CLI conversion |
 | [External Editor](EXTERNAL_EDITOR.md) | The standalone desktop editor |
@@ -69,6 +71,9 @@ conflicts is a clean load.
 
 **A package isn't loading.** `/fuse.loaded` — not listed means undiscovered,
 listed as faulted means it failed to apply.
+
+**Can the converter convert a DLL/code mod?** No. It converts recognized JSON
+and package data only. See [Install, Convert, Or Author?](CHOOSING_A_WORKFLOW.md).
 
 **Filing a bug?** Attach `FUSE.log`, `Player.log`, `/fuse.report json` output, and
 the package's `conversion-report.json`.

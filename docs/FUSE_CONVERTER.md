@@ -2,6 +2,11 @@
 
 Official drag-and-drop converter for legacy Railroader data mods.
 
+> **Data only:** this tool does not convert DLLs or code mods. It can convert
+> recognized JSON/data from a mixed package, but compiled behavior must remain an
+> installed compatibility-hosted mod or be independently reimplemented. Use
+> [Install, Convert, Or Author?](CHOOSING_A_WORKFLOW.md) if you are unsure.
+
 ## Download
 
 Prebuilt binaries are published on the GitHub Releases page rather than tracked in this repo:
@@ -21,10 +26,14 @@ Drag any of these onto `ConvertToFUSE.cmd` at the repo root:
 - a legacy route / track mod folder
 - a legacy route / track mod `.zip`
 - a legacy horn / whistle / bell folder or `.zip`
-- a legacy asset-pack folder or `.zip`
 - a single legacy JSON data file
 
 `ConvertToFUSE.cmd` launches the official FUSE converter.
+
+Drag asset packs, Alina map-tile packages, native FUSE packages, and compatible
+code mods onto `FUSE-Installer.exe` instead. The converter identifies those
+inputs and explains the correct install path; it does not make empty wrapper
+packages for them.
 
 The repository also includes the FUSE converter icon at:
 
@@ -72,7 +81,7 @@ dotnet run --project FUSE.ConverterCli -- "C:\Path\To\LegacyMod" --out "C:\Steam
 ```
 
 ```text
-fuse-convert <inputs...> [--out <dir>] [--kind auto|route|audio|asset] [--clean] [--batch]
+fuse-convert <inputs...> [--out <dir>] [--kind auto|route|audio] [--clean] [--batch]
              [--no-validate] [--strict] [--format console|json|markdown|all] [--quiet]
 ```
 
@@ -81,10 +90,10 @@ fuse-convert <inputs...> [--out <dir>] [--kind auto|route|audio|asset] [--clean]
 | `--out <dir>` | Output root; each mod converts into `<dir>\<ModFolder>.FUSE`. Default: `.\FUSEConverted`. |
 | `--kind <kind>` | Force a package kind instead of auto-detection. |
 | `--clean` | Replace an existing `.FUSE` output folder. |
-| `--batch` | Treat each input as a container and convert every recognized child folder. |
+| `--batch` | Treat each input as a container. Convert JSON packages and report the correct install guidance for code, asset, tile, or native packages. |
 | `--no-validate` | Skip validation (it is on by default). |
 | `--strict` | Validation warnings also fail the run (exit 2), not just errors. |
-| `--format <fmt>` | `console` (default) prints to stdout; `json` / `markdown` also write `conversion-report.json` / `conversion-report.md` into each output folder; `all` writes both. |
+| `--format <fmt>` | `console` (default) prints to stdout; `json` / `markdown` also write reports. Successful reports live in the output package; failed/unsupported reports live under `<out>\_conversion-reports`. |
 | `--quiet` | Suppress per-diagnostic output; print only summaries. |
 
 Exit codes (CI can gate conversion and validation separately):
@@ -146,7 +155,6 @@ Useful options:
 | `--clean` | Replace an existing generated `.FUSE` output folder under the output root. |
 | `--kind route` | Force route/track/data conversion. |
 | `--kind audio` | Force horn/whistle/bell conversion. |
-| `--kind asset` | Force asset-pack wrapper conversion. |
 | `--batch` | Recursively convert every recognized child mod, zip, or JSON in the input folder. |
 
 ## Outputs
@@ -155,7 +163,7 @@ Each converted package gets:
 
 - `Info.json`
 - one or more `*.fuse.json` files, or `audio.fuse.json`
-- copied audio files or asset pack folders when needed
+- copied audio files and asset folders carried by a converted route package when needed
 - `conversion-report.json`
 - `conversion-report.md`
 
@@ -174,8 +182,12 @@ The report is the important bit. It records:
 | Track / route JSON folders | One FUSE data file per source JSON, preserving file-per-concern structure. |
 | Single route JSON file | One standalone FUSE package fragment. |
 | Horn / whistle / bell packs | FUSE audio package with copied audio files. |
-| Strange Customs asset packs | FUSE asset wrapper with `FuseAssetPacks` in `Info.json`. |
 | Zip files | Extracted to a temporary folder, detected, converted, then cleaned up. |
+
+Asset-pack-only, Alina map-tile, native FUSE, and compiled-code packages are not
+conversion inputs. Install the original package with the FUSE installer. A
+mixed legacy package may still convert its recognized top-level JSON data; its
+DLL behavior remains unconverted and is called out in the report.
 
 ## Known Lossy Areas
 
@@ -210,5 +222,9 @@ Current intentional unsupported/deferred areas:
 - arbitrary legacy script logic from `.dll` files
 - rolling stock/car/locomotive packages outside FUSE audio definitions
 - unknown custom component types when their owning assembly is not installed or not converted to a FUSE component package
+
+The presence of a `.dll` is never a successful code conversion. The report must
+keep that binary visible as manual/unsupported work even when the package's JSON
+converted successfully.
 
 Unsupported entries must remain visible in `conversion-report.json` and `conversion-report.md`. A clean conversion is allowed to have `info` entries, but a supported package should not rely on hidden unsupported runtime behavior.

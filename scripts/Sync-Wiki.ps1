@@ -42,6 +42,7 @@ $blobBase = 'https://github.com/F-U-S-E-E/FuseDevelopmentGroup/blob/main'
 # docs/ file -> wiki page name. Order drives the sidebar.
 $pageMap = [ordered]@{
     'GETTING_STARTED.md'      = 'Getting-Started'
+    'CHOOSING_A_WORKFLOW.md'  = 'Install-Convert-Or-Author'
     'FAQ.md'                  = 'FAQ'
     'MIGRATION_FROM_LEGACY.md' = 'Migrating-From-Legacy-Mods'
     'SETTINGS.md'             = 'Settings'
@@ -51,13 +52,15 @@ $pageMap = [ordered]@{
     'FUSE_INSTALLER.md'       = 'Installer'
     'FUSE_CONVERTER.md'       = 'Converter'
     'PACKAGE_AUTHOR_GUIDE.md' = 'Package-Author-Guide'
+    'AUTHORING_RECIPES.md'    = 'Authoring-Recipes'
     'EXTERNAL_EDITOR.md'      = 'External-Editor'
+    'BASE_GAME_MAP_AUTHORING_AUDIT.md' = 'Map-Authoring-Coverage'
 }
 
 # Sidebar grouping.
 $sections = [ordered]@{
-    'Players'         = @('Getting-Started', 'FAQ', 'Migrating-From-Legacy-Mods', 'Settings', 'Console-Commands', 'Troubleshooting', 'Known-Issues', 'Installer')
-    'Package Authors' = @('Converter', 'Package-Author-Guide', 'External-Editor')
+    'Players'         = @('Getting-Started', 'Install-Convert-Or-Author', 'FAQ', 'Migrating-From-Legacy-Mods', 'Settings', 'Console-Commands', 'Troubleshooting', 'Known-Issues', 'Installer')
+    'Package Authors' = @('Converter', 'Package-Author-Guide', 'Authoring-Recipes', 'External-Editor', 'Map-Authoring-Coverage')
 }
 
 function Convert-Links {
@@ -147,6 +150,9 @@ and Alina's Map Mod packages.
 
 **New here?** Start with [Getting Started](Getting-Started).
 
+**Not sure whether to install, convert, or edit a mod?** Use
+[Install, Convert, Or Author](Install-Convert-Or-Author).
+
 **Coming from Railloader or another legacy stack?** Read
 [Migrating From Legacy Mods](Migrating-From-Legacy-Mods) before installing
 anything.
@@ -154,6 +160,7 @@ anything.
 ## Players
 
 - [Getting Started](Getting-Started) — install, verify, update, uninstall
+- [Install, Convert, Or Author](Install-Convert-Or-Author) — choose the correct tool
 - [FAQ](FAQ) — legacy mods, multiplayer, saves, performance
 - [Settings](Settings) — every setting and its default
 - [Console Commands](Console-Commands) — every ``/fuse.*`` command
@@ -165,7 +172,9 @@ anything.
 
 - [Converter](Converter) — converting legacy mods
 - [Package Author Guide](Package-Author-Guide) — the authoring contract
+- [Authoring Recipes](Authoring-Recipes) — common map, industry, loader, and JSON tasks
 - [External Editor](External-Editor) — the standalone desktop editor
+- [Map Authoring Coverage](Map-Authoring-Coverage) — base-game subsystem crosswalk and live acceptance boundary
 - [JSON Schema Reference]($blobBase/schemas/FUSE_JSON_SCHEMA.md) — the data contract
 
 ## Offline manuals
