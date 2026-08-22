@@ -261,6 +261,15 @@ try {
           $preflightIndex -lt $releaseIndex
         ) `
         -Message "$workflowPath must package and preflight Nexus before creating the GitHub release."
+
+      $nexusPackageBlock = $workflow.Substring($packageIndex, $preflightIndex - $packageIndex)
+      Assert-Condition `
+        -Condition (
+          $nexusPackageBlock.Contains('Copy-Item "dist\FUSE-Installer.exe" $payloadRoot') -and
+          $nexusPackageBlock.Contains('-Path $payloadRoot -DestinationPath $archivePath -ContentsOnly') -and
+          $nexusPackageBlock.Contains("'FUSE-Installer.exe', 'FUSE/FUSE.dll', 'FUSE/Info.json', 'FUSE/LICENSE'")
+        ) `
+        -Message "$workflowPath must package and verify the installer-inclusive Nexus archive."
     }
   }
 
