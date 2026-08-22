@@ -74,10 +74,6 @@ namespace FUSE.Infrastructure
         public const int DefaultGraceMinimumDays = 0;
         public const int DefaultGraceMultiplier = 1;
         public const int DefaultGraceAddedDays = 0;
-        public const int DefaultInterchangeServiceIntervalMinutes = 150;
-        public const bool DefaultInterchangeContinuousService = false;
-        public const float DefaultInterchangeNotBeforeHour = 0f;
-        public const float DefaultInterchangeNotAfterHour = 24f;
         public const bool DefaultEnableOutboundIndustryRerouting = false;
         public const float DefaultOutboundIndustryRerouteChance = 0.25f;
         public const float DefaultOutboundIndustryFillFactor = 1f;
@@ -85,8 +81,6 @@ namespace FUSE.Infrastructure
         public const bool DefaultOutboundIndustryAllowShortTrips = false;
         public const bool DefaultOutboundIndustryIgnoreOrigin = false;
         public const bool DefaultOutboundIndustryPreventBlocking = false;
-        public const int DefaultInterchangeToInterchangeMaximumCars = 30;
-        internal const int InterchangeToInterchangeMaximumCarsLimit = 200;
         public const bool DefaultForYourConvenienceShowCabooseIcons = false;
         public const bool DefaultForYourConvenienceShowCarTagMph = false;
         public const bool DefaultForYourConvenienceShowCarTagLoads = false;
@@ -171,18 +165,6 @@ namespace FUSE.Infrastructure
 
         public static int GraceAddedDays { get; private set; } = DefaultGraceAddedDays;
 
-        public static int InterchangeServiceIntervalMinutes { get; private set; } =
-            DefaultInterchangeServiceIntervalMinutes;
-
-        public static bool InterchangeContinuousService { get; private set; } =
-            DefaultInterchangeContinuousService;
-
-        public static float InterchangeNotBeforeHour { get; private set; } =
-            DefaultInterchangeNotBeforeHour;
-
-        public static float InterchangeNotAfterHour { get; private set; } =
-            DefaultInterchangeNotAfterHour;
-
         public static bool EnableOutboundIndustryRerouting { get; private set; } =
             DefaultEnableOutboundIndustryRerouting;
 
@@ -203,9 +185,6 @@ namespace FUSE.Infrastructure
 
         public static bool OutboundIndustryPreventBlocking { get; private set; } =
             DefaultOutboundIndustryPreventBlocking;
-
-        public static int InterchangeToInterchangeMaximumCars { get; private set; } =
-            DefaultInterchangeToInterchangeMaximumCars;
 
         public static bool ForYourConvenienceShowCabooseIcons { get; private set; } =
             DefaultForYourConvenienceShowCabooseIcons;
@@ -252,10 +231,6 @@ namespace FUSE.Infrastructure
             GraceMinimumDays = DefaultGraceMinimumDays;
             GraceMultiplier = DefaultGraceMultiplier;
             GraceAddedDays = DefaultGraceAddedDays;
-            InterchangeServiceIntervalMinutes = DefaultInterchangeServiceIntervalMinutes;
-            InterchangeContinuousService = DefaultInterchangeContinuousService;
-            InterchangeNotBeforeHour = DefaultInterchangeNotBeforeHour;
-            InterchangeNotAfterHour = DefaultInterchangeNotAfterHour;
             EnableOutboundIndustryRerouting = DefaultEnableOutboundIndustryRerouting;
             OutboundIndustryRerouteChance = DefaultOutboundIndustryRerouteChance;
             OutboundIndustryFillFactor = DefaultOutboundIndustryFillFactor;
@@ -263,7 +238,6 @@ namespace FUSE.Infrastructure
             OutboundIndustryAllowShortTrips = DefaultOutboundIndustryAllowShortTrips;
             OutboundIndustryIgnoreOrigin = DefaultOutboundIndustryIgnoreOrigin;
             OutboundIndustryPreventBlocking = DefaultOutboundIndustryPreventBlocking;
-            InterchangeToInterchangeMaximumCars = DefaultInterchangeToInterchangeMaximumCars;
             ForYourConvenienceShowCabooseIcons = DefaultForYourConvenienceShowCabooseIcons;
             ForYourConvenienceShowCarTagMph = DefaultForYourConvenienceShowCarTagMph;
             ForYourConvenienceShowCarTagLoads = DefaultForYourConvenienceShowCarTagLoads;
@@ -345,16 +319,6 @@ namespace FUSE.Infrastructure
                     ReadInt(settings, "GraceMultiplier", DefaultGraceMultiplier));
                 GraceAddedDays = NormalizeGraceAddedDays(
                     ReadInt(settings, "GraceAddedDays", DefaultGraceAddedDays));
-                InterchangeServiceIntervalMinutes = NormalizeInterchangeServiceIntervalMinutes(
-                    ReadInt(settings, "InterchangeServiceIntervalMinutes", DefaultInterchangeServiceIntervalMinutes));
-                InterchangeContinuousService =
-                    ReadBool(settings, "InterchangeContinuousService", DefaultInterchangeContinuousService);
-                InterchangeNotBeforeHour = ClampInterchangeServiceHour(
-                    ReadFloat(settings, "InterchangeNotBeforeHour", DefaultInterchangeNotBeforeHour),
-                    DefaultInterchangeNotBeforeHour);
-                InterchangeNotAfterHour = ClampInterchangeServiceHour(
-                    ReadFloat(settings, "InterchangeNotAfterHour", DefaultInterchangeNotAfterHour),
-                    DefaultInterchangeNotAfterHour);
                 EnableOutboundIndustryRerouting =
                     ReadBool(settings, "EnableOutboundIndustryRerouting", DefaultEnableOutboundIndustryRerouting);
                 OutboundIndustryRerouteChance = ClampOutboundIndustryRerouteChance(
@@ -369,11 +333,6 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, "OutboundIndustryIgnoreOrigin", DefaultOutboundIndustryIgnoreOrigin);
                 OutboundIndustryPreventBlocking =
                     ReadBool(settings, "OutboundIndustryPreventBlocking", DefaultOutboundIndustryPreventBlocking);
-                InterchangeToInterchangeMaximumCars = ClampInterchangeToInterchangeMaximumCars(
-                    ReadInt(
-                        settings,
-                        "InterchangeToInterchangeMaximumCars",
-                        DefaultInterchangeToInterchangeMaximumCars));
                 ForYourConvenienceShowCabooseIcons = ReadBool(
                     settings,
                     "ForYourConvenienceShowCabooseIcons",
@@ -425,10 +384,6 @@ namespace FUSE.Infrastructure
                     $"GraceMinimumDays={GraceMinimumDays} " +
                     $"GraceMultiplier={GraceMultiplier} " +
                     $"GraceAddedDays={GraceAddedDays} " +
-                    $"InterchangeServiceIntervalMinutes={InterchangeServiceIntervalMinutes} " +
-                    $"InterchangeContinuousService={InterchangeContinuousService} " +
-                    $"InterchangeNotBeforeHour={InterchangeNotBeforeHour} " +
-                    $"InterchangeNotAfterHour={InterchangeNotAfterHour} " +
                     $"EnableOutboundIndustryRerouting={EnableOutboundIndustryRerouting} " +
                     $"OutboundIndustryRerouteChance={OutboundIndustryRerouteChance} " +
                     $"OutboundIndustryFillFactor={OutboundIndustryFillFactor} " +
@@ -436,7 +391,6 @@ namespace FUSE.Infrastructure
                     $"OutboundIndustryAllowShortTrips={OutboundIndustryAllowShortTrips} " +
                     $"OutboundIndustryIgnoreOrigin={OutboundIndustryIgnoreOrigin} " +
                     $"OutboundIndustryPreventBlocking={OutboundIndustryPreventBlocking} " +
-                    $"InterchangeToInterchangeMaximumCars={InterchangeToInterchangeMaximumCars} " +
                     $"ForYourConvenienceShowCabooseIcons={ForYourConvenienceShowCabooseIcons} " +
                     $"ForYourConvenienceShowCarTagMph={ForYourConvenienceShowCarTagMph} " +
                     $"ForYourConvenienceShowCarTagLoads={ForYourConvenienceShowCarTagLoads} " +
@@ -477,10 +431,6 @@ namespace FUSE.Infrastructure
                 GraceMinimumDays = DefaultGraceMinimumDays;
                 GraceMultiplier = DefaultGraceMultiplier;
                 GraceAddedDays = DefaultGraceAddedDays;
-                InterchangeServiceIntervalMinutes = DefaultInterchangeServiceIntervalMinutes;
-                InterchangeContinuousService = DefaultInterchangeContinuousService;
-                InterchangeNotBeforeHour = DefaultInterchangeNotBeforeHour;
-                InterchangeNotAfterHour = DefaultInterchangeNotAfterHour;
                 EnableOutboundIndustryRerouting = DefaultEnableOutboundIndustryRerouting;
                 OutboundIndustryRerouteChance = DefaultOutboundIndustryRerouteChance;
                 OutboundIndustryFillFactor = DefaultOutboundIndustryFillFactor;
@@ -488,7 +438,6 @@ namespace FUSE.Infrastructure
                 OutboundIndustryAllowShortTrips = DefaultOutboundIndustryAllowShortTrips;
                 OutboundIndustryIgnoreOrigin = DefaultOutboundIndustryIgnoreOrigin;
                 OutboundIndustryPreventBlocking = DefaultOutboundIndustryPreventBlocking;
-                InterchangeToInterchangeMaximumCars = DefaultInterchangeToInterchangeMaximumCars;
                 ForYourConvenienceShowCabooseIcons = DefaultForYourConvenienceShowCabooseIcons;
                 ForYourConvenienceShowCarTagMph = DefaultForYourConvenienceShowCarTagMph;
                 ForYourConvenienceShowCarTagLoads = DefaultForYourConvenienceShowCarTagLoads;
@@ -757,74 +706,6 @@ namespace FUSE.Infrastructure
             FuseLog.Info($"FUSE legacy gameplay setting changed: {nameof(GraceAddedDays)}={GraceAddedDays}.");
         }
 
-        public static void SetInterchangeServiceIntervalMinutes(int value)
-        {
-            InterchangeServiceIntervalMinutes = NormalizeInterchangeServiceIntervalMinutes(value);
-            SaveUserOverride(nameof(InterchangeServiceIntervalMinutes), InterchangeServiceIntervalMinutes);
-            FuseLog.Info(
-                $"FUSE legacy gameplay setting changed: {nameof(InterchangeServiceIntervalMinutes)}=" +
-                $"{InterchangeServiceIntervalMinutes}.");
-        }
-
-        public static void SetInterchangeContinuousService(bool enabled)
-        {
-            InterchangeContinuousService = enabled;
-            SaveUserOverride(nameof(InterchangeContinuousService), enabled);
-            FuseLog.Info(
-                $"FUSE legacy gameplay setting changed: {nameof(InterchangeContinuousService)}={enabled}.");
-        }
-
-        internal static void PreviewInterchangeNotBeforeHour(float value)
-        {
-            InterchangeNotBeforeHour = ClampInterchangeServiceHour(
-                value,
-                DefaultInterchangeNotBeforeHour);
-        }
-
-        public static void SetInterchangeNotBeforeHour(float value)
-        {
-            InterchangeNotBeforeHour = ClampInterchangeServiceHour(
-                value,
-                DefaultInterchangeNotBeforeHour);
-            SaveUserOverride(nameof(InterchangeNotBeforeHour), InterchangeNotBeforeHour);
-            FuseLog.Info(
-                $"FUSE legacy gameplay setting changed: {nameof(InterchangeNotBeforeHour)}=" +
-                $"{InterchangeNotBeforeHour:F2}.");
-        }
-
-        internal static void PreviewInterchangeNotAfterHour(float value)
-        {
-            InterchangeNotAfterHour = ClampInterchangeServiceHour(
-                value,
-                DefaultInterchangeNotAfterHour);
-        }
-
-        public static void SetInterchangeNotAfterHour(float value)
-        {
-            InterchangeNotAfterHour = ClampInterchangeServiceHour(
-                value,
-                DefaultInterchangeNotAfterHour);
-            SaveUserOverride(nameof(InterchangeNotAfterHour), InterchangeNotAfterHour);
-            FuseLog.Info(
-                $"FUSE legacy gameplay setting changed: {nameof(InterchangeNotAfterHour)}=" +
-                $"{InterchangeNotAfterHour:F2}.");
-        }
-
-        internal static int NormalizeInterchangeServiceIntervalMinutes(int value)
-        {
-            return value <= 0 ? DefaultInterchangeServiceIntervalMinutes : Math.Min(value, 7 * 24 * 60);
-        }
-
-        internal static float ClampInterchangeServiceHour(float value, float defaultValue)
-        {
-            if (float.IsNaN(value))
-            {
-                return defaultValue;
-            }
-
-            return Mathf.Clamp(value, 0f, 24f);
-        }
-
         internal static int NormalizeGraceMinimumDays(int value)
         {
             return Math.Max(0, value);
@@ -839,7 +720,6 @@ namespace FUSE.Infrastructure
         {
             return Math.Max(0, value);
         }
-
         public static void SetEnableOutboundIndustryRerouting(bool enabled)
         {
             EnableOutboundIndustryRerouting = enabled;
@@ -895,17 +775,6 @@ namespace FUSE.Infrastructure
         {
             OutboundIndustryPreventBlocking = enabled;
             SaveUserOverride(nameof(OutboundIndustryPreventBlocking), enabled);
-        }
-
-        public static void SetInterchangeToInterchangeMaximumCars(int value)
-        {
-            InterchangeToInterchangeMaximumCars = ClampInterchangeToInterchangeMaximumCars(value);
-            SaveUserOverride(nameof(InterchangeToInterchangeMaximumCars), InterchangeToInterchangeMaximumCars);
-        }
-
-        internal static int ClampInterchangeToInterchangeMaximumCars(int value)
-        {
-            return Mathf.Clamp(value, 0, InterchangeToInterchangeMaximumCarsLimit);
         }
 
         public static void SetForYourConvenienceShowCabooseIcons(bool enabled)
@@ -1189,19 +1058,6 @@ namespace FUSE.Infrastructure
                     ReadInt(settings, nameof(GraceMultiplier), GraceMultiplier));
                 GraceAddedDays = NormalizeGraceAddedDays(
                     ReadInt(settings, nameof(GraceAddedDays), GraceAddedDays));
-                InterchangeServiceIntervalMinutes = NormalizeInterchangeServiceIntervalMinutes(
-                    ReadInt(
-                        settings,
-                        nameof(InterchangeServiceIntervalMinutes),
-                        InterchangeServiceIntervalMinutes));
-                InterchangeContinuousService =
-                    ReadBool(settings, nameof(InterchangeContinuousService), InterchangeContinuousService);
-                InterchangeNotBeforeHour = ClampInterchangeServiceHour(
-                    ReadFloat(settings, nameof(InterchangeNotBeforeHour), InterchangeNotBeforeHour),
-                    InterchangeNotBeforeHour);
-                InterchangeNotAfterHour = ClampInterchangeServiceHour(
-                    ReadFloat(settings, nameof(InterchangeNotAfterHour), InterchangeNotAfterHour),
-                    InterchangeNotAfterHour);
                 EnableOutboundIndustryRerouting =
                     ReadBool(settings, nameof(EnableOutboundIndustryRerouting), EnableOutboundIndustryRerouting);
                 OutboundIndustryRerouteChance = ClampOutboundIndustryRerouteChance(
@@ -1219,11 +1075,6 @@ namespace FUSE.Infrastructure
                     ReadBool(settings, nameof(OutboundIndustryIgnoreOrigin), OutboundIndustryIgnoreOrigin);
                 OutboundIndustryPreventBlocking =
                     ReadBool(settings, nameof(OutboundIndustryPreventBlocking), OutboundIndustryPreventBlocking);
-                InterchangeToInterchangeMaximumCars = ClampInterchangeToInterchangeMaximumCars(
-                    ReadInt(
-                        settings,
-                        nameof(InterchangeToInterchangeMaximumCars),
-                        InterchangeToInterchangeMaximumCars));
                 ForYourConvenienceShowCabooseIcons = ReadBool(
                     settings,
                     nameof(ForYourConvenienceShowCabooseIcons),

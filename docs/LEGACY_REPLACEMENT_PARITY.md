@@ -127,12 +127,12 @@ hosted as old code mods, but hosted execution is not a native replacement.
 |---|---|---|
 | AbsoluteMadness | outbound empty/loaded routing overrides; settings tab | Implemented: dependency-scoped native routing, industry capacity weighting, payment/grace calculation, and persisted settings; in-game route-generation fixture pending |
 | ADRFDR | pay-for-resource industry component and picker title | Implemented: `ADRFDR.Pay4Resource` normalizes to the FUSE component and the picker honors `ICustomIndustryTitle`; in-game payment/title fixture pending |
-| C1CD | configurable interchange service interval, hours, continuous delivery | Implemented: native bounded scheduling policy, overnight/daytime service windows, continuous extra-service scheduling, and persisted UI; in-game service-cycle fixture pending |
+| C1CD | configurable interchange service interval, hours, continuous delivery | Deliberately not provided: removed from FUSE's native replacement scope; dependency remains unsatisfied unless the user installs a separate provider |
 | CommandLine | third-party command-line parser dependency | N/A: load packaged dependency for hosted mods; no gameplay replacement |
 | DediSevi | dedicated-server startup, RCON, player list, autosave, instant load, terrain/camera/UI suppression | Missing |
 | FallFromGrace | grace-day calculation and inspector display | Implemented: native identity-safe grace transform, persisted compatibility settings, and due-time inspector row; in-game calculation/inspector fixture pending |
 | ForYourConvenience | caboose map icons, clickable stations, live car tags, industry dashboard/settings | Implemented: dependency-scoped station-map actions, opt-in caboose icons and speed/load tag lines, persisted settings, and native read-only Industry Dashboard; in-game icon/click/tag/dashboard fixture pending |
-| Interchange2Interchange | interchange contracts and car routing between interchanges | Implemented: dependency-scoped contracted interchanges, bounded daily cross-interchange orders, cargo discovery, inspector visibility, and persisted maximum-cut setting; in-game EOD/service fixture pending |
+| Interchange2Interchange | interchange contracts and car routing between interchanges | Deliberately not provided: removed from FUSE's native replacement scope; dependency remains unsatisfied unless the user installs a separate provider |
 | SanityInitiative | unit/UI/auto-engineer/equipment/roster/placer/daily-report fixes | Missing |
 | SerialTrafficControl | serial/TCP CTC protocol bridge and settings | Missing |
 | SomeKindOfMadness | outbound routing hooks, target overrides, shuffle/prevent-blocking behavior/settings | Implemented: native candidate event, configurable chance/fill/payment/short-trip/origin behavior, safe order shuffling, and dependency-scoped activation; in-game route-generation and extension-event fixture pending |

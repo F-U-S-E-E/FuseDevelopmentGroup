@@ -315,12 +315,12 @@ base-game path, but does not replace the required large-mod-set/low-end run.
     refiller, destination sign, livery swap, and industry components.
   - [x] AbsoluteMadness (native dependency-scoped routing; in-game fixture remains in the parity row).
   - [x] ADRFDR (native component/title contract; in-game fixture remains in the parity row).
-  - [x] C1CD (native service scheduling/settings; in-game fixture remains in the parity row).
+  - [x] C1CD removed from FUSE's replacement scope; its dependency id is no longer virtually satisfied.
   - [ ] CommandLine contract where required by hosted compatibility.
   - [ ] DediSevi.
   - [x] FallFromGrace (native grace transform/inspector row; in-game fixture remains in the parity row).
   - [x] ForYourConvenience (native dashboard, station actions, and optional map/tag additions; in-game fixture remains in the parity row).
-  - [x] Interchange2Interchange (native bounded cross-interchange ordering; in-game fixture remains in the parity row).
+  - [x] Interchange2Interchange removed from FUSE's replacement scope; its dependency id is no longer virtually satisfied.
   - [ ] SanityInitiative.
   - [ ] SerialTrafficControl.
   - [x] SomeKindOfMadness (native configurable routing/event contract; in-game fixture remains in the parity row).

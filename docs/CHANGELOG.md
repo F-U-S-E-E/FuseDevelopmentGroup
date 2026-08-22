@@ -56,13 +56,12 @@
   through an explicit Legacy Gameplay setting), exposes a contained native
   candidate event, and includes bounded capacity/payment/short-trip/origin and
   order-shuffle controls.
-- Added a native Interchange2Interchange replacement with dependency-scoped
-  activation, contracted interchange visibility, daily cross-interchange cargo
-  orders, bounded cut sizes, and a persisted maximum-cars control.
+- Removed the staged C1CD and Interchange2Interchange replacements after the
+  provenance and scope review. FUSE no longer patches interchange scheduling,
+  generates cross-interchange orders, exposes settings for either behavior, or
+  virtually satisfies those legacy dependency ids.
 
 - Added native FallFromGrace parity: FUSE now owns the configurable grace-day transform, exposes its settings under **Settings > Legacy Gameplay**, and adds the due-time row to paid waybills without requiring the old DLL. Default settings leave the base-game calculation unchanged.
-- Added native C1CD parity: configurable interchange intervals, daily or overnight service windows, and continuous extra-service scheduling now live under **Settings > Legacy Gameplay**. Invalid intervals are bounded instead of allowing the legacy scheduling loop to hang.
-
 - Added the legacy `/cs-livery-refresh` command and a FUSE-owned
   `/fuse.liveries` diagnostic report. Refresh now clears only FUSE's cached
   livery textures and reapplies each live car's saved `cs.livery` selection.

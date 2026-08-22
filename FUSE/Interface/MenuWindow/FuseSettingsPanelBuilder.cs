@@ -81,69 +81,6 @@ namespace FUSE.Interface.MenuWindow
             AddIntegerField(builder, "Multiplier", FuseSettings.GraceMultiplier, FuseSettings.SetGraceMultiplier);
             AddIntegerField(builder, "Added Days", FuseSettings.GraceAddedDays, FuseSettings.SetGraceAddedDays);
 
-            builder.AddSection("Configurable Interchange Service");
-            builder.AddLabel(
-                "Replaces C1CD. Controls the extra-service interval and optional daily service window for all interchanges.");
-
-            var intervals = new[] { 5, 15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480, 720, 1080 };
-            var selectedInterval = Array.IndexOf(intervals, FuseSettings.InterchangeServiceIntervalMinutes);
-            if (selectedInterval < 0)
-            {
-                selectedInterval = Array.FindIndex(
-                    intervals,
-                    value => value >= FuseSettings.InterchangeServiceIntervalMinutes);
-                if (selectedInterval < 0)
-                {
-                    selectedInterval = intervals.Length - 1;
-                }
-            }
-
-            builder.AddField(
-                "Serve Interval",
-                builder.AddDropdown(
-                    new List<string>(Array.ConvertAll(intervals, FormatServiceInterval)),
-                    selectedInterval,
-                    index =>
-                    {
-                        if (index >= 0 && index < intervals.Length)
-                        {
-                            FuseSettings.SetInterchangeServiceIntervalMinutes(intervals[index]);
-                        }
-                    }));
-
-            builder.AddField("Continuous Service", control: BuildToggleBoxWithButton(
-                builder,
-                FuseSettings.InterchangeContinuousService,
-                () =>
-                {
-                    FuseSettings.SetInterchangeContinuousService(!FuseSettings.InterchangeContinuousService);
-                    builder.Rebuild();
-                }));
-
-            builder.AddLabel(
-                "When enabled, FUSE schedules the next extra service after every interchange pass, even when no orders remain.");
-
-            builder.AddField("Not Before", control: builder.AddSliderQuantized(
-                () => FuseSettings.InterchangeNotBeforeHour,
-                () => FormatServiceHour(FuseSettings.InterchangeNotBeforeHour),
-                FuseSettings.PreviewInterchangeNotBeforeHour,
-                0.25f,
-                0f,
-                24f,
-                FuseSettings.SetInterchangeNotBeforeHour));
-
-            builder.AddField("Not After", control: builder.AddSliderQuantized(
-                () => FuseSettings.InterchangeNotAfterHour,
-                () => FormatServiceHour(FuseSettings.InterchangeNotAfterHour),
-                FuseSettings.PreviewInterchangeNotAfterHour,
-                0.25f,
-                0f,
-                24f,
-                FuseSettings.SetInterchangeNotAfterHour));
-
-            builder.AddLabel(
-                "Use 00:00–24:00 for all-day service. A start later than the end (for example 22:00–06:00) creates an overnight window.");
-
             builder.AddSection("Outbound Industry Routing");
             builder.AddLabel(
                 "Native replacement for AbsoluteMadness and SomeKindOfMadness. It activates automatically when an enabled package requests either legacy id. " +
@@ -205,16 +142,6 @@ namespace FUSE.Interface.MenuWindow
                 "If both old packages are requested, the configurable SomeKindOfMadness behavior wins. " +
                 "A routing extension can inspect or adjust candidates through FUSE's native outbound-routing event.");
 
-            builder.AddSection("Interchange-to-Interchange Traffic");
-            builder.AddLabel(
-                "Replaces Interchange2Interchange when an enabled package requests it. " +
-                "Each contracted source interchange can create a daily cut for every other enabled interchange.");
-            AddIntegerField(
-                builder,
-                "Maximum Cars / Cut",
-                FuseSettings.InterchangeToInterchangeMaximumCars,
-                FuseSettings.SetInterchangeToInterchangeMaximumCars);
-
             builder.AddSection("For Your Convenience");
             builder.AddLabel(
                 "These visual additions activate only when an enabled package requests ForYourConvenience. " +
@@ -273,21 +200,6 @@ namespace FUSE.Interface.MenuWindow
                             builder.Rebuild();
                         }
                     }));
-        }
-
-        private static string FormatServiceInterval(int minutes)
-        {
-            return minutes < 60
-                ? minutes + " min"
-                : (minutes / 60f).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " h";
-        }
-
-        private static string FormatServiceHour(float hour)
-        {
-            var totalMinutes = (int)Math.Round(hour * 60f);
-            var displayHour = totalMinutes / 60;
-            var displayMinute = totalMinutes % 60;
-            return $"{displayHour:00}:{displayMinute:00}";
         }
 
         private static void BuildGeneralSettingsPage(UIPanelBuilder builder)

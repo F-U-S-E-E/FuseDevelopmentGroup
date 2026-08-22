@@ -67,6 +67,14 @@ expected shape with the received value, and ends with the concrete correction.
 This package-scoped copy is usually easier to send to an author than the full
 health report.
 
+### Progression Is Unlocked But Towns Or Industries Stay Disabled
+
+Run `/fuse.progressions`, then check the package folder for backup definitions.
+FUSE applies every top-level `*.fuse.json` file. A file named, for example,
+`progressions-old1.fuse.json` is still live and can overwrite the current
+progression's section-to-feature links. Rename or remove archival definitions,
+reload the save, and test again before changing the saved progression state.
+
 ### Unknown Scenery Asset
 
 Run `/fuse.assets` and verify the required asset pack is installed. Do not replace the missing asset with a guessed alias unless the legacy source actually used the alias.
