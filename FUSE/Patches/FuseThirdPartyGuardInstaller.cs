@@ -75,105 +75,42 @@ namespace FUSE.Patches
                 return;
             }
 
-            string mapEnhancerStatus;
-            try
-            {
-                mapEnhancerStatus = FuseMapEnhancerCullingGuardPatches.EnsureInstalled(_harmony);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception("FUSE Map Enhancer culling guard failed to install", ex);
-                mapEnhancerStatus = "failed";
-            }
-
-            string rebillStatus;
-            try
-            {
-                rebillStatus = FuseRebillIndustryCarsGuardPatches.EnsureInstalled(_harmony);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception("FUSE Rebill Industry Cars guard failed to install", ex);
-                rebillStatus = "failed";
-            }
-
-            string brssStatus;
-            try
-            {
-                brssStatus = FuseBrssModMenuGuardPatches.EnsureInstalled(_harmony);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception("FUSE BRSS mod-menu guard failed to install", ex);
-                brssStatus = "failed";
-            }
-
-            string timeSyncStatus;
-            try
-            {
-                timeSyncStatus = FuseTimeSyncMainThreadGuardPatches.EnsureInstalled(_harmony);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception("FUSE TimeSync main-thread guard failed to install", ex);
-                timeSyncStatus = "failed";
-            }
-
-            string utilitiesQueryStatus;
-            try
-            {
-                utilitiesQueryStatus = FuseUtilitiesQueryTooltipCompatibility.EnsureInstalled(_harmony);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception("FUSE RR Utilities query compatibility failed to install", ex);
-                utilitiesQueryStatus = "failed";
-            }
-
-            string utilitiesMapLoadStatus;
-            try
-            {
-                utilitiesMapLoadStatus = FuseUtilitiesMapLoadCompatibility.EnsureInstalled(_harmony);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception("FUSE RR Utilities map-load compatibility failed to install", ex);
-                utilitiesMapLoadStatus = "failed";
-            }
-
-            string realisticRerailStatus;
-            try
-            {
-                realisticRerailStatus = FuseRealisticRerailCraneGuardPatches.EnsureInstalled(_harmony);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception("FUSE Realistic Rerail startup guard failed to install", ex);
-                realisticRerailStatus = "failed";
-            }
-
-            string memoryLeakFpsStatus;
-            try
-            {
-                memoryLeakFpsStatus = FuseMemoryLeakFpsCompatibility.EnsureInstalled(_harmony);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception("FUSE Memory Leak & FPS compatibility failed to install", ex);
-                memoryLeakFpsStatus = "failed";
-            }
-
-            string bmanLocomotiveAudioStatus;
-            try
-            {
-                bmanLocomotiveAudioStatus =
-                    FuseBmanLocomotiveAudioCompatibility.EnsureInstalled(_harmony);
-            }
-            catch (Exception ex)
-            {
-                FuseLog.Exception("FUSE Bman locomotive audio compatibility failed to install", ex);
-                bmanLocomotiveAudioStatus = "failed";
-            }
+            var mapEnhancerStatus = InstallGuard(
+                "Map Enhancer culling guard",
+                () => FuseMapEnhancerCullingGuardPatches.EnsureInstalled(_harmony));
+            var rebillStatus = InstallGuard(
+                "Rebill Industry Cars guard",
+                () => FuseRebillIndustryCarsGuardPatches.EnsureInstalled(_harmony));
+            var brssStatus = InstallGuard(
+                "BRSS mod-menu guard",
+                () => FuseBrssModMenuGuardPatches.EnsureInstalled(_harmony));
+            var timeSyncStatus = InstallGuard(
+                "TimeSync main-thread guard",
+                () => FuseTimeSyncMainThreadGuardPatches.EnsureInstalled(_harmony));
+            var utilitiesQueryStatus = InstallGuard(
+                "RR Utilities query compatibility",
+                () => FuseUtilitiesQueryTooltipCompatibility.EnsureInstalled(_harmony));
+            var utilitiesMapLoadStatus = InstallGuard(
+                "RR Utilities map-load compatibility",
+                () => FuseUtilitiesMapLoadCompatibility.EnsureInstalled(_harmony));
+            var realisticRerailStatus = InstallGuard(
+                "Realistic Rerail startup guard",
+                () => FuseRealisticRerailCraneGuardPatches.EnsureInstalled(_harmony));
+            var memoryLeakFpsStatus = InstallGuard(
+                "Memory Leak & FPS compatibility",
+                () => FuseMemoryLeakFpsCompatibility.EnsureInstalled(_harmony));
+            var bmanLocomotiveAudioStatus = InstallGuard(
+                "Bman locomotive audio compatibility",
+                () => FuseBmanLocomotiveAudioCompatibility.EnsureInstalled(_harmony));
+            var legosLibraryStatus = InstallGuard(
+                "Legos Library compatibility",
+                () => FuseLegosLibraryCompatibility.EnsureInstalled(_harmony));
+            var assetLoaderStatus = InstallGuard(
+                "AssetLoader replacement compatibility",
+                () => FuseAssetLoaderReplacementCompatibility.EnsureInstalled(_harmony));
+            var alinasUtilitiesStatus = InstallGuard(
+                "Alina Utilities compatibility",
+                FuseAlinasUtilitiesCompatibility.EnsureInstalled);
 
             var summary =
                 $"FUSE third-party guards: mapEnhancerCulling='{mapEnhancerStatus}' " +
@@ -183,11 +120,27 @@ namespace FUSE.Patches
                 $"utilitiesMapLoad='{utilitiesMapLoadStatus}' " +
                 $"realisticRerail='{realisticRerailStatus}' " +
                 $"memoryLeakFps='{memoryLeakFpsStatus}' " +
-                $"bmanLocomotiveAudio='{bmanLocomotiveAudioStatus}'.";
+                $"bmanLocomotiveAudio='{bmanLocomotiveAudioStatus}' " +
+                $"legosLibrary='{legosLibraryStatus}' " +
+                $"assetLoader='{assetLoaderStatus}' " +
+                $"alinasUtilities='{alinasUtilitiesStatus}'.";
             if (!string.Equals(summary, _lastSummary, StringComparison.Ordinal))
             {
                 _lastSummary = summary;
                 FuseLog.Info(summary);
+            }
+        }
+
+        private static string InstallGuard(string name, Func<string> install)
+        {
+            try
+            {
+                return install();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FUSE {name} failed to install", ex);
+                return "failed";
             }
         }
 
@@ -210,7 +163,15 @@ namespace FUSE.Patches
                 assemblyName,
                 "GP38Scripts",
                 StringComparison.Ordinal);
-            if (!isRealisticRerail && !isUtilities && !isMemoryLeakFps && !isBmanLocomotiveAudio)
+            var isLegosLibrary = string.Equals(
+                assemblyName,
+                "LegosLibraryOfStuff",
+                StringComparison.Ordinal);
+            var isAssetLoader = FuseAssetLoaderReplacementCompatibility.IsTargetAssemblyName(assemblyName);
+            var isAlinasUtilities = FuseAlinasUtilitiesCompatibility.IsTargetAssemblyName(assemblyName);
+            if (!isRealisticRerail && !isUtilities && !isMemoryLeakFps &&
+                !isBmanLocomotiveAudio && !isLegosLibrary && !isAssetLoader &&
+                !isAlinasUtilities)
             {
                 return;
             }

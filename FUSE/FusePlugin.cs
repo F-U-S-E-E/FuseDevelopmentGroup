@@ -65,7 +65,6 @@ namespace FUSE
             try
             {
                 FuseLegacySupportAssemblyShim.Initialize();
-                FuseLegacyUmmRecovery.RecoverFailedEntries();
                 WarnIfLegacyRailloaderInstallPresent();
                 LogStartupVersions(modEntry);
                 FuseSettings.Load(modEntry);
@@ -75,6 +74,8 @@ namespace FUSE
 
                 _harmony = new Harmony(HarmonyId);
                 FusePatchResilience.ApplyAll(_harmony, Assembly.GetExecutingAssembly());
+                FuseConfusingSupplementsCompatibility.Initialize();
+                StrangeCustoms.FileCache.EnsureInstance();
                 FuseNarrowGaugePerformanceCompatibility.Initialize(_harmony);
                 FuseEarlyLoader.SetPatchAvailable(FusePatchResilience.Applied.Any(patch =>
                     string.Equals(patch.TypeName, "FUSE.Patches.FuseEarlyLoaderSceneManagerPatch", StringComparison.Ordinal)));
@@ -218,14 +219,15 @@ namespace FUSE
 
         private static void Shutdown()
         {
-            FuseNarrowGaugePerformanceCompatibility.Shutdown();
-            FuseThirdPartyGuardInstaller.Shutdown();
+            RunShutdownStep("narrow-gauge compatibility", FuseNarrowGaugePerformanceCompatibility.Shutdown);
+            RunShutdownStep("third-party guards", FuseThirdPartyGuardInstaller.Shutdown);
 
             if (_harmony != null)
             {
                 try
                 {
                     _harmony.UnpatchAll(HarmonyId);
+                    FuseLegosLibraryCompatibility.ResetAfterSuccessfulUnpatch();
                 }
                 catch (Exception ex)
                 {
@@ -234,6 +236,9 @@ namespace FUSE
 
                 _harmony = null;
             }
+
+            RunShutdownStep("Confusing Supplements compatibility", FuseConfusingSupplementsCompatibility.Reset);
+            RunShutdownStep("legacy livery texture cache", FuseConfusingSupplementsLiveryRegistry.Shutdown);
 
             if (_lifecycle != null)
             {
@@ -249,43 +254,56 @@ namespace FUSE
                 _lifecycle = null;
             }
 
-            FuseSceneryLoadThrottlePatch.Shutdown();
-            FuseCullingManagerUpdateRacePatch.ResetStats();
-            FuseTrackRebuilderQueueProcessor.Shutdown();
-            FuseCarCullerPendingProcessor.Shutdown();
-            FuseCarModelCompletionScheduler.Shutdown();
-            FuseDeferredAssetReferenceReleaseQueue.Shutdown();
-            FuseSceneryLoadFailurePatch.Shutdown();
-            FuseModExceptionLogHook.Shutdown();
-            FuseLegacyAssemblyHost.Shutdown();
-            FuseLegacySupportAssemblyShim.Shutdown();
-            FuseLegacyUmmRecovery.Reset();
-            FuseRuntimeRebindService.Shutdown();
-            FuseVersionCheck.Shutdown();
-            FuseMenuWindow.Shutdown();
-            FuseTrackDebugOverlay.Shutdown();
-            FuseSceneryDebugOverlay.Shutdown();
-            FuseWorldLabelsOverlay.Shutdown();
-            FuseLoadingScreen.Shutdown();
-            FuseFrameSpikeDiagnostic.Shutdown();
-            FuseRuntimePump.Shutdown();
-            FuseNativeLeakDiagnostic.Shutdown();
-            FuseUnusedAssetReclaimer.Reset();
-            FuseConstrainedTextureMemoryPolicy.Restore();
+            RunShutdownStep("scenery load throttle", FuseSceneryLoadThrottlePatch.Shutdown);
+            RunShutdownStep("culling race statistics", FuseCullingManagerUpdateRacePatch.ResetStats);
+            RunShutdownStep("track rebuilder queue", FuseTrackRebuilderQueueProcessor.Shutdown);
+            RunShutdownStep("car culler queue", FuseCarCullerPendingProcessor.Shutdown);
+            RunShutdownStep("car model scheduler", FuseCarModelCompletionScheduler.Shutdown);
+            RunShutdownStep("deferred asset release queue", FuseDeferredAssetReferenceReleaseQueue.Shutdown);
+            RunShutdownStep("scenery load failure hook", FuseSceneryLoadFailurePatch.Shutdown);
+            RunShutdownStep("mod exception hook", FuseModExceptionLogHook.Shutdown);
+            RunShutdownStep("legacy assembly host", FuseLegacyAssemblyHost.Shutdown);
+            RunShutdownStep("legacy file cache", StrangeCustoms.FileCache.Shutdown);
+            RunShutdownStep("legacy support shim", FuseLegacySupportAssemblyShim.Shutdown);
+            RunShutdownStep("legacy UMM recovery", FuseLegacyUmmRecovery.Reset);
+            RunShutdownStep("runtime rebind service", FuseRuntimeRebindService.Shutdown);
+            RunShutdownStep("version check", FuseVersionCheck.Shutdown);
+            RunShutdownStep("menu window", FuseMenuWindow.Shutdown);
+            RunShutdownStep("track debug overlay", FuseTrackDebugOverlay.Shutdown);
+            RunShutdownStep("scenery debug overlay", FuseSceneryDebugOverlay.Shutdown);
+            RunShutdownStep("world labels overlay", FuseWorldLabelsOverlay.Shutdown);
+            RunShutdownStep("loading screen", FuseLoadingScreen.Shutdown);
+            RunShutdownStep("frame spike diagnostic", FuseFrameSpikeDiagnostic.Shutdown);
+            RunShutdownStep("runtime pump", FuseRuntimePump.Shutdown);
+            RunShutdownStep("native leak diagnostic", FuseNativeLeakDiagnostic.Shutdown);
+            RunShutdownStep("unused asset reclaimer", FuseUnusedAssetReclaimer.Reset);
+            RunShutdownStep("texture memory policy", FuseConstrainedTextureMemoryPolicy.Restore);
 
             if (_isLoaded && InGameEditorEnabled)
             {
-                FuseEditorBridge.NotifyFuseUnloaded();
+                RunShutdownStep("editor unload notification", FuseEditorBridge.NotifyFuseUnloaded);
             }
 
             if (_isLoaded)
             {
-                FuseEvents.RaiseFuseUnloaded();
+                RunShutdownStep("unload event", FuseEvents.RaiseFuseUnloaded);
                 FuseLog.Info("FUSE unloaded.");
             }
 
             _isLoaded = false;
             ModEntry = null;
+        }
+
+        private static void RunShutdownStep(string name, Action step)
+        {
+            try
+            {
+                step();
+            }
+            catch (Exception ex)
+            {
+                FuseLog.Exception($"FUSE failed while shutting down {name}", ex);
+            }
         }
     }
 }

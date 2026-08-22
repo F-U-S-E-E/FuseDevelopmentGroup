@@ -6,6 +6,7 @@ using FUSE.Patches;
 using GalaSoft.MvvmLight.Helpers;
 using Game.Events;
 using HarmonyLib;
+using Railloader.Events;
 using Xunit;
 
 namespace FUSE.Tests.Patches
@@ -64,9 +65,10 @@ namespace FUSE.Tests.Patches
         }
 
         [Fact]
-        public void TargetMethods_CoverAllFourLifecycleEvents_WithBothDispatchEntries()
+        public void TargetMethods_CoverLifecycleAndLegacyDebugEvents_WithBothDispatchEntries()
         {
-            // Full expected surface: four lifecycle structs, two dispatch
+            // Full expected surface: four lifecycle structs plus the legacy
+            // debug-report contribution event, two dispatch
             // entries each. Compile-time typeofs again so any single
             // event going missing or changing shape raises an alarm here
             // instead of a runtime "stays unguarded" warning nobody reads.
@@ -75,7 +77,8 @@ namespace FUSE.Tests.Patches
                 typeof(MapWillLoadEvent),
                 typeof(MapDidLoadEvent),
                 typeof(MapWillUnloadEvent),
-                typeof(MapDidUnloadEvent)
+                typeof(MapDidUnloadEvent),
+                typeof(WillCopyDebugInformation)
             };
 
             var expected = new HashSet<MethodBase>();

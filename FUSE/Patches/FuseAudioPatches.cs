@@ -182,4 +182,47 @@ namespace FUSE.Patches
         }
 
     }
+
+    /// <summary>
+    /// Contains a bad whistle/horn/bell provider at the individual picker
+    /// boundary. Asset packs are third-party inputs; one provider throwing
+    /// while its definitions are enumerated must not abort construction of the
+    /// entire customize window and leave the player locked out of its controls.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class FuseCarCustomizeSoundPickerGuardPatch
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            var windowType = typeof(UI.CarCustomizeWindow.CarCustomizeWindow);
+            foreach (var name in new[] { "BuildSoundTabWhistle", "BuildSoundTabHorn", "BuildSoundTabBell" })
+            {
+                var method = AccessTools.DeclaredMethod(windowType, name);
+                if (method == null)
+                {
+                    FuseLog.Warning(
+                        $"FUSE could not guard the car customize sound picker because " +
+                        $"'{windowType.FullName}.{name}' could not be resolved.");
+                    continue;
+                }
+
+                yield return method;
+            }
+        }
+
+        private static Exception Finalizer(Exception __exception, MethodBase __originalMethod)
+        {
+            if (__exception == null)
+            {
+                return null;
+            }
+
+            var picker = (__originalMethod?.Name ?? "sound picker").Replace("BuildSoundTab", string.Empty);
+            FuseLog.Warning(
+                $"FUSE contained a broken {picker} definition provider while building the car customize window: " +
+                $"{__exception.GetBaseException().GetType().Name}: {__exception.GetBaseException().Message}. " +
+                "Only that sound picker was omitted; the rest of the window remains available.");
+            return null;
+        }
+    }
 }

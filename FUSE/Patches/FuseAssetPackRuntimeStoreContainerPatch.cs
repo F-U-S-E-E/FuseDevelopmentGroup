@@ -25,6 +25,12 @@ namespace FUSE.Patches
                     __result = container;
                     return false;
                 }
+
+                if (FuseAssetPackRegistry.TryLoadLegacyDefinitionOverrideContainer(__instance, out container))
+                {
+                    __result = container;
+                    return false;
+                }
             }
             catch (System.Exception ex)
             {

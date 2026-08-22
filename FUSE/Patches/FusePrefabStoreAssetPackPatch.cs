@@ -28,7 +28,27 @@ namespace FUSE.Patches
             finally
             {
                 // Even a partial store add changes the identifier population.
-                FUSE.Runtime.API.SceneryAPI.InvalidateKnownSceneryIdentifierIndex();
+                try
+                {
+                    FUSE.Runtime.API.SceneryAPI.InvalidateKnownSceneryIdentifierIndex();
+                }
+                catch (System.Exception ex)
+                {
+                    FuseLog.Exception(
+                        "FUSE direct asset pack identifier invalidation failed softly",
+                        ex);
+                }
+
+                try
+                {
+                    FuseEquipmentCatalogWarmup.Schedule(__result);
+                }
+                catch (System.Exception ex)
+                {
+                    FuseLog.Exception(
+                        "FUSE equipment catalog warmup scheduling failed softly",
+                        ex);
+                }
             }
         }
     }

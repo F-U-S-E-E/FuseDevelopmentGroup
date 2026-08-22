@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using FUSE.Loading;
+using FUSE.Patches;
 using HarmonyLib;
 using Model.Definition;
 using Model.Definition.Data;
@@ -55,6 +56,34 @@ namespace FUSE.Tests.Loading
         {
             _h = harness;
             _out = output;
+        }
+
+        [Fact]
+        public void CompatibilityLatch_ReentersInstallerAfterSuccessfulUnpatch()
+        {
+            var installedField = typeof(FuseLegosLibraryCompatibility).GetField(
+                "_installed",
+                BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(installedField);
+            var original = (bool)installedField.GetValue(null);
+
+            try
+            {
+                installedField.SetValue(null, true);
+                Assert.Equal(
+                    "installed",
+                    FuseLegosLibraryCompatibility.EnsureInstalled(null));
+
+                FuseLegosLibraryCompatibility.ResetAfterSuccessfulUnpatch();
+
+                Assert.Equal(
+                    "unavailable (no harmony)",
+                    FuseLegosLibraryCompatibility.EnsureInstalled(null));
+            }
+            finally
+            {
+                installedField.SetValue(null, original);
+            }
         }
 
         // ------------------------------------------------------------------
