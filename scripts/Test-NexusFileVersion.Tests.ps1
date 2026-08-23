@@ -254,6 +254,14 @@ try {
       Assert-Condition `
         -Condition ($workflow -notmatch '(?m)^\s+git (?:fetch|rev-parse|merge-base)\b') `
         -Message "$workflowPath requires a git executable on the release runner."
+      Assert-Condition `
+        -Condition (
+          $workflow.Contains('/releases/tags/') -and
+          $workflow.Contains('browser_download_url') -and
+          $workflow.Contains('Invoke-WebRequest') -and
+          $workflow -notmatch '(?m)^\s+gh release download\b'
+        ) `
+        -Message "$workflowPath requires the GitHub CLI to download its locked upstream asset."
     }
 
     Assert-Condition `

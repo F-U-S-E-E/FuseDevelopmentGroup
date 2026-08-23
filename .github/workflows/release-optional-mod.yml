@@ -154,13 +154,32 @@ jobs:
           $downloadRoot = Join-Path $env:RUNNER_TEMP "optional-release-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           New-Item -ItemType Directory -Path $downloadRoot | Out-Null
 
-          gh release download $env:SOURCE_TAG `
-            --repo $env:SOURCE_REPOSITORY `
-            --pattern $env:ASSET_NAME `
-            --dir $downloadRoot
-          if ($LASTEXITCODE -ne 0) {
-            throw "Could not download '$env:ASSET_NAME' from $env:SOURCE_REPOSITORY release $env:SOURCE_TAG."
+          $headers = @{
+            Accept = 'application/vnd.github+json'
+            Authorization = "Bearer $env:GH_TOKEN"
+            'X-GitHub-Api-Version' = '2022-11-28'
           }
+          $encodedTag = [Uri]::EscapeDataString($env:SOURCE_TAG)
+          $releaseUri = "https://api.github.com/repos/$env:SOURCE_REPOSITORY/releases/tags/$encodedTag"
+          $release = Invoke-RestMethod -Method Get -Uri $releaseUri -Headers $headers
+          $matchingAssets = @(
+            $release.assets | Where-Object { $_.name -ceq $env:ASSET_NAME }
+          )
+          if ($matchingAssets.Count -ne 1) {
+            throw "Expected exactly one '$env:ASSET_NAME' asset on $env:SOURCE_REPOSITORY release $env:SOURCE_TAG."
+          }
+
+          $asset = $matchingAssets[0]
+          if ($asset.state -ne 'uploaded' -or
+              $asset.browser_download_url -notmatch '^https://github\.com/') {
+            throw "The locked upstream release asset is not an uploaded GitHub asset."
+          }
+
+          $archivePath = Join-Path $downloadRoot $env:ASSET_NAME
+          Invoke-WebRequest `
+            -Uri $asset.browser_download_url `
+            -OutFile $archivePath `
+            -UseBasicParsing
 
           $archives = @(Get-ChildItem -LiteralPath $downloadRoot -File)
           if ($archives.Count -ne 1 -or $archives[0].Name -cne $env:ASSET_NAME) {
