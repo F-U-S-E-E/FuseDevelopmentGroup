@@ -148,14 +148,11 @@ baselines:
 - NarrowGaugeMod `0.4.1`
 
 Baseline tags remain blocked so they cannot archive or replace an existing
-Nexus file. Narrow Gauge `0.4.1` is checksum-pinned and already live on Nexus.
-Toolshed `0.3.1` is checksum-pinned and already live on Nexus. Tile Editor
-has an additional reconciliation block: Nexus is at `0.26.6`, but its public
-source/release metadata and ZIP are still `0.26.4`, and that ZIP uses Windows
-backslash entry names. Reconcile its version sources, create a ZIP with portable
-`/` entry names, and cut a matching upstream release before enabling its next
-promotion. Enable a successor only when that exact upstream asset is ready. The
-release resolver fails closed while an entry is not promotion-ready.
+Nexus file. Narrow Gauge `0.4.1` and Toolshed `0.3.1` are checksum-pinned and
+already live on Nexus. Tile Editor `0.26.7` is checksum-pinned and ready to
+replace the reconciled `0.26.6` Nexus baseline. Enable a successor only when
+that exact upstream asset is ready. The release resolver fails closed while an
+entry is not promotion-ready.
 
 To promote a successor:
 
