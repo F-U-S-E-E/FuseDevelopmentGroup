@@ -262,6 +262,9 @@ try {
           $workflow -notmatch '(?m)^\s+gh release download\b'
         ) `
         -Message "$workflowPath requires the GitHub CLI to download its locked upstream asset."
+      Assert-Condition `
+        -Condition ($workflow -match '(?m)^\s+category:\s+optional\s*$') `
+        -Message "$workflowPath must publish optional products in the Nexus optional-files category."
     }
 
     Assert-Condition `

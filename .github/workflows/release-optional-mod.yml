@@ -237,5 +237,5 @@ jobs:
           description: |
             Release ${{ steps.release.outputs.version }}.
             Source release: ${{ steps.release.outputs.source_release_url }}
-          category: main
+          category: optional
           archive_existing_version: true
