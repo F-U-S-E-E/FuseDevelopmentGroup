@@ -144,12 +144,12 @@ The versions already uploaded manually to Nexus are recorded as the initial
 baselines:
 
 - Hrogers.TileEditorSuite `0.26.6`
-- Toolshed FUSE `0.3.0`
+- Toolshed FUSE `0.3.1`
 - NarrowGaugeMod `0.4.1`
 
 Baseline tags remain blocked so they cannot archive or replace an existing
 Nexus file. Narrow Gauge `0.4.1` is checksum-pinned and already live on Nexus.
-Toolshed `0.3.1` is checksum-pinned and promotion-ready. Tile Editor
+Toolshed `0.3.1` is checksum-pinned and already live on Nexus. Tile Editor
 has an additional reconciliation block: Nexus is at `0.26.6`, but its public
 source/release metadata and ZIP are still `0.26.4`, and that ZIP uses Windows
 backslash entry names. Reconcile its version sources, create a ZIP with portable
