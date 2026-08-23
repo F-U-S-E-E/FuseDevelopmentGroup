@@ -236,8 +236,24 @@ try {
     }
     else {
       Assert-Condition `
-        -Condition ($workflow -match 'git fetch --no-tags origin main:refs/remotes/origin/main') `
-        -Message "$workflowPath does not verify its tag against protected main."
+        -Condition (
+          $workflow.Contains('/git/ref/tags/') -and
+          $workflow.Contains('/git/tags/') -and
+          $workflow.Contains('/compare/$tagCommit...main') -and
+          $workflow.Contains("`$comparison.status -notin @('identical', 'ahead')")
+        ) `
+        -Message "$workflowPath does not verify its tag against protected main through the GitHub API."
+      Assert-Condition `
+        -Condition (
+          $workflow.Contains('workflow_dispatch:') -and
+          $workflow.Contains('release_tag:') -and
+          $workflow.Contains('TAG_NAME: ${{ env.RELEASE_TAG }}') -and
+          $workflow.Contains('tag_name: ${{ env.RELEASE_TAG }}')
+        ) `
+        -Message "$workflowPath does not support a verified rerun for an existing immutable tag."
+      Assert-Condition `
+        -Condition ($workflow -notmatch '(?m)^\s+git (?:fetch|rev-parse|merge-base)\b') `
+        -Message "$workflowPath requires a git executable on the release runner."
     }
 
     Assert-Condition `

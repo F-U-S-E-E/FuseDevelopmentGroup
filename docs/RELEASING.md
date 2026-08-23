@@ -176,6 +176,13 @@ To promote a successor:
    the deployed baseline and prevents a later lock-file rollback from being
    promoted as a successor.
 
+If the promotion fails before creating a release or uploading to Nexus, do not
+delete or rewrite its protected tag. Repair the workflow on `main`, then run
+**Release Optional Mod** manually from `main` with that existing tag in the
+`release_tag` input. The recovery path re-resolves the tag through the GitHub
+API, verifies that its commit belongs to protected `main`, and uses the reviewed
+lock file on `main` before it can reach the deployment gate.
+
 The repository retains the existing `NEXUSMODS_API_KEY` secret and one Nexus
 API Info variable per product. Release jobs can use that repository-scoped
 secret only after the protected `nexus-release` environment gate approves and
