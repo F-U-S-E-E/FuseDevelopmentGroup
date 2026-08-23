@@ -147,16 +147,16 @@ baselines:
 - Toolshed FUSE `0.3.0`
 - NarrowGaugeMod `0.4.0`
 
-All three baseline entries have `promotionReady: false`, so pushing a baseline
-tag fails before it can archive or replace an existing Nexus file. Toolshed and
-Narrow Gauge have matching, checksum-pinned GitHub assets in the lock file.
-Tile Editor has an additional reconciliation block: Nexus is at `0.26.6`, but
-its public source/release metadata and ZIP are still `0.26.4`, and that ZIP uses
-Windows backslash entry names. Reconcile its six version sources, create a ZIP
-with portable `/` entry names, and cut a matching upstream release before
-enabling its next promotion. Advance the relevant lock entry to a successor and
-enable it only when that exact upstream asset is ready. The release resolver
-fails closed while a baseline is not promotion-ready.
+Baseline tags remain blocked so they cannot archive or replace an existing
+Nexus file. Narrow Gauge `0.4.1` is checksum-pinned and promotion-ready.
+Toolshed `0.3.1` is checksum-pinned but remains blocked pending its Appalachian
+Railway in-game transfer, save/reload, and tick-performance gate. Tile Editor
+has an additional reconciliation block: Nexus is at `0.26.6`, but its public
+source/release metadata and ZIP are still `0.26.4`, and that ZIP uses Windows
+backslash entry names. Reconcile its version sources, create a ZIP with portable
+`/` entry names, and cut a matching upstream release before enabling its next
+promotion. Enable a successor only when that exact upstream asset is ready. The
+release resolver fails closed while an entry is not promotion-ready.
 
 To promote a successor:
 
