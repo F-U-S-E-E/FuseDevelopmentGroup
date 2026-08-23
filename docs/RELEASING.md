@@ -143,14 +143,13 @@ only a plain `major.minor.patch` version is sent to Nexus.
 The versions already uploaded manually to Nexus are recorded as the initial
 baselines:
 
-- Hrogers.TileEditorSuite `0.26.6`
+- Hrogers.TileEditorSuite `0.26.7`
 - Toolshed FUSE `0.3.1`
 - NarrowGaugeMod `0.4.1`
 
 Baseline tags remain blocked so they cannot archive or replace an existing
-Nexus file. Narrow Gauge `0.4.1` and Toolshed `0.3.1` are checksum-pinned and
-already live on Nexus. Tile Editor `0.26.7` is checksum-pinned and ready to
-replace the reconciled `0.26.6` Nexus baseline. Enable a successor only when
+Nexus file. Tile Editor `0.26.7`, Narrow Gauge `0.4.1`, and Toolshed `0.3.1`
+are checksum-pinned and already live on Nexus. Enable a successor only when
 that exact upstream asset is ready. The release resolver fails closed while an
 entry is not promotion-ready.
 
