@@ -125,7 +125,7 @@ jobs:
       - name: Upload test results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results
           path: FUSE.Tests/TestResults/test-results.trx
@@ -265,7 +265,7 @@ jobs:
       - name: Upload EditMode test results
         if: always() && steps.editmode_gate.outputs.enabled == 'true' && steps.unity_probe.outputs.available == 'true'
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unity-editmode-results
           path: FUSE.UnityTests/TestResults/editmode-results.xml
@@ -393,7 +393,7 @@ jobs:
         # genuinely missing archive is still caught upstream by the Package mod zip
         # and Validate mod package steps, so this only tolerates upload-side failures.
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.build_id.outputs.archive }}
           path: ${{ steps.build_id.outputs.archive }}
@@ -482,7 +482,7 @@ jobs:
       - name: Upload editor publish artifacts
         if: github.event_name != 'pull_request'
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuse-external-editor
           path: publish/
@@ -491,7 +491,7 @@ jobs:
       - name: Upload net10 test results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: net10-test-results
           path: TestResults/*.trx
